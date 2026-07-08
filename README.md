@@ -13,12 +13,12 @@ This repository starts Milestone 1:
 - Local UI state and metadata helpers
 - Browser-side Kaspa wRPC connection and test wallet import/generation
 - Browser-side testnet ticket purchase transactions
-- Local commit-reveal finalization
-- Treasury-signed prize payout transactions
+- Local commit-reveal finalization with automatic prize payout
+- REST explorer history grouped by raffle round
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-Toccata covenant compilation and browser-side chain scanning are not implemented yet. Prize payout requires the private key for the round treasury address; finalization alone only selects the winner.
+Toccata covenant compilation is not implemented yet. Automatic prize payout requires a signer key for the round treasury address in the browser session. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
 
 ## Testnet Notes
 

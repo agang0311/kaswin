@@ -7,11 +7,11 @@ import {
   Link2,
   Plug,
   RefreshCw,
-  Send,
   ShieldCheck,
   Ticket,
   Upload
 } from "lucide-react";
+import { loadRaffleHistory, type RaffleHistoryRound } from "../kaspa/history";
 import {
   connectBrowserRpc,
   disconnectBrowserRpc,
@@ -47,6 +47,10 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : String(error || fallback);
 }
 
+function formatDate(value: number | undefined) {
+  return value ? new Date(value).toLocaleString() : "unknown";
+}
+
 export function App() {
   const rpcConnectionRef = useRef<KaspaRpcConnection | null>(null);
   const [rpcUrl, setRpcUrl] = useState("ws://tn12-node.kaspa.com:17210");
@@ -70,6 +74,12 @@ export function App() {
   const [isBuying, setIsBuying] = useState(false);
   const [payoutPrivateKeyInput, setPayoutPrivateKeyInput] = useState("");
   const [isPayingOut, setIsPayingOut] = useState(false);
+  const [historyApiBase, setHistoryApiBase] = useState("https://api-tn10.kaspa.org");
+  const [historyAddress, setHistoryAddress] = useState("");
+  const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [historyMessage, setHistoryMessage] = useState("");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isBuyingRef = useRef(false);
   const isPayingOutRef = useRef(false);
 
@@ -269,47 +279,6 @@ export function App() {
     setChainError("");
     setChainMessage("");
 
-    if (finalized) {
-      setChainMessage(`Winner is ticket #${finalized.winnerTicketId}.`);
-      return;
-    }
-
-    if (!creatorSecret) {
-      setChainError("Creator secret is required to finalize this round.");
-      return;
-    }
-
-    if (tickets.length < metadata.minTickets) {
-      setChainError("Not enough tickets to finalize this round.");
-      return;
-    }
-
-    const commitment = await creatorCommitment(creatorSecret);
-
-    if (commitment !== metadata.creatorCommitment) {
-      setChainError("Creator secret does not match the round commitment.");
-      return;
-    }
-
-    const randomSeed = await sha256Hex(`${creatorSecret}:${tickets.map((ticket) => ticket.buyerCommitment).join(":")}`);
-    const winnerIndex = Number(BigInt(`0x${randomSeed}`) % BigInt(tickets.length));
-    const winner = tickets[winnerIndex];
-
-    setFinalized({
-      appId: "KASPA_RAFFLE_FINAL_V1",
-      roundId: metadata.roundId || "pending-round",
-      randomSeed,
-      winnerTicketId: winner.ticketId,
-      winnerAddress: winner.owner,
-      payoutTxId: ""
-    });
-    setChainMessage(`Winner is ticket #${winner.ticketId}.`);
-  }
-
-  async function handlePayPrize() {
-    setChainError("");
-    setChainMessage("");
-
     if (isPayingOutRef.current) {
       return;
     }
@@ -318,17 +287,52 @@ export function App() {
     setIsPayingOut(true);
 
     try {
-      if (!finalized) {
-        throw new Error("Finalize this round before paying the prize.");
-      }
-
-      if (finalized.payoutTxId) {
-        setChainMessage(`Prize already paid: ${finalized.payoutTxId}`);
+      if (finalized?.payoutTxId) {
+        setChainMessage(`Winner #${finalized.winnerTicketId} was paid: ${finalized.payoutTxId}`);
         return;
       }
 
       if (!rpcConnectionRef.current) {
         throw new Error("Connect to a Kaspa wRPC node first.");
+      }
+
+      if (!payoutPrivateKeyInput.trim()) {
+        throw new Error("Prize pool signer key is required for automatic payout.");
+      }
+
+      if (!creatorSecret) {
+        throw new Error("Creator secret is required to finalize this round.");
+      }
+
+      if (tickets.length < metadata.minTickets) {
+        throw new Error("Not enough tickets to finalize this round.");
+      }
+
+      const commitment = await creatorCommitment(creatorSecret);
+
+      if (commitment !== metadata.creatorCommitment) {
+        throw new Error("Creator secret does not match the round commitment.");
+      }
+
+      if (round.potAmount <= 0n) {
+        throw new Error("Prize amount must be greater than zero.");
+      }
+
+      const randomSeed = await sha256Hex(`${creatorSecret}:${tickets.map((ticket) => ticket.buyerCommitment).join(":")}`);
+      const winnerIndex = Number(BigInt(`0x${randomSeed}`) % BigInt(tickets.length));
+      const winner = tickets[winnerIndex];
+      const nextFinalized: FinalizeState = finalized ?? {
+        appId: "KASPA_RAFFLE_FINAL_V1",
+        roundId: metadata.roundId || "pending-round",
+        randomSeed,
+        winnerTicketId: winner.ticketId,
+        winnerAddress: winner.owner,
+        payoutTxId: ""
+      };
+
+      if (nextFinalized.payoutTxId) {
+        setChainMessage(`Winner #${nextFinalized.winnerTicketId} was paid: ${nextFinalized.payoutTxId}`);
+        return;
       }
 
       const treasuryAddress = metadata.treasuryAddress?.trim();
@@ -337,46 +341,63 @@ export function App() {
         throw new Error("Set a ticket treasury address for this round.");
       }
 
-      if (!payoutPrivateKeyInput.trim()) {
-        throw new Error("Import the treasury private key before paying the prize.");
-      }
-
-      if (round.potAmount <= 0n) {
-        throw new Error("Prize amount must be greater than zero.");
-      }
-
       const payoutWallet = await importBrowserTestWallet(payoutPrivateKeyInput, metadata.network || networkId);
 
       if (payoutWallet.address !== treasuryAddress) {
-        throw new Error("Payout signer does not match the round treasury address.");
+        throw new Error("Prize pool signer does not match the round treasury address.");
       }
 
       const payment = await sendKaspaPayment({
         connection: rpcConnectionRef.current,
         wallet: payoutWallet,
-        toAddress: finalized.winnerAddress,
+        toAddress: nextFinalized.winnerAddress,
         amountSompi: round.potAmount,
         payload: encodePayload({
           app: "kaspa-raffle-static",
           type: "payout",
           version: metadata.version,
           roundId: metadata.roundId,
-          winnerTicketId: finalized.winnerTicketId,
-          winnerAddress: finalized.winnerAddress,
-          randomSeed: finalized.randomSeed,
+          winnerTicketId: nextFinalized.winnerTicketId,
+          winnerAddress: nextFinalized.winnerAddress,
+          randomSeed: nextFinalized.randomSeed,
           amount: round.potAmount.toString(),
           createdAt: new Date().toISOString()
         })
       });
       const txId = payment.txIds[payment.txIds.length - 1] ?? "";
+      const paidFinalized = { ...nextFinalized, payoutTxId: txId };
 
-      setFinalized((current) => (current ? { ...current, payoutTxId: txId } : current));
-      setChainMessage(`Prize payout submitted: ${txId}`);
+      setFinalized(paidFinalized);
+      setChainMessage(`Winner #${paidFinalized.winnerTicketId} paid automatically: ${txId}`);
     } catch (error) {
-      setChainError(errorMessage(error, "Unable to pay prize."));
+      setChainError(errorMessage(error, "Unable to finalize and pay prize."));
     } finally {
       isPayingOutRef.current = false;
       setIsPayingOut(false);
+    }
+  }
+
+  async function handleLoadHistory() {
+    setHistoryError("");
+    setHistoryMessage("");
+    setIsLoadingHistory(true);
+
+    try {
+      const targetAddress = (historyAddress || metadata.treasuryAddress || "").trim();
+
+      if (!targetAddress) {
+        throw new Error("Set a treasury address to load history.");
+      }
+
+      const rounds = await loadRaffleHistory(historyApiBase, targetAddress);
+
+      setHistoryAddress(targetAddress);
+      setHistoryRounds(rounds);
+      setHistoryMessage(`Loaded ${rounds.length} raffle round${rounds.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setHistoryError(errorMessage(error, "Unable to load raffle history."));
+    } finally {
+      setIsLoadingHistory(false);
     }
   }
 
@@ -647,17 +668,13 @@ export function App() {
             <button type="button" className="secondary">
               Close round
             </button>
-            <button type="button" className="secondary" onClick={handleFinalizeLocal}>
-              Finalize
-            </button>
             <button
               type="button"
               className="secondary"
-              onClick={handlePayPrize}
-              disabled={!finalized || Boolean(finalized.payoutTxId) || isPayingOut}
+              onClick={handleFinalizeLocal}
+              disabled={Boolean(finalized?.payoutTxId) || isPayingOut}
             >
-              <Send size={17} />
-              {isPayingOut ? "Paying..." : "Pay prize"}
+              {isPayingOut ? "Paying..." : "Finalize"}
             </button>
           </div>
           <label className="field">
@@ -665,11 +682,11 @@ export function App() {
             <input readOnly value={creatorSecret} placeholder="Generate a creator secret first" />
           </label>
           <label className="field">
-            <span>Treasury private key</span>
+            <span>Auto payout signer key</span>
             <input
               value={payoutPrivateKeyInput}
               onChange={(event) => setPayoutPrivateKeyInput(event.target.value)}
-              placeholder="Treasury signer private key"
+              placeholder="Prize pool signer private key"
               type="password"
             />
           </label>
@@ -697,6 +714,74 @@ export function App() {
             <Download size={17} />
             Export backup
           </button>
+        </Panel>
+
+        <Panel title="History" eyebrow="Explorer index">
+          <label className="field">
+            <span>REST API</span>
+            <input value={historyApiBase} onChange={(event) => setHistoryApiBase(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Treasury address</span>
+            <input
+              value={historyAddress || metadata.treasuryAddress || ""}
+              onChange={(event) => setHistoryAddress(event.target.value)}
+              placeholder="kaspatest:..."
+            />
+          </label>
+          <button type="button" className="secondary wide" onClick={handleLoadHistory} disabled={isLoadingHistory}>
+            <RefreshCw size={17} />
+            {isLoadingHistory ? "Loading..." : "Load history"}
+          </button>
+          {historyError ? <p className="error-text">{historyError}</p> : null}
+          {historyMessage ? <p className="success-text">{historyMessage}</p> : null}
+          {historyRounds.length ? (
+            <div className="history-list">
+              {historyRounds.map((historyRound) => {
+                const latestPayout = historyRound.payouts[0];
+
+                return (
+                  <article className="history-item" key={historyRound.roundId}>
+                    <h3 className="compact-title">{historyRound.roundId}</h3>
+                    <dl className="stat-list dense">
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{latestPayout ? "Paid" : "Open"}</dd>
+                      </div>
+                      <div>
+                        <dt>Tickets</dt>
+                        <dd>{historyRound.tickets.length}</dd>
+                      </div>
+                      <div>
+                        <dt>Pot</dt>
+                        <dd>{formatSompi(historyRound.potAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Last seen</dt>
+                        <dd>{formatDate(historyRound.lastBlockTime)}</dd>
+                      </div>
+                    </dl>
+                    <ul className="message-list compact">
+                      {historyRound.tickets.map((ticket) => (
+                        <li key={ticket.txId}>
+                          Ticket #{ticket.ticketId} {formatSompi(ticket.paidAmount)}{" "}
+                          <span className="mono">{ticket.txId}</span>
+                        </li>
+                      ))}
+                      {historyRound.payouts.map((payout) => (
+                        <li key={payout.txId}>
+                          Paid #{payout.winnerTicketId} {formatSompi(payout.amount)}{" "}
+                          <span className="mono">{payout.txId}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="muted">No indexed raffle history loaded.</p>
+          )}
         </Panel>
 
         <Panel title="Verify" eyebrow="Local checks">

@@ -316,6 +316,24 @@ dd {
   font-size: 0.84rem;
 }
 
+.history-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.history-item {
+  border: 1px solid #ded8ca;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.compact-title {
+  font-size: 0.95rem;
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
 .muted {
   color: #66726b;
   margin: 12px 0 0;
