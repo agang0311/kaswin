@@ -12,11 +12,13 @@ This repository starts Milestone 1:
 - One-page raffle operations console
 - Local UI state and metadata helpers
 - Browser-side Kaspa wRPC connection and test wallet import/generation
-- Placeholder scanner and contract transaction boundaries
+- Browser-side testnet ticket purchase transactions
+- Local commit-reveal finalization
+- Treasury-signed prize payout transactions
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-Toccata covenant compilation, transaction building, and browser-side scanning are not implemented yet.
+Toccata covenant compilation and browser-side chain scanning are not implemented yet. Prize payout requires the private key for the round treasury address; finalization alone only selects the winner.
 
 ## Testnet Notes
 

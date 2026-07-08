@@ -7,6 +7,7 @@ import {
   Link2,
   Plug,
   RefreshCw,
+  Send,
   ShieldCheck,
   Ticket,
   Upload
@@ -67,7 +68,10 @@ export function App() {
   const [chainMessage, setChainMessage] = useState("");
   const [chainError, setChainError] = useState("");
   const [isBuying, setIsBuying] = useState(false);
+  const [payoutPrivateKeyInput, setPayoutPrivateKeyInput] = useState("");
+  const [isPayingOut, setIsPayingOut] = useState(false);
   const isBuyingRef = useRef(false);
+  const isPayingOutRef = useRef(false);
 
   const round = useMemo<RoundState>(() => {
     const ticketPrice = BigInt(metadata.ticketPrice || "0");
@@ -159,6 +163,7 @@ export function App() {
     setCreatorSecret(secret);
     setTickets([]);
     setFinalized(undefined);
+    setPayoutPrivateKeyInput("");
     setChainMessage("");
     setChainError("");
     setMetadata((current) => ({
@@ -299,6 +304,80 @@ export function App() {
       payoutTxId: ""
     });
     setChainMessage(`Winner is ticket #${winner.ticketId}.`);
+  }
+
+  async function handlePayPrize() {
+    setChainError("");
+    setChainMessage("");
+
+    if (isPayingOutRef.current) {
+      return;
+    }
+
+    isPayingOutRef.current = true;
+    setIsPayingOut(true);
+
+    try {
+      if (!finalized) {
+        throw new Error("Finalize this round before paying the prize.");
+      }
+
+      if (finalized.payoutTxId) {
+        setChainMessage(`Prize already paid: ${finalized.payoutTxId}`);
+        return;
+      }
+
+      if (!rpcConnectionRef.current) {
+        throw new Error("Connect to a Kaspa wRPC node first.");
+      }
+
+      const treasuryAddress = metadata.treasuryAddress?.trim();
+
+      if (!treasuryAddress) {
+        throw new Error("Set a ticket treasury address for this round.");
+      }
+
+      if (!payoutPrivateKeyInput.trim()) {
+        throw new Error("Import the treasury private key before paying the prize.");
+      }
+
+      if (round.potAmount <= 0n) {
+        throw new Error("Prize amount must be greater than zero.");
+      }
+
+      const payoutWallet = await importBrowserTestWallet(payoutPrivateKeyInput, metadata.network || networkId);
+
+      if (payoutWallet.address !== treasuryAddress) {
+        throw new Error("Payout signer does not match the round treasury address.");
+      }
+
+      const payment = await sendKaspaPayment({
+        connection: rpcConnectionRef.current,
+        wallet: payoutWallet,
+        toAddress: finalized.winnerAddress,
+        amountSompi: round.potAmount,
+        payload: encodePayload({
+          app: "kaspa-raffle-static",
+          type: "payout",
+          version: metadata.version,
+          roundId: metadata.roundId,
+          winnerTicketId: finalized.winnerTicketId,
+          winnerAddress: finalized.winnerAddress,
+          randomSeed: finalized.randomSeed,
+          amount: round.potAmount.toString(),
+          createdAt: new Date().toISOString()
+        })
+      });
+      const txId = payment.txIds[payment.txIds.length - 1] ?? "";
+
+      setFinalized((current) => (current ? { ...current, payoutTxId: txId } : current));
+      setChainMessage(`Prize payout submitted: ${txId}`);
+    } catch (error) {
+      setChainError(errorMessage(error, "Unable to pay prize."));
+    } finally {
+      isPayingOutRef.current = false;
+      setIsPayingOut(false);
+    }
   }
 
   function updateMetadata<K extends keyof RaffleMetadata>(key: K, value: RaffleMetadata[K]) {
@@ -571,13 +650,28 @@ export function App() {
             <button type="button" className="secondary" onClick={handleFinalizeLocal}>
               Finalize
             </button>
-            <button type="button" className="secondary">
-              Refund
+            <button
+              type="button"
+              className="secondary"
+              onClick={handlePayPrize}
+              disabled={!finalized || Boolean(finalized.payoutTxId) || isPayingOut}
+            >
+              <Send size={17} />
+              {isPayingOut ? "Paying..." : "Pay prize"}
             </button>
           </div>
           <label className="field">
             <span>Creator secret backup</span>
             <input readOnly value={creatorSecret} placeholder="Generate a creator secret first" />
+          </label>
+          <label className="field">
+            <span>Treasury private key</span>
+            <input
+              value={payoutPrivateKeyInput}
+              onChange={(event) => setPayoutPrivateKeyInput(event.target.value)}
+              placeholder="Treasury signer private key"
+              type="password"
+            />
           </label>
           {finalized ? (
             <dl className="stat-list">
@@ -592,6 +686,10 @@ export function App() {
               <div>
                 <dt>Seed</dt>
                 <dd className="mono">{finalized.randomSeed}</dd>
+              </div>
+              <div>
+                <dt>Payout tx</dt>
+                <dd className="mono">{finalized.payoutTxId || "pending"}</dd>
               </div>
             </dl>
           ) : null}
