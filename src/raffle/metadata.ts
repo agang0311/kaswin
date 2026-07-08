@@ -4,12 +4,12 @@ export function createEmptyMetadata(): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
     version: "0.1.0",
-    network: "testnet",
+    network: "testnet-12",
     roundId: "",
     createTxId: "",
-    ticketPrice: "0",
-    maxTickets: 100,
-    minTickets: 10,
+    ticketPrice: "10000000",
+    maxTickets: 3,
+    minTickets: 1,
     creatorCommitment: "",
     contractVersion: "raffle-v0"
   };
@@ -46,4 +46,3 @@ export function parseMetadata(raw: string): RaffleMetadata {
 export function stringifyMetadata(metadata: RaffleMetadata): string {
   return JSON.stringify(metadata, null, 2);
 }
-

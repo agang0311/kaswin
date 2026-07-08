@@ -10,14 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@kluster/kaspa-wasm": "^2.0.1",
+    "@onekeyfe/kaspa-wasm": "^1.0.3-alpha.1",
+    "buffer": "^6.0.3",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^5.0.0",
     "typescript": "^5.6.3",
     "vite": "^6.0.0"
   }

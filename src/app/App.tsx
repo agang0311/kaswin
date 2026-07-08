@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,8 +11,19 @@ import {
   Ticket,
   Upload
 } from "lucide-react";
-import { connectBrowserRpc, type KaspaNodeStatus } from "../kaspa/rpc";
-import { createPlaceholderWallet, type BrowserTestWallet } from "../kaspa/wallet";
+import {
+  connectBrowserRpc,
+  disconnectBrowserRpc,
+  getAddressBalanceSompi,
+  type KaspaNodeStatus,
+  type KaspaRpcConnection
+} from "../kaspa/rpc";
+import {
+  createBrowserTestWallet,
+  importBrowserTestWallet,
+  withWalletBalance,
+  type BrowserTestWallet
+} from "../kaspa/wallet";
 import { createEmptyMetadata, stringifyMetadata } from "../raffle/metadata";
 import { creatorCommitment, randomHex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
@@ -22,11 +33,14 @@ import { Panel } from "../ui/Panel";
 const emptyMetadata = createEmptyMetadata();
 
 function formatSompi(value: bigint) {
-  return value.toString();
+  const kas = Number(value) / 100_000_000;
+  return `${kas.toLocaleString(undefined, { maximumFractionDigits: 8 })} KAS (${value.toString()} sompi)`;
 }
 
 export function App() {
-  const [rpcUrl, setRpcUrl] = useState("wss://node.example.com:PORT");
+  const rpcConnectionRef = useRef<KaspaRpcConnection | null>(null);
+  const [rpcUrl, setRpcUrl] = useState("ws://tn12-node.kaspa.com:17210");
+  const [networkId, setNetworkId] = useState("testnet-12");
   const [nodeStatus, setNodeStatus] = useState<KaspaNodeStatus>({
     connected: false,
     network: "unknown",
@@ -34,6 +48,8 @@ export function App() {
   });
   const [rpcError, setRpcError] = useState("");
   const [wallet, setWallet] = useState<BrowserTestWallet | null>(null);
+  const [walletError, setWalletError] = useState("");
+  const [privateKeyInput, setPrivateKeyInput] = useState("");
   const [metadata, setMetadata] = useState<RaffleMetadata>(emptyMetadata);
   const [creatorSecret, setCreatorSecret] = useState("");
   const [buyerSecret, setBuyerSecret] = useState("");
@@ -64,10 +80,60 @@ export function App() {
     setRpcError("");
 
     try {
-      setNodeStatus(await connectBrowserRpc(rpcUrl));
+      await disconnectBrowserRpc(rpcConnectionRef.current);
+      const connection = await connectBrowserRpc(rpcUrl, networkId);
+      rpcConnectionRef.current = connection;
+      setNodeStatus(connection.status);
     } catch (error) {
       setRpcError(error instanceof Error ? error.message : "Unable to connect to node.");
       setNodeStatus((current) => ({ ...current, connected: false }));
+    }
+  }
+
+  async function handleDisconnect() {
+    await disconnectBrowserRpc(rpcConnectionRef.current);
+    rpcConnectionRef.current = null;
+    setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
+  }
+
+  async function handleGenerateWallet() {
+    setWalletError("");
+
+    try {
+      setWallet(await createBrowserTestWallet(networkId));
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : "Unable to generate wallet.");
+    }
+  }
+
+  async function handleImportWallet() {
+    setWalletError("");
+
+    try {
+      setWallet(await importBrowserTestWallet(privateKeyInput, networkId));
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : "Unable to import private key.");
+    }
+  }
+
+  async function handleRefreshBalance() {
+    setWalletError("");
+
+    if (!wallet) {
+      setWalletError("Generate or import a wallet first.");
+      return;
+    }
+
+    if (!rpcConnectionRef.current) {
+      setWalletError("Connect to a Kaspa wRPC node first.");
+      return;
+    }
+
+    try {
+      const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, wallet.address);
+      setWallet(withWalletBalance(wallet, balanceSompi));
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : "Unable to refresh balance.");
     }
   }
 
@@ -116,12 +182,16 @@ export function App() {
             <span>Kaspa wRPC URL</span>
             <input value={rpcUrl} onChange={(event) => setRpcUrl(event.target.value)} />
           </label>
+          <label className="field">
+            <span>Requested network</span>
+            <input value={networkId} onChange={(event) => setNetworkId(event.target.value)} />
+          </label>
           <div className="button-row">
             <button type="button" onClick={handleConnect}>
               <Plug size={17} />
               Connect
             </button>
-            <button type="button" className="secondary" onClick={() => setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" })}>
+            <button type="button" className="secondary" onClick={handleDisconnect}>
               Disconnect
             </button>
           </div>
@@ -136,34 +206,56 @@ export function App() {
               <dd>{nodeStatus.syncStatus}</dd>
             </div>
             <div>
+              <dt>UTXO index</dt>
+              <dd>{nodeStatus.hasUtxoIndex === undefined ? "unknown" : nodeStatus.hasUtxoIndex ? "enabled" : "disabled"}</dd>
+            </div>
+            <div>
               <dt>Latency</dt>
               <dd>{nodeStatus.latencyMs ? `${nodeStatus.latencyMs} ms` : "unknown"}</dd>
+            </div>
+            <div>
+              <dt>Version</dt>
+              <dd>{nodeStatus.serverVersion ?? "unknown"}</dd>
             </div>
           </dl>
         </Panel>
 
         <Panel title="Wallet" eyebrow="Browser local">
           <div className="button-row">
-            <button type="button" onClick={() => setWallet(createPlaceholderWallet())}>
+            <button type="button" onClick={handleGenerateWallet}>
               <KeyRound size={17} />
               Generate
             </button>
-            <button type="button" className="secondary">
+            <button type="button" className="secondary" onClick={handleImportWallet}>
               <Upload size={17} />
               Import
             </button>
           </div>
+          <label className="field">
+            <span>Private key import</span>
+            <input
+              value={privateKeyInput}
+              onChange={(event) => setPrivateKeyInput(event.target.value)}
+              placeholder="64-char hex private key"
+              type="password"
+            />
+          </label>
+          {walletError ? <p className="error-text">{walletError}</p> : null}
           <dl className="stat-list">
             <div>
               <dt>Address</dt>
               <dd className="mono">{wallet?.address ?? "not generated"}</dd>
             </div>
             <div>
+              <dt>Network</dt>
+              <dd>{wallet?.network ?? networkId}</dd>
+            </div>
+            <div>
               <dt>Balance</dt>
-              <dd>{wallet ? `${formatSompi(wallet.balanceSompi)} sompi` : "unknown"}</dd>
+              <dd>{wallet ? formatSompi(wallet.balanceSompi) : "unknown"}</dd>
             </div>
           </dl>
-          <button type="button" className="secondary wide">
+          <button type="button" className="secondary wide" onClick={handleRefreshBalance}>
             <RefreshCw size={17} />
             Refresh balance
           </button>
@@ -252,7 +344,7 @@ export function App() {
             </div>
             <div>
               <dt>Pot</dt>
-              <dd>{formatSompi(round.potAmount)} sompi</dd>
+              <dd>{formatSompi(round.potAmount)}</dd>
             </div>
             <div>
               <dt>Tickets</dt>
@@ -322,4 +414,3 @@ export function App() {
     </main>
   );
 }
-

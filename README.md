@@ -11,11 +11,31 @@ This repository starts Milestone 1:
 - Static Vite + React + TypeScript app shell
 - One-page raffle operations console
 - Local UI state and metadata helpers
-- Placeholder Kaspa RPC, wallet, scanner, and contract boundaries
+- Browser-side Kaspa wRPC connection and test wallet import/generation
+- Placeholder scanner and contract transaction boundaries
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-Real Kaspa wRPC, Toccata covenant compilation, transaction building, and browser-side scanning are not implemented yet.
+Toccata covenant compilation, transaction building, and browser-side scanning are not implemented yet.
+
+## Testnet Notes
+
+Default local testing targets TN12/Toccata:
+
+- wRPC: `ws://tn12-node.kaspa.com:17210`
+- network id: `testnet-12`
+- initial ticket price: `10000000` sompi, or `0.1 KAS`
+- initial ticket bounds: 1 to 3 tickets
+
+Create a local experiment wallet:
+
+```bash
+node scripts/create-experiment-wallet.mjs testnet-12
+```
+
+Wallet files are written under `wallets/`, which is intentionally ignored by Git.
+
+As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 
 ## Development
 
@@ -35,4 +55,3 @@ The build output is `dist/` and should be deployable to GitHub Pages, IPFS, Arwe
 ## Safety
 
 This app is experimental and intended for testnet or dedicated small-value wallets only. Do not import a main wallet seed. A static page can still be modified by whoever serves it, and a malicious page can steal browser-local secrets.
-
