@@ -7,10 +7,11 @@ export function createEmptyMetadata(): RaffleMetadata {
     network: "testnet-12",
     roundId: "",
     createTxId: "",
-    ticketPrice: "10000000",
+    ticketPrice: "20000000",
     maxTickets: 3,
     minTickets: 1,
     creatorCommitment: "",
+    treasuryAddress: "",
     contractVersion: "raffle-v0"
   };
 }

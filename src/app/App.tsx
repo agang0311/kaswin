@@ -18,6 +18,7 @@ import {
   type KaspaNodeStatus,
   type KaspaRpcConnection
 } from "../kaspa/rpc";
+import { sendKaspaPayment } from "../kaspa/transactions";
 import {
   createBrowserTestWallet,
   importBrowserTestWallet,
@@ -25,9 +26,9 @@ import {
   type BrowserTestWallet
 } from "../kaspa/wallet";
 import { createEmptyMetadata, stringifyMetadata } from "../raffle/metadata";
-import { creatorCommitment, randomHex } from "../raffle/randomness";
+import { creatorCommitment, randomHex, sha256Hex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
-import type { RaffleMetadata, RoundState, TicketState } from "../raffle/types";
+import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
 import { Panel } from "../ui/Panel";
 
 const emptyMetadata = createEmptyMetadata();
@@ -35,6 +36,14 @@ const emptyMetadata = createEmptyMetadata();
 function formatSompi(value: bigint) {
   const kas = Number(value) / 100_000_000;
   return `${kas.toLocaleString(undefined, { maximumFractionDigits: 8 })} KAS (${value.toString()} sompi)`;
+}
+
+function encodePayload(value: unknown) {
+  return new TextEncoder().encode(JSON.stringify(value));
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : String(error || fallback);
 }
 
 export function App() {
@@ -53,9 +62,15 @@ export function App() {
   const [metadata, setMetadata] = useState<RaffleMetadata>(emptyMetadata);
   const [creatorSecret, setCreatorSecret] = useState("");
   const [buyerSecret, setBuyerSecret] = useState("");
+  const [tickets, setTickets] = useState<TicketState[]>([]);
+  const [finalized, setFinalized] = useState<FinalizeState | undefined>();
+  const [chainMessage, setChainMessage] = useState("");
+  const [chainError, setChainError] = useState("");
 
   const round = useMemo<RoundState>(() => {
     const ticketPrice = BigInt(metadata.ticketPrice || "0");
+    const status: RoundState["status"] = finalized ? "Finalized" : tickets.length >= metadata.maxTickets ? "Closed" : "Open";
+
     return {
       appId: "KASPA_RAFFLE_ROUND_V1",
       roundId: metadata.roundId || "pending-round",
@@ -63,18 +78,17 @@ export function App() {
       ticketPrice,
       maxTickets: metadata.maxTickets,
       minTickets: metadata.minTickets,
-      soldTickets: 0,
-      potAmount: 0n,
+      soldTickets: tickets.length,
+      potAmount: BigInt(tickets.length) * ticketPrice,
       feeBps: 0,
-      status: "Open",
+      status,
       randomnessMode: "commit-reveal",
       creatorCommitment: metadata.creatorCommitment,
       ticketRoot: ""
     };
-  }, [metadata, wallet]);
+  }, [finalized, metadata, tickets.length, wallet]);
 
-  const tickets = useMemo<TicketState[]>(() => [], []);
-  const verification = useMemo(() => verifyRaffleState({ round, tickets }), [round, tickets]);
+  const verification = useMemo(() => verifyRaffleState({ round, tickets, finalized }), [finalized, round, tickets]);
 
   async function handleConnect() {
     setRpcError("");
@@ -141,11 +155,135 @@ export function App() {
     const secret = randomHex(32);
     const commitment = await creatorCommitment(secret);
     setCreatorSecret(secret);
+    setTickets([]);
+    setFinalized(undefined);
+    setChainMessage("");
+    setChainError("");
     setMetadata((current) => ({
       ...current,
       roundId: `round-${randomHex(8)}`,
       creatorCommitment: commitment
     }));
+  }
+
+  async function handleBuyTicket() {
+    setChainError("");
+    setChainMessage("");
+
+    if (!wallet) {
+      setChainError("Import the funded buyer wallet first.");
+      return;
+    }
+
+    if (!rpcConnectionRef.current) {
+      setChainError("Connect to a Kaspa wRPC node first.");
+      return;
+    }
+
+    if (!metadata.roundId || !metadata.creatorCommitment) {
+      setChainError("Generate the creator secret before buying tickets.");
+      return;
+    }
+
+    const treasuryAddress = metadata.treasuryAddress?.trim();
+
+    if (!treasuryAddress) {
+      setChainError("Set a ticket treasury address for this round.");
+      return;
+    }
+
+    if (tickets.length >= metadata.maxTickets) {
+      setChainError("This round has reached its max ticket count.");
+      return;
+    }
+
+    const paidAmount = BigInt(metadata.ticketPrice || "0");
+
+    if (paidAmount <= 0n) {
+      setChainError("Ticket price must be greater than zero.");
+      return;
+    }
+
+    try {
+      const ticketId = tickets.length + 1;
+      const secret = buyerSecret || randomHex(32);
+      const buyerCommitment = await sha256Hex(secret);
+      const payload = {
+        app: "kaspa-raffle-static",
+        type: "ticket",
+        version: metadata.version,
+        roundId: metadata.roundId,
+        ticketId,
+        buyer: wallet.address,
+        buyerCommitment,
+        paidAmount: paidAmount.toString(),
+        createdAt: new Date().toISOString()
+      };
+      const payment = await sendKaspaPayment({
+        connection: rpcConnectionRef.current,
+        wallet,
+        toAddress: treasuryAddress,
+        amountSompi: paidAmount,
+        payload: encodePayload(payload)
+      });
+      const txId = payment.txIds[payment.txIds.length - 1] ?? "";
+      await new Promise((resolve) => window.setTimeout(resolve, 4_000));
+      const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, wallet.address);
+
+      setBuyerSecret(secret);
+      setWallet(withWalletBalance(wallet, balanceSompi));
+      setTickets((current) => [
+        ...current,
+        {
+          appId: "KASPA_RAFFLE_TICKET_V1",
+          roundId: metadata.roundId,
+          ticketId,
+          owner: wallet.address,
+          paidAmount,
+          buyerCommitment,
+          ticketTxId: txId
+        }
+      ]);
+      setChainMessage(`Ticket #${ticketId} submitted: ${txId}`);
+    } catch (error) {
+      setChainError(errorMessage(error, "Unable to buy ticket."));
+    }
+  }
+
+  async function handleFinalizeLocal() {
+    setChainError("");
+    setChainMessage("");
+
+    if (!creatorSecret) {
+      setChainError("Creator secret is required to finalize this round.");
+      return;
+    }
+
+    if (tickets.length < metadata.minTickets) {
+      setChainError("Not enough tickets to finalize this round.");
+      return;
+    }
+
+    const commitment = await creatorCommitment(creatorSecret);
+
+    if (commitment !== metadata.creatorCommitment) {
+      setChainError("Creator secret does not match the round commitment.");
+      return;
+    }
+
+    const randomSeed = await sha256Hex(`${creatorSecret}:${tickets.map((ticket) => ticket.buyerCommitment).join(":")}`);
+    const winnerIndex = Number(BigInt(`0x${randomSeed}`) % BigInt(tickets.length));
+    const winner = tickets[winnerIndex];
+
+    setFinalized({
+      appId: "KASPA_RAFFLE_FINAL_V1",
+      roundId: metadata.roundId || "pending-round",
+      randomSeed,
+      winnerTicketId: winner.ticketId,
+      winnerAddress: winner.owner,
+      payoutTxId: ""
+    });
+    setChainMessage(`Winner is ticket #${winner.ticketId}.`);
   }
 
   function updateMetadata<K extends keyof RaffleMetadata>(key: K, value: RaffleMetadata[K]) {
@@ -264,7 +402,7 @@ export function App() {
         <Panel title="Create Round" eyebrow="Commit reveal">
           <div className="two-column">
             <label className="field">
-              <span>Ticket price</span>
+              <span>Ticket price (sompi)</span>
               <input value={metadata.ticketPrice} onChange={(event) => updateMetadata("ticketPrice", event.target.value)} />
             </label>
             <label className="field">
@@ -290,6 +428,14 @@ export function App() {
               <input value={metadata.network} onChange={(event) => updateMetadata("network", event.target.value)} />
             </label>
           </div>
+          <label className="field">
+            <span>Ticket treasury address</span>
+            <input
+              value={metadata.treasuryAddress ?? ""}
+              onChange={(event) => updateMetadata("treasuryAddress", event.target.value)}
+              placeholder="kaspatest:..."
+            />
+          </label>
           <button type="button" onClick={handleGenerateCreatorSecret}>
             <ShieldCheck size={17} />
             Generate creator secret
@@ -302,6 +448,10 @@ export function App() {
             <div>
               <dt>Commitment</dt>
               <dd className="mono">{metadata.creatorCommitment || "pending"}</dd>
+            </div>
+            <div>
+              <dt>Treasury</dt>
+              <dd className="mono">{metadata.treasuryAddress || "pending"}</dd>
             </div>
           </dl>
         </Panel>
@@ -351,10 +501,20 @@ export function App() {
               <dd>{tickets.length}</dd>
             </div>
           </dl>
-          <div className="empty-state">
-            <Ticket size={24} />
-            <p>No chain scanner events loaded yet.</p>
-          </div>
+          {tickets.length ? (
+            <ul className="message-list compact">
+              {tickets.map((ticket) => (
+                <li key={ticket.ticketTxId}>
+                  #{ticket.ticketId} <span className="mono">{ticket.ticketTxId}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-state">
+              <Ticket size={24} />
+              <p>No ticket transactions submitted yet.</p>
+            </div>
+          )}
         </Panel>
 
         <Panel title="Buy Ticket" eyebrow="Ticket UTXO">
@@ -364,11 +524,21 @@ export function App() {
           </button>
           <dl className="stat-list">
             <div>
+              <dt>Next ticket</dt>
+              <dd>#{tickets.length + 1}</dd>
+            </div>
+            <div>
+              <dt>Price</dt>
+              <dd>{formatSompi(BigInt(metadata.ticketPrice || "0"))}</dd>
+            </div>
+            <div>
               <dt>Buyer secret</dt>
               <dd className="mono">{buyerSecret || "pending"}</dd>
             </div>
           </dl>
-          <button type="button" className="secondary wide">
+          {chainError ? <p className="error-text">{chainError}</p> : null}
+          {chainMessage ? <p className="success-text">{chainMessage}</p> : null}
+          <button type="button" className="secondary wide" onClick={handleBuyTicket}>
             Buy ticket
           </button>
         </Panel>
@@ -378,7 +548,7 @@ export function App() {
             <button type="button" className="secondary">
               Close round
             </button>
-            <button type="button" className="secondary">
+            <button type="button" className="secondary" onClick={handleFinalizeLocal}>
               Finalize
             </button>
             <button type="button" className="secondary">
@@ -389,6 +559,22 @@ export function App() {
             <span>Creator secret backup</span>
             <input readOnly value={creatorSecret} placeholder="Generate a creator secret first" />
           </label>
+          {finalized ? (
+            <dl className="stat-list">
+              <div>
+                <dt>Winner</dt>
+                <dd>#{finalized.winnerTicketId}</dd>
+              </div>
+              <div>
+                <dt>Address</dt>
+                <dd className="mono">{finalized.winnerAddress}</dd>
+              </div>
+              <div>
+                <dt>Seed</dt>
+                <dd className="mono">{finalized.randomSeed}</dd>
+              </div>
+            </dl>
+          ) : null}
           <button type="button" className="secondary wide">
             <Download size={17} />
             Export backup

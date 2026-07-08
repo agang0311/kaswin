@@ -48,6 +48,7 @@ export interface RaffleMetadata {
   maxTickets: number;
   minTickets: number;
   creatorCommitment: string;
+  treasuryAddress?: string;
   contractVersion: string;
 }
 
@@ -64,4 +65,3 @@ export interface RaffleState {
   myTickets: TicketState[];
   verification: VerificationResult;
 }
-

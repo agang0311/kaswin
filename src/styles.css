@@ -254,6 +254,12 @@ dd {
   font-weight: 700;
 }
 
+.success-text {
+  color: #1f6d3c;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .empty-state {
   align-items: center;
   background: #f7f6f2;
@@ -293,6 +299,10 @@ dd {
   padding-left: 20px;
 }
 
+.message-list.compact {
+  font-size: 0.84rem;
+}
+
 .muted {
   color: #66726b;
   margin: 12px 0 0;
@@ -323,4 +333,3 @@ dd {
     align-items: flex-start;
   }
 }
-

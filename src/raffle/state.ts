@@ -14,8 +14,8 @@ export function verifyRaffleState(state: Pick<RaffleState, "round" | "tickets" |
       errors.push(`Ticket ${ticket.ticketId} has a mismatched roundId.`);
     }
 
-    if (ticket.ticketId !== index) {
-      errors.push("Ticket IDs must be continuous from 0.");
+    if (ticket.ticketId !== index + 1) {
+      errors.push("Ticket IDs must be continuous from 1.");
     }
 
     if (ticket.paidAmount !== round.ticketPrice) {
@@ -41,4 +41,3 @@ export function verifyRaffleState(state: Pick<RaffleState, "round" | "tickets" |
     warnings
   };
 }
-
