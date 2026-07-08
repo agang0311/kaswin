@@ -15,6 +15,8 @@ This repository starts Milestone 1:
 - Browser-side testnet ticket purchase transactions
 - Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
+- Shareable round links for participant entry
+- Development verification gates for buyer flow and covenant payout readiness
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
@@ -59,6 +61,20 @@ npm run build
 ```
 
 The build output is `dist/` and should be deployable to GitHub Pages, IPFS, Arweave, Nginx, or any static file host.
+
+Run the current development gate:
+
+```bash
+npm run verify
+```
+
+Run the covenant release gate:
+
+```bash
+npm run verify:covenant
+```
+
+The covenant release gate is expected to fail until `raffle_round.sil` is compiled and browser-side covenant transaction builders are wired. See [`docs/development-verification-loop.md`](docs/development-verification-loop.md).
 
 ## Safety
 

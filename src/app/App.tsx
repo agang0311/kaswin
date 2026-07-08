@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -27,7 +27,7 @@ import {
   withWalletBalance,
   type BrowserTestWallet
 } from "../kaspa/wallet";
-import { createEmptyMetadata, stringifyMetadata } from "../raffle/metadata";
+import { createEmptyMetadata, parseMetadata, stringifyMetadata } from "../raffle/metadata";
 import { creatorCommitment, randomHex, sha256Hex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
@@ -42,6 +42,25 @@ function formatSompi(value: bigint) {
 
 function encodePayload(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value));
+}
+
+function encodeShareMetadata(metadata: RaffleMetadata) {
+  const bytes = new TextEncoder().encode(JSON.stringify(metadata));
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function decodeShareMetadata(value: string) {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+  return parseMetadata(new TextDecoder().decode(bytes));
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -66,6 +85,9 @@ export function App() {
   const [walletError, setWalletError] = useState("");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const [metadata, setMetadata] = useState<RaffleMetadata>(emptyMetadata);
+  const [metadataText, setMetadataText] = useState(stringifyMetadata(emptyMetadata));
+  const [metadataError, setMetadataError] = useState("");
+  const [metadataMessage, setMetadataMessage] = useState("");
   const [creatorSecret, setCreatorSecret] = useState("");
   const [buyerSecret, setBuyerSecret] = useState("");
   const [tickets, setTickets] = useState<TicketState[]>([]);
@@ -83,6 +105,14 @@ export function App() {
   const isBuyingRef = useRef(false);
   const isFinalizingRef = useRef(false);
   const covenantStatus = useMemo(() => getRaffleCovenantStatus(), []);
+
+  useEffect(() => {
+    setMetadataText(stringifyMetadata(metadata));
+  }, [metadata]);
+
+  useEffect(() => {
+    loadSharedRoundFromUrl();
+  }, []);
 
   const round = useMemo<RoundState>(() => {
     const ticketPrice = BigInt(metadata.ticketPrice || "0");
@@ -181,6 +211,57 @@ export function App() {
       roundId: `round-${randomHex(8)}`,
       creatorCommitment: commitment
     }));
+  }
+
+  function applyMetadata(nextMetadata: RaffleMetadata, message: string) {
+    setMetadata(nextMetadata);
+    setNetworkId(nextMetadata.network);
+    setTickets([]);
+    setFinalized(undefined);
+    setCreatorSecret("");
+    setBuyerSecret("");
+    setChainError("");
+    setChainMessage("");
+    setMetadataError("");
+    setMetadataMessage(message);
+  }
+
+  function handleImportMetadata() {
+    try {
+      applyMetadata(parseMetadata(metadataText), "Round metadata loaded.");
+    } catch (error) {
+      setMetadataMessage("");
+      setMetadataError(errorMessage(error, "Unable to import round metadata."));
+    }
+  }
+
+  async function handleCopyRoundLink() {
+    try {
+      const shareMetadata = parseMetadata(stringifyMetadata(metadata));
+      const url = new URL(window.location.href);
+      url.searchParams.set("round", encodeShareMetadata(shareMetadata));
+      await navigator.clipboard.writeText(url.toString());
+      setMetadataError("");
+      setMetadataMessage("Round link copied.");
+    } catch (error) {
+      setMetadataMessage("");
+      setMetadataError(errorMessage(error, "Unable to copy round link."));
+    }
+  }
+
+  function loadSharedRoundFromUrl() {
+    const sharedRound = new URLSearchParams(window.location.search).get("round");
+
+    if (!sharedRound) {
+      return;
+    }
+
+    try {
+      applyMetadata(decodeShareMetadata(sharedRound), "Shared round loaded from URL.");
+    } catch (error) {
+      setMetadataMessage("");
+      setMetadataError(errorMessage(error, "Unable to load shared round from URL."));
+    }
   }
 
   async function handleBuyTicket() {
@@ -547,25 +628,21 @@ export function App() {
         <Panel title="Load Round" eyebrow="Metadata">
           <textarea
             spellCheck={false}
-            value={stringifyMetadata(metadata)}
-            onChange={(event) => {
-              try {
-                setMetadata(JSON.parse(event.target.value));
-              } catch {
-                return;
-              }
-            }}
+            value={metadataText}
+            onChange={(event) => setMetadataText(event.target.value)}
           />
           <div className="button-row">
-            <button type="button" className="secondary">
+            <button type="button" className="secondary" onClick={handleImportMetadata}>
               <Upload size={17} />
               Import JSON
             </button>
-            <button type="button" className="secondary">
+            <button type="button" className="secondary" onClick={handleCopyRoundLink}>
               <Link2 size={17} />
               Copy link
             </button>
           </div>
+          {metadataError ? <p className="error-text">{metadataError}</p> : null}
+          {metadataMessage ? <p className="success-text">{metadataMessage}</p> : null}
         </Panel>
 
         <Panel title="Round Status" eyebrow="Chain reconstruction">

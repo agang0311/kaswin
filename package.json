@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "verify": "npm run build && node scripts/verify-dev-loop.mjs",
+    "verify:covenant": "npm run build && node scripts/verify-dev-loop.mjs --require-covenant",
     "preview": "vite preview"
   },
   "dependencies": {

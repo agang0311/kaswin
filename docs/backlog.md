@@ -17,6 +17,7 @@
 - [ ] Define final metadata schema and validation errors
 - [ ] Export and import round metadata JSON
 - [ ] Support share-link query parameters
+- [x] Add share-link import/export for round metadata
 - [ ] Implement local raffle event reducer
 - [ ] Add mock scanner events for UI development
 - [ ] Add verification panel checks for local state
@@ -49,6 +50,7 @@
 - [ ] Build finalize transaction
 - [ ] Pay winner directly in finalize transaction
 - [ ] Display final verification details
+- [x] Add release gate that fails until covenant payout artifacts are compiled
 
 ## Milestone 6: Refund Flow
 

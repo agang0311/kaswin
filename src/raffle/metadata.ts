@@ -27,7 +27,6 @@ export function parseMetadata(raw: string): RaffleMetadata {
     "version",
     "network",
     "roundId",
-    "createTxId",
     "ticketPrice",
     "maxTickets",
     "minTickets",
@@ -39,6 +38,25 @@ export function parseMetadata(raw: string): RaffleMetadata {
     if (parsed[field] === undefined || parsed[field] === "") {
       throw new Error(`Metadata is missing ${field}.`);
     }
+  }
+
+  if (Number(parsed.ticketPrice) <= 0) {
+    throw new Error("Metadata ticketPrice must be greater than zero.");
+  }
+
+  const maxTickets = parsed.maxTickets;
+  const minTickets = parsed.minTickets;
+
+  if (typeof maxTickets !== "number" || !Number.isInteger(maxTickets) || maxTickets < 1) {
+    throw new Error("Metadata maxTickets must be a positive integer.");
+  }
+
+  if (typeof minTickets !== "number" || !Number.isInteger(minTickets) || minTickets < 1) {
+    throw new Error("Metadata minTickets must be a positive integer.");
+  }
+
+  if (minTickets > maxTickets) {
+    throw new Error("Metadata minTickets cannot exceed maxTickets.");
   }
 
   return parsed as RaffleMetadata;
