@@ -11,6 +11,7 @@ import {
   Ticket,
   Upload
 } from "lucide-react";
+import { assertRaffleCovenantReady, getRaffleCovenantStatus } from "../kaspa/covenant";
 import { loadRaffleHistory, type RaffleHistoryRound } from "../kaspa/history";
 import {
   connectBrowserRpc,
@@ -72,8 +73,7 @@ export function App() {
   const [chainMessage, setChainMessage] = useState("");
   const [chainError, setChainError] = useState("");
   const [isBuying, setIsBuying] = useState(false);
-  const [payoutPrivateKeyInput, setPayoutPrivateKeyInput] = useState("");
-  const [isPayingOut, setIsPayingOut] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [historyApiBase, setHistoryApiBase] = useState("https://api-tn10.kaspa.org");
   const [historyAddress, setHistoryAddress] = useState("");
   const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>([]);
@@ -81,7 +81,8 @@ export function App() {
   const [historyMessage, setHistoryMessage] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isBuyingRef = useRef(false);
-  const isPayingOutRef = useRef(false);
+  const isFinalizingRef = useRef(false);
+  const covenantStatus = useMemo(() => getRaffleCovenantStatus(), []);
 
   const round = useMemo<RoundState>(() => {
     const ticketPrice = BigInt(metadata.ticketPrice || "0");
@@ -173,7 +174,6 @@ export function App() {
     setCreatorSecret(secret);
     setTickets([]);
     setFinalized(undefined);
-    setPayoutPrivateKeyInput("");
     setChainMessage("");
     setChainError("");
     setMetadata((current) => ({
@@ -279,12 +279,12 @@ export function App() {
     setChainError("");
     setChainMessage("");
 
-    if (isPayingOutRef.current) {
+    if (isFinalizingRef.current) {
       return;
     }
 
-    isPayingOutRef.current = true;
-    setIsPayingOut(true);
+    isFinalizingRef.current = true;
+    setIsFinalizing(true);
 
     try {
       if (finalized?.payoutTxId) {
@@ -292,13 +292,7 @@ export function App() {
         return;
       }
 
-      if (!rpcConnectionRef.current) {
-        throw new Error("Connect to a Kaspa wRPC node first.");
-      }
-
-      if (!payoutPrivateKeyInput.trim()) {
-        throw new Error("Prize pool signer key is required for automatic payout.");
-      }
+      assertRaffleCovenantReady();
 
       if (!creatorSecret) {
         throw new Error("Creator secret is required to finalize this round.");
@@ -316,6 +310,10 @@ export function App() {
 
       if (round.potAmount <= 0n) {
         throw new Error("Prize amount must be greater than zero.");
+      }
+
+      if (!rpcConnectionRef.current) {
+        throw new Error("Connect to a Kaspa wRPC node first.");
       }
 
       const randomSeed = await sha256Hex(`${creatorSecret}:${tickets.map((ticket) => ticket.buyerCommitment).join(":")}`);
@@ -341,39 +339,14 @@ export function App() {
         throw new Error("Set a ticket treasury address for this round.");
       }
 
-      const payoutWallet = await importBrowserTestWallet(payoutPrivateKeyInput, metadata.network || networkId);
-
-      if (payoutWallet.address !== treasuryAddress) {
-        throw new Error("Prize pool signer does not match the round treasury address.");
-      }
-
-      const payment = await sendKaspaPayment({
-        connection: rpcConnectionRef.current,
-        wallet: payoutWallet,
-        toAddress: nextFinalized.winnerAddress,
-        amountSompi: round.potAmount,
-        payload: encodePayload({
-          app: "kaspa-raffle-static",
-          type: "payout",
-          version: metadata.version,
-          roundId: metadata.roundId,
-          winnerTicketId: nextFinalized.winnerTicketId,
-          winnerAddress: nextFinalized.winnerAddress,
-          randomSeed: nextFinalized.randomSeed,
-          amount: round.potAmount.toString(),
-          createdAt: new Date().toISOString()
-        })
-      });
-      const txId = payment.txIds[payment.txIds.length - 1] ?? "";
-      const paidFinalized = { ...nextFinalized, payoutTxId: txId };
-
-      setFinalized(paidFinalized);
-      setChainMessage(`Winner #${paidFinalized.winnerTicketId} paid automatically: ${txId}`);
+      void treasuryAddress;
+      void nextFinalized;
+      throw new Error("Covenant finalize transaction builder is not wired yet.");
     } catch (error) {
-      setChainError(errorMessage(error, "Unable to finalize and pay prize."));
+      setChainError(errorMessage(error, "Unable to finalize covenant round."));
     } finally {
-      isPayingOutRef.current = false;
-      setIsPayingOut(false);
+      isFinalizingRef.current = false;
+      setIsFinalizing(false);
     }
   }
 
@@ -663,7 +636,22 @@ export function App() {
           </button>
         </Panel>
 
-        <Panel title="Finalize / Refund" eyebrow="Anyone can finalize">
+        <Panel title="Finalize / Refund" eyebrow="Covenant enforced">
+          <div className={covenantStatus.enabled ? "verify-box ok" : "verify-box"}>
+            <ShieldCheck size={20} />
+            <span>{covenantStatus.enabled ? "Covenant artifacts loaded" : "Covenant artifacts pending"}</span>
+          </div>
+          <p className="muted">{covenantStatus.message}</p>
+          <dl className="stat-list dense">
+            <div>
+              <dt>Contract</dt>
+              <dd>{covenantStatus.contract}</dd>
+            </div>
+            <div>
+              <dt>Artifact</dt>
+              <dd>{covenantStatus.status}</dd>
+            </div>
+          </dl>
           <div className="button-row">
             <button type="button" className="secondary">
               Close round
@@ -672,23 +660,14 @@ export function App() {
               type="button"
               className="secondary"
               onClick={handleFinalizeLocal}
-              disabled={Boolean(finalized?.payoutTxId) || isPayingOut}
+              disabled={!covenantStatus.enabled || Boolean(finalized?.payoutTxId) || isFinalizing}
             >
-              {isPayingOut ? "Paying..." : "Finalize"}
+              {isFinalizing ? "Finalizing..." : "Finalize"}
             </button>
           </div>
           <label className="field">
             <span>Creator secret backup</span>
             <input readOnly value={creatorSecret} placeholder="Generate a creator secret first" />
-          </label>
-          <label className="field">
-            <span>Auto payout signer key</span>
-            <input
-              value={payoutPrivateKeyInput}
-              onChange={(event) => setPayoutPrivateKeyInput(event.target.value)}
-              placeholder="Prize pool signer private key"
-              type="password"
-            />
           </label>
           {finalized ? (
             <dl className="stat-list">

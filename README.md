@@ -13,12 +13,16 @@ This repository starts Milestone 1:
 - Local UI state and metadata helpers
 - Browser-side Kaspa wRPC connection and test wallet import/generation
 - Browser-side testnet ticket purchase transactions
-- Local commit-reveal finalization with automatic prize payout
+- Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-Toccata covenant compilation is not implemented yet. Automatic prize payout requires a signer key for the round treasury address in the browser session. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
+The current payment flow is a legacy test harness, not the final covenant design. The app now refuses to present signer-key payout as a contract. Real automatic payout requires compiling `src/contracts/raffle_round.sil`, committing the compiled artifact under `src/contracts/compiled/`, and wiring browser-side transaction v1 covenant spends. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
+
+## Covenant Direction
+
+The intended V0 covenant keeps the pot in a `RaffleRound` covenant UTXO. Ticket purchases spend the current round state into the next state. Finalization reveals the creator secret, computes the winner from `roundId`, `ticketRoot`, and the reveal, terminates the covenant, and requires output 0 to pay the winner. No treasury private key should be needed after the round UTXO is created.
 
 ## Testnet Notes
 

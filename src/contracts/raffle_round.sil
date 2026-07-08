@@ -1,0 +1,94 @@
+pragma silverscript ^0.1.0;
+
+// Kaspa Raffle Static V0 covenant draft.
+//
+// Intent:
+// - The round pot is held by this covenant UTXO, not by a normal pubkey address.
+// - Buying a ticket spends the current round UTXO and creates one successor round
+//   UTXO with soldTickets + 1 and potAmount + ticketPrice.
+// - Finalizing spends the round UTXO, verifies the reveal and winner, terminates
+//   the covenant, and requires output 0 to pay the winner.
+// - Refund spends are a separate path for failed rounds.
+//
+// This file is the source of truth for the desired Toccata contract. It still
+// needs to be compiled with kaspanet/silverscript and wired to v1 covenant
+// transaction builders before production use.
+
+contract RaffleRound(
+    int max_tickets,
+    int min_tickets,
+    int ticket_price,
+    byte[32] round_id,
+    byte[32] creator_commitment,
+    int fee_bps
+) {
+    int sold_tickets = 0;
+    int pot_amount = 0;
+    int status = 0; // 0 Open, 1 Closed, 2 Finalized, 3 Refunding
+    byte[32] ticket_root = byte[32](0);
+
+    #[covenant.singleton(mode = transition)]
+    function buy(
+        State prev_state,
+        byte[32] next_ticket_root
+    ) : (State) {
+        require(prev_state.status == 0);
+        require(prev_state.sold_tickets < max_tickets);
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value + ticket_price);
+
+        return({
+            sold_tickets: prev_state.sold_tickets + 1,
+            pot_amount: prev_state.pot_amount + ticket_price,
+            status: 0,
+            ticket_root: next_ticket_root
+        });
+    }
+
+    #[covenant.singleton(mode = transition)]
+    function close(State prev_state) : (State) {
+        require(prev_state.status == 0);
+        require(prev_state.sold_tickets == max_tickets || prev_state.sold_tickets >= min_tickets);
+
+        return({
+            sold_tickets: prev_state.sold_tickets,
+            pot_amount: prev_state.pot_amount,
+            status: 1,
+            ticket_root: prev_state.ticket_root
+        });
+    }
+
+    #[covenant.singleton(mode = transition, termination = allowed)]
+    function finalize(
+        State prev_state,
+        byte[32] creator_secret,
+        int winner_ticket_id,
+        byte[35] winner_script_pub_key
+    ) : (State[]) {
+        require(prev_state.status == 1);
+        require(prev_state.sold_tickets >= min_tickets);
+        require(sha256(byte[](creator_secret)) == creator_commitment);
+
+        byte[32] seed = sha256(byte[](round_id) + byte[](prev_state.ticket_root) + byte[](creator_secret));
+        require(winner_ticket_id == int(seed) % prev_state.sold_tickets);
+
+        // Covenant termination: no successor round state.
+        // Output 0 must pay the entire pot to the winning ticket owner.
+        require(tx.outputs[0].scriptPubKey == byte[](winner_script_pub_key));
+        require(tx.outputs[0].value == prev_state.pot_amount);
+
+        return([]);
+    }
+
+    #[covenant.singleton(mode = transition)]
+    function enter_refunding(State prev_state) : (State) {
+        require(prev_state.status == 0 || prev_state.status == 1);
+        require(prev_state.sold_tickets < min_tickets);
+
+        return({
+            sold_tickets: prev_state.sold_tickets,
+            pot_amount: prev_state.pot_amount,
+            status: 3,
+            ticket_root: prev_state.ticket_root
+        });
+    }
+}

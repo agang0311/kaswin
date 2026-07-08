@@ -23,10 +23,10 @@
 
 ## Milestone 3: Toccata Contract Templates
 
-- [ ] Implement Round covenant template
-- [ ] Implement Ticket covenant template
-- [ ] Implement Finalize covenant template
-- [ ] Implement Refund covenant template
+- [x] Draft Round covenant source
+- [ ] Compile Round covenant with `kaspanet/silverscript`
+- [ ] Implement Ticket inclusion/root strategy in the covenant state
+- [ ] Implement Refund covenant path
 - [ ] Compile artifacts into `src/contracts/compiled/`
 - [ ] Add contract version metadata
 
@@ -65,4 +65,3 @@
 - [ ] Clearer error messages
 - [ ] Security warning placement
 - [ ] Testnet end-to-end test plan
-

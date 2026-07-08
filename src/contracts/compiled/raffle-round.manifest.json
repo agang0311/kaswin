@@ -1,0 +1,16 @@
+{
+  "contract": "RaffleRound",
+  "network": "testnet-12",
+  "source": "../raffle_round.sil",
+  "compiler": "kaspanet/silverscript",
+  "status": "source-only",
+  "compiledAt": null,
+  "artifactVersion": null,
+  "script": null,
+  "abi": null,
+  "notes": [
+    "This manifest intentionally contains no script bytecode yet.",
+    "Compile src/contracts/raffle_round.sil with kaspanet/silverscript before enabling covenant transactions.",
+    "Do not treat the legacy P2PK payout test harness as a covenant implementation."
+  ]
+}
