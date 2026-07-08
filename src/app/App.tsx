@@ -66,6 +66,8 @@ export function App() {
   const [finalized, setFinalized] = useState<FinalizeState | undefined>();
   const [chainMessage, setChainMessage] = useState("");
   const [chainError, setChainError] = useState("");
+  const [isBuying, setIsBuying] = useState(false);
+  const isBuyingRef = useRef(false);
 
   const round = useMemo<RoundState>(() => {
     const ticketPrice = BigInt(metadata.ticketPrice || "0");
@@ -170,41 +172,46 @@ export function App() {
     setChainError("");
     setChainMessage("");
 
-    if (!wallet) {
-      setChainError("Import the funded buyer wallet first.");
+    if (isBuyingRef.current) {
       return;
     }
 
-    if (!rpcConnectionRef.current) {
-      setChainError("Connect to a Kaspa wRPC node first.");
-      return;
-    }
-
-    if (!metadata.roundId || !metadata.creatorCommitment) {
-      setChainError("Generate the creator secret before buying tickets.");
-      return;
-    }
-
-    const treasuryAddress = metadata.treasuryAddress?.trim();
-
-    if (!treasuryAddress) {
-      setChainError("Set a ticket treasury address for this round.");
-      return;
-    }
-
-    if (tickets.length >= metadata.maxTickets) {
-      setChainError("This round has reached its max ticket count.");
-      return;
-    }
-
-    const paidAmount = BigInt(metadata.ticketPrice || "0");
-
-    if (paidAmount <= 0n) {
-      setChainError("Ticket price must be greater than zero.");
-      return;
-    }
+    isBuyingRef.current = true;
+    setIsBuying(true);
 
     try {
+      if (!wallet) {
+        throw new Error("Import the funded buyer wallet first.");
+      }
+
+      if (!rpcConnectionRef.current) {
+        throw new Error("Connect to a Kaspa wRPC node first.");
+      }
+
+      if (!metadata.roundId || !metadata.creatorCommitment) {
+        throw new Error("Generate the creator secret before buying tickets.");
+      }
+
+      if (finalized) {
+        throw new Error("This round is already finalized.");
+      }
+
+      const treasuryAddress = metadata.treasuryAddress?.trim();
+
+      if (!treasuryAddress) {
+        throw new Error("Set a ticket treasury address for this round.");
+      }
+
+      if (tickets.length >= metadata.maxTickets) {
+        throw new Error("This round has reached its max ticket count.");
+      }
+
+      const paidAmount = BigInt(metadata.ticketPrice || "0");
+
+      if (paidAmount <= 0n) {
+        throw new Error("Ticket price must be greater than zero.");
+      }
+
       const ticketId = tickets.length + 1;
       const secret = buyerSecret || randomHex(32);
       const buyerCommitment = await sha256Hex(secret);
@@ -247,12 +254,20 @@ export function App() {
       setChainMessage(`Ticket #${ticketId} submitted: ${txId}`);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to buy ticket."));
+    } finally {
+      isBuyingRef.current = false;
+      setIsBuying(false);
     }
   }
 
   async function handleFinalizeLocal() {
     setChainError("");
     setChainMessage("");
+
+    if (finalized) {
+      setChainMessage(`Winner is ticket #${finalized.winnerTicketId}.`);
+      return;
+    }
 
     if (!creatorSecret) {
       setChainError("Creator secret is required to finalize this round.");
@@ -525,7 +540,7 @@ export function App() {
           <dl className="stat-list">
             <div>
               <dt>Next ticket</dt>
-              <dd>#{tickets.length + 1}</dd>
+              <dd>{finalized || tickets.length >= metadata.maxTickets ? "closed" : `#${tickets.length + 1}`}</dd>
             </div>
             <div>
               <dt>Price</dt>
@@ -538,8 +553,13 @@ export function App() {
           </dl>
           {chainError ? <p className="error-text">{chainError}</p> : null}
           {chainMessage ? <p className="success-text">{chainMessage}</p> : null}
-          <button type="button" className="secondary wide" onClick={handleBuyTicket}>
-            Buy ticket
+          <button
+            type="button"
+            className="secondary wide"
+            onClick={handleBuyTicket}
+            disabled={isBuying || Boolean(finalized) || tickets.length >= metadata.maxTickets}
+          >
+            {isBuying ? "Buying..." : "Buy ticket"}
           </button>
         </Panel>
 

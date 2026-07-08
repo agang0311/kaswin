@@ -42,6 +42,15 @@ button:hover {
   background: #0f382f;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button:disabled:hover {
+  background: #174c43;
+}
+
 button.secondary {
   background: #fff;
   border-color: #c9c4b8;
@@ -50,6 +59,10 @@ button.secondary {
 
 button.secondary:hover {
   background: #f0ece2;
+}
+
+button.secondary:disabled:hover {
+  background: #fff;
 }
 
 button.wide {
