@@ -2,29 +2,114 @@ pragma silverscript ^0.1.0;
 
 // Kaspa Raffle Static V0 covenant draft.
 //
-// Intent:
-// - The round pot is held by this covenant UTXO, not by a normal pubkey address.
-// - Buying a ticket spends the current round UTXO and creates one successor round
-//   UTXO with soldTickets + 1 and potAmount + ticketPrice.
-// - Finalizing spends the round UTXO, verifies the reveal and winner, terminates
-//   the covenant, and requires output 0 to pay the winner.
-// - Refund spends are a separate path for failed rounds.
-//
-// This file is the source of truth for the desired Toccata contract. It still
-// needs to be compiled with kaspanet/silverscript and wired to v1 covenant
-// transaction builders before production use.
+// Toccata's current validateOutputState path accepts primitive state fields, but
+// not byte arrays. 32-byte values are encoded as 32 int byte slots and rebuilt
+// as byte[32] values only inside the script when hashing is needed.
 
 contract RaffleRound() {
     int max_tickets = 0;
     int min_tickets = 0;
     int ticket_price = 0;
-    byte[32] round_id = 0x0000000000000000000000000000000000000000000000000000000000000000;
-    byte[32] creator_commitment = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int round_id_00 = 0;
+    int round_id_01 = 0;
+    int round_id_02 = 0;
+    int round_id_03 = 0;
+    int round_id_04 = 0;
+    int round_id_05 = 0;
+    int round_id_06 = 0;
+    int round_id_07 = 0;
+    int round_id_08 = 0;
+    int round_id_09 = 0;
+    int round_id_10 = 0;
+    int round_id_11 = 0;
+    int round_id_12 = 0;
+    int round_id_13 = 0;
+    int round_id_14 = 0;
+    int round_id_15 = 0;
+    int round_id_16 = 0;
+    int round_id_17 = 0;
+    int round_id_18 = 0;
+    int round_id_19 = 0;
+    int round_id_20 = 0;
+    int round_id_21 = 0;
+    int round_id_22 = 0;
+    int round_id_23 = 0;
+    int round_id_24 = 0;
+    int round_id_25 = 0;
+    int round_id_26 = 0;
+    int round_id_27 = 0;
+    int round_id_28 = 0;
+    int round_id_29 = 0;
+    int round_id_30 = 0;
+    int round_id_31 = 0;
+    int creator_commitment_00 = 0;
+    int creator_commitment_01 = 0;
+    int creator_commitment_02 = 0;
+    int creator_commitment_03 = 0;
+    int creator_commitment_04 = 0;
+    int creator_commitment_05 = 0;
+    int creator_commitment_06 = 0;
+    int creator_commitment_07 = 0;
+    int creator_commitment_08 = 0;
+    int creator_commitment_09 = 0;
+    int creator_commitment_10 = 0;
+    int creator_commitment_11 = 0;
+    int creator_commitment_12 = 0;
+    int creator_commitment_13 = 0;
+    int creator_commitment_14 = 0;
+    int creator_commitment_15 = 0;
+    int creator_commitment_16 = 0;
+    int creator_commitment_17 = 0;
+    int creator_commitment_18 = 0;
+    int creator_commitment_19 = 0;
+    int creator_commitment_20 = 0;
+    int creator_commitment_21 = 0;
+    int creator_commitment_22 = 0;
+    int creator_commitment_23 = 0;
+    int creator_commitment_24 = 0;
+    int creator_commitment_25 = 0;
+    int creator_commitment_26 = 0;
+    int creator_commitment_27 = 0;
+    int creator_commitment_28 = 0;
+    int creator_commitment_29 = 0;
+    int creator_commitment_30 = 0;
+    int creator_commitment_31 = 0;
     int fee_bps = 0;
     int sold_tickets = 0;
     int pot_amount = 0;
     int status = 0; // 0 Open, 1 Closed, 2 Finalized, 3 Refunding
-    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int ticket_root_00 = 0;
+    int ticket_root_01 = 0;
+    int ticket_root_02 = 0;
+    int ticket_root_03 = 0;
+    int ticket_root_04 = 0;
+    int ticket_root_05 = 0;
+    int ticket_root_06 = 0;
+    int ticket_root_07 = 0;
+    int ticket_root_08 = 0;
+    int ticket_root_09 = 0;
+    int ticket_root_10 = 0;
+    int ticket_root_11 = 0;
+    int ticket_root_12 = 0;
+    int ticket_root_13 = 0;
+    int ticket_root_14 = 0;
+    int ticket_root_15 = 0;
+    int ticket_root_16 = 0;
+    int ticket_root_17 = 0;
+    int ticket_root_18 = 0;
+    int ticket_root_19 = 0;
+    int ticket_root_20 = 0;
+    int ticket_root_21 = 0;
+    int ticket_root_22 = 0;
+    int ticket_root_23 = 0;
+    int ticket_root_24 = 0;
+    int ticket_root_25 = 0;
+    int ticket_root_26 = 0;
+    int ticket_root_27 = 0;
+    int ticket_root_28 = 0;
+    int ticket_root_29 = 0;
+    int ticket_root_30 = 0;
+    int ticket_root_31 = 0;
 
     #[covenant.singleton(mode = transition)]
     function buy(
@@ -39,13 +124,106 @@ contract RaffleRound() {
             max_tickets: prev_state.max_tickets,
             min_tickets: prev_state.min_tickets,
             ticket_price: prev_state.ticket_price,
-            round_id: prev_state.round_id,
-            creator_commitment: prev_state.creator_commitment,
+            round_id_00: prev_state.round_id_00,
+            round_id_01: prev_state.round_id_01,
+            round_id_02: prev_state.round_id_02,
+            round_id_03: prev_state.round_id_03,
+            round_id_04: prev_state.round_id_04,
+            round_id_05: prev_state.round_id_05,
+            round_id_06: prev_state.round_id_06,
+            round_id_07: prev_state.round_id_07,
+            round_id_08: prev_state.round_id_08,
+            round_id_09: prev_state.round_id_09,
+            round_id_10: prev_state.round_id_10,
+            round_id_11: prev_state.round_id_11,
+            round_id_12: prev_state.round_id_12,
+            round_id_13: prev_state.round_id_13,
+            round_id_14: prev_state.round_id_14,
+            round_id_15: prev_state.round_id_15,
+            round_id_16: prev_state.round_id_16,
+            round_id_17: prev_state.round_id_17,
+            round_id_18: prev_state.round_id_18,
+            round_id_19: prev_state.round_id_19,
+            round_id_20: prev_state.round_id_20,
+            round_id_21: prev_state.round_id_21,
+            round_id_22: prev_state.round_id_22,
+            round_id_23: prev_state.round_id_23,
+            round_id_24: prev_state.round_id_24,
+            round_id_25: prev_state.round_id_25,
+            round_id_26: prev_state.round_id_26,
+            round_id_27: prev_state.round_id_27,
+            round_id_28: prev_state.round_id_28,
+            round_id_29: prev_state.round_id_29,
+            round_id_30: prev_state.round_id_30,
+            round_id_31: prev_state.round_id_31,
+            creator_commitment_00: prev_state.creator_commitment_00,
+            creator_commitment_01: prev_state.creator_commitment_01,
+            creator_commitment_02: prev_state.creator_commitment_02,
+            creator_commitment_03: prev_state.creator_commitment_03,
+            creator_commitment_04: prev_state.creator_commitment_04,
+            creator_commitment_05: prev_state.creator_commitment_05,
+            creator_commitment_06: prev_state.creator_commitment_06,
+            creator_commitment_07: prev_state.creator_commitment_07,
+            creator_commitment_08: prev_state.creator_commitment_08,
+            creator_commitment_09: prev_state.creator_commitment_09,
+            creator_commitment_10: prev_state.creator_commitment_10,
+            creator_commitment_11: prev_state.creator_commitment_11,
+            creator_commitment_12: prev_state.creator_commitment_12,
+            creator_commitment_13: prev_state.creator_commitment_13,
+            creator_commitment_14: prev_state.creator_commitment_14,
+            creator_commitment_15: prev_state.creator_commitment_15,
+            creator_commitment_16: prev_state.creator_commitment_16,
+            creator_commitment_17: prev_state.creator_commitment_17,
+            creator_commitment_18: prev_state.creator_commitment_18,
+            creator_commitment_19: prev_state.creator_commitment_19,
+            creator_commitment_20: prev_state.creator_commitment_20,
+            creator_commitment_21: prev_state.creator_commitment_21,
+            creator_commitment_22: prev_state.creator_commitment_22,
+            creator_commitment_23: prev_state.creator_commitment_23,
+            creator_commitment_24: prev_state.creator_commitment_24,
+            creator_commitment_25: prev_state.creator_commitment_25,
+            creator_commitment_26: prev_state.creator_commitment_26,
+            creator_commitment_27: prev_state.creator_commitment_27,
+            creator_commitment_28: prev_state.creator_commitment_28,
+            creator_commitment_29: prev_state.creator_commitment_29,
+            creator_commitment_30: prev_state.creator_commitment_30,
+            creator_commitment_31: prev_state.creator_commitment_31,
             fee_bps: prev_state.fee_bps,
             sold_tickets: prev_state.sold_tickets + 1,
             pot_amount: prev_state.pot_amount + prev_state.ticket_price,
             status: 0,
-            ticket_root: next_ticket_root
+            ticket_root_00: int(next_ticket_root[0]),
+            ticket_root_01: int(next_ticket_root[1]),
+            ticket_root_02: int(next_ticket_root[2]),
+            ticket_root_03: int(next_ticket_root[3]),
+            ticket_root_04: int(next_ticket_root[4]),
+            ticket_root_05: int(next_ticket_root[5]),
+            ticket_root_06: int(next_ticket_root[6]),
+            ticket_root_07: int(next_ticket_root[7]),
+            ticket_root_08: int(next_ticket_root[8]),
+            ticket_root_09: int(next_ticket_root[9]),
+            ticket_root_10: int(next_ticket_root[10]),
+            ticket_root_11: int(next_ticket_root[11]),
+            ticket_root_12: int(next_ticket_root[12]),
+            ticket_root_13: int(next_ticket_root[13]),
+            ticket_root_14: int(next_ticket_root[14]),
+            ticket_root_15: int(next_ticket_root[15]),
+            ticket_root_16: int(next_ticket_root[16]),
+            ticket_root_17: int(next_ticket_root[17]),
+            ticket_root_18: int(next_ticket_root[18]),
+            ticket_root_19: int(next_ticket_root[19]),
+            ticket_root_20: int(next_ticket_root[20]),
+            ticket_root_21: int(next_ticket_root[21]),
+            ticket_root_22: int(next_ticket_root[22]),
+            ticket_root_23: int(next_ticket_root[23]),
+            ticket_root_24: int(next_ticket_root[24]),
+            ticket_root_25: int(next_ticket_root[25]),
+            ticket_root_26: int(next_ticket_root[26]),
+            ticket_root_27: int(next_ticket_root[27]),
+            ticket_root_28: int(next_ticket_root[28]),
+            ticket_root_29: int(next_ticket_root[29]),
+            ticket_root_30: int(next_ticket_root[30]),
+            ticket_root_31: int(next_ticket_root[31]),
         });
     }
 
@@ -58,36 +236,230 @@ contract RaffleRound() {
             max_tickets: prev_state.max_tickets,
             min_tickets: prev_state.min_tickets,
             ticket_price: prev_state.ticket_price,
-            round_id: prev_state.round_id,
-            creator_commitment: prev_state.creator_commitment,
+            round_id_00: prev_state.round_id_00,
+            round_id_01: prev_state.round_id_01,
+            round_id_02: prev_state.round_id_02,
+            round_id_03: prev_state.round_id_03,
+            round_id_04: prev_state.round_id_04,
+            round_id_05: prev_state.round_id_05,
+            round_id_06: prev_state.round_id_06,
+            round_id_07: prev_state.round_id_07,
+            round_id_08: prev_state.round_id_08,
+            round_id_09: prev_state.round_id_09,
+            round_id_10: prev_state.round_id_10,
+            round_id_11: prev_state.round_id_11,
+            round_id_12: prev_state.round_id_12,
+            round_id_13: prev_state.round_id_13,
+            round_id_14: prev_state.round_id_14,
+            round_id_15: prev_state.round_id_15,
+            round_id_16: prev_state.round_id_16,
+            round_id_17: prev_state.round_id_17,
+            round_id_18: prev_state.round_id_18,
+            round_id_19: prev_state.round_id_19,
+            round_id_20: prev_state.round_id_20,
+            round_id_21: prev_state.round_id_21,
+            round_id_22: prev_state.round_id_22,
+            round_id_23: prev_state.round_id_23,
+            round_id_24: prev_state.round_id_24,
+            round_id_25: prev_state.round_id_25,
+            round_id_26: prev_state.round_id_26,
+            round_id_27: prev_state.round_id_27,
+            round_id_28: prev_state.round_id_28,
+            round_id_29: prev_state.round_id_29,
+            round_id_30: prev_state.round_id_30,
+            round_id_31: prev_state.round_id_31,
+            creator_commitment_00: prev_state.creator_commitment_00,
+            creator_commitment_01: prev_state.creator_commitment_01,
+            creator_commitment_02: prev_state.creator_commitment_02,
+            creator_commitment_03: prev_state.creator_commitment_03,
+            creator_commitment_04: prev_state.creator_commitment_04,
+            creator_commitment_05: prev_state.creator_commitment_05,
+            creator_commitment_06: prev_state.creator_commitment_06,
+            creator_commitment_07: prev_state.creator_commitment_07,
+            creator_commitment_08: prev_state.creator_commitment_08,
+            creator_commitment_09: prev_state.creator_commitment_09,
+            creator_commitment_10: prev_state.creator_commitment_10,
+            creator_commitment_11: prev_state.creator_commitment_11,
+            creator_commitment_12: prev_state.creator_commitment_12,
+            creator_commitment_13: prev_state.creator_commitment_13,
+            creator_commitment_14: prev_state.creator_commitment_14,
+            creator_commitment_15: prev_state.creator_commitment_15,
+            creator_commitment_16: prev_state.creator_commitment_16,
+            creator_commitment_17: prev_state.creator_commitment_17,
+            creator_commitment_18: prev_state.creator_commitment_18,
+            creator_commitment_19: prev_state.creator_commitment_19,
+            creator_commitment_20: prev_state.creator_commitment_20,
+            creator_commitment_21: prev_state.creator_commitment_21,
+            creator_commitment_22: prev_state.creator_commitment_22,
+            creator_commitment_23: prev_state.creator_commitment_23,
+            creator_commitment_24: prev_state.creator_commitment_24,
+            creator_commitment_25: prev_state.creator_commitment_25,
+            creator_commitment_26: prev_state.creator_commitment_26,
+            creator_commitment_27: prev_state.creator_commitment_27,
+            creator_commitment_28: prev_state.creator_commitment_28,
+            creator_commitment_29: prev_state.creator_commitment_29,
+            creator_commitment_30: prev_state.creator_commitment_30,
+            creator_commitment_31: prev_state.creator_commitment_31,
             fee_bps: prev_state.fee_bps,
             sold_tickets: prev_state.sold_tickets,
             pot_amount: prev_state.pot_amount,
             status: 1,
-            ticket_root: prev_state.ticket_root
+            ticket_root_00: prev_state.ticket_root_00,
+            ticket_root_01: prev_state.ticket_root_01,
+            ticket_root_02: prev_state.ticket_root_02,
+            ticket_root_03: prev_state.ticket_root_03,
+            ticket_root_04: prev_state.ticket_root_04,
+            ticket_root_05: prev_state.ticket_root_05,
+            ticket_root_06: prev_state.ticket_root_06,
+            ticket_root_07: prev_state.ticket_root_07,
+            ticket_root_08: prev_state.ticket_root_08,
+            ticket_root_09: prev_state.ticket_root_09,
+            ticket_root_10: prev_state.ticket_root_10,
+            ticket_root_11: prev_state.ticket_root_11,
+            ticket_root_12: prev_state.ticket_root_12,
+            ticket_root_13: prev_state.ticket_root_13,
+            ticket_root_14: prev_state.ticket_root_14,
+            ticket_root_15: prev_state.ticket_root_15,
+            ticket_root_16: prev_state.ticket_root_16,
+            ticket_root_17: prev_state.ticket_root_17,
+            ticket_root_18: prev_state.ticket_root_18,
+            ticket_root_19: prev_state.ticket_root_19,
+            ticket_root_20: prev_state.ticket_root_20,
+            ticket_root_21: prev_state.ticket_root_21,
+            ticket_root_22: prev_state.ticket_root_22,
+            ticket_root_23: prev_state.ticket_root_23,
+            ticket_root_24: prev_state.ticket_root_24,
+            ticket_root_25: prev_state.ticket_root_25,
+            ticket_root_26: prev_state.ticket_root_26,
+            ticket_root_27: prev_state.ticket_root_27,
+            ticket_root_28: prev_state.ticket_root_28,
+            ticket_root_29: prev_state.ticket_root_29,
+            ticket_root_30: prev_state.ticket_root_30,
+            ticket_root_31: prev_state.ticket_root_31,
         });
     }
 
     #[covenant.singleton(mode = transition, termination = allowed)]
     function finalize(
         State prev_state,
+        State[] next_states,
         byte[32] creator_secret,
         int winner_ticket_id,
         byte[35] winner_script_pub_key
     ) : (State[]) {
         require(prev_state.status == 1);
+        require(next_states.length == 0);
         require(prev_state.sold_tickets >= prev_state.min_tickets);
-        require(sha256(byte[](creator_secret)) == prev_state.creator_commitment);
 
-        byte[32] seed = sha256(byte[](prev_state.round_id) + byte[](prev_state.ticket_root) + byte[](creator_secret));
+        byte[32] round_id_bytes =
+            byte[1](byte(prev_state.round_id_00)) +
+            byte[1](byte(prev_state.round_id_01)) +
+            byte[1](byte(prev_state.round_id_02)) +
+            byte[1](byte(prev_state.round_id_03)) +
+            byte[1](byte(prev_state.round_id_04)) +
+            byte[1](byte(prev_state.round_id_05)) +
+            byte[1](byte(prev_state.round_id_06)) +
+            byte[1](byte(prev_state.round_id_07)) +
+            byte[1](byte(prev_state.round_id_08)) +
+            byte[1](byte(prev_state.round_id_09)) +
+            byte[1](byte(prev_state.round_id_10)) +
+            byte[1](byte(prev_state.round_id_11)) +
+            byte[1](byte(prev_state.round_id_12)) +
+            byte[1](byte(prev_state.round_id_13)) +
+            byte[1](byte(prev_state.round_id_14)) +
+            byte[1](byte(prev_state.round_id_15)) +
+            byte[1](byte(prev_state.round_id_16)) +
+            byte[1](byte(prev_state.round_id_17)) +
+            byte[1](byte(prev_state.round_id_18)) +
+            byte[1](byte(prev_state.round_id_19)) +
+            byte[1](byte(prev_state.round_id_20)) +
+            byte[1](byte(prev_state.round_id_21)) +
+            byte[1](byte(prev_state.round_id_22)) +
+            byte[1](byte(prev_state.round_id_23)) +
+            byte[1](byte(prev_state.round_id_24)) +
+            byte[1](byte(prev_state.round_id_25)) +
+            byte[1](byte(prev_state.round_id_26)) +
+            byte[1](byte(prev_state.round_id_27)) +
+            byte[1](byte(prev_state.round_id_28)) +
+            byte[1](byte(prev_state.round_id_29)) +
+            byte[1](byte(prev_state.round_id_30)) +
+            byte[1](byte(prev_state.round_id_31));
+        byte[32] creator_commitment_bytes =
+            byte[1](byte(prev_state.creator_commitment_00)) +
+            byte[1](byte(prev_state.creator_commitment_01)) +
+            byte[1](byte(prev_state.creator_commitment_02)) +
+            byte[1](byte(prev_state.creator_commitment_03)) +
+            byte[1](byte(prev_state.creator_commitment_04)) +
+            byte[1](byte(prev_state.creator_commitment_05)) +
+            byte[1](byte(prev_state.creator_commitment_06)) +
+            byte[1](byte(prev_state.creator_commitment_07)) +
+            byte[1](byte(prev_state.creator_commitment_08)) +
+            byte[1](byte(prev_state.creator_commitment_09)) +
+            byte[1](byte(prev_state.creator_commitment_10)) +
+            byte[1](byte(prev_state.creator_commitment_11)) +
+            byte[1](byte(prev_state.creator_commitment_12)) +
+            byte[1](byte(prev_state.creator_commitment_13)) +
+            byte[1](byte(prev_state.creator_commitment_14)) +
+            byte[1](byte(prev_state.creator_commitment_15)) +
+            byte[1](byte(prev_state.creator_commitment_16)) +
+            byte[1](byte(prev_state.creator_commitment_17)) +
+            byte[1](byte(prev_state.creator_commitment_18)) +
+            byte[1](byte(prev_state.creator_commitment_19)) +
+            byte[1](byte(prev_state.creator_commitment_20)) +
+            byte[1](byte(prev_state.creator_commitment_21)) +
+            byte[1](byte(prev_state.creator_commitment_22)) +
+            byte[1](byte(prev_state.creator_commitment_23)) +
+            byte[1](byte(prev_state.creator_commitment_24)) +
+            byte[1](byte(prev_state.creator_commitment_25)) +
+            byte[1](byte(prev_state.creator_commitment_26)) +
+            byte[1](byte(prev_state.creator_commitment_27)) +
+            byte[1](byte(prev_state.creator_commitment_28)) +
+            byte[1](byte(prev_state.creator_commitment_29)) +
+            byte[1](byte(prev_state.creator_commitment_30)) +
+            byte[1](byte(prev_state.creator_commitment_31));
+        byte[32] ticket_root_bytes =
+            byte[1](byte(prev_state.ticket_root_00)) +
+            byte[1](byte(prev_state.ticket_root_01)) +
+            byte[1](byte(prev_state.ticket_root_02)) +
+            byte[1](byte(prev_state.ticket_root_03)) +
+            byte[1](byte(prev_state.ticket_root_04)) +
+            byte[1](byte(prev_state.ticket_root_05)) +
+            byte[1](byte(prev_state.ticket_root_06)) +
+            byte[1](byte(prev_state.ticket_root_07)) +
+            byte[1](byte(prev_state.ticket_root_08)) +
+            byte[1](byte(prev_state.ticket_root_09)) +
+            byte[1](byte(prev_state.ticket_root_10)) +
+            byte[1](byte(prev_state.ticket_root_11)) +
+            byte[1](byte(prev_state.ticket_root_12)) +
+            byte[1](byte(prev_state.ticket_root_13)) +
+            byte[1](byte(prev_state.ticket_root_14)) +
+            byte[1](byte(prev_state.ticket_root_15)) +
+            byte[1](byte(prev_state.ticket_root_16)) +
+            byte[1](byte(prev_state.ticket_root_17)) +
+            byte[1](byte(prev_state.ticket_root_18)) +
+            byte[1](byte(prev_state.ticket_root_19)) +
+            byte[1](byte(prev_state.ticket_root_20)) +
+            byte[1](byte(prev_state.ticket_root_21)) +
+            byte[1](byte(prev_state.ticket_root_22)) +
+            byte[1](byte(prev_state.ticket_root_23)) +
+            byte[1](byte(prev_state.ticket_root_24)) +
+            byte[1](byte(prev_state.ticket_root_25)) +
+            byte[1](byte(prev_state.ticket_root_26)) +
+            byte[1](byte(prev_state.ticket_root_27)) +
+            byte[1](byte(prev_state.ticket_root_28)) +
+            byte[1](byte(prev_state.ticket_root_29)) +
+            byte[1](byte(prev_state.ticket_root_30)) +
+            byte[1](byte(prev_state.ticket_root_31));
+
+        require(sha256(byte[](creator_secret)) == creator_commitment_bytes);
+
+        byte[32] seed = sha256(byte[](round_id_bytes) + byte[](ticket_root_bytes) + byte[](creator_secret));
         require(winner_ticket_id == int(seed) % prev_state.sold_tickets);
 
-        // Covenant termination: no successor round state.
-        // Output 0 must pay the entire pot to the winning ticket owner.
         require(tx.outputs[0].scriptPubKey == byte[](winner_script_pub_key));
         require(tx.outputs[0].value == prev_state.pot_amount);
 
-        return([]);
+        return(next_states);
     }
 
     #[covenant.singleton(mode = transition)]
@@ -99,13 +471,106 @@ contract RaffleRound() {
             max_tickets: prev_state.max_tickets,
             min_tickets: prev_state.min_tickets,
             ticket_price: prev_state.ticket_price,
-            round_id: prev_state.round_id,
-            creator_commitment: prev_state.creator_commitment,
+            round_id_00: prev_state.round_id_00,
+            round_id_01: prev_state.round_id_01,
+            round_id_02: prev_state.round_id_02,
+            round_id_03: prev_state.round_id_03,
+            round_id_04: prev_state.round_id_04,
+            round_id_05: prev_state.round_id_05,
+            round_id_06: prev_state.round_id_06,
+            round_id_07: prev_state.round_id_07,
+            round_id_08: prev_state.round_id_08,
+            round_id_09: prev_state.round_id_09,
+            round_id_10: prev_state.round_id_10,
+            round_id_11: prev_state.round_id_11,
+            round_id_12: prev_state.round_id_12,
+            round_id_13: prev_state.round_id_13,
+            round_id_14: prev_state.round_id_14,
+            round_id_15: prev_state.round_id_15,
+            round_id_16: prev_state.round_id_16,
+            round_id_17: prev_state.round_id_17,
+            round_id_18: prev_state.round_id_18,
+            round_id_19: prev_state.round_id_19,
+            round_id_20: prev_state.round_id_20,
+            round_id_21: prev_state.round_id_21,
+            round_id_22: prev_state.round_id_22,
+            round_id_23: prev_state.round_id_23,
+            round_id_24: prev_state.round_id_24,
+            round_id_25: prev_state.round_id_25,
+            round_id_26: prev_state.round_id_26,
+            round_id_27: prev_state.round_id_27,
+            round_id_28: prev_state.round_id_28,
+            round_id_29: prev_state.round_id_29,
+            round_id_30: prev_state.round_id_30,
+            round_id_31: prev_state.round_id_31,
+            creator_commitment_00: prev_state.creator_commitment_00,
+            creator_commitment_01: prev_state.creator_commitment_01,
+            creator_commitment_02: prev_state.creator_commitment_02,
+            creator_commitment_03: prev_state.creator_commitment_03,
+            creator_commitment_04: prev_state.creator_commitment_04,
+            creator_commitment_05: prev_state.creator_commitment_05,
+            creator_commitment_06: prev_state.creator_commitment_06,
+            creator_commitment_07: prev_state.creator_commitment_07,
+            creator_commitment_08: prev_state.creator_commitment_08,
+            creator_commitment_09: prev_state.creator_commitment_09,
+            creator_commitment_10: prev_state.creator_commitment_10,
+            creator_commitment_11: prev_state.creator_commitment_11,
+            creator_commitment_12: prev_state.creator_commitment_12,
+            creator_commitment_13: prev_state.creator_commitment_13,
+            creator_commitment_14: prev_state.creator_commitment_14,
+            creator_commitment_15: prev_state.creator_commitment_15,
+            creator_commitment_16: prev_state.creator_commitment_16,
+            creator_commitment_17: prev_state.creator_commitment_17,
+            creator_commitment_18: prev_state.creator_commitment_18,
+            creator_commitment_19: prev_state.creator_commitment_19,
+            creator_commitment_20: prev_state.creator_commitment_20,
+            creator_commitment_21: prev_state.creator_commitment_21,
+            creator_commitment_22: prev_state.creator_commitment_22,
+            creator_commitment_23: prev_state.creator_commitment_23,
+            creator_commitment_24: prev_state.creator_commitment_24,
+            creator_commitment_25: prev_state.creator_commitment_25,
+            creator_commitment_26: prev_state.creator_commitment_26,
+            creator_commitment_27: prev_state.creator_commitment_27,
+            creator_commitment_28: prev_state.creator_commitment_28,
+            creator_commitment_29: prev_state.creator_commitment_29,
+            creator_commitment_30: prev_state.creator_commitment_30,
+            creator_commitment_31: prev_state.creator_commitment_31,
             fee_bps: prev_state.fee_bps,
             sold_tickets: prev_state.sold_tickets,
             pot_amount: prev_state.pot_amount,
             status: 3,
-            ticket_root: prev_state.ticket_root
+            ticket_root_00: prev_state.ticket_root_00,
+            ticket_root_01: prev_state.ticket_root_01,
+            ticket_root_02: prev_state.ticket_root_02,
+            ticket_root_03: prev_state.ticket_root_03,
+            ticket_root_04: prev_state.ticket_root_04,
+            ticket_root_05: prev_state.ticket_root_05,
+            ticket_root_06: prev_state.ticket_root_06,
+            ticket_root_07: prev_state.ticket_root_07,
+            ticket_root_08: prev_state.ticket_root_08,
+            ticket_root_09: prev_state.ticket_root_09,
+            ticket_root_10: prev_state.ticket_root_10,
+            ticket_root_11: prev_state.ticket_root_11,
+            ticket_root_12: prev_state.ticket_root_12,
+            ticket_root_13: prev_state.ticket_root_13,
+            ticket_root_14: prev_state.ticket_root_14,
+            ticket_root_15: prev_state.ticket_root_15,
+            ticket_root_16: prev_state.ticket_root_16,
+            ticket_root_17: prev_state.ticket_root_17,
+            ticket_root_18: prev_state.ticket_root_18,
+            ticket_root_19: prev_state.ticket_root_19,
+            ticket_root_20: prev_state.ticket_root_20,
+            ticket_root_21: prev_state.ticket_root_21,
+            ticket_root_22: prev_state.ticket_root_22,
+            ticket_root_23: prev_state.ticket_root_23,
+            ticket_root_24: prev_state.ticket_root_24,
+            ticket_root_25: prev_state.ticket_root_25,
+            ticket_root_26: prev_state.ticket_root_26,
+            ticket_root_27: prev_state.ticket_root_27,
+            ticket_root_28: prev_state.ticket_root_28,
+            ticket_root_29: prev_state.ticket_root_29,
+            ticket_root_30: prev_state.ticket_root_30,
+            ticket_root_31: prev_state.ticket_root_31,
         });
     }
 }
