@@ -76,6 +76,14 @@ npm run verify:covenant
 
 The covenant release gate is expected to fail until `raffle_round.sil` is compiled and browser-side covenant transaction builders are wired. See [`docs/development-verification-loop.md`](docs/development-verification-loop.md).
 
+Compile the covenant source with the local Silverscript checkout:
+
+```bash
+npm run compile:contract
+```
+
+The compiler toolchain runs locally now. The raffle source is still blocked by current Silverscript byte-array state support, so the app keeps covenant payout disabled.
+
 ## Safety
 
 This app is experimental and intended for testnet or dedicated small-value wallets only. Do not import a main wallet seed. A static page can still be modified by whoever serves it, and a malicious page can steal browser-local secrets.

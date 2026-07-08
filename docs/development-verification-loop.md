@@ -19,6 +19,14 @@ npm run verify:covenant
 
 Runs the same checks with the release gate enabled. This command must fail until `src/contracts/raffle_round.sil` is compiled and `src/contracts/compiled/raffle-round.manifest.json` contains real ABI/script artifacts.
 
+```bash
+npm run compile:contract
+```
+
+Runs the local `kaspanet/silverscript` compiler from `.tools/silverscript`. On Windows, the script uses Rust GNU plus MSYS2 MinGW and injects a temporary RISC0 allocation stub required by the current `kaspa-txscript` dependency graph.
+
+As of 2026-07-08, the compiler binary runs locally, but the raffle contract does not yet compile because `validateOutputState` rejects the byte-array state fields needed for `round_id`, `creator_commitment`, and `ticket_root`. The covenant release gate must stay red until that is solved without weakening payout correctness.
+
 ## Manual TN12 Browser Loop
 
 Use a dedicated testnet wallet only.

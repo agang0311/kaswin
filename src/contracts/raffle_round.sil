@@ -14,18 +14,17 @@ pragma silverscript ^0.1.0;
 // needs to be compiled with kaspanet/silverscript and wired to v1 covenant
 // transaction builders before production use.
 
-contract RaffleRound(
-    int max_tickets,
-    int min_tickets,
-    int ticket_price,
-    byte[32] round_id,
-    byte[32] creator_commitment,
-    int fee_bps
-) {
+contract RaffleRound() {
+    int max_tickets = 0;
+    int min_tickets = 0;
+    int ticket_price = 0;
+    byte[32] round_id = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] creator_commitment = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int fee_bps = 0;
     int sold_tickets = 0;
     int pot_amount = 0;
     int status = 0; // 0 Open, 1 Closed, 2 Finalized, 3 Refunding
-    byte[32] ticket_root = byte[32](0);
+    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
 
     #[covenant.singleton(mode = transition)]
     function buy(
@@ -33,12 +32,18 @@ contract RaffleRound(
         byte[32] next_ticket_root
     ) : (State) {
         require(prev_state.status == 0);
-        require(prev_state.sold_tickets < max_tickets);
-        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value + ticket_price);
+        require(prev_state.sold_tickets < prev_state.max_tickets);
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value + prev_state.ticket_price);
 
         return({
+            max_tickets: prev_state.max_tickets,
+            min_tickets: prev_state.min_tickets,
+            ticket_price: prev_state.ticket_price,
+            round_id: prev_state.round_id,
+            creator_commitment: prev_state.creator_commitment,
+            fee_bps: prev_state.fee_bps,
             sold_tickets: prev_state.sold_tickets + 1,
-            pot_amount: prev_state.pot_amount + ticket_price,
+            pot_amount: prev_state.pot_amount + prev_state.ticket_price,
             status: 0,
             ticket_root: next_ticket_root
         });
@@ -47,9 +52,15 @@ contract RaffleRound(
     #[covenant.singleton(mode = transition)]
     function close(State prev_state) : (State) {
         require(prev_state.status == 0);
-        require(prev_state.sold_tickets == max_tickets || prev_state.sold_tickets >= min_tickets);
+        require(prev_state.sold_tickets == prev_state.max_tickets || prev_state.sold_tickets >= prev_state.min_tickets);
 
         return({
+            max_tickets: prev_state.max_tickets,
+            min_tickets: prev_state.min_tickets,
+            ticket_price: prev_state.ticket_price,
+            round_id: prev_state.round_id,
+            creator_commitment: prev_state.creator_commitment,
+            fee_bps: prev_state.fee_bps,
             sold_tickets: prev_state.sold_tickets,
             pot_amount: prev_state.pot_amount,
             status: 1,
@@ -65,10 +76,10 @@ contract RaffleRound(
         byte[35] winner_script_pub_key
     ) : (State[]) {
         require(prev_state.status == 1);
-        require(prev_state.sold_tickets >= min_tickets);
-        require(sha256(byte[](creator_secret)) == creator_commitment);
+        require(prev_state.sold_tickets >= prev_state.min_tickets);
+        require(sha256(byte[](creator_secret)) == prev_state.creator_commitment);
 
-        byte[32] seed = sha256(byte[](round_id) + byte[](prev_state.ticket_root) + byte[](creator_secret));
+        byte[32] seed = sha256(byte[](prev_state.round_id) + byte[](prev_state.ticket_root) + byte[](creator_secret));
         require(winner_ticket_id == int(seed) % prev_state.sold_tickets);
 
         // Covenant termination: no successor round state.
@@ -82,9 +93,15 @@ contract RaffleRound(
     #[covenant.singleton(mode = transition)]
     function enter_refunding(State prev_state) : (State) {
         require(prev_state.status == 0 || prev_state.status == 1);
-        require(prev_state.sold_tickets < min_tickets);
+        require(prev_state.sold_tickets < prev_state.min_tickets);
 
         return({
+            max_tickets: prev_state.max_tickets,
+            min_tickets: prev_state.min_tickets,
+            ticket_price: prev_state.ticket_price,
+            round_id: prev_state.round_id,
+            creator_commitment: prev_state.creator_commitment,
+            fee_bps: prev_state.fee_bps,
             sold_tickets: prev_state.sold_tickets,
             pot_amount: prev_state.pot_amount,
             status: 3,

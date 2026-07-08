@@ -39,6 +39,7 @@ const metadataSource = readText("src/raffle/metadata.ts");
 const contractSource = readText("src/contracts/raffle_round.sil");
 
 assert("Build script exists", packageJson.scripts?.build === "tsc --noEmit && vite build");
+assert("Contract compile script exists", packageJson.scripts?.["compile:contract"] === "node scripts/compile-raffle-contract.mjs");
 assert("Default TN12 wRPC is present", appSource.includes("ws://tn12-node.kaspa.com:17210"));
 assert("Default ticket price is 0.2 KAS", metadataSource.includes('ticketPrice: "20000000"'));
 assert("Browser ticket payment path exists", transactionSource.includes("createTransactions") && appSource.includes("handleBuyTicket"));

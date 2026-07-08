@@ -10,6 +10,13 @@ Current files:
 Next required work:
 
 1. Install/build `kaspanet/silverscript`.
-2. Compile `raffle_round.sil` for TN12.
-3. Replace `compiled/raffle-round.manifest.json` with ABI/script bytes and `status: "compiled"`.
-4. Wire transaction v1 covenant creation, buy, close, finalize, and refund spends in the browser.
+2. Run `npm run compile:contract`.
+3. Resolve the current compiler limitation: `validateOutputState` rejects byte-array state fields used by `round_id`, `creator_commitment`, and `ticket_root`.
+4. Replace `compiled/raffle-round.manifest.json` with ABI/script bytes and `status: "compiled"` only after the raffle covenant source compiles.
+5. Wire transaction v1 covenant creation, buy, close, finalize, and refund spends in the browser.
+
+Windows TN12 compiler note:
+
+- Rust/Cargo can build `silverc` with the `stable-x86_64-pc-windows-gnu` toolchain plus MSYS2 MinGW.
+- `kaspa-txscript` currently pulls RISC0 dependencies on Windows. The compile script injects a no-runtime RISC0 allocation stub so the compiler binary can link.
+- The compiler now runs locally, but the raffle source is still blocked by byte-array covenant state support.
