@@ -345,7 +345,7 @@ contract RaffleRound() {
         State[] next_states,
         byte[32] creator_secret,
         int winner_ticket_id,
-        byte[35] winner_script_pub_key
+        byte[34] winner_script_pub_key
     ) : (State[]) {
         require(prev_state.status == 1);
         require(next_states.length == 0);

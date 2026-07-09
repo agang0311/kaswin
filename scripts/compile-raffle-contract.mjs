@@ -8,6 +8,7 @@ const root = process.cwd();
 const silverscriptDir = path.join(root, ".tools", "silverscript");
 const sourcePath = path.join(root, "src", "contracts", "raffle_round.sil");
 const outputPath = path.join(root, "src", "contracts", "compiled", "raffle-round.silverc.json");
+const runtimeArtifactPath = path.join(root, "src", "contracts", "compiled", "raffle-round.artifact.json");
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -106,3 +107,28 @@ const cargoArgs =
 
 run(cargo, cargoArgs, { cwd: silverscriptDir, env });
 console.log(`Compiled ${sourcePath} to ${outputPath}`);
+
+const compiled = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+const entrypoints = compiled.ast.functions.filter((fn) => fn.entrypoint).map((fn, selector) => ({ name: fn.name, selector }));
+const stateFields = compiled.ast.fields.map((field) => ({
+  name: field.name,
+  type: field.type_ref?.base ?? "unknown"
+}));
+const runtimeArtifact = {
+  contract: compiled.contract_name,
+  compilerVersion: compiled.compiler_version,
+  source: "../raffle_round.sil",
+  generatedAt: new Date().toISOString(),
+  script: Buffer.from(compiled.script).toString("hex"),
+  scriptLength: compiled.script.length,
+  withoutSelector: compiled.without_selector,
+  abi: compiled.abi.map((entry) => ({
+    ...entry,
+    selector: entrypoints.find((candidate) => candidate.name === entry.name)?.selector ?? null
+  })),
+  stateLayout: compiled.state_layout,
+  stateFields
+};
+
+fs.writeFileSync(runtimeArtifactPath, `${JSON.stringify(runtimeArtifact, null, 2)}\n`, "utf8");
+console.log(`Wrote runtime covenant artifact to ${runtimeArtifactPath}`);
