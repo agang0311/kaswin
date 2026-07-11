@@ -230,6 +230,7 @@ function encodePayload(value: unknown) {
 }
 
 const DEV_ORACLE_KEY_PREFIX = "kaspa-raffle-static:dev-oracle:";
+const OPEN_DEV_ORACLE_DERIVATION_PREFIX = "kaspa-raffle-static:open-dev-oracle:v1:";
 
 function devOracleStorageKey(roundId: string, oraclePublicKey: string) {
   return `${DEV_ORACLE_KEY_PREFIX}${roundId}:${oraclePublicKey}`;
@@ -263,6 +264,35 @@ function restoreDevOracleKey(roundId: string, oraclePublicKey: string) {
   }
 
   return "";
+}
+
+async function deriveOpenDevOracleKey(roundId: string): Promise<string> {
+  for (let nonce = 0; nonce < 256; nonce += 1) {
+    const privateKey = await sha256Hex(`${OPEN_DEV_ORACLE_DERIVATION_PREFIX}${roundId}:${nonce}`);
+
+    if (secp.utils.isValidSecretKey(hexToBytes(privateKey))) {
+      return privateKey;
+    }
+  }
+
+  throw new Error("Unable to derive the open development oracle key.");
+}
+
+async function recoverDevOracleKey(roundId: string, oraclePublicKey: string): Promise<string> {
+  const storedKey = restoreDevOracleKey(roundId, oraclePublicKey);
+
+  if (storedKey) {
+    return storedKey;
+  }
+
+  const derivedKey = await deriveOpenDevOracleKey(roundId);
+
+  if (oraclePublicKeyFromPrivateKey(derivedKey) !== oraclePublicKey) {
+    return "";
+  }
+
+  rememberDevOracleKey(roundId, oraclePublicKey, derivedKey);
+  return derivedKey;
 }
 
 function encodeShareMetadata(metadata: RaffleMetadata) {
@@ -564,7 +594,15 @@ export function App() {
     setWalletError("");
 
     try {
-      setWallet(await importBrowserTestWallet(privateKeyInput, networkId));
+      let importedWallet = await importBrowserTestWallet(privateKeyInput, networkId);
+
+      if (rpcConnectionRef.current) {
+        const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, importedWallet.address);
+        importedWallet = withWalletBalance(importedWallet, balanceSompi);
+      }
+
+      setWallet(importedWallet);
+      setPrivateKeyInput("");
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Unable to import private key.");
     }
@@ -591,14 +629,14 @@ export function App() {
     }
   }
 
-  function prepareOracleForCreate(forceNew = false) {
+  async function prepareOracleForCreate(forceNew = false) {
+    const roundId = forceNew || !metadata.roundId ? `round-${randomHex(8)}` : metadata.roundId;
     const canReuseKey =
       !forceNew &&
       /^[0-9a-f]{64}$/.test(oraclePrivateKey) &&
       (!metadata.oraclePublicKey || oraclePublicKeyFromPrivateKey(oraclePrivateKey) === metadata.oraclePublicKey);
-    const privateKey = canReuseKey ? oraclePrivateKey : randomHex(32);
+    const privateKey = canReuseKey ? oraclePrivateKey : await deriveOpenDevOracleKey(roundId);
     const publicKey = oraclePublicKeyFromPrivateKey(privateKey);
-    const roundId = forceNew || !metadata.roundId ? `round-${randomHex(8)}` : metadata.roundId;
 
     setOraclePrivateKey(privateKey);
     rememberDevOracleKey(roundId, publicKey, privateKey);
@@ -745,7 +783,7 @@ export function App() {
       const createdAtDaaScore = await currentVirtualDaaScore(rpcConnectionRef.current);
       const refundAfterDaaScore = createdAtDaaScore + refundDelayDaa;
       const creatorPubkey = pubkeyHexFromAddress(wallet.address);
-      const prepared = prepareOracleForCreate(Boolean(metadata.covenant));
+      const prepared = await prepareOracleForCreate(Boolean(metadata.covenant));
       const creationRound: RoundState = {
         ...round,
         roundId: prepared.roundId,
@@ -1105,21 +1143,27 @@ export function App() {
 
       let finalizeOracleSeed = oracleSeed;
       let finalizeOracleSignature = oracleSignature;
-      const hasMatchingLocalOracleKey =
-        /^[0-9a-f]{64}$/.test(oraclePrivateKey) &&
-        oraclePublicKeyFromPrivateKey(oraclePrivateKey) === metadata.oraclePublicKey;
+      let signingOracleKey = oraclePrivateKey;
+      let hasMatchingLocalOracleKey =
+        /^[0-9a-f]{64}$/.test(signingOracleKey) &&
+        oraclePublicKeyFromPrivateKey(signingOracleKey) === metadata.oraclePublicKey;
+
+      if (!hasMatchingLocalOracleKey) {
+        signingOracleKey = await recoverDevOracleKey(metadata.roundId, metadata.oraclePublicKey);
+        hasMatchingLocalOracleKey = Boolean(signingOracleKey);
+
+        if (signingOracleKey) {
+          setOraclePrivateKey(signingOracleKey);
+        }
+      }
 
       if (hasMatchingLocalOracleKey) {
         finalizeOracleSeed = randomHex(32);
-        finalizeOracleSignature = await signOracleSeed(oraclePrivateKey, finalizeOracleSeed);
+        finalizeOracleSignature = await signOracleSeed(signingOracleKey, finalizeOracleSeed);
         setOracleSeed(finalizeOracleSeed);
         setOracleSignature(finalizeOracleSignature);
       } else if (!finalizeOracleSeed || !finalizeOracleSignature) {
-        if (!/^[0-9a-f]{64}$/.test(oraclePrivateKey)) {
-          throw new Error("This browser has no oracle key for the round. Load an external oracle attestation in Advanced oracle.");
-        }
-
-        throw new Error("The saved oracle key does not match this round. Load an external oracle attestation in Advanced oracle.");
+        throw new Error("This legacy round uses a creator-only oracle key. Finalize it in the creator browser, provide an external attestation, or refund it after timeout.");
       }
 
       const randomSeed = await buildFinalizeSeedHex(closedRound, finalizeOracleSeed);
@@ -1336,7 +1380,7 @@ export function App() {
     return DEFAULT_REFUND_TIMEOUT_SECONDS;
   }
 
-  function handleJoinSelectedHistoryRound() {
+  async function handleJoinSelectedHistoryRound() {
     setHistoryError("");
     setHistoryMessage("");
     setChainError("");
@@ -1372,7 +1416,10 @@ export function App() {
     }
 
     const loadedNetwork = networkFromKaspaAddress(covenant.address);
-    const restoredOraclePrivateKey = restoreDevOracleKey(selectedHistoryRound.roundId, selectedHistoryRound.oraclePublicKey);
+    const restoredOraclePrivateKey = await recoverDevOracleKey(
+      selectedHistoryRound.roundId,
+      selectedHistoryRound.oraclePublicKey
+    );
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound);
 
     setNetworkId(loadedNetwork);

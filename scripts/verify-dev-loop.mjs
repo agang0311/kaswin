@@ -80,6 +80,18 @@ assert(
     !appSource.includes("KAS (${value.toString()} sompi)") &&
     transactionSource.includes("formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)")
 );
+assert(
+  "Imported wallets refresh balance and clear the private-key field",
+  appSource.includes("balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, importedWallet.address)") &&
+    appSource.includes('setPrivateKeyInput("")')
+);
+assert(
+  "History-loaded testnet rounds recover an open development oracle key",
+  appSource.includes("deriveOpenDevOracleKey") &&
+    appSource.includes("recoverDevOracleKey") &&
+    appSource.includes("signingOracleKey = await recoverDevOracleKey") &&
+    appSource.includes("const restoredOraclePrivateKey = await recoverDevOracleKey")
+);
 assert("Loaded rounds restore local dev oracle keys", appSource.includes("restoreDevOracleKey") && appSource.includes("Oracle key restored; finalize is ready"));
 assert("Treasury private key UI removed", !appSource.includes("Treasury private key"));
 assert("Manual Pay prize UI removed", !appSource.includes("Pay prize"));
@@ -88,7 +100,7 @@ assert("Finalize is gated by covenant readiness", appSource.includes("assertRaff
 assert("Finalize builder is wired", transactionSource.includes("finalizeRaffleCovenantRound") && !appSource.includes("builder is not wired yet"));
 assert(
   "Finalize automatically creates a local oracle attestation",
-  appSource.includes("finalizeOracleSeed = randomHex(32)") && appSource.includes("signOracleSeed(oraclePrivateKey, finalizeOracleSeed)")
+  appSource.includes("finalizeOracleSeed = randomHex(32)") && appSource.includes("signOracleSeed(signingOracleKey, finalizeOracleSeed)")
 );
 assert(
   "Finalize is allowed only when sold out or timed out",
