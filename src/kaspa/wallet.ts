@@ -1,158 +1,42 @@
-import { Transaction, type PendingTransaction } from "@onekeyfe/kaspa-wasm";
-import { pubkeyHexFromAddress } from "./covenant";
+import { kasWareWalletAdapter } from "./wallet-kasware";
+import { kastleWalletAdapter } from "./wallet-kastle";
+import type { BrowserTestWallet, KaspaWalletAdapter, WalletAdapterOption } from "./wallet-types";
 
-interface KasWareSignInput {
-  index: number;
-  sighashType: number;
-}
+const adapters: KaspaWalletAdapter[] = [kasWareWalletAdapter, kastleWalletAdapter];
 
-export interface KasWareProvider {
-  requestAccounts(): Promise<string[]>;
-  getAccounts(): Promise<string[]>;
-  getPublicKey(): Promise<string>;
-  getNetwork?(): Promise<string | number>;
-  signPskt(input: {
-    txJsonString: string;
-    options: { signInputs: KasWareSignInput[] };
-  }): Promise<string | { txJsonString?: string; signedTx?: string }>;
-  disconnect?(origin: string): Promise<unknown>;
-  on?(event: string, listener: (...args: unknown[]) => void): void;
-  removeListener?(event: string, listener: (...args: unknown[]) => void): void;
-}
+function adapterById(adapterId: string): KaspaWalletAdapter {
+  const adapter = adapters.find((candidate) => candidate.id === adapterId);
 
-declare global {
-  interface Window {
-    kasware?: KasWareProvider;
-  }
-}
-
-export interface BrowserTestWallet {
-  id: string;
-  address: string;
-  network: string;
-  publicKey: string;
-  balanceSompi: bigint;
-  providerName: "KasWare";
-  signTransaction(transaction: PendingTransaction): Promise<void>;
-}
-
-export function getKasWareProvider(): KasWareProvider | undefined {
-  return window.kasware;
-}
-
-function normalizedXOnlyPublicKey(publicKey: string): string {
-  const normalized = publicKey.trim().toLowerCase();
-
-  if (/^(02|03)[0-9a-f]{64}$/.test(normalized)) {
-    return normalized.slice(2);
+  if (!adapter) {
+    throw new Error(`Unsupported wallet adapter: ${adapterId}`);
   }
 
-  if (/^[0-9a-f]{64}$/.test(normalized)) {
-    return normalized;
-  }
-
-  throw new Error("The connected wallet returned an invalid public key.");
+  return adapter;
 }
 
-function signedTransactionJson(result: string | { txJsonString?: string; signedTx?: string }): string {
-  if (typeof result === "string") {
-    return result;
-  }
-
-  const json = result.txJsonString ?? result.signedTx;
-
-  if (!json) {
-    throw new Error("The wallet did not return a signed transaction.");
-  }
-
-  return json;
+export function listWalletAdapters(): WalletAdapterOption[] {
+  return adapters.map((adapter) => ({
+    id: adapter.id,
+    name: adapter.name,
+    installed: adapter.isInstalled()
+  }));
 }
 
-async function fillWalletSignatures(provider: KasWareProvider, transaction: PendingTransaction): Promise<void> {
-  const inputCount = transaction.transaction.inputs.length;
-  const result = await provider.signPskt({
-    txJsonString: transaction.serializeToSafeJSON(),
-    options: {
-      signInputs: Array.from({ length: inputCount }, (_, index) => ({ index, sighashType: 1 }))
-    }
-  });
-  const signed = Transaction.deserializeFromSafeJSON(signedTransactionJson(result));
-
-  if (signed.inputs.length !== inputCount) {
-    throw new Error("The wallet returned a transaction with a different input count.");
-  }
-
-  signed.inputs.forEach((input, index) => {
-    const signatureScript = input.signatureScript;
-
-    if (!signatureScript?.length) {
-      throw new Error(`The wallet did not sign transaction input ${index + 1}.`);
-    }
-
-    transaction.fillInput(index, signatureScript);
-  });
+export function connectBrowserWallet(adapterId: string, network: string): Promise<BrowserTestWallet> {
+  return adapterById(adapterId).connect(network);
 }
 
-async function walletFromAccounts(provider: KasWareProvider, accounts: string[], network: string): Promise<BrowserTestWallet> {
-  const address = accounts[0]?.trim() ?? "";
-
-  if (!address) {
-    throw new Error("No KasWare account was selected.");
-  }
-
-  if (!address.startsWith("kaspatest:")) {
-    throw new Error("Switch KasWare to a Kaspa testnet account before connecting.");
-  }
-
-  const publicKey = normalizedXOnlyPublicKey(await provider.getPublicKey());
-
-  if (pubkeyHexFromAddress(address).toLowerCase() !== publicKey) {
-    throw new Error("The wallet public key does not match the selected address.");
-  }
-
-  return {
-    id: publicKey.slice(0, 16),
-    address,
-    network,
-    publicKey,
-    balanceSompi: 0n,
-    providerName: "KasWare",
-    signTransaction: (transaction) => fillWalletSignatures(provider, transaction)
-  };
+export function readConnectedBrowserWallet(wallet: Pick<BrowserTestWallet, "adapterId">, network: string): Promise<BrowserTestWallet | null> {
+  return adapterById(wallet.adapterId).readConnected(network);
 }
 
-export async function connectKasWareWallet(network: string): Promise<BrowserTestWallet> {
-  const provider = getKasWareProvider();
-
-  if (!provider) {
-    throw new Error("KasWare Wallet was not detected. Install or enable the KasWare browser extension, then refresh the page.");
-  }
-
-  return walletFromAccounts(provider, await provider.requestAccounts(), network);
+export function disconnectBrowserWallet(wallet: Pick<BrowserTestWallet, "adapterId">): Promise<void> {
+  return adapterById(wallet.adapterId).disconnect();
 }
 
-export async function readConnectedKasWareWallet(network: string): Promise<BrowserTestWallet | null> {
-  const provider = getKasWareProvider();
-
-  if (!provider) {
-    return null;
-  }
-
-  const accounts = await provider.getAccounts();
-  return accounts.length ? walletFromAccounts(provider, accounts, network) : null;
+export function subscribeBrowserWallet(wallet: Pick<BrowserTestWallet, "adapterId">, listener: () => void): () => void {
+  return adapterById(wallet.adapterId).subscribe(listener);
 }
 
-export async function disconnectKasWareWallet(): Promise<void> {
-  const provider = getKasWareProvider();
-
-  if (provider?.disconnect) {
-    await provider.disconnect(window.location.origin);
-  }
-}
-
-export function withWalletBalance(wallet: BrowserTestWallet, balanceSompi: bigint): BrowserTestWallet {
-  return {
-    ...wallet,
-    balanceSompi
-  };
-}
+export { withWalletBalance } from "./wallet-types";
+export type { BrowserTestWallet, WalletAdapterOption } from "./wallet-types";

@@ -258,6 +258,51 @@ h3 {
   justify-content: flex-end;
 }
 
+.wallet-picker {
+  position: relative;
+}
+
+.wallet-menu {
+  background: #fff;
+  border: 1px solid #cbd2cd;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(20, 42, 36, 0.16);
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+}
+
+.wallet-menu-item {
+  align-items: center;
+  background: #fff;
+  color: #173d36;
+  display: flex;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 7px 9px;
+  width: 100%;
+}
+
+.wallet-menu-item:hover:not(:disabled) {
+  background: #edf5f1;
+}
+
+.wallet-menu-item small {
+  color: #64716b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.wallet-menu-item:disabled {
+  background: #f5f6f5;
+  color: #8a938e;
+}
+
 .visually-hidden {
   clip: rect(0 0 0 0);
   clip-path: inset(50%);

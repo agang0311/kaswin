@@ -45,12 +45,14 @@ import {
   sendKaspaPayment
 } from "../kaspa/transactions";
 import {
-  connectKasWareWallet,
-  disconnectKasWareWallet,
-  getKasWareProvider,
-  readConnectedKasWareWallet,
+  connectBrowserWallet,
+  disconnectBrowserWallet,
+  listWalletAdapters,
+  readConnectedBrowserWallet,
+  subscribeBrowserWallet,
   withWalletBalance,
-  type BrowserTestWallet
+  type BrowserTestWallet,
+  type WalletAdapterOption
 } from "../kaspa/wallet";
 import { createEmptyMetadata, parseMetadata, stringifyMetadata } from "../raffle/metadata";
 import { hexToBytes, randomHex, sha256Hex } from "../raffle/randomness";
@@ -354,6 +356,8 @@ export function App() {
   const [wallet, setWallet] = useState<BrowserTestWallet | null>(null);
   const [walletError, setWalletError] = useState("");
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [isWalletMenuOpen, setIsWalletMenuOpen] = useState(false);
+  const [walletOptions, setWalletOptions] = useState<WalletAdapterOption[]>(() => listWalletAdapters());
   const [metadata, setMetadata] = useState<RaffleMetadata>(emptyMetadata);
   const [metadataText, setMetadataText] = useState(stringifyMetadata(emptyMetadata));
   const [metadataError, setMetadataError] = useState("");
@@ -417,14 +421,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const provider = getKasWareProvider();
-
-    if (!provider?.on || !wallet) {
+    if (!wallet) {
       return;
     }
 
     const syncConnectedAccount = () => {
-      void readConnectedKasWareWallet(rpcConnectionRef.current?.status.network ?? networkId)
+      void readConnectedBrowserWallet(wallet, rpcConnectionRef.current?.status.network ?? networkId)
         .then(async (nextWallet) => {
           if (!nextWallet) {
             setWallet(null);
@@ -439,20 +441,10 @@ export function App() {
         })
         .catch((error) => setWalletError(error instanceof Error ? error.message : "Unable to update the connected wallet."));
     };
-    const clearConnectedAccount = () => setWallet(null);
+    const unsubscribe = subscribeBrowserWallet(wallet, syncConnectedAccount);
 
-    provider.on("accountsChanged", syncConnectedAccount);
-    provider.on("networkChanged", syncConnectedAccount);
-    provider.on("balanceChanged", syncConnectedAccount);
-    provider.on("disconnect", clearConnectedAccount);
-
-    return () => {
-      provider.removeListener?.("accountsChanged", syncConnectedAccount);
-      provider.removeListener?.("networkChanged", syncConnectedAccount);
-      provider.removeListener?.("balanceChanged", syncConnectedAccount);
-      provider.removeListener?.("disconnect", clearConnectedAccount);
-    };
-  }, [networkId, wallet?.address]);
+    return unsubscribe;
+  }, [networkId, wallet?.adapterId, wallet?.address]);
 
   useEffect(() => {
     let cancelled = false;
@@ -621,13 +613,20 @@ export function App() {
     setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
   }
 
-  async function handleConnectWallet() {
+  function handleToggleWalletMenu() {
+    setWalletOptions(listWalletAdapters());
+    setIsWalletMenuOpen((current) => !current);
+    setWalletError("");
+  }
+
+  async function handleConnectWallet(adapterId: string) {
     setWalletError("");
     setIsConnectingWallet(true);
+    setIsWalletMenuOpen(false);
 
     try {
       const walletNetwork = rpcConnectionRef.current?.status.network ?? networkId;
-      let connectedWallet = await connectKasWareWallet(walletNetwork);
+      let connectedWallet = await connectBrowserWallet(adapterId, walletNetwork);
 
       if (rpcConnectionRef.current) {
         const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
@@ -636,7 +635,7 @@ export function App() {
 
       setWallet(connectedWallet);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : "Unable to connect KasWare Wallet.");
+      setWalletError(error instanceof Error ? error.message : "Unable to connect the selected wallet.");
     } finally {
       setIsConnectingWallet(false);
     }
@@ -646,7 +645,9 @@ export function App() {
     setWalletError("");
 
     try {
-      await disconnectKasWareWallet();
+      if (wallet) {
+        await disconnectBrowserWallet(wallet);
+      }
       setWallet(null);
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Unable to disconnect KasWare Wallet.");
@@ -657,7 +658,7 @@ export function App() {
     setWalletError("");
 
     if (!wallet) {
-      setWalletError("Connect KasWare Wallet first.");
+      setWalletError("Connect a wallet first.");
       return;
     }
 
@@ -1615,12 +1616,37 @@ export function App() {
 
         <div className="wallet-actions">
           {wallet ? (
-            <button type="button" className="secondary" onClick={handleDisconnectWallet}>Disconnect wallet</button>
+            <button type="button" className="secondary" onClick={handleDisconnectWallet}>Disconnect {wallet.providerName}</button>
           ) : (
-            <button type="button" onClick={handleConnectWallet} disabled={isConnectingWallet}>
-              <WalletCards size={17} />
-              {isConnectingWallet ? "Connecting..." : "Connect wallet"}
-            </button>
+            <div className="wallet-picker">
+              <button
+                type="button"
+                onClick={handleToggleWalletMenu}
+                disabled={isConnectingWallet}
+                aria-haspopup="menu"
+                aria-expanded={isWalletMenuOpen}
+              >
+                <WalletCards size={17} />
+                {isConnectingWallet ? "Connecting..." : "Connect wallet"}
+              </button>
+              {isWalletMenuOpen ? (
+                <div className="wallet-menu" role="menu" aria-label="Choose a wallet">
+                  {walletOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="menuitem"
+                      className="wallet-menu-item"
+                      disabled={!option.installed}
+                      onClick={() => handleConnectWallet(option.id)}
+                    >
+                      <span>{option.name}</span>
+                      <small>{option.installed ? "Detected" : "Not installed"}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
 

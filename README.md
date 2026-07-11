@@ -2,7 +2,7 @@
 
 Static, testnet-first raffle dApp for Kaspa Toccata.
 
-The app is designed to run without a project-controlled backend. Users provide a browser-compatible Kaspa wRPC endpoint, connect KasWare Wallet, approve funding transaction signatures in the wallet, and reconstruct raffle state from chain data.
+The app is designed to run without a project-controlled backend. Users provide a browser-compatible Kaspa wRPC endpoint, connect a supported browser wallet, approve funding transaction signatures in the wallet, and reconstruct raffle state from chain data.
 
 ## Current Status
 
@@ -11,8 +11,9 @@ This repository starts Milestone 1:
 - Single-file React + TypeScript SPA build
 - Focused one-page raffle workspace with technical details collapsed by default
 - Local UI state and metadata helpers
-- Browser-side Kaspa wRPC connection and KasWare Wallet connection
-- Funding transactions signed through KasWare `signPskt`; the page never receives the wallet private key
+- Browser-side Kaspa wRPC connection and an extensible wallet adapter registry
+- KasWare `signPskt` and Kastle `signTx` / `kas:sign_tx` adapters
+- Funding transactions signed by the selected wallet; the page never receives the wallet private key
 - Browser-side testnet ticket purchase transactions
 - Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
@@ -39,7 +40,7 @@ Default local testing targets the public Toccata testnet endpoint:
 - round carrier reserve: `5000000000` sompi, or `50 KAS`; this keeps the covenant UTXO above current storage-mass limits and is refunded to the creator at finalize when large enough.
 - temporary covenant funding reserve: at least `1000000000` sompi, or `10 KAS`; this is returned during the ticket or registry transaction when possible.
 
-Install KasWare Wallet, select a Kaspa testnet account, then use **Connect wallet** in the page. Wallet connection is requested only after that button is clicked.
+Install KasWare or Kastle, select a Kaspa testnet account, then choose the detected provider from **Connect wallet**. Wallet connection is requested only after a wallet is selected.
 
 As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 

@@ -37,6 +37,9 @@ const appSource = readText("src/app/App.tsx");
 const covenantSource = readText("src/kaspa/covenant.ts");
 const transactionSource = readText("src/kaspa/transactions.ts");
 const walletSource = readText("src/kaspa/wallet.ts");
+const walletTypesSource = readText("src/kaspa/wallet-types.ts");
+const kasWareWalletSource = readText("src/kaspa/wallet-kasware.ts");
+const kastleWalletSource = readText("src/kaspa/wallet-kastle.ts");
 const metadataSource = readText("src/raffle/metadata.ts");
 const contractSource = readText("src/contracts/raffle_round.sil");
 const viteSource = readText("vite.config.ts");
@@ -82,11 +85,17 @@ assert(
     transactionSource.includes("formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)")
 );
 assert(
-  "Browser wallet connection replaces private-key import",
-  appSource.includes("connectKasWareWallet") &&
+  "Wallet adapter registry supports KasWare and Kastle",
+  appSource.includes("connectBrowserWallet") &&
     appSource.includes('"Connect wallet"') &&
-    walletSource.includes("provider.signPskt") &&
-    walletSource.includes("requestAccounts") &&
+    appSource.includes('role="menu" aria-label="Choose a wallet"') &&
+    walletSource.includes("kasWareWalletAdapter") &&
+    walletSource.includes("kastleWalletAdapter") &&
+    walletTypesSource.includes("interface KaspaWalletAdapter") &&
+    kasWareWalletSource.includes("signPskt") &&
+    kasWareWalletSource.includes("requestAccounts") &&
+    kastleWalletSource.includes("kas:sign_tx") &&
+    kastleWalletSource.includes("kas:connect") &&
     !appSource.includes("privateKeyInput") &&
     !appSource.includes("Import wallet") &&
     !appSource.includes("Generate test wallet")
