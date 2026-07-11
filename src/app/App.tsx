@@ -1508,17 +1508,15 @@ export function App() {
           </button>
         </div>
 
-        <details className="disclosure" open={!wallet}>
+        <details className="disclosure setup-wallet-details">
           <summary>Wallet setup</summary>
-          <div className="disclosure-body">
-            <div className="button-row">
-              <button type="button" className="secondary" onClick={handleGenerateWallet}>
-                <KeyRound size={17} />
-                Generate test wallet
-              </button>
-            </div>
-            <label className="field">
-              <span>Private key</span>
+          <div className="disclosure-body wallet-setup-row">
+            <button type="button" className="secondary" onClick={handleGenerateWallet}>
+              <KeyRound size={17} />
+              Generate test wallet
+            </button>
+            <label className="wallet-key-field">
+              <span className="visually-hidden">Private key</span>
               <input
                 value={privateKeyInput}
                 onChange={(event) => setPrivateKeyInput(event.target.value.trim())}
