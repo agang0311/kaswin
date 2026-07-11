@@ -557,7 +557,7 @@ textarea {
 }
 
 .history-section .batch-row {
-  background: #f5f7f4;
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .duration-grid {
@@ -567,9 +567,36 @@ textarea {
 }
 
 .history-section {
-  border-top: 1px solid #d9ddd8;
+  background: #eaf2ed;
+  border: 1px solid #b8cdc1;
+  border-left: 5px solid #174c43;
+  border-radius: 8px;
   margin-top: 24px;
-  padding-top: 24px;
+  padding: 20px;
+}
+
+.history-section .section-heading-row {
+  margin-bottom: 16px;
+}
+
+.history-section .eyebrow {
+  color: #9b5700;
+}
+
+.history-title-block h2 {
+  font-size: 1.55rem;
+}
+
+.history-summary {
+  color: #43584e;
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 5px 0 0;
+}
+
+.history-refresh {
+  flex: 0 0 auto;
+  min-height: 44px;
 }
 
 .history-select {
@@ -581,9 +608,9 @@ textarea {
 }
 
 .history-metrics {
-  background: #fff;
-  border-bottom: 1px solid #d9ddd8;
-  border-top: 1px solid #d9ddd8;
+  background: transparent;
+  border-bottom: 1px solid #b8cdc1;
+  border-top: 1px solid #b8cdc1;
   margin-bottom: 14px;
   padding: 14px 0;
 }
@@ -594,6 +621,18 @@ textarea {
 
 .history-metrics strong {
   color: #17211c;
+}
+
+.history-empty {
+  border-top: 1px solid #c7d8ce;
+  color: #43584e;
+  font-weight: 700;
+  margin: 0;
+  padding: 16px 0 6px;
+}
+
+.history-section .compact-disclosure summary {
+  color: #344b40;
 }
 
 .technical-section {

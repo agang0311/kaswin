@@ -1784,13 +1784,20 @@ export function App() {
       {chainError ? <p className="error-text action-message">{chainError}</p> : null}
       {chainMessage ? <p className="success-text action-message">{chainMessage}</p> : null}
 
-      <section className="history-section">
+      <section className="history-section" aria-labelledby="raffle-history-title">
         <div className="section-heading-row">
-          <div>
+          <div className="history-title-block">
             <p className="eyebrow">On-chain activity</p>
-            <h2>Raffle history</h2>
+            <h2 id="raffle-history-title">Raffle history</h2>
+            <p className="history-summary" aria-live="polite">
+              {historyRounds.length
+                ? `${historyRounds.length.toLocaleString()} rounds indexed · ${historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Paid").length.toLocaleString()} paid · ${historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Refunded").length.toLocaleString()} refunded`
+                : isLoadingHistory
+                  ? "Reading round results from the network..."
+                  : "Round results from the network"}
+            </p>
           </div>
-          <button type="button" className="secondary" onClick={handleLoadHistory} disabled={isLoadingHistory}>
+          <button type="button" className="history-refresh" onClick={handleLoadHistory} disabled={isLoadingHistory}>
             <RefreshCw size={17} />
             {isLoadingHistory ? "Loading history..." : "Refresh history"}
           </button>
@@ -1872,7 +1879,7 @@ export function App() {
             ) : null}
           </>
         ) : (
-          <p className="muted">Refresh to load indexed rounds from the network.</p>
+          <p className="history-empty">No indexed rounds loaded yet.</p>
         )}
 
         <details className="disclosure compact-disclosure">
