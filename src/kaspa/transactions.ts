@@ -109,11 +109,12 @@ export interface RaffleCovenantSpendResult {
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
 export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 500_000_000n;
-const MANUAL_TX_FEE_SOMPI = 1_000_000n;
-const COVENANT_BUY_FEE_SOMPI = 6_000_000n;
+export const COVENANT_CREATE_FEE_SOMPI = 1_000_000n;
+export const COVENANT_BUY_FEE_SOMPI = 6_000_000n;
+export const COVENANT_FINALIZE_FEE_SOMPI = 20_000_000n;
+export const COVENANT_REFUND_FEE_SOMPI = 20_000_000n;
+const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
 const COVENANT_CLOSE_FEE_SOMPI = 6_000_000n;
-const COVENANT_FINALIZE_FEE_SOMPI = 20_000_000n;
-const COVENANT_REFUND_FEE_SOMPI = 20_000_000n;
 const LOW_COST_FUNDING_MIN_SOMPI = 1_000_000_000n;
 const STANDARD_REFUND_MIN_SOMPI = 100_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
@@ -121,6 +122,12 @@ const RAFFLE_BUY_COMPUTE_BUDGET = 400;
 const RAFFLE_CLOSE_COMPUTE_BUDGET = 400;
 const RAFFLE_FINALIZE_COMPUTE_BUDGET = 1_300;
 const RAFFLE_REFUND_COMPUTE_BUDGET = 1_600;
+
+function formatKasAmount(value: bigint): string {
+  const whole = value / 100_000_000n;
+  const fraction = (value % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} KAS`;
+}
 const ZERO_SUBNETWORK_ID = "0000000000000000000000000000000000000000";
 const LOW_COST_REDEEM_SCRIPT = new Uint8Array([0x51]);
 
@@ -170,7 +177,7 @@ function normalizeTransactionError(error: unknown): Error {
 
   if (message.includes("Storage mass exceeds maximum")) {
     return new Error(
-      `A covenant or temporary funding output is below the current Toccata storage-mass minimum. Refresh the page and retry with the current build. New rounds need a carrier reserve of at least ${MIN_COVENANT_CARRIER_SOMPI.toString()} sompi; old rounds created below that floor must be recreated.`
+      `A covenant or temporary funding output is below the current Toccata storage-mass minimum. Refresh the page and retry with the current build. New rounds need a carrier reserve of at least ${formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)}; old rounds created below that floor must be recreated.`
     );
   }
 
@@ -255,7 +262,7 @@ function lowCostFundingAmount(requiredAmount: bigint, feeReserve = MANUAL_TX_FEE
 
 function requireAtLeastSompi(value: bigint, minimum: bigint, label: string): void {
   if (value < minimum) {
-    throw new Error(`${label} is below the current safe Toccata storage-mass floor. Use at least ${minimum.toString()} sompi.`);
+    throw new Error(`${label} is below the current safe Toccata storage-mass floor. Use at least ${formatKasAmount(minimum)}.`);
   }
 }
 

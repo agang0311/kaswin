@@ -69,6 +69,43 @@ button.wide {
   width: 100%;
 }
 
+.kas-cost-button {
+  overflow: visible;
+  position: relative;
+}
+
+.kas-cost-button::after {
+  background: #17211c;
+  border: 1px solid #34473e;
+  border-radius: 6px;
+  bottom: calc(100% + 9px);
+  color: #fff;
+  content: attr(data-cost);
+  font-size: 0.78rem;
+  font-weight: 650;
+  left: 50%;
+  line-height: 1.45;
+  max-width: min(380px, calc(100vw - 32px));
+  opacity: 0;
+  padding: 9px 11px;
+  pointer-events: none;
+  position: absolute;
+  text-align: left;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  visibility: hidden;
+  white-space: normal;
+  width: max-content;
+  z-index: 20;
+}
+
+.kas-cost-button:hover::after,
+.kas-cost-button:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+
 .icon-button {
   aspect-ratio: 1;
   min-height: 40px;

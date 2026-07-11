@@ -30,6 +30,10 @@ import {
 } from "../kaspa/rpc";
 import {
   buyRaffleCovenantTicket,
+  COVENANT_BUY_FEE_SOMPI,
+  COVENANT_CREATE_FEE_SOMPI,
+  COVENANT_FINALIZE_FEE_SOMPI,
+  COVENANT_REFUND_FEE_SOMPI,
   createRaffleCovenantRound,
   DEFAULT_COVENANT_CARRIER_SOMPI,
   DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
@@ -78,9 +82,10 @@ const REFUND_TIMEOUT_FIELDS: Array<{ key: RefundTimeoutPart; label: string }> = 
   { key: "seconds", label: "秒" }
 ];
 
-function formatSompi(value: bigint) {
-  const kas = Number(value) / 100_000_000;
-  return `${kas.toLocaleString(undefined, { maximumFractionDigits: 8 })} KAS (${value.toString()} sompi)`;
+function formatKas(value: bigint) {
+  const whole = value / 100_000_000n;
+  const fraction = (value % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} KAS`;
 }
 function parsePositiveSompi(value: string, fieldName: string) {
   try {
@@ -96,7 +101,7 @@ function parsePositiveSompi(value: string, fieldName: string) {
       throw error;
     }
 
-    throw new Error(`${fieldName} must be a whole number of sompi.`);
+    throw new Error(`${fieldName} must be a valid KAS amount.`);
   }
 }
 
@@ -104,18 +109,10 @@ function parseMinimumSompi(value: string, fieldName: string, minimum: bigint) {
   const parsed = parsePositiveSompi(value, fieldName);
 
   if (parsed < minimum) {
-    throw new Error(`${fieldName} must be at least ${minimum.toString()} sompi for the current Toccata storage-mass floor.`);
+    throw new Error(`${fieldName} must be at least ${formatKas(minimum)} for the current Toccata storage-mass floor.`);
   }
 
   return parsed;
-}
-
-function formatSompiInput(value: string) {
-  try {
-    return formatSompi(BigInt(value || "0"));
-  } catch {
-    return "invalid";
-  }
 }
 
 function sompiToKasInput(value: string) {
@@ -448,6 +445,17 @@ export function App() {
   const purchaseTotal = Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0
     ? round.ticketPrice * BigInt(parsedTicketQuantity)
     : 0n;
+  const createCarrierAmount = useMemo(() => {
+    try {
+      return BigInt(covenantCarrierSompi || "0");
+    } catch {
+      return 0n;
+    }
+  }, [covenantCarrierSompi]);
+  const createCostTooltip = `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} history marker reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} marker refund fee + funding transaction fees. Reserves return later.`;
+  const buyCostTooltip = `${formatKas(purchaseTotal)} ticket price + ${formatKas(COVENANT_BUY_FEE_SOMPI)} covenant fee + funding transaction fee (varies with wallet UTXOs).`;
+  const payoutCostTooltip = `${formatKas(round.potAmount)} prize from the pot + ${formatKas(COVENANT_FINALIZE_FEE_SOMPI)} covenant fee from the carrier. Wallet payment: 0 KAS.`;
+  const refundCostTooltip = `${formatKas(round.potAmount)} ticket refunds from the pot + ${formatKas(COVENANT_REFUND_FEE_SOMPI)} covenant fee from the carrier. Wallet payment: 0 KAS.`;
   const soldPercent = metadata.maxTickets > 0
     ? Math.min(100, (round.soldTickets / metadata.maxTickets) * 100)
     : 0;
@@ -1348,7 +1356,7 @@ export function App() {
 
     if (BigInt(covenant.amountSompi) < MIN_COVENANT_CARRIER_SOMPI) {
       setHistoryError(
-        `Selected round was created with an old carrier reserve. Recreate it with at least ${MIN_COVENANT_CARRIER_SOMPI.toString()} sompi.`
+        `Selected round was created with an old carrier reserve. Recreate it with at least ${formatKas(MIN_COVENANT_CARRIER_SOMPI)}.`
       );
       return;
     }
@@ -1477,7 +1485,7 @@ export function App() {
             {nodeStatus.connected ? <CheckCircle2 size={17} /> : <Plug size={17} />}
             {nodeStatus.connected ? "Node ready" : "Node offline"}
           </span>
-          <span className="balance-pill">{wallet ? formatSompi(wallet.balanceSompi) : "Wallet not loaded"}</span>
+          <span className="balance-pill">{wallet ? formatKas(wallet.balanceSompi) : "Wallet not loaded"}</span>
         </div>
       </header>
 
@@ -1506,7 +1514,7 @@ export function App() {
           </div>
           <div>
             <span className="summary-label">Balance</span>
-            <strong>{wallet ? formatSompi(wallet.balanceSompi) : "Unknown"}</strong>
+            <strong>{wallet ? formatKas(wallet.balanceSompi) : "Unknown"}</strong>
           </div>
           <button type="button" className="icon-button secondary" onClick={handleRefreshBalance} title="Refresh balance" aria-label="Refresh balance">
             <RefreshCw size={17} />
@@ -1560,11 +1568,11 @@ export function App() {
           </div>
           <div>
             <span>Prize pot</span>
-            <strong>{formatSompi(round.potAmount)}</strong>
+            <strong>{formatKas(round.potAmount)}</strong>
           </div>
           <div>
             <span>Ticket price</span>
-            <strong>{formatSompi(round.ticketPrice)}</strong>
+            <strong>{formatKas(round.ticketPrice)}</strong>
           </div>
           <div>
             <span>Draw / refund</span>
@@ -1585,7 +1593,7 @@ export function App() {
                   <strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>
                   <span>{batch.count.toLocaleString()} ticket{batch.count === 1 ? "" : "s"}</span>
                   <span className="mono">{shortValue(batch.owner, 9)}</span>
-                  <span>{formatSompi(batch.amount)}</span>
+                  <span>{formatKas(batch.amount)}</span>
                 </div>
               ))}
             </div>
@@ -1668,7 +1676,8 @@ export function App() {
 
               <button
                 type="button"
-                className="wide"
+                className="wide kas-cost-button"
+                data-cost={createCostTooltip}
                 onClick={handleCreateCovenantRound}
                 disabled={isCreatingRound || !canStartNewRound}
               >
@@ -1727,7 +1736,7 @@ export function App() {
                 <div className="key-metrics history-metrics">
                   <div><span>Status</span><strong>{historyRoundStatus(selectedHistoryRound)}</strong></div>
                   <div><span>Tickets</span><strong>{selectedHistoryRound.tickets.length.toLocaleString()}</strong></div>
-                  <div><span>Pot</span><strong>{formatSompi(selectedHistoryRound.potAmount)}</strong></div>
+                  <div><span>Pot</span><strong>{formatKas(selectedHistoryRound.potAmount)}</strong></div>
                   <div>
                     <span>Winner</span>
                     <strong>{selectedHistoryRound.payouts[0] ? `#${selectedHistoryRound.payouts[0].winnerTicketId}` : "Pending"}</strong>
@@ -1756,7 +1765,7 @@ export function App() {
                         <strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>
                         <span>{batch.count.toLocaleString()} tickets</span>
                         <span className="mono">{shortValue(batch.owner, 9)}</span>
-                        <span>{formatSompi(batch.amount)}</span>
+                        <span>{formatKas(batch.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -1871,13 +1880,14 @@ export function App() {
                 </div>
               </div>
               <dl className="purchase-summary">
-                <div><dt>Total</dt><dd>{formatSompi(purchaseTotal)}</dd></div>
+                <div><dt>Total</dt><dd>{formatKas(purchaseTotal)}</dd></div>
                 <div><dt>Remaining</dt><dd>{remainingTickets.toLocaleString()}</dd></div>
                 <div><dt>Purchase batches</dt><dd>{(metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 0)} / 20</dd></div>
               </dl>
               <button
                 type="button"
-                className="wide"
+                className="wide kas-cost-button"
+                data-cost={buyCostTooltip}
                 onClick={handleBuyTicket}
                 disabled={isBuying || Boolean(finalized) || remainingTickets <= 0}
               >
@@ -1918,6 +1928,8 @@ export function App() {
               <div className="button-row">
                 <button
                   type="button"
+                  className="kas-cost-button"
+                  data-cost={payoutCostTooltip}
                   onClick={handleFinalizeLocal}
                   disabled={
                     !covenantStatus.enabled ||
@@ -1931,7 +1943,8 @@ export function App() {
                 </button>
                 <button
                   type="button"
-                  className="secondary"
+                  className="secondary kas-cost-button"
+                  data-cost={refundCostTooltip}
                   onClick={handleRefundTimedOutRound}
                   disabled={
                     !covenantStatus.enabled ||
@@ -1995,8 +2008,12 @@ export function App() {
                 />
               </label>
               <label className="field">
-                <span>Carrier reserve (sompi)</span>
-                <input value={covenantCarrierSompi} onChange={(event) => setCovenantCarrierSompi(event.target.value)} />
+                <span>Carrier reserve (KAS)</span>
+                <input
+                  inputMode="decimal"
+                  value={sompiToKasInput(covenantCarrierSompi)}
+                  onChange={(event) => setCovenantCarrierSompi(kasInputToSompi(event.target.value))}
+                />
               </label>
             </div>
             <dl className="stat-list dense">

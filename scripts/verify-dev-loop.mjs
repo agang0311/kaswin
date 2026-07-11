@@ -65,6 +65,21 @@ assert(
     appSource.includes('id="round-history-panel"') &&
     appSource.includes('id="round-payout-panel"')
 );
+assert(
+  "KAS-spending actions expose hover cost breakdowns",
+  appSource.includes("data-cost={createCostTooltip}") &&
+    appSource.includes("data-cost={buyCostTooltip}") &&
+    appSource.includes("data-cost={payoutCostTooltip}") &&
+    appSource.includes("data-cost={refundCostTooltip}") &&
+    transactionSource.includes("export const COVENANT_BUY_FEE_SOMPI")
+);
+assert(
+  "Visible amount labels use KAS instead of sompi",
+  appSource.includes("Carrier reserve (KAS)") &&
+    !appSource.includes("Carrier reserve (sompi)") &&
+    !appSource.includes("KAS (${value.toString()} sompi)") &&
+    transactionSource.includes("formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)")
+);
 assert("Loaded rounds restore local dev oracle keys", appSource.includes("restoreDevOracleKey") && appSource.includes("Oracle key restored; finalize is ready"));
 assert("Treasury private key UI removed", !appSource.includes("Treasury private key"));
 assert("Manual Pay prize UI removed", !appSource.includes("Pay prize"));
