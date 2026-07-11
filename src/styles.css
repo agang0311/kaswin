@@ -350,6 +350,75 @@ h3 {
   margin-bottom: 10px;
 }
 
+.tabbed-workspace {
+  margin: 0 0 18px;
+}
+
+.workspace-tabs {
+  border-bottom: 2px solid #174c43;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 180px));
+}
+
+.workspace-tab {
+  background: #eef2ef;
+  border: 1px solid #ccd4cf;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  color: #35473f;
+  min-height: 44px;
+  padding: 0 18px;
+}
+
+.workspace-tab + .workspace-tab {
+  border-left: 0;
+}
+
+.workspace-tab:hover {
+  background: #dfe8e2;
+}
+
+.workspace-tab.active,
+.workspace-tab.active:hover {
+  background: #174c43;
+  border-color: #174c43;
+  color: #fff;
+}
+
+.workspace-tab:focus-visible {
+  outline: 3px solid rgba(23, 76, 67, 0.24);
+  outline-offset: 2px;
+}
+
+.workspace-panel {
+  background: #fff;
+  border: 1px solid #d9ddd8;
+  border-radius: 0 0 8px 8px;
+  border-top: 0;
+  min-width: 0;
+  padding: 18px;
+}
+
+.workspace-panel.action-pane {
+  border-radius: 0 0 8px 8px;
+  border-top: 0;
+}
+
+.workspace-empty {
+  align-content: center;
+  display: grid;
+  min-height: 140px;
+}
+
+.workspace-empty h2 {
+  margin-bottom: 8px;
+}
+
+.workspace-empty p:last-child {
+  color: #59665f;
+  margin: 0;
+}
+
 .action-pane {
   background: #fff;
   border: 1px solid #d9ddd8;
@@ -575,6 +644,12 @@ textarea {
   padding: 20px;
 }
 
+.history-tab-panel {
+  border-radius: 0 0 8px 8px;
+  border-top: 0;
+  margin-top: 0;
+}
+
 .history-section .section-heading-row {
   margin-bottom: 16px;
 }
@@ -774,6 +849,14 @@ dd {
 
   .header-status {
     justify-content: flex-start;
+  }
+
+  .workspace-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-tab {
+    padding: 0 10px;
   }
 
   .setup-primary .inline-field > span {

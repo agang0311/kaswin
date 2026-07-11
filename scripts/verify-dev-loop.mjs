@@ -58,6 +58,13 @@ assert("Default ticket price is 0.3 KAS", metadataSource.includes('ticketPrice: 
 assert("Default round has 10 tickets", metadataSource.includes("maxTickets: 10"));
 assert("Browser covenant ticket path exists", transactionSource.includes("buyRaffleCovenantTicket") && appSource.includes("handleBuyTicket"));
 assert("Share-link round import exists", appSource.includes("handleCopyRoundLink") && appSource.includes("loadSharedRoundFromUrl"));
+assert(
+  "Round source and action workflows use peer tab bars",
+  appSource.includes('role="tablist" aria-label="Create or load a round"') &&
+    appSource.includes('role="tablist" aria-label="Participate or pay out"') &&
+    appSource.includes('id="round-history-panel"') &&
+    appSource.includes('id="round-payout-panel"')
+);
 assert("Loaded rounds restore local dev oracle keys", appSource.includes("restoreDevOracleKey") && appSource.includes("Oracle key restored; finalize is ready"));
 assert("Treasury private key UI removed", !appSource.includes("Treasury private key"));
 assert("Manual Pay prize UI removed", !appSource.includes("Pay prize"));

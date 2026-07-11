@@ -352,6 +352,8 @@ export function App() {
   const [historyError, setHistoryError] = useState("");
   const [historyMessage, setHistoryMessage] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [roundSourceTab, setRoundSourceTab] = useState<"create" | "history">("create");
+  const [roundActionTab, setRoundActionTab] = useState<"buy" | "payout">("buy");
   const isCreatingRoundRef = useRef(false);
   const isBuyingRef = useRef(false);
   const isFinalizingRef = useRef(false);
@@ -853,6 +855,7 @@ export function App() {
       }));
       setTickets([]);
       setFinalized(undefined);
+      setRoundActionTab("buy");
       setHistoryAddress((current) => current || targetRegistryAddress);
       setChainMessage(
         registryTxIds.length
@@ -1161,6 +1164,7 @@ export function App() {
         ...nextFinalized,
         payoutTxId: result.txId
       });
+      setRoundActionTab("payout");
       setMetadata((current) => ({
         ...current,
         covenant: current.covenant
@@ -1399,6 +1403,7 @@ export function App() {
       }))
     );
     setFinalized(undefined);
+    setRoundActionTab("buy");
     setOraclePrivateKey(restoredOraclePrivateKey);
     setOracleSeed("");
     setOracleSignature("");
@@ -1588,11 +1593,37 @@ export function App() {
         ) : null}
       </section>
 
-      <section className="action-layout">
-        <section className="action-pane">
-          {canStartNewRound ? (
-            <>
-              <div className="pane-heading">
+      <section className="tabbed-workspace source-workspace">
+        <div className="workspace-tabs" role="tablist" aria-label="Create or load a round">
+          <button
+            type="button"
+            id="round-create-tab"
+            className={`workspace-tab ${roundSourceTab === "create" ? "active" : ""}`}
+            role="tab"
+            aria-selected={roundSourceTab === "create"}
+            aria-controls="round-create-panel"
+            onClick={() => setRoundSourceTab("create")}
+          >
+            Create round
+          </button>
+          <button
+            type="button"
+            id="round-history-tab"
+            className={`workspace-tab ${roundSourceTab === "history" ? "active" : ""}`}
+            role="tab"
+            aria-selected={roundSourceTab === "history"}
+            aria-controls="round-history-panel"
+            onClick={() => setRoundSourceTab("history")}
+          >
+            Load history
+          </button>
+        </div>
+
+        {roundSourceTab === "create" ? (
+          <section id="round-create-panel" className="workspace-panel" role="tabpanel" aria-labelledby="round-create-tab">
+            {canStartNewRound ? (
+              <>
+<div className="pane-heading">
                 <p className="eyebrow">Organizer</p>
                 <h2>{finalized ? "Create next round" : "Create a round"}</h2>
               </div>
@@ -1643,148 +1674,17 @@ export function App() {
               >
                 {isCreatingRound ? "Creating round..." : finalized ? "Create next round" : "Create round"}
               </button>
-            </>
-          ) : (
-            <>
-              <div className="pane-heading">
-                <p className="eyebrow">Participant</p>
-                <h2>Buy tickets</h2>
+              </>
+            ) : (
+              <div className="workspace-empty">
+                <p className="eyebrow">Organizer</p>
+                <h2>Round in progress</h2>
+                <p>Finalize or refund the current round before creating the next one.</p>
               </div>
-              <div className="purchase-form">
-                <label className="field quantity-field">
-                  <span>Quantity</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={remainingTickets}
-                    value={ticketQuantity}
-                    onChange={(event) => setTicketQuantity(event.target.value)}
-                  />
-                </label>
-                <div className="segmented-control" aria-label="Ticket quantity presets">
-                  {[1, 10].map((quantity) => (
-                    <button
-                      type="button"
-                      className={parsedTicketQuantity === quantity ? "active" : ""}
-                      disabled={remainingTickets < quantity}
-                      key={quantity}
-                      onClick={() => setTicketQuantity(String(quantity))}
-                    >
-                      {quantity}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className={parsedTicketQuantity === remainingTickets ? "active" : ""}
-                    disabled={remainingTickets < 1}
-                    onClick={() => setTicketQuantity(String(remainingTickets))}
-                  >
-                    Max
-                  </button>
-                </div>
-              </div>
-              <dl className="purchase-summary">
-                <div><dt>Total</dt><dd>{formatSompi(purchaseTotal)}</dd></div>
-                <div><dt>Remaining</dt><dd>{remainingTickets.toLocaleString()}</dd></div>
-                <div><dt>Purchase batches</dt><dd>{(metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 0)} / 20</dd></div>
-              </dl>
-              <button
-                type="button"
-                className="wide"
-                onClick={handleBuyTicket}
-                disabled={isBuying || Boolean(finalized) || remainingTickets <= 0}
-              >
-                {isBuying ? "Buying tickets..." : `Buy ${Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0 ? parsedTicketQuantity.toLocaleString() : ""} ticket${parsedTicketQuantity === 1 ? "" : "s"}`}
-              </button>
-            </>
-          )}
-        </section>
-
-        <section className="action-pane">
-          <div className="pane-heading">
-            <p className="eyebrow">Covenant action</p>
-            <h2>Draw and payout</h2>
-          </div>
-
-          {finalized ? (
-            <div className="winner-block">
-              <span>Winner</span>
-              <strong>Ticket #{finalized.winnerTicketId}</strong>
-              <p className="mono">{finalized.winnerAddress}</p>
-              <p>Paid in transaction <span className="mono">{shortValue(finalized.payoutTxId, 10)}</span></p>
-            </div>
-          ) : (
-            <>
-              <p className="pane-copy">
-                {round.soldTickets >= round.maxTickets
-                  ? "All tickets are sold. The round can be drawn now."
-                  : round.soldTickets > 0
-                    ? `${remainingTickets.toLocaleString()} tickets remain, or draw after the timeout.`
-                    : "Buy at least one ticket before drawing."}
-              </p>
-              <div className="button-row">
-                <button
-                  type="button"
-                  onClick={handleFinalizeLocal}
-                  disabled={
-                    !covenantStatus.enabled ||
-                    isFinalizing ||
-                    !metadata.covenant ||
-                    (metadata.covenant.status !== "Open" && metadata.covenant.status !== "Closed") ||
-                    metadata.covenant.soldTickets <= 0
-                  }
-                >
-                  {isFinalizing ? "Drawing and paying..." : "Draw & pay"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={handleRefundTimedOutRound}
-                  disabled={
-                    !covenantStatus.enabled ||
-                    isRefundingRound ||
-                    !metadata.covenant ||
-                    metadata.covenant.status === "Finalized" ||
-                    metadata.covenant.status === "Refunding" ||
-                    metadata.covenant.status === "Refunded" ||
-                    metadata.covenant.soldTickets <= 0
-                  }
-                >
-                  {isRefundingRound ? "Refunding..." : "Refund after timeout"}
-                </button>
-              </div>
-            </>
-          )}
-
-          <details className="disclosure compact-disclosure">
-            <summary>Oracle attestation</summary>
-            <div className="disclosure-body">
-              <label className="field">
-                <span>Development oracle private key</span>
-                <input
-                  type="password"
-                  value={oraclePrivateKey}
-                  onChange={(event) => handleOraclePrivateKeyInput(event.target.value)}
-                  placeholder="Restored automatically for locally created rounds"
-                />
-              </label>
-              <label className="field">
-                <span>External oracle seed</span>
-                <input value={oracleSeed} onChange={(event) => setOracleSeed(event.target.value.trim().toLowerCase())} />
-              </label>
-              <label className="field">
-                <span>External oracle signature</span>
-                <input value={oracleSignature} onChange={(event) => setOracleSignature(event.target.value.trim().toLowerCase())} />
-              </label>
-            </div>
-          </details>
-        </section>
-      </section>
-
-      {chainError ? <p className="error-text action-message">{chainError}</p> : null}
-      {chainMessage ? <p className="success-text action-message">{chainMessage}</p> : null}
-
-      <section className="history-section" aria-labelledby="raffle-history-title">
+            )}
+          </section>
+        ) : (
+      <section id="round-history-panel" className="history-section history-tab-panel" role="tabpanel" aria-labelledby="round-history-tab raffle-history-title">
         <div className="section-heading-row">
           <div className="history-title-block">
             <p className="eyebrow">On-chain activity</p>
@@ -1900,6 +1800,183 @@ export function App() {
           </div>
         </details>
       </section>
+        )}
+      </section>
+
+      <section className="tabbed-workspace action-workspace">
+        <div className="workspace-tabs" role="tablist" aria-label="Participate or pay out">
+          <button
+            type="button"
+            id="round-buy-tab"
+            className={`workspace-tab ${roundActionTab === "buy" ? "active" : ""}`}
+            role="tab"
+            aria-selected={roundActionTab === "buy"}
+            aria-controls="round-buy-panel"
+            onClick={() => setRoundActionTab("buy")}
+          >
+            Buy tickets
+          </button>
+          <button
+            type="button"
+            id="round-payout-tab"
+            className={`workspace-tab ${roundActionTab === "payout" ? "active" : ""}`}
+            role="tab"
+            aria-selected={roundActionTab === "payout"}
+            aria-controls="round-payout-panel"
+            onClick={() => setRoundActionTab("payout")}
+          >
+            Draw & pay
+          </button>
+        </div>
+
+        {roundActionTab === "buy" ? (
+          <section id="round-buy-panel" className="workspace-panel action-pane" role="tabpanel" aria-labelledby="round-buy-tab">
+            {metadata.covenant && !finalized ? (
+              <>
+<div className="pane-heading">
+                <p className="eyebrow">Participant</p>
+                <h2>Buy tickets</h2>
+              </div>
+              <div className="purchase-form">
+                <label className="field quantity-field">
+                  <span>Quantity</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={remainingTickets}
+                    value={ticketQuantity}
+                    onChange={(event) => setTicketQuantity(event.target.value)}
+                  />
+                </label>
+                <div className="segmented-control" aria-label="Ticket quantity presets">
+                  {[1, 10].map((quantity) => (
+                    <button
+                      type="button"
+                      className={parsedTicketQuantity === quantity ? "active" : ""}
+                      disabled={remainingTickets < quantity}
+                      key={quantity}
+                      onClick={() => setTicketQuantity(String(quantity))}
+                    >
+                      {quantity}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={parsedTicketQuantity === remainingTickets ? "active" : ""}
+                    disabled={remainingTickets < 1}
+                    onClick={() => setTicketQuantity(String(remainingTickets))}
+                  >
+                    Max
+                  </button>
+                </div>
+              </div>
+              <dl className="purchase-summary">
+                <div><dt>Total</dt><dd>{formatSompi(purchaseTotal)}</dd></div>
+                <div><dt>Remaining</dt><dd>{remainingTickets.toLocaleString()}</dd></div>
+                <div><dt>Purchase batches</dt><dd>{(metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 0)} / 20</dd></div>
+              </dl>
+              <button
+                type="button"
+                className="wide"
+                onClick={handleBuyTicket}
+                disabled={isBuying || Boolean(finalized) || remainingTickets <= 0}
+              >
+                {isBuying ? "Buying tickets..." : `Buy ${Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0 ? parsedTicketQuantity.toLocaleString() : ""} ticket${parsedTicketQuantity === 1 ? "" : "s"}`}
+              </button>
+              </>
+            ) : (
+              <div className="workspace-empty">
+                <p className="eyebrow">Participant</p>
+                <h2>Buy tickets</h2>
+                <p>Create or load an open round before buying tickets.</p>
+              </div>
+            )}
+          </section>
+        ) : (
+<section id="round-payout-panel" className="workspace-panel action-pane" role="tabpanel" aria-labelledby="round-payout-tab">
+          <div className="pane-heading">
+            <p className="eyebrow">Covenant action</p>
+            <h2>Draw and payout</h2>
+          </div>
+
+          {finalized ? (
+            <div className="winner-block">
+              <span>Winner</span>
+              <strong>Ticket #{finalized.winnerTicketId}</strong>
+              <p className="mono">{finalized.winnerAddress}</p>
+              <p>Paid in transaction <span className="mono">{shortValue(finalized.payoutTxId, 10)}</span></p>
+            </div>
+          ) : (
+            <>
+              <p className="pane-copy">
+                {round.soldTickets >= round.maxTickets
+                  ? "All tickets are sold. The round can be drawn now."
+                  : round.soldTickets > 0
+                    ? `${remainingTickets.toLocaleString()} tickets remain, or draw after the timeout.`
+                    : "Buy at least one ticket before drawing."}
+              </p>
+              <div className="button-row">
+                <button
+                  type="button"
+                  onClick={handleFinalizeLocal}
+                  disabled={
+                    !covenantStatus.enabled ||
+                    isFinalizing ||
+                    !metadata.covenant ||
+                    (metadata.covenant.status !== "Open" && metadata.covenant.status !== "Closed") ||
+                    metadata.covenant.soldTickets <= 0
+                  }
+                >
+                  {isFinalizing ? "Drawing and paying..." : "Draw & pay"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleRefundTimedOutRound}
+                  disabled={
+                    !covenantStatus.enabled ||
+                    isRefundingRound ||
+                    !metadata.covenant ||
+                    metadata.covenant.status === "Finalized" ||
+                    metadata.covenant.status === "Refunding" ||
+                    metadata.covenant.status === "Refunded" ||
+                    metadata.covenant.soldTickets <= 0
+                  }
+                >
+                  {isRefundingRound ? "Refunding..." : "Refund after timeout"}
+                </button>
+              </div>
+            </>
+          )}
+
+          <details className="disclosure compact-disclosure">
+            <summary>Oracle attestation</summary>
+            <div className="disclosure-body">
+              <label className="field">
+                <span>Development oracle private key</span>
+                <input
+                  type="password"
+                  value={oraclePrivateKey}
+                  onChange={(event) => handleOraclePrivateKeyInput(event.target.value)}
+                  placeholder="Restored automatically for locally created rounds"
+                />
+              </label>
+              <label className="field">
+                <span>External oracle seed</span>
+                <input value={oracleSeed} onChange={(event) => setOracleSeed(event.target.value.trim().toLowerCase())} />
+              </label>
+              <label className="field">
+                <span>External oracle signature</span>
+                <input value={oracleSignature} onChange={(event) => setOracleSignature(event.target.value.trim().toLowerCase())} />
+              </label>
+            </div>
+          </details>
+        </section>
+        )}
+      </section>
+
+      {chainError ? <p className="error-text action-message">{chainError}</p> : null}
+      {chainMessage ? <p className="success-text action-message">{chainMessage}</p> : null}
 
       <details className="technical-section disclosure">
         <summary>Advanced settings and technical details</summary>
