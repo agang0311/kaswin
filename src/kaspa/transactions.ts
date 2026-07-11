@@ -1,13 +1,11 @@
 import {
   CovenantBinding,
-  createInputSignature,
   createTransactions,
   GenesisCovenantGroup,
   Hash,
   addressFromScriptPublicKey,
   payToAddressScript,
   payToScriptHashScript,
-  PrivateKey,
   ScriptBuilder,
   Transaction,
   TransactionOutput,
@@ -327,14 +325,6 @@ async function waitForAddressUtxo(
   throw new Error("Funding UTXO was not indexed in time. Wait a few seconds and retry.");
 }
 
-function signWalletInput(tx: Transaction, inputIndex: number, privateKeyHex: string): void {
-  const signature = createInputSignature(tx, inputIndex, new PrivateKey(privateKeyHex));
-  const builder = new ScriptBuilder();
-
-  builder.addData(hexToBytes(signature));
-  tx.inputs[inputIndex].signatureScript = builder.drain();
-}
-
 async function submitTransaction(connection: KaspaRpcConnection, tx: Transaction): Promise<string> {
   tx.finalize();
   const submitReadyTransaction = rpcTransactionObject(JSON.parse(tx.serializeToSafeJSON(), reviveTransactionBigInts));
@@ -485,7 +475,7 @@ export async function sendKaspaPayment(input: SendKaspaPaymentInput): Promise<Se
     let feeSompi = 0n;
 
     for (const transaction of transactions) {
-      transaction.sign([input.wallet.privateKey], true);
+      await input.wallet.signTransaction(transaction);
       txIds.push(await transaction.submit(input.connection.client));
       feeSompi += transaction.feeAmount;
     }
@@ -541,7 +531,7 @@ export async function createRaffleCovenantRound(input: CreateRaffleCovenantRound
       throw new Error("Unable to build covenant funding transaction.");
     }
 
-    stagingTransaction.sign([input.wallet.privateKey], true);
+    await input.wallet.signTransaction(stagingTransaction);
     const stagingTxId = await stagingTransaction.submit(input.connection.client);
     const stagingUtxo = await waitForAddressUtxo(input.connection, stagingAddress, stagingTxId, 0);
 
@@ -665,7 +655,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
       throw new Error("Unable to build ticket funding transaction.");
     }
 
-    stagingTransaction.sign([input.wallet.privateKey], true);
+    await input.wallet.signTransaction(stagingTransaction);
     const stagingTxId = await stagingTransaction.submit(input.connection.client);
     const stagingUtxo = await waitForAddressUtxo(input.connection, stagingAddress, stagingTxId, 0);
     const buyerPubkey = pubkeyHexFromAddress(input.wallet.address);

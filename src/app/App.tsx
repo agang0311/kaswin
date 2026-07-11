@@ -3,13 +3,13 @@ import * as secp from "@noble/secp256k1";
 import {
   AlertTriangle,
   CheckCircle2,
-  KeyRound,
   Link2,
   Plug,
   RefreshCw,
   ShieldCheck,
   Ticket,
-  Upload
+  Upload,
+  WalletCards
 } from "lucide-react";
 import {
   assertRaffleCovenantReady,
@@ -45,8 +45,10 @@ import {
   sendKaspaPayment
 } from "../kaspa/transactions";
 import {
-  createBrowserTestWallet,
-  importBrowserTestWallet,
+  connectKasWareWallet,
+  disconnectKasWareWallet,
+  getKasWareProvider,
+  readConnectedKasWareWallet,
   withWalletBalance,
   type BrowserTestWallet
 } from "../kaspa/wallet";
@@ -351,7 +353,7 @@ export function App() {
   const [rpcError, setRpcError] = useState("");
   const [wallet, setWallet] = useState<BrowserTestWallet | null>(null);
   const [walletError, setWalletError] = useState("");
-  const [privateKeyInput, setPrivateKeyInput] = useState("");
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
   const [metadata, setMetadata] = useState<RaffleMetadata>(emptyMetadata);
   const [metadataText, setMetadataText] = useState(stringifyMetadata(emptyMetadata));
   const [metadataError, setMetadataError] = useState("");
@@ -413,6 +415,44 @@ export function App() {
   useEffect(() => {
     loadSharedRoundFromUrl();
   }, []);
+
+  useEffect(() => {
+    const provider = getKasWareProvider();
+
+    if (!provider?.on || !wallet) {
+      return;
+    }
+
+    const syncConnectedAccount = () => {
+      void readConnectedKasWareWallet(rpcConnectionRef.current?.status.network ?? networkId)
+        .then(async (nextWallet) => {
+          if (!nextWallet) {
+            setWallet(null);
+            return;
+          }
+
+          const balanceSompi = rpcConnectionRef.current
+            ? await getAddressBalanceSompi(rpcConnectionRef.current, nextWallet.address)
+            : 0n;
+          setWallet(withWalletBalance(nextWallet, balanceSompi));
+          setWalletError("");
+        })
+        .catch((error) => setWalletError(error instanceof Error ? error.message : "Unable to update the connected wallet."));
+    };
+    const clearConnectedAccount = () => setWallet(null);
+
+    provider.on("accountsChanged", syncConnectedAccount);
+    provider.on("networkChanged", syncConnectedAccount);
+    provider.on("balanceChanged", syncConnectedAccount);
+    provider.on("disconnect", clearConnectedAccount);
+
+    return () => {
+      provider.removeListener?.("accountsChanged", syncConnectedAccount);
+      provider.removeListener?.("networkChanged", syncConnectedAccount);
+      provider.removeListener?.("balanceChanged", syncConnectedAccount);
+      provider.removeListener?.("disconnect", clearConnectedAccount);
+    };
+  }, [networkId, wallet?.address]);
 
   useEffect(() => {
     let cancelled = false;
@@ -564,8 +604,9 @@ export function App() {
             : { ...current, network: connectedNetwork }
         ));
 
-        if (wallet && wallet.network !== connectedNetwork) {
-          setWallet(await importBrowserTestWallet(wallet.privateKey, connectedNetwork));
+        if (wallet) {
+          const balanceSompi = await getAddressBalanceSompi(connection, wallet.address);
+          setWallet(withWalletBalance({ ...wallet, network: connectedNetwork }, balanceSompi));
         }
       }
     } catch (error) {
@@ -580,31 +621,35 @@ export function App() {
     setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
   }
 
-  async function handleGenerateWallet() {
+  async function handleConnectWallet() {
     setWalletError("");
+    setIsConnectingWallet(true);
 
     try {
-      setWallet(await createBrowserTestWallet(networkId));
+      const walletNetwork = rpcConnectionRef.current?.status.network ?? networkId;
+      let connectedWallet = await connectKasWareWallet(walletNetwork);
+
+      if (rpcConnectionRef.current) {
+        const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
+        connectedWallet = withWalletBalance(connectedWallet, balanceSompi);
+      }
+
+      setWallet(connectedWallet);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : "Unable to generate wallet.");
+      setWalletError(error instanceof Error ? error.message : "Unable to connect KasWare Wallet.");
+    } finally {
+      setIsConnectingWallet(false);
     }
   }
 
-  async function handleImportWallet() {
+  async function handleDisconnectWallet() {
     setWalletError("");
 
     try {
-      let importedWallet = await importBrowserTestWallet(privateKeyInput, networkId);
-
-      if (rpcConnectionRef.current) {
-        const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, importedWallet.address);
-        importedWallet = withWalletBalance(importedWallet, balanceSompi);
-      }
-
-      setWallet(importedWallet);
-      setPrivateKeyInput("");
+      await disconnectKasWareWallet();
+      setWallet(null);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : "Unable to import private key.");
+      setWalletError(error instanceof Error ? error.message : "Unable to disconnect KasWare Wallet.");
     }
   }
 
@@ -612,7 +657,7 @@ export function App() {
     setWalletError("");
 
     if (!wallet) {
-      setWalletError("Generate or import a wallet first.");
+      setWalletError("Connect KasWare Wallet first.");
       return;
     }
 
@@ -753,7 +798,7 @@ export function App() {
       assertRaffleCovenantReady();
 
       if (!wallet) {
-        throw new Error("Import the funded creator wallet first.");
+        throw new Error("Connect a funded creator wallet first.");
       }
 
       if (!rpcConnectionRef.current) {
@@ -930,7 +975,7 @@ export function App() {
 
     try {
       if (!wallet) {
-        throw new Error("Import the funded buyer wallet first.");
+        throw new Error("Connect a funded buyer wallet first.");
       }
 
       if (!rpcConnectionRef.current) {
@@ -1568,25 +1613,16 @@ export function App() {
           </button>
         </div>
 
-        <details className="disclosure setup-wallet-details">
-          <summary>Wallet setup</summary>
-          <div className="disclosure-body wallet-setup-row">
-            <button type="button" className="secondary" onClick={handleGenerateWallet}>
-              <KeyRound size={17} />
-              Generate test wallet
+        <div className="wallet-actions">
+          {wallet ? (
+            <button type="button" className="secondary" onClick={handleDisconnectWallet}>Disconnect wallet</button>
+          ) : (
+            <button type="button" onClick={handleConnectWallet} disabled={isConnectingWallet}>
+              <WalletCards size={17} />
+              {isConnectingWallet ? "Connecting..." : "Connect wallet"}
             </button>
-            <label className="wallet-key-field">
-              <span className="visually-hidden">Private key</span>
-              <input
-                value={privateKeyInput}
-                onChange={(event) => setPrivateKeyInput(event.target.value.trim())}
-                placeholder="64-character testnet private key"
-                type="password"
-              />
-            </label>
-            <button type="button" className="secondary" onClick={handleImportWallet}>Import wallet</button>
-          </div>
-        </details>
+          )}
+        </div>
 
         {rpcError ? <p className="error-text strip-message">{rpcError}</p> : null}
         {walletError ? <p className="error-text strip-message">{walletError}</p> : null}

@@ -36,6 +36,7 @@ const artifact = readJson("src/contracts/compiled/raffle-round.artifact.json");
 const appSource = readText("src/app/App.tsx");
 const covenantSource = readText("src/kaspa/covenant.ts");
 const transactionSource = readText("src/kaspa/transactions.ts");
+const walletSource = readText("src/kaspa/wallet.ts");
 const metadataSource = readText("src/raffle/metadata.ts");
 const contractSource = readText("src/contracts/raffle_round.sil");
 const viteSource = readText("vite.config.ts");
@@ -81,9 +82,14 @@ assert(
     transactionSource.includes("formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)")
 );
 assert(
-  "Imported wallets refresh balance and clear the private-key field",
-  appSource.includes("balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, importedWallet.address)") &&
-    appSource.includes('setPrivateKeyInput("")')
+  "Browser wallet connection replaces private-key import",
+  appSource.includes("connectKasWareWallet") &&
+    appSource.includes('"Connect wallet"') &&
+    walletSource.includes("provider.signPskt") &&
+    walletSource.includes("requestAccounts") &&
+    !appSource.includes("privateKeyInput") &&
+    !appSource.includes("Import wallet") &&
+    !appSource.includes("Generate test wallet")
 );
 assert(
   "History-loaded testnet rounds recover an open development oracle key",

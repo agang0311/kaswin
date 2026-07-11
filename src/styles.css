@@ -252,31 +252,10 @@ h3 {
   min-width: 0;
 }
 
-.setup-wallet-details summary {
-  align-self: center;
-  padding: 1px 0;
-}
-
-.setup-wallet-details {
-  display: contents;
-  grid-column: auto;
-}
-
-.setup-wallet-details[open] > summary {
-  margin-bottom: 0;
-}
-
-.wallet-setup-row {
+.wallet-actions {
   align-items: center;
-  display: grid;
-  gap: 8px;
-  grid-column: 1 / -1;
-  grid-template-columns: auto minmax(260px, 1fr) auto;
-  margin-top: 4px;
-}
-
-.wallet-key-field {
-  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .visually-hidden {
@@ -908,10 +887,6 @@ dd {
 
   .wallet-summary {
     justify-content: space-between;
-  }
-
-  .wallet-setup-row {
-    grid-template-columns: 1fr;
   }
 
   .key-metrics,
