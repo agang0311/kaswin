@@ -1,576 +1,445 @@
-pragma silverscript ^0.1.0;
-
-// Kaspa Raffle Static V0 covenant draft.
-//
-// Toccata's current validateOutputState path accepts primitive state fields, but
-// not byte arrays. 32-byte values are encoded as 32 int byte slots and rebuilt
-// as byte[32] values only inside the script when hashing is needed.
-
 contract RaffleRound() {
     int max_tickets = 0;
-    int min_tickets = 0;
     int ticket_price = 0;
-    int round_id_00 = 0;
-    int round_id_01 = 0;
-    int round_id_02 = 0;
-    int round_id_03 = 0;
-    int round_id_04 = 0;
-    int round_id_05 = 0;
-    int round_id_06 = 0;
-    int round_id_07 = 0;
-    int round_id_08 = 0;
-    int round_id_09 = 0;
-    int round_id_10 = 0;
-    int round_id_11 = 0;
-    int round_id_12 = 0;
-    int round_id_13 = 0;
-    int round_id_14 = 0;
-    int round_id_15 = 0;
-    int round_id_16 = 0;
-    int round_id_17 = 0;
-    int round_id_18 = 0;
-    int round_id_19 = 0;
-    int round_id_20 = 0;
-    int round_id_21 = 0;
-    int round_id_22 = 0;
-    int round_id_23 = 0;
-    int round_id_24 = 0;
-    int round_id_25 = 0;
-    int round_id_26 = 0;
-    int round_id_27 = 0;
-    int round_id_28 = 0;
-    int round_id_29 = 0;
-    int round_id_30 = 0;
-    int round_id_31 = 0;
-    int creator_commitment_00 = 0;
-    int creator_commitment_01 = 0;
-    int creator_commitment_02 = 0;
-    int creator_commitment_03 = 0;
-    int creator_commitment_04 = 0;
-    int creator_commitment_05 = 0;
-    int creator_commitment_06 = 0;
-    int creator_commitment_07 = 0;
-    int creator_commitment_08 = 0;
-    int creator_commitment_09 = 0;
-    int creator_commitment_10 = 0;
-    int creator_commitment_11 = 0;
-    int creator_commitment_12 = 0;
-    int creator_commitment_13 = 0;
-    int creator_commitment_14 = 0;
-    int creator_commitment_15 = 0;
-    int creator_commitment_16 = 0;
-    int creator_commitment_17 = 0;
-    int creator_commitment_18 = 0;
-    int creator_commitment_19 = 0;
-    int creator_commitment_20 = 0;
-    int creator_commitment_21 = 0;
-    int creator_commitment_22 = 0;
-    int creator_commitment_23 = 0;
-    int creator_commitment_24 = 0;
-    int creator_commitment_25 = 0;
-    int creator_commitment_26 = 0;
-    int creator_commitment_27 = 0;
-    int creator_commitment_28 = 0;
-    int creator_commitment_29 = 0;
-    int creator_commitment_30 = 0;
-    int creator_commitment_31 = 0;
-    int fee_bps = 0;
+    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] oracle_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int refund_after_daa = 0;
     int sold_tickets = 0;
-    int pot_amount = 0;
-    int status = 0; // 0 Open, 1 Closed, 2 Finalized, 3 Refunding
-    int ticket_root_00 = 0;
-    int ticket_root_01 = 0;
-    int ticket_root_02 = 0;
-    int ticket_root_03 = 0;
-    int ticket_root_04 = 0;
-    int ticket_root_05 = 0;
-    int ticket_root_06 = 0;
-    int ticket_root_07 = 0;
-    int ticket_root_08 = 0;
-    int ticket_root_09 = 0;
-    int ticket_root_10 = 0;
-    int ticket_root_11 = 0;
-    int ticket_root_12 = 0;
-    int ticket_root_13 = 0;
-    int ticket_root_14 = 0;
-    int ticket_root_15 = 0;
-    int ticket_root_16 = 0;
-    int ticket_root_17 = 0;
-    int ticket_root_18 = 0;
-    int ticket_root_19 = 0;
-    int ticket_root_20 = 0;
-    int ticket_root_21 = 0;
-    int ticket_root_22 = 0;
-    int ticket_root_23 = 0;
-    int ticket_root_24 = 0;
-    int ticket_root_25 = 0;
-    int ticket_root_26 = 0;
-    int ticket_root_27 = 0;
-    int ticket_root_28 = 0;
-    int ticket_root_29 = 0;
-    int ticket_root_30 = 0;
-    int ticket_root_31 = 0;
+    int sold_batches = 0;
+    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int batch_end_01 = 0;
+    int batch_end_02 = 0;
+    int batch_end_03 = 0;
+    int batch_end_04 = 0;
+    int batch_end_05 = 0;
+    int batch_end_06 = 0;
+    int batch_end_07 = 0;
+    int batch_end_08 = 0;
+    int batch_end_09 = 0;
+    int batch_end_10 = 0;
+    int batch_end_11 = 0;
+    int batch_end_12 = 0;
+    int batch_end_13 = 0;
+    int batch_end_14 = 0;
+    int batch_end_15 = 0;
+    int batch_end_16 = 0;
+    int batch_end_17 = 0;
+    int batch_end_18 = 0;
+    int batch_end_19 = 0;
+    int batch_end_20 = 0;
+    byte[32] owner_01 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_02 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_03 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_04 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_05 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_06 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_07 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_08 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_09 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_10 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_11 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_12 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_13 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_14 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_15 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_16 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_17 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_18 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_19 = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] owner_20 = 0x0000000000000000000000000000000000000000000000000000000000000000;
 
-    #[covenant.singleton(mode = transition)]
-    function buy(
-        State prev_state,
-        byte[32] next_ticket_root
-    ) : (State) {
-        require(prev_state.status == 0);
-        require(prev_state.sold_tickets < prev_state.max_tickets);
-        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value + prev_state.ticket_price);
+    entrypoint function buy(byte[32] next_ticket_root, pubkey owner_pubkey, int ticket_count) {
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
 
-        return({
-            max_tickets: prev_state.max_tickets,
-            min_tickets: prev_state.min_tickets,
-            ticket_price: prev_state.ticket_price,
-            round_id_00: prev_state.round_id_00,
-            round_id_01: prev_state.round_id_01,
-            round_id_02: prev_state.round_id_02,
-            round_id_03: prev_state.round_id_03,
-            round_id_04: prev_state.round_id_04,
-            round_id_05: prev_state.round_id_05,
-            round_id_06: prev_state.round_id_06,
-            round_id_07: prev_state.round_id_07,
-            round_id_08: prev_state.round_id_08,
-            round_id_09: prev_state.round_id_09,
-            round_id_10: prev_state.round_id_10,
-            round_id_11: prev_state.round_id_11,
-            round_id_12: prev_state.round_id_12,
-            round_id_13: prev_state.round_id_13,
-            round_id_14: prev_state.round_id_14,
-            round_id_15: prev_state.round_id_15,
-            round_id_16: prev_state.round_id_16,
-            round_id_17: prev_state.round_id_17,
-            round_id_18: prev_state.round_id_18,
-            round_id_19: prev_state.round_id_19,
-            round_id_20: prev_state.round_id_20,
-            round_id_21: prev_state.round_id_21,
-            round_id_22: prev_state.round_id_22,
-            round_id_23: prev_state.round_id_23,
-            round_id_24: prev_state.round_id_24,
-            round_id_25: prev_state.round_id_25,
-            round_id_26: prev_state.round_id_26,
-            round_id_27: prev_state.round_id_27,
-            round_id_28: prev_state.round_id_28,
-            round_id_29: prev_state.round_id_29,
-            round_id_30: prev_state.round_id_30,
-            round_id_31: prev_state.round_id_31,
-            creator_commitment_00: prev_state.creator_commitment_00,
-            creator_commitment_01: prev_state.creator_commitment_01,
-            creator_commitment_02: prev_state.creator_commitment_02,
-            creator_commitment_03: prev_state.creator_commitment_03,
-            creator_commitment_04: prev_state.creator_commitment_04,
-            creator_commitment_05: prev_state.creator_commitment_05,
-            creator_commitment_06: prev_state.creator_commitment_06,
-            creator_commitment_07: prev_state.creator_commitment_07,
-            creator_commitment_08: prev_state.creator_commitment_08,
-            creator_commitment_09: prev_state.creator_commitment_09,
-            creator_commitment_10: prev_state.creator_commitment_10,
-            creator_commitment_11: prev_state.creator_commitment_11,
-            creator_commitment_12: prev_state.creator_commitment_12,
-            creator_commitment_13: prev_state.creator_commitment_13,
-            creator_commitment_14: prev_state.creator_commitment_14,
-            creator_commitment_15: prev_state.creator_commitment_15,
-            creator_commitment_16: prev_state.creator_commitment_16,
-            creator_commitment_17: prev_state.creator_commitment_17,
-            creator_commitment_18: prev_state.creator_commitment_18,
-            creator_commitment_19: prev_state.creator_commitment_19,
-            creator_commitment_20: prev_state.creator_commitment_20,
-            creator_commitment_21: prev_state.creator_commitment_21,
-            creator_commitment_22: prev_state.creator_commitment_22,
-            creator_commitment_23: prev_state.creator_commitment_23,
-            creator_commitment_24: prev_state.creator_commitment_24,
-            creator_commitment_25: prev_state.creator_commitment_25,
-            creator_commitment_26: prev_state.creator_commitment_26,
-            creator_commitment_27: prev_state.creator_commitment_27,
-            creator_commitment_28: prev_state.creator_commitment_28,
-            creator_commitment_29: prev_state.creator_commitment_29,
-            creator_commitment_30: prev_state.creator_commitment_30,
-            creator_commitment_31: prev_state.creator_commitment_31,
-            fee_bps: prev_state.fee_bps,
-            sold_tickets: prev_state.sold_tickets + 1,
-            pot_amount: prev_state.pot_amount + prev_state.ticket_price,
-            status: 0,
-            ticket_root_00: int(next_ticket_root[0]),
-            ticket_root_01: int(next_ticket_root[1]),
-            ticket_root_02: int(next_ticket_root[2]),
-            ticket_root_03: int(next_ticket_root[3]),
-            ticket_root_04: int(next_ticket_root[4]),
-            ticket_root_05: int(next_ticket_root[5]),
-            ticket_root_06: int(next_ticket_root[6]),
-            ticket_root_07: int(next_ticket_root[7]),
-            ticket_root_08: int(next_ticket_root[8]),
-            ticket_root_09: int(next_ticket_root[9]),
-            ticket_root_10: int(next_ticket_root[10]),
-            ticket_root_11: int(next_ticket_root[11]),
-            ticket_root_12: int(next_ticket_root[12]),
-            ticket_root_13: int(next_ticket_root[13]),
-            ticket_root_14: int(next_ticket_root[14]),
-            ticket_root_15: int(next_ticket_root[15]),
-            ticket_root_16: int(next_ticket_root[16]),
-            ticket_root_17: int(next_ticket_root[17]),
-            ticket_root_18: int(next_ticket_root[18]),
-            ticket_root_19: int(next_ticket_root[19]),
-            ticket_root_20: int(next_ticket_root[20]),
-            ticket_root_21: int(next_ticket_root[21]),
-            ticket_root_22: int(next_ticket_root[22]),
-            ticket_root_23: int(next_ticket_root[23]),
-            ticket_root_24: int(next_ticket_root[24]),
-            ticket_root_25: int(next_ticket_root[25]),
-            ticket_root_26: int(next_ticket_root[26]),
-            ticket_root_27: int(next_ticket_root[27]),
-            ticket_root_28: int(next_ticket_root[28]),
-            ticket_root_29: int(next_ticket_root[29]),
-            ticket_root_30: int(next_ticket_root[30]),
-            ticket_root_31: int(next_ticket_root[31]),
+        require(max_tickets <= 1000);
+        require(sold_batches < 20);
+        require(ticket_count > 0);
+        require(sold_tickets + ticket_count <= max_tickets);
+        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);
+
+        int next_batch_end_01 = batch_end_01;
+        int next_batch_end_02 = batch_end_02;
+        int next_batch_end_03 = batch_end_03;
+        int next_batch_end_04 = batch_end_04;
+        int next_batch_end_05 = batch_end_05;
+        int next_batch_end_06 = batch_end_06;
+        int next_batch_end_07 = batch_end_07;
+        int next_batch_end_08 = batch_end_08;
+        int next_batch_end_09 = batch_end_09;
+        int next_batch_end_10 = batch_end_10;
+        int next_batch_end_11 = batch_end_11;
+        int next_batch_end_12 = batch_end_12;
+        int next_batch_end_13 = batch_end_13;
+        int next_batch_end_14 = batch_end_14;
+        int next_batch_end_15 = batch_end_15;
+        int next_batch_end_16 = batch_end_16;
+        int next_batch_end_17 = batch_end_17;
+        int next_batch_end_18 = batch_end_18;
+        int next_batch_end_19 = batch_end_19;
+        int next_batch_end_20 = batch_end_20;
+        byte[32] next_owner_01 = owner_01;
+        byte[32] next_owner_02 = owner_02;
+        byte[32] next_owner_03 = owner_03;
+        byte[32] next_owner_04 = owner_04;
+        byte[32] next_owner_05 = owner_05;
+        byte[32] next_owner_06 = owner_06;
+        byte[32] next_owner_07 = owner_07;
+        byte[32] next_owner_08 = owner_08;
+        byte[32] next_owner_09 = owner_09;
+        byte[32] next_owner_10 = owner_10;
+        byte[32] next_owner_11 = owner_11;
+        byte[32] next_owner_12 = owner_12;
+        byte[32] next_owner_13 = owner_13;
+        byte[32] next_owner_14 = owner_14;
+        byte[32] next_owner_15 = owner_15;
+        byte[32] next_owner_16 = owner_16;
+        byte[32] next_owner_17 = owner_17;
+        byte[32] next_owner_18 = owner_18;
+        byte[32] next_owner_19 = owner_19;
+        byte[32] next_owner_20 = owner_20;
+        int next_sold_tickets = sold_tickets + ticket_count;
+        byte[32] buyer = byte[32](owner_pubkey);
+
+        if (sold_batches == 0) {
+            next_batch_end_01 = next_sold_tickets;
+            next_owner_01 = buyer;
+        }
+        if (sold_batches == 1) {
+            next_batch_end_02 = next_sold_tickets;
+            next_owner_02 = buyer;
+        }
+        if (sold_batches == 2) {
+            next_batch_end_03 = next_sold_tickets;
+            next_owner_03 = buyer;
+        }
+        if (sold_batches == 3) {
+            next_batch_end_04 = next_sold_tickets;
+            next_owner_04 = buyer;
+        }
+        if (sold_batches == 4) {
+            next_batch_end_05 = next_sold_tickets;
+            next_owner_05 = buyer;
+        }
+        if (sold_batches == 5) {
+            next_batch_end_06 = next_sold_tickets;
+            next_owner_06 = buyer;
+        }
+        if (sold_batches == 6) {
+            next_batch_end_07 = next_sold_tickets;
+            next_owner_07 = buyer;
+        }
+        if (sold_batches == 7) {
+            next_batch_end_08 = next_sold_tickets;
+            next_owner_08 = buyer;
+        }
+        if (sold_batches == 8) {
+            next_batch_end_09 = next_sold_tickets;
+            next_owner_09 = buyer;
+        }
+        if (sold_batches == 9) {
+            next_batch_end_10 = next_sold_tickets;
+            next_owner_10 = buyer;
+        }
+        if (sold_batches == 10) {
+            next_batch_end_11 = next_sold_tickets;
+            next_owner_11 = buyer;
+        }
+        if (sold_batches == 11) {
+            next_batch_end_12 = next_sold_tickets;
+            next_owner_12 = buyer;
+        }
+        if (sold_batches == 12) {
+            next_batch_end_13 = next_sold_tickets;
+            next_owner_13 = buyer;
+        }
+        if (sold_batches == 13) {
+            next_batch_end_14 = next_sold_tickets;
+            next_owner_14 = buyer;
+        }
+        if (sold_batches == 14) {
+            next_batch_end_15 = next_sold_tickets;
+            next_owner_15 = buyer;
+        }
+        if (sold_batches == 15) {
+            next_batch_end_16 = next_sold_tickets;
+            next_owner_16 = buyer;
+        }
+        if (sold_batches == 16) {
+            next_batch_end_17 = next_sold_tickets;
+            next_owner_17 = buyer;
+        }
+        if (sold_batches == 17) {
+            next_batch_end_18 = next_sold_tickets;
+            next_owner_18 = buyer;
+        }
+        if (sold_batches == 18) {
+            next_batch_end_19 = next_sold_tickets;
+            next_owner_19 = buyer;
+        }
+        if (sold_batches == 19) {
+            next_batch_end_20 = next_sold_tickets;
+            next_owner_20 = buyer;
+        }
+
+        validateOutputState(cov_out_idx, {
+            max_tickets: max_tickets,
+            ticket_price: ticket_price,
+            creator_pubkey: creator_pubkey,
+            oracle_pubkey: oracle_pubkey,
+            refund_after_daa: refund_after_daa,
+            sold_tickets: next_sold_tickets,
+            sold_batches: sold_batches + 1,
+            ticket_root: next_ticket_root,
+            batch_end_01: next_batch_end_01,
+            batch_end_02: next_batch_end_02,
+            batch_end_03: next_batch_end_03,
+            batch_end_04: next_batch_end_04,
+            batch_end_05: next_batch_end_05,
+            batch_end_06: next_batch_end_06,
+            batch_end_07: next_batch_end_07,
+            batch_end_08: next_batch_end_08,
+            batch_end_09: next_batch_end_09,
+            batch_end_10: next_batch_end_10,
+            batch_end_11: next_batch_end_11,
+            batch_end_12: next_batch_end_12,
+            batch_end_13: next_batch_end_13,
+            batch_end_14: next_batch_end_14,
+            batch_end_15: next_batch_end_15,
+            batch_end_16: next_batch_end_16,
+            batch_end_17: next_batch_end_17,
+            batch_end_18: next_batch_end_18,
+            batch_end_19: next_batch_end_19,
+            batch_end_20: next_batch_end_20,
+            owner_01: next_owner_01,
+            owner_02: next_owner_02,
+            owner_03: next_owner_03,
+            owner_04: next_owner_04,
+            owner_05: next_owner_05,
+            owner_06: next_owner_06,
+            owner_07: next_owner_07,
+            owner_08: next_owner_08,
+            owner_09: next_owner_09,
+            owner_10: next_owner_10,
+            owner_11: next_owner_11,
+            owner_12: next_owner_12,
+            owner_13: next_owner_13,
+            owner_14: next_owner_14,
+            owner_15: next_owner_15,
+            owner_16: next_owner_16,
+            owner_17: next_owner_17,
+            owner_18: next_owner_18,
+            owner_19: next_owner_19,
+            owner_20: next_owner_20,
         });
     }
 
-    #[covenant.singleton(mode = transition)]
-    function close(State prev_state) : (State) {
-        require(prev_state.status == 0);
-        require(prev_state.sold_tickets == prev_state.max_tickets || prev_state.sold_tickets >= prev_state.min_tickets);
-
-        return({
-            max_tickets: prev_state.max_tickets,
-            min_tickets: prev_state.min_tickets,
-            ticket_price: prev_state.ticket_price,
-            round_id_00: prev_state.round_id_00,
-            round_id_01: prev_state.round_id_01,
-            round_id_02: prev_state.round_id_02,
-            round_id_03: prev_state.round_id_03,
-            round_id_04: prev_state.round_id_04,
-            round_id_05: prev_state.round_id_05,
-            round_id_06: prev_state.round_id_06,
-            round_id_07: prev_state.round_id_07,
-            round_id_08: prev_state.round_id_08,
-            round_id_09: prev_state.round_id_09,
-            round_id_10: prev_state.round_id_10,
-            round_id_11: prev_state.round_id_11,
-            round_id_12: prev_state.round_id_12,
-            round_id_13: prev_state.round_id_13,
-            round_id_14: prev_state.round_id_14,
-            round_id_15: prev_state.round_id_15,
-            round_id_16: prev_state.round_id_16,
-            round_id_17: prev_state.round_id_17,
-            round_id_18: prev_state.round_id_18,
-            round_id_19: prev_state.round_id_19,
-            round_id_20: prev_state.round_id_20,
-            round_id_21: prev_state.round_id_21,
-            round_id_22: prev_state.round_id_22,
-            round_id_23: prev_state.round_id_23,
-            round_id_24: prev_state.round_id_24,
-            round_id_25: prev_state.round_id_25,
-            round_id_26: prev_state.round_id_26,
-            round_id_27: prev_state.round_id_27,
-            round_id_28: prev_state.round_id_28,
-            round_id_29: prev_state.round_id_29,
-            round_id_30: prev_state.round_id_30,
-            round_id_31: prev_state.round_id_31,
-            creator_commitment_00: prev_state.creator_commitment_00,
-            creator_commitment_01: prev_state.creator_commitment_01,
-            creator_commitment_02: prev_state.creator_commitment_02,
-            creator_commitment_03: prev_state.creator_commitment_03,
-            creator_commitment_04: prev_state.creator_commitment_04,
-            creator_commitment_05: prev_state.creator_commitment_05,
-            creator_commitment_06: prev_state.creator_commitment_06,
-            creator_commitment_07: prev_state.creator_commitment_07,
-            creator_commitment_08: prev_state.creator_commitment_08,
-            creator_commitment_09: prev_state.creator_commitment_09,
-            creator_commitment_10: prev_state.creator_commitment_10,
-            creator_commitment_11: prev_state.creator_commitment_11,
-            creator_commitment_12: prev_state.creator_commitment_12,
-            creator_commitment_13: prev_state.creator_commitment_13,
-            creator_commitment_14: prev_state.creator_commitment_14,
-            creator_commitment_15: prev_state.creator_commitment_15,
-            creator_commitment_16: prev_state.creator_commitment_16,
-            creator_commitment_17: prev_state.creator_commitment_17,
-            creator_commitment_18: prev_state.creator_commitment_18,
-            creator_commitment_19: prev_state.creator_commitment_19,
-            creator_commitment_20: prev_state.creator_commitment_20,
-            creator_commitment_21: prev_state.creator_commitment_21,
-            creator_commitment_22: prev_state.creator_commitment_22,
-            creator_commitment_23: prev_state.creator_commitment_23,
-            creator_commitment_24: prev_state.creator_commitment_24,
-            creator_commitment_25: prev_state.creator_commitment_25,
-            creator_commitment_26: prev_state.creator_commitment_26,
-            creator_commitment_27: prev_state.creator_commitment_27,
-            creator_commitment_28: prev_state.creator_commitment_28,
-            creator_commitment_29: prev_state.creator_commitment_29,
-            creator_commitment_30: prev_state.creator_commitment_30,
-            creator_commitment_31: prev_state.creator_commitment_31,
-            fee_bps: prev_state.fee_bps,
-            sold_tickets: prev_state.sold_tickets,
-            pot_amount: prev_state.pot_amount,
-            status: 1,
-            ticket_root_00: prev_state.ticket_root_00,
-            ticket_root_01: prev_state.ticket_root_01,
-            ticket_root_02: prev_state.ticket_root_02,
-            ticket_root_03: prev_state.ticket_root_03,
-            ticket_root_04: prev_state.ticket_root_04,
-            ticket_root_05: prev_state.ticket_root_05,
-            ticket_root_06: prev_state.ticket_root_06,
-            ticket_root_07: prev_state.ticket_root_07,
-            ticket_root_08: prev_state.ticket_root_08,
-            ticket_root_09: prev_state.ticket_root_09,
-            ticket_root_10: prev_state.ticket_root_10,
-            ticket_root_11: prev_state.ticket_root_11,
-            ticket_root_12: prev_state.ticket_root_12,
-            ticket_root_13: prev_state.ticket_root_13,
-            ticket_root_14: prev_state.ticket_root_14,
-            ticket_root_15: prev_state.ticket_root_15,
-            ticket_root_16: prev_state.ticket_root_16,
-            ticket_root_17: prev_state.ticket_root_17,
-            ticket_root_18: prev_state.ticket_root_18,
-            ticket_root_19: prev_state.ticket_root_19,
-            ticket_root_20: prev_state.ticket_root_20,
-            ticket_root_21: prev_state.ticket_root_21,
-            ticket_root_22: prev_state.ticket_root_22,
-            ticket_root_23: prev_state.ticket_root_23,
-            ticket_root_24: prev_state.ticket_root_24,
-            ticket_root_25: prev_state.ticket_root_25,
-            ticket_root_26: prev_state.ticket_root_26,
-            ticket_root_27: prev_state.ticket_root_27,
-            ticket_root_28: prev_state.ticket_root_28,
-            ticket_root_29: prev_state.ticket_root_29,
-            ticket_root_30: prev_state.ticket_root_30,
-            ticket_root_31: prev_state.ticket_root_31,
-        });
+    entrypoint function close() {
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
+        require(sold_tickets > 0);
+        require(tx.outputs[cov_out_idx].scriptPubKey == tx.inputs[this.activeInputIndex].scriptPubKey);
+        require(tx.outputs[cov_out_idx].value >= ticket_price * sold_tickets);
     }
 
-    #[covenant.singleton(mode = transition, termination = allowed)]
-    function finalize(
-        State prev_state,
-        State[] next_states,
-        byte[32] creator_secret,
+    entrypoint function finalize(
+        datasig oracle_sig,
+        byte[32] oracle_seed,
         int winner_ticket_id,
-        byte[34] winner_script_pub_key
-    ) : (State[]) {
-        require(prev_state.status == 1);
-        require(next_states.length == 0);
-        require(prev_state.sold_tickets >= prev_state.min_tickets);
+        pubkey winner_pubkey
+    ) {
+        require(OpAuthOutputCount(this.activeInputIndex) == 0);
+        require(sold_tickets > 0);
+        require(sold_batches > 0);
+        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);
+        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));
 
-        byte[32] round_id_bytes =
-            byte[1](byte(prev_state.round_id_00)) +
-            byte[1](byte(prev_state.round_id_01)) +
-            byte[1](byte(prev_state.round_id_02)) +
-            byte[1](byte(prev_state.round_id_03)) +
-            byte[1](byte(prev_state.round_id_04)) +
-            byte[1](byte(prev_state.round_id_05)) +
-            byte[1](byte(prev_state.round_id_06)) +
-            byte[1](byte(prev_state.round_id_07)) +
-            byte[1](byte(prev_state.round_id_08)) +
-            byte[1](byte(prev_state.round_id_09)) +
-            byte[1](byte(prev_state.round_id_10)) +
-            byte[1](byte(prev_state.round_id_11)) +
-            byte[1](byte(prev_state.round_id_12)) +
-            byte[1](byte(prev_state.round_id_13)) +
-            byte[1](byte(prev_state.round_id_14)) +
-            byte[1](byte(prev_state.round_id_15)) +
-            byte[1](byte(prev_state.round_id_16)) +
-            byte[1](byte(prev_state.round_id_17)) +
-            byte[1](byte(prev_state.round_id_18)) +
-            byte[1](byte(prev_state.round_id_19)) +
-            byte[1](byte(prev_state.round_id_20)) +
-            byte[1](byte(prev_state.round_id_21)) +
-            byte[1](byte(prev_state.round_id_22)) +
-            byte[1](byte(prev_state.round_id_23)) +
-            byte[1](byte(prev_state.round_id_24)) +
-            byte[1](byte(prev_state.round_id_25)) +
-            byte[1](byte(prev_state.round_id_26)) +
-            byte[1](byte(prev_state.round_id_27)) +
-            byte[1](byte(prev_state.round_id_28)) +
-            byte[1](byte(prev_state.round_id_29)) +
-            byte[1](byte(prev_state.round_id_30)) +
-            byte[1](byte(prev_state.round_id_31));
-        byte[32] creator_commitment_bytes =
-            byte[1](byte(prev_state.creator_commitment_00)) +
-            byte[1](byte(prev_state.creator_commitment_01)) +
-            byte[1](byte(prev_state.creator_commitment_02)) +
-            byte[1](byte(prev_state.creator_commitment_03)) +
-            byte[1](byte(prev_state.creator_commitment_04)) +
-            byte[1](byte(prev_state.creator_commitment_05)) +
-            byte[1](byte(prev_state.creator_commitment_06)) +
-            byte[1](byte(prev_state.creator_commitment_07)) +
-            byte[1](byte(prev_state.creator_commitment_08)) +
-            byte[1](byte(prev_state.creator_commitment_09)) +
-            byte[1](byte(prev_state.creator_commitment_10)) +
-            byte[1](byte(prev_state.creator_commitment_11)) +
-            byte[1](byte(prev_state.creator_commitment_12)) +
-            byte[1](byte(prev_state.creator_commitment_13)) +
-            byte[1](byte(prev_state.creator_commitment_14)) +
-            byte[1](byte(prev_state.creator_commitment_15)) +
-            byte[1](byte(prev_state.creator_commitment_16)) +
-            byte[1](byte(prev_state.creator_commitment_17)) +
-            byte[1](byte(prev_state.creator_commitment_18)) +
-            byte[1](byte(prev_state.creator_commitment_19)) +
-            byte[1](byte(prev_state.creator_commitment_20)) +
-            byte[1](byte(prev_state.creator_commitment_21)) +
-            byte[1](byte(prev_state.creator_commitment_22)) +
-            byte[1](byte(prev_state.creator_commitment_23)) +
-            byte[1](byte(prev_state.creator_commitment_24)) +
-            byte[1](byte(prev_state.creator_commitment_25)) +
-            byte[1](byte(prev_state.creator_commitment_26)) +
-            byte[1](byte(prev_state.creator_commitment_27)) +
-            byte[1](byte(prev_state.creator_commitment_28)) +
-            byte[1](byte(prev_state.creator_commitment_29)) +
-            byte[1](byte(prev_state.creator_commitment_30)) +
-            byte[1](byte(prev_state.creator_commitment_31));
-        byte[32] ticket_root_bytes =
-            byte[1](byte(prev_state.ticket_root_00)) +
-            byte[1](byte(prev_state.ticket_root_01)) +
-            byte[1](byte(prev_state.ticket_root_02)) +
-            byte[1](byte(prev_state.ticket_root_03)) +
-            byte[1](byte(prev_state.ticket_root_04)) +
-            byte[1](byte(prev_state.ticket_root_05)) +
-            byte[1](byte(prev_state.ticket_root_06)) +
-            byte[1](byte(prev_state.ticket_root_07)) +
-            byte[1](byte(prev_state.ticket_root_08)) +
-            byte[1](byte(prev_state.ticket_root_09)) +
-            byte[1](byte(prev_state.ticket_root_10)) +
-            byte[1](byte(prev_state.ticket_root_11)) +
-            byte[1](byte(prev_state.ticket_root_12)) +
-            byte[1](byte(prev_state.ticket_root_13)) +
-            byte[1](byte(prev_state.ticket_root_14)) +
-            byte[1](byte(prev_state.ticket_root_15)) +
-            byte[1](byte(prev_state.ticket_root_16)) +
-            byte[1](byte(prev_state.ticket_root_17)) +
-            byte[1](byte(prev_state.ticket_root_18)) +
-            byte[1](byte(prev_state.ticket_root_19)) +
-            byte[1](byte(prev_state.ticket_root_20)) +
-            byte[1](byte(prev_state.ticket_root_21)) +
-            byte[1](byte(prev_state.ticket_root_22)) +
-            byte[1](byte(prev_state.ticket_root_23)) +
-            byte[1](byte(prev_state.ticket_root_24)) +
-            byte[1](byte(prev_state.ticket_root_25)) +
-            byte[1](byte(prev_state.ticket_root_26)) +
-            byte[1](byte(prev_state.ticket_root_27)) +
-            byte[1](byte(prev_state.ticket_root_28)) +
-            byte[1](byte(prev_state.ticket_root_29)) +
-            byte[1](byte(prev_state.ticket_root_30)) +
-            byte[1](byte(prev_state.ticket_root_31));
+        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));
+        int seed_0 = int(seed[0]);
+        int seed_1 = int(seed[1]);
+        int seed_2 = int(seed[2]);
+        int seed_3 = int(seed[3]);
+        if (seed_0 < 0) {
+            seed_0 = -seed_0;
+        }
+        if (seed_1 < 0) {
+            seed_1 = -seed_1;
+        }
+        if (seed_2 < 0) {
+            seed_2 = -seed_2;
+        }
+        if (seed_3 < 0) {
+            seed_3 = -seed_3;
+        }
 
-        require(sha256(byte[](creator_secret)) == creator_commitment_bytes);
+        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;
+        require(winner_ticket_id < sold_tickets);
+        require(winner_ticket_id == winner_from_seed);
 
-        byte[32] seed = sha256(byte[](round_id_bytes) + byte[](ticket_root_bytes) + byte[](creator_secret));
-        require(winner_ticket_id == int(seed) % prev_state.sold_tickets);
+        byte[32] winner_owner = owner_01;
+        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {
+            winner_owner = owner_02;
+        }
+        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {
+            winner_owner = owner_03;
+        }
+        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {
+            winner_owner = owner_04;
+        }
+        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {
+            winner_owner = owner_05;
+        }
+        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {
+            winner_owner = owner_06;
+        }
+        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {
+            winner_owner = owner_07;
+        }
+        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {
+            winner_owner = owner_08;
+        }
+        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {
+            winner_owner = owner_09;
+        }
+        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {
+            winner_owner = owner_10;
+        }
+        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {
+            winner_owner = owner_11;
+        }
+        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {
+            winner_owner = owner_12;
+        }
+        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {
+            winner_owner = owner_13;
+        }
+        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {
+            winner_owner = owner_14;
+        }
+        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {
+            winner_owner = owner_15;
+        }
+        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {
+            winner_owner = owner_16;
+        }
+        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {
+            winner_owner = owner_17;
+        }
+        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {
+            winner_owner = owner_18;
+        }
+        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {
+            winner_owner = owner_19;
+        }
+        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {
+            winner_owner = owner_20;
+        }
+        require(byte[32](winner_pubkey) == winner_owner);
 
-        require(tx.outputs[0].scriptPubKey == byte[](winner_script_pub_key));
-        require(tx.outputs[0].value == prev_state.pot_amount);
-
-        return(next_states);
+        int prize = ticket_price * sold_tickets;
+        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 20000000;
+        require(creator_refund >= 0);
+        require(tx.outputs.length == 2);
+        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));
+        require(tx.outputs[0].value == prize);
+        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
+        require(tx.outputs[1].value == creator_refund);
     }
 
-    #[covenant.singleton(mode = transition)]
-    function enter_refunding(State prev_state) : (State) {
-        require(prev_state.status == 0 || prev_state.status == 1);
-        require(prev_state.sold_tickets < prev_state.min_tickets);
+    entrypoint function refund_all() {
+        require(OpAuthOutputCount(this.activeInputIndex) == 0);
+        require(max_tickets <= 1000);
+        require(sold_batches > 0);
+        require(sold_batches <= 20);
+        require(tx.locktime >= refund_after_daa);
 
-        return({
-            max_tickets: prev_state.max_tickets,
-            min_tickets: prev_state.min_tickets,
-            ticket_price: prev_state.ticket_price,
-            round_id_00: prev_state.round_id_00,
-            round_id_01: prev_state.round_id_01,
-            round_id_02: prev_state.round_id_02,
-            round_id_03: prev_state.round_id_03,
-            round_id_04: prev_state.round_id_04,
-            round_id_05: prev_state.round_id_05,
-            round_id_06: prev_state.round_id_06,
-            round_id_07: prev_state.round_id_07,
-            round_id_08: prev_state.round_id_08,
-            round_id_09: prev_state.round_id_09,
-            round_id_10: prev_state.round_id_10,
-            round_id_11: prev_state.round_id_11,
-            round_id_12: prev_state.round_id_12,
-            round_id_13: prev_state.round_id_13,
-            round_id_14: prev_state.round_id_14,
-            round_id_15: prev_state.round_id_15,
-            round_id_16: prev_state.round_id_16,
-            round_id_17: prev_state.round_id_17,
-            round_id_18: prev_state.round_id_18,
-            round_id_19: prev_state.round_id_19,
-            round_id_20: prev_state.round_id_20,
-            round_id_21: prev_state.round_id_21,
-            round_id_22: prev_state.round_id_22,
-            round_id_23: prev_state.round_id_23,
-            round_id_24: prev_state.round_id_24,
-            round_id_25: prev_state.round_id_25,
-            round_id_26: prev_state.round_id_26,
-            round_id_27: prev_state.round_id_27,
-            round_id_28: prev_state.round_id_28,
-            round_id_29: prev_state.round_id_29,
-            round_id_30: prev_state.round_id_30,
-            round_id_31: prev_state.round_id_31,
-            creator_commitment_00: prev_state.creator_commitment_00,
-            creator_commitment_01: prev_state.creator_commitment_01,
-            creator_commitment_02: prev_state.creator_commitment_02,
-            creator_commitment_03: prev_state.creator_commitment_03,
-            creator_commitment_04: prev_state.creator_commitment_04,
-            creator_commitment_05: prev_state.creator_commitment_05,
-            creator_commitment_06: prev_state.creator_commitment_06,
-            creator_commitment_07: prev_state.creator_commitment_07,
-            creator_commitment_08: prev_state.creator_commitment_08,
-            creator_commitment_09: prev_state.creator_commitment_09,
-            creator_commitment_10: prev_state.creator_commitment_10,
-            creator_commitment_11: prev_state.creator_commitment_11,
-            creator_commitment_12: prev_state.creator_commitment_12,
-            creator_commitment_13: prev_state.creator_commitment_13,
-            creator_commitment_14: prev_state.creator_commitment_14,
-            creator_commitment_15: prev_state.creator_commitment_15,
-            creator_commitment_16: prev_state.creator_commitment_16,
-            creator_commitment_17: prev_state.creator_commitment_17,
-            creator_commitment_18: prev_state.creator_commitment_18,
-            creator_commitment_19: prev_state.creator_commitment_19,
-            creator_commitment_20: prev_state.creator_commitment_20,
-            creator_commitment_21: prev_state.creator_commitment_21,
-            creator_commitment_22: prev_state.creator_commitment_22,
-            creator_commitment_23: prev_state.creator_commitment_23,
-            creator_commitment_24: prev_state.creator_commitment_24,
-            creator_commitment_25: prev_state.creator_commitment_25,
-            creator_commitment_26: prev_state.creator_commitment_26,
-            creator_commitment_27: prev_state.creator_commitment_27,
-            creator_commitment_28: prev_state.creator_commitment_28,
-            creator_commitment_29: prev_state.creator_commitment_29,
-            creator_commitment_30: prev_state.creator_commitment_30,
-            creator_commitment_31: prev_state.creator_commitment_31,
-            fee_bps: prev_state.fee_bps,
-            sold_tickets: prev_state.sold_tickets,
-            pot_amount: prev_state.pot_amount,
-            status: 3,
-            ticket_root_00: prev_state.ticket_root_00,
-            ticket_root_01: prev_state.ticket_root_01,
-            ticket_root_02: prev_state.ticket_root_02,
-            ticket_root_03: prev_state.ticket_root_03,
-            ticket_root_04: prev_state.ticket_root_04,
-            ticket_root_05: prev_state.ticket_root_05,
-            ticket_root_06: prev_state.ticket_root_06,
-            ticket_root_07: prev_state.ticket_root_07,
-            ticket_root_08: prev_state.ticket_root_08,
-            ticket_root_09: prev_state.ticket_root_09,
-            ticket_root_10: prev_state.ticket_root_10,
-            ticket_root_11: prev_state.ticket_root_11,
-            ticket_root_12: prev_state.ticket_root_12,
-            ticket_root_13: prev_state.ticket_root_13,
-            ticket_root_14: prev_state.ticket_root_14,
-            ticket_root_15: prev_state.ticket_root_15,
-            ticket_root_16: prev_state.ticket_root_16,
-            ticket_root_17: prev_state.ticket_root_17,
-            ticket_root_18: prev_state.ticket_root_18,
-            ticket_root_19: prev_state.ticket_root_19,
-            ticket_root_20: prev_state.ticket_root_20,
-            ticket_root_21: prev_state.ticket_root_21,
-            ticket_root_22: prev_state.ticket_root_22,
-            ticket_root_23: prev_state.ticket_root_23,
-            ticket_root_24: prev_state.ticket_root_24,
-            ticket_root_25: prev_state.ticket_root_25,
-            ticket_root_26: prev_state.ticket_root_26,
-            ticket_root_27: prev_state.ticket_root_27,
-            ticket_root_28: prev_state.ticket_root_28,
-            ticket_root_29: prev_state.ticket_root_29,
-            ticket_root_30: prev_state.ticket_root_30,
-            ticket_root_31: prev_state.ticket_root_31,
-        });
+        int refund_total = ticket_price * sold_tickets;
+        int creator_refund = tx.inputs[this.activeInputIndex].value - refund_total - 20000000;
+        require(creator_refund >= 0);
+        require(tx.outputs.length == sold_batches + 1);
+
+        if (sold_batches >= 1) {
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_01))));
+            require(tx.outputs[0].value == ticket_price * (batch_end_01 - 0));
+        }
+        if (sold_batches >= 2) {
+            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_02))));
+            require(tx.outputs[1].value == ticket_price * (batch_end_02 - batch_end_01));
+        }
+        if (sold_batches >= 3) {
+            require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_03))));
+            require(tx.outputs[2].value == ticket_price * (batch_end_03 - batch_end_02));
+        }
+        if (sold_batches >= 4) {
+            require(tx.outputs[3].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_04))));
+            require(tx.outputs[3].value == ticket_price * (batch_end_04 - batch_end_03));
+        }
+        if (sold_batches >= 5) {
+            require(tx.outputs[4].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_05))));
+            require(tx.outputs[4].value == ticket_price * (batch_end_05 - batch_end_04));
+        }
+        if (sold_batches >= 6) {
+            require(tx.outputs[5].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_06))));
+            require(tx.outputs[5].value == ticket_price * (batch_end_06 - batch_end_05));
+        }
+        if (sold_batches >= 7) {
+            require(tx.outputs[6].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_07))));
+            require(tx.outputs[6].value == ticket_price * (batch_end_07 - batch_end_06));
+        }
+        if (sold_batches >= 8) {
+            require(tx.outputs[7].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_08))));
+            require(tx.outputs[7].value == ticket_price * (batch_end_08 - batch_end_07));
+        }
+        if (sold_batches >= 9) {
+            require(tx.outputs[8].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_09))));
+            require(tx.outputs[8].value == ticket_price * (batch_end_09 - batch_end_08));
+        }
+        if (sold_batches >= 10) {
+            require(tx.outputs[9].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_10))));
+            require(tx.outputs[9].value == ticket_price * (batch_end_10 - batch_end_09));
+        }
+        if (sold_batches >= 11) {
+            require(tx.outputs[10].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_11))));
+            require(tx.outputs[10].value == ticket_price * (batch_end_11 - batch_end_10));
+        }
+        if (sold_batches >= 12) {
+            require(tx.outputs[11].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_12))));
+            require(tx.outputs[11].value == ticket_price * (batch_end_12 - batch_end_11));
+        }
+        if (sold_batches >= 13) {
+            require(tx.outputs[12].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_13))));
+            require(tx.outputs[12].value == ticket_price * (batch_end_13 - batch_end_12));
+        }
+        if (sold_batches >= 14) {
+            require(tx.outputs[13].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_14))));
+            require(tx.outputs[13].value == ticket_price * (batch_end_14 - batch_end_13));
+        }
+        if (sold_batches >= 15) {
+            require(tx.outputs[14].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_15))));
+            require(tx.outputs[14].value == ticket_price * (batch_end_15 - batch_end_14));
+        }
+        if (sold_batches >= 16) {
+            require(tx.outputs[15].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_16))));
+            require(tx.outputs[15].value == ticket_price * (batch_end_16 - batch_end_15));
+        }
+        if (sold_batches >= 17) {
+            require(tx.outputs[16].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_17))));
+            require(tx.outputs[16].value == ticket_price * (batch_end_17 - batch_end_16));
+        }
+        if (sold_batches >= 18) {
+            require(tx.outputs[17].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_18))));
+            require(tx.outputs[17].value == ticket_price * (batch_end_18 - batch_end_17));
+        }
+        if (sold_batches >= 19) {
+            require(tx.outputs[18].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_19))));
+            require(tx.outputs[18].value == ticket_price * (batch_end_19 - batch_end_18));
+        }
+        if (sold_batches >= 20) {
+            require(tx.outputs[19].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_20))));
+            require(tx.outputs[19].value == ticket_price * (batch_end_20 - batch_end_19));
+        }
+
+        require(tx.outputs[sold_batches].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
+        require(tx.outputs[sold_batches].value == creator_refund);
     }
 }

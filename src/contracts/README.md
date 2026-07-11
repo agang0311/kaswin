@@ -1,21 +1,27 @@
 # Contract Artifacts
 
-`raffle_round.sil` is the covenant source for the V0 raffle round. It now compiles with the local Silverscript toolchain, but the app keeps covenant finalize disabled until the browser transaction builder is wired to the compiled artifact.
+`raffle_round.sil` is the covenant source for the raffle round. It compiles with the local Silverscript toolchain, and the browser transaction builder reads the runtime artifact for round creation, buy, direct finalize, and timeout refund spends.
 
 Current files:
 
 - `raffle_round.sil`: Silverscript source for the single-UTXO round covenant.
 - `compiled/raffle-round.silverc.json`: generated Silverscript output with script, ABI, state layout, AST, and debug info.
-- `compiled/raffle-round.manifest.json`: source-only manifest. The frontend reads this and disables covenant finalize until the transaction builder is ready.
+- `compiled/raffle-round-v1.artifact.json`: preserved runtime artifact for loading rounds created before direct finalize.
+- `compiled/raffle-round-v2.artifact.json`: preserved direct-finalize artifact for older rounds.
+- `compiled/raffle-round-v3-beta.artifact.json`: preserved first batch artifact so its test round can be refunded safely.
+- `compiled/raffle-round.manifest.json`: source metadata. The frontend uses `compiled/raffle-round.artifact.json` for executable covenant data.
 
-Next required work:
+Current verification:
 
-1. Wire transaction v1 covenant creation, buy, close, finalize, and refund spends in the browser.
-2. Pass an empty `State[] next_states` value to `finalize`; this is the compiler-supported termination form.
-3. Replace `compiled/raffle-round.manifest.json` with ABI/script bytes and `status: "compiled"` only after browser spends are verified on TN12.
+1. `raffle_round.sil` compiles with primitive `int` and fixed `byte[32]` state fields.
+2. Browser verification covers create, buy, automatic local oracle attestation, direct finalize, winner payout, and history load on the currently reachable public testnet node.
+3. Historical lookup is available through the explorer REST API; fuller chain reconstruction after arbitrary page reloads is still future work.
 
 Windows TN12 compiler note:
 
 - Rust/Cargo can build `silverc` with the `stable-x86_64-pc-windows-gnu` toolchain plus MSYS2 MinGW.
 - `kaspa-txscript` currently pulls RISC0 dependencies on Windows. The compile script injects a no-runtime RISC0 allocation stub so the compiler binary can link.
-- `raffle_round.sil` avoids byte-array covenant state fields by storing each 32-byte value as 32 primitive `int` byte slots and rebuilding `byte[32]` values only inside hashing logic.
+- `raffle_round.sil` stores the oracle public key and ticket root as fixed `byte[32]` covenant state fields, matching the compiler's encoded state layout directly.
+- Finalize is valid only after all tickets sell or the round deadline is reached. The timeout path shares its DAA deadline with the all-buyer refund path.
+- The current v3.1 state stores up to 20 purchase-batch end indexes and owner public keys. A batch may contain many tickets, allowing 1,000 total tickets without a 1,000-output refund transaction.
+- Finalize derives the winning ticket index, resolves its batch owner inside the covenant, and requires the prize output to use that public key.

@@ -8,8 +8,8 @@ The app is designed to run without a project-controlled backend. Users provide a
 
 This repository starts Milestone 1:
 
-- Static Vite + React + TypeScript app shell
-- One-page raffle operations console
+- Single-file React + TypeScript SPA build
+- Focused one-page raffle workspace with technical details collapsed by default
 - Local UI state and metadata helpers
 - Browser-side Kaspa wRPC connection and test wallet import/generation
 - Browser-side testnet ticket purchase transactions
@@ -20,20 +20,23 @@ This repository starts Milestone 1:
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-The current payment flow is a legacy test harness, not the final covenant design. The app now refuses to present signer-key payout as a contract. Real automatic payout requires compiling `src/contracts/raffle_round.sil`, committing the compiled artifact under `src/contracts/compiled/`, and wiring browser-side transaction v1 covenant spends. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
+The current flow builds browser-side Toccata covenant transactions for round creation, batched ticket buys, direct finalize, and timeout refunds. One purchase can cover many sequential ticket numbers, allowing up to 1,000 tickets while keeping at most 20 on-chain purchase batches. Finalize automatically creates the local development oracle attestation when its saved key is available. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
 
 ## Covenant Direction
 
-The intended V0 covenant keeps the pot in a `RaffleRound` covenant UTXO. Ticket purchases spend the current round state into the next state. Finalization reveals the creator secret, computes the winner from `roundId`, `ticketRoot`, and the reveal, terminates the covenant, and requires output 0 to pay the winner. No treasury private key should be needed after the round UTXO is created.
+The covenant keeps the pot in a `RaffleRound` covenant UTXO. Ticket purchases spend the current round state into the next state. Each purchase stores its ending ticket number and owner public key, so finalize can prove that the payout address owns the winning ticket without storing 1,000 owners. The oracle public key and ticket root remain native `byte[32]` state fields. Finalization is valid only when all tickets have sold or the configured DAA deadline has arrived. It computes the winner, verifies the owner, pays the prize, and refunds the carrier to the creator in the same transaction.
 
 ## Testnet Notes
 
-Default local testing targets TN12/Toccata:
+Default local testing targets the public Toccata testnet endpoint:
 
-- wRPC: `ws://tn12-node.kaspa.com:17210`
-- network id: `testnet-12`
-- initial ticket price: `20000000` sompi, or `0.2 KAS`
-- initial ticket bounds: 1 to 3 tickets
+- wRPC: `ws://tn12-node.kaspa.com:18210`
+- network id: use the network reported after connecting; as of 2026-07-09 this endpoint reports `testnet-10`
+- initial ticket price: `30000000` sompi, or `0.3 KAS`
+- default round size: 10 tickets
+- contract limit: 1,000 tickets across at most 20 purchase batches
+- round carrier reserve: `5000000000` sompi, or `50 KAS`; this keeps the covenant UTXO above current storage-mass limits and is refunded to the creator at finalize when large enough.
+- temporary covenant funding reserve: at least `1000000000` sompi, or `10 KAS`; this is returned during the ticket or registry transaction when possible.
 
 Create a local experiment wallet:
 
@@ -45,7 +48,7 @@ Wallet files are written under `wallets/`, which is intentionally ignored by Git
 
 As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 
-Manual transaction testing on 2026-07-08 showed that `0.1 KAS` ticket outputs are rejected by current Toccata storage-mass rules with `Storage mass exceeds maximum`. `0.2 KAS` ticket outputs are accepted, so local end-to-end testing starts there.
+Manual transaction testing on 2026-07-09 and 2026-07-10 showed that low-value covenant outputs can be rejected by current Toccata storage-mass rules. Local end-to-end ticket testing starts at `0.3 KAS`, and round creation uses a configurable carrier reserve that defaults to `50 KAS` for the covenant output.
 
 ## Development
 
@@ -60,7 +63,7 @@ Build static assets:
 npm run build
 ```
 
-The build output is `dist/` and should be deployable to GitHub Pages, IPFS, Arweave, Nginx, or any static file host.
+The build output is a self-contained `dist/index.html` with JavaScript, CSS, and Kaspa WASM embedded. It can be deployed as one file to GitHub Pages, IPFS, Arweave, Nginx, or any static file host.
 
 Run the current development gate:
 
@@ -74,7 +77,7 @@ Run the covenant release gate:
 npm run verify:covenant
 ```
 
-The covenant release gate is expected to fail until `raffle_round.sil` is compiled and browser-side covenant transaction builders are wired. See [`docs/development-verification-loop.md`](docs/development-verification-loop.md).
+The covenant release gate requires the compiled Silverscript artifact and wired browser-side covenant transaction builders. See [`docs/development-verification-loop.md`](docs/development-verification-loop.md).
 
 Compile the covenant source with the local Silverscript checkout:
 
@@ -82,7 +85,7 @@ Compile the covenant source with the local Silverscript checkout:
 npm run compile:contract
 ```
 
-The compiler toolchain runs locally now. The raffle source is still blocked by current Silverscript byte-array state support, so the app keeps covenant payout disabled.
+The compiler toolchain runs locally now. The raffle source stores oracle public key and ticket root as fixed `byte[32]` covenant state fields and the browser encoder writes the same state layout produced by the compiler.
 
 ## Safety
 

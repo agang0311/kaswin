@@ -3,7 +3,7 @@
 This project has two separate gates:
 
 1. Buyer flow: a normal user can open the static page, connect to a browser wRPC endpoint, load a round link, import or generate a funded testnet wallet, and buy tickets.
-2. Covenant flow: close/finalize must be a real Kaspa covenant spend. The prize must be paid by the finalize transaction itself, not by a treasury private key or a later manual transfer.
+2. Covenant flow: finalize must be a real Kaspa covenant spend after sellout or timeout. The prize must be paid by the finalize transaction itself, not by a treasury private key or a later manual transfer.
 
 ## Local Commands
 
@@ -17,7 +17,7 @@ Runs the TypeScript build and static release checks. This command is allowed to 
 npm run verify:covenant
 ```
 
-Runs the same checks with the release gate enabled. This command must fail until `src/contracts/raffle_round.sil` is compiled and `src/contracts/compiled/raffle-round.manifest.json` contains real ABI/script artifacts.
+Runs the same checks with the release gate enabled. This command must fail if the compiled runtime artifact is missing or the browser covenant transaction builders are not wired.
 
 ```bash
 npm run compile:contract
@@ -25,7 +25,7 @@ npm run compile:contract
 
 Runs the local `kaspanet/silverscript` compiler from `.tools/silverscript`. On Windows, the script uses Rust GNU plus MSYS2 MinGW and injects a temporary RISC0 allocation stub required by the current `kaspa-txscript` dependency graph.
 
-As of 2026-07-08, the compiler binary runs locally, but the raffle contract does not yet compile because `validateOutputState` rejects the byte-array state fields needed for `round_id`, `creator_commitment`, and `ticket_root`. The covenant release gate must stay red until that is solved without weakening payout correctness.
+As of 2026-07-09, the raffle contract compiles locally. The 32-byte oracle public key and ticket-root values are stored as fixed `byte[32]` covenant state fields, and the browser encoder mirrors the compiler state layout.
 
 ## Manual TN12 Browser Loop
 
@@ -33,23 +33,34 @@ Use a dedicated testnet wallet only.
 
 1. Start the static app locally.
 2. Open the app in Chrome.
-3. Connect to `ws://tn12-node.kaspa.com:17210` with network `testnet-12`.
+3. Connect to `ws://tn12-node.kaspa.com:18210`; the app should adopt the network reported by the node.
 4. Load the shared round URL or paste the round metadata JSON.
 5. Import a funded TN12 buyer wallet.
-6. Buy one ticket at `20000000` sompi.
-7. Increase ticket coverage to two and then three tickets.
-8. Confirm the page reconstructs sold ticket count and pot size.
-9. Close/finalize only when the covenant manifest is compiled.
-10. Confirm the winning output is paid by the covenant finalize transaction itself.
+6. Buy a ticket batch and confirm the page displays one ticket-number range instead of one row per ticket.
+7. Run at least three complete create/buy/finalize rounds; one round must contain 10 tickets.
+8. Run a final 1,000-ticket round and confirm it can be bought in one batch, reconstructed from history, and paid out.
+9. Confirm round creation uses the default `5000000000` sompi carrier reserve and stores the creator address for refund.
+10. Finalize after the round sells out; the page should create the development oracle attestation automatically.
+11. Load at least one sold-out round through History before finalizing it.
+12. Confirm the winning output is paid by the covenant finalize transaction itself and any large carrier remainder is refunded to the creator.
 
 ## Current Expected Result
 
-The buyer flow is live on TN12 with the legacy ticket-payment harness. The covenant flow is intentionally blocked because the committed manifest is still `source-only`.
+The buyer flow and covenant transaction builders are wired for the currently reachable Toccata testnet endpoint. As of 2026-07-09, the public `ws://tn12-node.kaspa.com:18210` endpoint reports `testnet-10`, so the UI follows the connected node network instead of assuming the label in the URL.
 
 A passing release run requires all of the following:
 
 - `raffle_round.sil` compiles against the current `kaspanet/silverscript` toolchain.
-- The compiled manifest has `status: "compiled"`, script bytes, and ABI data.
-- Browser transaction builders create the round covenant UTXO, ticket transition spends, close spend, and finalize termination spend.
+- The compiled runtime artifact has script bytes, ABI data, and the expected primitive state layout.
+- Browser transaction builders create the round covenant UTXO, ticket transition spends, direct finalize termination spend, and timeout refund spend.
+- The covenant permits finalize only after all tickets sell or the configured DAA deadline arrives.
+- The covenant supports up to 1,000 tickets through at most 20 purchase batches and verifies the winning batch owner on chain.
 - Finalize output 0 pays the winning ticket owner directly from the covenant pot.
 - No treasury private key or manual `Pay prize` path exists in the UI.
+- `dist/` contains only a self-contained `index.html` with the Kaspa WASM embedded.
+
+## Verified TN12 Runs (2026-07-11)
+
+- `round-e58e5261eb6c6e1e`: 10 tickets, one batch, payout `9100ff8d511fd101f29a76281baac777ee13a50f6c6f9c2469d0a4711d086cc7`.
+- `round-a57468eb2c262611`: 3 tickets, loaded through History before finalize, payout `fec95efa66655439f80ad015835e0baf1ccc936baddcc533dccc9603412d330a`.
+- `round-66ce07a8daa5b00b`: 1,000 tickets, one batch, winner #495, payout `f197bdbdd9a08e16a9e9c441a09d524fb75e9e3a885b101495f5d99f9a9cbb17`.

@@ -112,7 +112,7 @@ const compiled = JSON.parse(fs.readFileSync(outputPath, "utf8"));
 const entrypoints = compiled.ast.functions.filter((fn) => fn.entrypoint).map((fn, selector) => ({ name: fn.name, selector }));
 const stateFields = compiled.ast.fields.map((field) => ({
   name: field.name,
-  type: field.type_ref?.base ?? "unknown"
+  type: field.type_span?.trim() ?? field.type_ref?.base ?? "unknown"
 }));
 const runtimeArtifact = {
   contract: compiled.contract_name,

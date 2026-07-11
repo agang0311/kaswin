@@ -7,12 +7,18 @@ export function createEmptyMetadata(): RaffleMetadata {
     network: "testnet-12",
     roundId: "",
     createTxId: "",
-    ticketPrice: "20000000",
-    maxTickets: 3,
+    ticketPrice: "30000000",
+    maxTickets: 10,
     minTickets: 1,
+    creatorAddress: "",
+    creatorPubkey: "",
     creatorCommitment: "",
+    oraclePublicKey: "",
+    refundTimeoutSeconds: "600",
+    refundTimeoutDaa: "6000",
+    refundAfterDaaScore: "",
     treasuryAddress: "",
-    contractVersion: "raffle-v0"
+    contractVersion: "raffle-v3.1-batch-1000"
   };
 }
 
@@ -30,7 +36,7 @@ export function parseMetadata(raw: string): RaffleMetadata {
     "ticketPrice",
     "maxTickets",
     "minTickets",
-    "creatorCommitment",
+    "oraclePublicKey",
     "contractVersion"
   ];
 
@@ -49,6 +55,10 @@ export function parseMetadata(raw: string): RaffleMetadata {
 
   if (typeof maxTickets !== "number" || !Number.isInteger(maxTickets) || maxTickets < 1) {
     throw new Error("Metadata maxTickets must be a positive integer.");
+  }
+
+  if (maxTickets > 1000) {
+    throw new Error("Metadata maxTickets cannot exceed 1000.");
   }
 
   if (typeof minTickets !== "number" || !Number.isInteger(minTickets) || minTickets < 1) {

@@ -41,28 +41,69 @@ const script = hexToBytes(artifact.script);
 const stateStart = artifact.stateLayout.start;
 const stateEnd = stateStart + artifact.stateLayout.len;
 const stateSlice = script.slice(stateStart, stateEnd);
-const expectedZeroState = new Uint8Array(artifact.stateFields.length * 9);
+const expectedZeroState = new Uint8Array(
+  artifact.stateFields.reduce((total, field) => {
+    if (field.type === "int") {
+      return total + 9;
+    }
 
-for (let offset = 0; offset < expectedZeroState.length; offset += 9) {
-  expectedZeroState[offset] = 8;
+    if (field.type === "byte[32]") {
+      return total + 33;
+    }
+
+    return total;
+  }, 0)
+);
+
+let expectedOffset = 0;
+for (const field of artifact.stateFields) {
+  if (field.type === "int") {
+    expectedZeroState[expectedOffset] = 8;
+    expectedOffset += 9;
+  } else if (field.type === "byte[32]") {
+    expectedZeroState[expectedOffset] = 32;
+    expectedOffset += 33;
+  }
 }
 
 const abiSelectors = Object.fromEntries(artifact.abi.map((entry) => [entry.name, entry.selector]));
-const finalize = artifact.abi.find((entry) => entry.name === "__covenant_entrypoint_auth_finalize");
+const buy = artifact.abi.find((entry) => entry.name === "buy");
+const finalize = artifact.abi.find((entry) => entry.name === "finalize");
+const refundAll = artifact.abi.find((entry) => entry.name === "refund_all");
+const expectedStateFields = [
+  "max_tickets:int",
+  "ticket_price:int",
+  "creator_pubkey:byte[32]",
+  "oracle_pubkey:byte[32]",
+  "refund_after_daa:int",
+  "sold_tickets:int",
+  "sold_batches:int",
+  "ticket_root:byte[32]",
+  ...Array.from({ length: 20 }, (_, index) => `batch_end_${String(index + 1).padStart(2, "0")}:int`),
+  ...Array.from({ length: 20 }, (_, index) => `owner_${String(index + 1).padStart(2, "0")}:byte[32]`)
+];
 
 assert("Runtime artifact names RaffleRound", artifact.contract === "RaffleRound");
 assert("Runtime artifact script length matches bytes", script.length === artifact.scriptLength, `${script.length} bytes`);
-assert("Runtime artifact has 103 int state fields", artifact.stateFields.length === 103);
-assert("Runtime artifact state layout length matches int chunks", artifact.stateLayout.len === artifact.stateFields.length * 9);
-assert("Compiled default state segment matches zero int encoding", Buffer.compare(Buffer.from(stateSlice), Buffer.from(expectedZeroState)) === 0);
-assert("Buy selector is 0", abiSelectors.__covenant_entrypoint_auth_buy === 0);
-assert("Close selector is 1", abiSelectors.__covenant_entrypoint_auth_close === 1);
-assert("Finalize selector is 2", abiSelectors.__covenant_entrypoint_auth_finalize === 2);
-assert("Refund selector is 3", abiSelectors.__covenant_entrypoint_auth_enter_refunding === 3);
 assert(
-  "Finalize ABI uses empty State array and byte[34] payout script",
-  JSON.stringify(finalize?.inputs.map((input) => input.type_name)) === JSON.stringify(["State[]", "byte[32]", "int", "byte[34]"])
+  "Runtime artifact has timeout refund state fields",
+  JSON.stringify(artifact.stateFields.map((field) => `${field.name}:${field.type}`)) === JSON.stringify(expectedStateFields)
 );
+assert("Runtime artifact state layout length matches field encoding", artifact.stateLayout.len === expectedZeroState.length);
+assert("Compiled default state segment matches zero state encoding", Buffer.compare(Buffer.from(stateSlice), Buffer.from(expectedZeroState)) === 0);
+assert("Buy selector is 0", abiSelectors.buy === 0);
+assert("Close selector is 1", abiSelectors.close === 1);
+assert("Finalize selector is 2", abiSelectors.finalize === 2);
+assert("Refund-all selector is 3", abiSelectors.refund_all === 3);
+assert(
+  "Buy ABI uses ticket root, owner pubkey, and batch quantity",
+  JSON.stringify(buy?.inputs.map((input) => input.type_name)) === JSON.stringify(["byte[32]", "pubkey", "int"])
+);
+assert(
+  "Finalize ABI uses oracle signature, seed, winner id, and payout pubkey",
+  JSON.stringify(finalize?.inputs.map((input) => input.type_name)) === JSON.stringify(["datasig", "byte[32]", "int", "pubkey"])
+);
+assert("Refund-all ABI takes no arguments", JSON.stringify(refundAll?.inputs.map((input) => input.type_name)) === JSON.stringify([]));
 
 if (failures > 0) {
   console.error(`\n${failures} covenant artifact check${failures === 1 ? "" : "s"} failed.`);

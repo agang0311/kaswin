@@ -6,15 +6,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/inline-spa.mjs",
     "compile:contract": "node scripts/compile-raffle-contract.mjs",
     "verify": "npm run build && node scripts/verify-dev-loop.mjs && node scripts/verify-covenant-artifact.mjs",
     "verify:artifact": "node scripts/verify-covenant-artifact.mjs",
-    "verify:covenant": "npm run build && node scripts/verify-dev-loop.mjs --require-covenant",
+    "verify:covenant": "npm run build && node scripts/verify-dev-loop.mjs --require-covenant && node scripts/verify-covenant-artifact.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@kluster/kaspa-wasm": "^2.0.1",
+    "@noble/secp256k1": "^3.1.0",
     "@onekeyfe/kaspa-wasm": "^1.0.3-alpha.1",
     "buffer": "^6.0.3",
     "lucide-react": "^0.468.0",
