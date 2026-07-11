@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -22,9 +24,41 @@ function patchOneKeyBrowserWasmLoader(): Plugin {
   };
 }
 
+function localTestWalletPlugin(): Plugin {
+  return {
+    name: "local-test-wallet",
+    configureServer(server) {
+      server.middlewares.use("/__kaspa_raffle_local_test_wallet", (request, response, next) => {
+        if (request.method !== "GET") {
+          next();
+          return;
+        }
+
+        const walletPath = path.resolve("wallets", "experiment-testnet-12.json");
+
+        try {
+          const wallet = JSON.parse(fs.readFileSync(walletPath, "utf8")) as { privateKey?: string };
+
+          if (!wallet.privateKey) {
+            throw new Error("Missing private key");
+          }
+
+          response.statusCode = 200;
+          response.setHeader("Cache-Control", "no-store");
+          response.setHeader("Content-Type", "text/plain; charset=utf-8");
+          response.end(wallet.privateKey);
+        } catch {
+          response.statusCode = 404;
+          response.end("Local test wallet unavailable");
+        }
+      });
+    }
+  };
+}
+
 export default defineConfig({
   base: "./",
-  plugins: [patchOneKeyBrowserWasmLoader(), react()],
+  plugins: [patchOneKeyBrowserWasmLoader(), localTestWalletPlugin(), react()],
   build: {
     assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     cssCodeSplit: false,

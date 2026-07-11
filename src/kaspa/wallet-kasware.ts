@@ -1,9 +1,11 @@
-import type { PendingTransaction } from "@onekeyfe/kaspa-wasm";
 import {
   createConnectedWallet,
   fillSignedTransaction,
+  serializeWalletTransaction,
+  walletTransactionInputCount,
   type BrowserTestWallet,
-  type KaspaWalletAdapter
+  type KaspaWalletAdapter,
+  type WalletSignableTransaction
 } from "./wallet-types";
 
 interface KasWareSignInput {
@@ -58,15 +60,20 @@ function signedTransactionJson(result: string | { txJsonString?: string; signedT
   return json;
 }
 
-async function signTransaction(walletProvider: KasWareProvider, transaction: PendingTransaction): Promise<void> {
-  const inputCount = transaction.transaction.inputs.length;
+async function signTransaction(
+  walletProvider: KasWareProvider,
+  transaction: WalletSignableTransaction,
+  inputIndexes?: number[]
+): Promise<void> {
+  const inputCount = walletTransactionInputCount(transaction);
+  const indexes = inputIndexes ?? Array.from({ length: inputCount }, (_, index) => index);
   const result = await walletProvider.signPskt({
-    txJsonString: transaction.serializeToSafeJSON(),
+    txJsonString: serializeWalletTransaction(transaction),
     options: {
-      signInputs: Array.from({ length: inputCount }, (_, index) => ({ index, sighashType: 1 }))
+      signInputs: indexes.map((index) => ({ index, sighashType: 1 }))
     }
   });
-  fillSignedTransaction(transaction, signedTransactionJson(result));
+  fillSignedTransaction(transaction, signedTransactionJson(result), indexes);
 }
 
 async function walletFromAccounts(walletProvider: KasWareProvider, accounts: string[], network: string): Promise<BrowserTestWallet> {
@@ -76,7 +83,7 @@ async function walletFromAccounts(walletProvider: KasWareProvider, accounts: str
     address: accounts[0] ?? "",
     publicKey: await walletProvider.getPublicKey(),
     network,
-    signTransaction: (transaction) => signTransaction(walletProvider, transaction)
+    signTransaction: (transaction, inputIndexes) => signTransaction(walletProvider, transaction, inputIndexes)
   });
 }
 

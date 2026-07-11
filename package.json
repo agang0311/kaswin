@@ -1,6 +1,6 @@
 {
   "name": "kaspa-raffle-static-v0",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Static, testnet-first raffle dApp for Kaspa Toccata.",
   "private": true,
   "type": "module",
@@ -23,6 +23,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^5.0.0",

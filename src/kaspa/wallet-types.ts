@@ -1,6 +1,8 @@
 import { Transaction, type PendingTransaction } from "@onekeyfe/kaspa-wasm";
 import { pubkeyHexFromAddress } from "./covenant";
 
+export type WalletSignableTransaction = PendingTransaction | Transaction;
+
 export interface BrowserTestWallet {
   id: string;
   adapterId: string;
@@ -9,7 +11,7 @@ export interface BrowserTestWallet {
   publicKey: string;
   balanceSompi: bigint;
   providerName: string;
-  signTransaction(transaction: PendingTransaction): Promise<void>;
+  signTransaction(transaction: WalletSignableTransaction, inputIndexes?: number[]): Promise<void>;
 }
 
 export interface WalletAdapterOption {
@@ -56,22 +58,46 @@ export function validateWalletAccount(address: string, publicKey: string, provid
   }
 }
 
-export function fillSignedTransaction(transaction: PendingTransaction, signedTransactionJson: string): void {
+function underlyingTransaction(transaction: WalletSignableTransaction): Transaction {
+  return "transaction" in transaction ? transaction.transaction : transaction;
+}
+
+export function serializeWalletTransaction(transaction: WalletSignableTransaction): string {
+  return transaction.serializeToSafeJSON();
+}
+
+export function walletTransactionInputCount(transaction: WalletSignableTransaction): number {
+  return underlyingTransaction(transaction).inputs.length;
+}
+
+export function fillSignedTransaction(
+  transaction: WalletSignableTransaction,
+  signedTransactionJson: string,
+  inputIndexes?: number[]
+): void {
   const signed = Transaction.deserializeFromSafeJSON(signedTransactionJson);
-  const inputCount = transaction.transaction.inputs.length;
+  const target = underlyingTransaction(transaction);
+  const inputCount = target.inputs.length;
 
   if (signed.inputs.length !== inputCount) {
     throw new Error("The wallet returned a transaction with a different input count.");
   }
 
-  signed.inputs.forEach((input, index) => {
+  const indexes = inputIndexes ?? Array.from({ length: inputCount }, (_, index) => index);
+
+  indexes.forEach((index) => {
+    const input = signed.inputs[index];
     const signatureScript = input.signatureScript;
 
     if (!signatureScript?.length) {
       throw new Error(`The wallet did not sign transaction input ${index + 1}.`);
     }
 
-    transaction.fillInput(index, signatureScript);
+    if ("fillInput" in transaction) {
+      transaction.fillInput(index, signatureScript);
+    } else {
+      transaction.inputs[index].signatureScript = signatureScript;
+    }
   });
 }
 
@@ -81,7 +107,7 @@ export function createConnectedWallet(input: {
   address: string;
   publicKey: string;
   network: string;
-  signTransaction(transaction: PendingTransaction): Promise<void>;
+  signTransaction(transaction: WalletSignableTransaction, inputIndexes?: number[]): Promise<void>;
 }): BrowserTestWallet {
   const address = input.address.trim();
   const publicKey = normalizedXOnlyPublicKey(input.publicKey);

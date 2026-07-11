@@ -1,8 +1,13 @@
 import { kasWareWalletAdapter } from "./wallet-kasware";
 import { kastleWalletAdapter } from "./wallet-kastle";
+import { localTestWalletAdapter } from "./wallet-local-test";
 import type { BrowserTestWallet, KaspaWalletAdapter, WalletAdapterOption } from "./wallet-types";
 
 const adapters: KaspaWalletAdapter[] = [kasWareWalletAdapter, kastleWalletAdapter];
+
+if (import.meta.env.DEV) {
+  adapters.push(localTestWalletAdapter);
+}
 
 function adapterById(adapterId: string): KaspaWalletAdapter {
   const adapter = adapters.find((candidate) => candidate.id === adapterId);

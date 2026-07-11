@@ -9,6 +9,8 @@ import raffleRoundArtifact from "../contracts/compiled/raffle-round.artifact.jso
 import raffleRoundV1Artifact from "../contracts/compiled/raffle-round-v1.artifact.json";
 import raffleRoundV2Artifact from "../contracts/compiled/raffle-round-v2.artifact.json";
 import raffleRoundV3BetaArtifact from "../contracts/compiled/raffle-round-v3-beta.artifact.json";
+import raffleRoundV31Artifact from "../contracts/compiled/raffle-round-v3.1.artifact.json";
+import raffleRoundV32Artifact from "../contracts/compiled/raffle-round-v3.2.artifact.json";
 import raffleRoundManifest from "../contracts/compiled/raffle-round.manifest.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
 import type { RoundState } from "../raffle/types";
@@ -69,9 +71,14 @@ const artifact = raffleRoundArtifact as RaffleRoundRuntimeArtifact;
 const legacyV1Artifact = raffleRoundV1Artifact as RaffleRoundRuntimeArtifact;
 const legacyV2Artifact = raffleRoundV2Artifact as RaffleRoundRuntimeArtifact;
 const legacyV3BetaArtifact = raffleRoundV3BetaArtifact as RaffleRoundRuntimeArtifact;
+const legacyV31Artifact = raffleRoundV31Artifact as RaffleRoundRuntimeArtifact;
+const legacyV32Artifact = raffleRoundV32Artifact as RaffleRoundRuntimeArtifact;
 const LEGACY_V1_CONTRACT_VERSION = "raffle-v1-timeout-refund";
 const LEGACY_V2_CONTRACT_VERSION = "raffle-v2-direct-finalize";
 const LEGACY_V3_BETA_CONTRACT_VERSION = "raffle-v3-batch-1000";
+const LEGACY_V3_1_CONTRACT_VERSION = "raffle-v3.1-batch-1000";
+const LEGACY_V3_2_CONTRACT_VERSION = "raffle-v3.2-participant-finalize";
+export const PARTICIPANT_FINALIZE_CONTRACT_VERSION = "raffle-v3.3-participant-finalize-fee40";
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
 const BYTES32_STATE_BYTES = 32;
@@ -219,7 +226,11 @@ export function buildRaffleRedeemScriptForContractVersion(
       ? legacyV2Artifact
       : contractVersion === LEGACY_V3_BETA_CONTRACT_VERSION
         ? legacyV3BetaArtifact
-      : artifact;
+        : contractVersion === LEGACY_V3_1_CONTRACT_VERSION
+          ? legacyV31Artifact
+          : contractVersion === LEGACY_V3_2_CONTRACT_VERSION
+            ? legacyV32Artifact
+          : artifact;
 
   return buildRaffleRedeemScript(state, runtimeArtifact);
 }
@@ -292,7 +303,8 @@ export function buildRaffleFinalizeSignatureScript(
   oracleSignatureHex: string,
   oracleSeedHex: string,
   winnerTicketId: number,
-  winnerScriptPublicKey: ScriptPublicKey
+  winnerScriptPublicKey: ScriptPublicKey,
+  callerScriptPublicKey: ScriptPublicKey
 ): string {
   const oracleSignature = hexToBytes(oracleSignatureHex);
   const oracleSeed = bytes32FromHex(oracleSeedHex, "oracle seed");
@@ -301,11 +313,16 @@ export function buildRaffleFinalizeSignatureScript(
     throw new Error("Oracle signature must be exactly 64 bytes.");
   }
 
-  return buildRaffleP2shSignatureScript("finalize", currentRedeemScript, (builder) => {
+  return buildRaffleP2shSignatureScript("finalize", currentRedeemScript, (builder, _runtimeArtifact, entry) => {
+    if (entry.inputs.length < 5) {
+      throw new Error("This legacy round does not enforce participant-only drawing. Refund it after timeout or create a new round.");
+    }
+
     builder.addData(oracleSignature);
     builder.addData(oracleSeed);
     builder.addI64(BigInt(winnerTicketId));
     builder.addData(pubkeyFromP2pkScriptPublicKey(winnerScriptPublicKey));
+    builder.addData(pubkeyFromP2pkScriptPublicKey(callerScriptPublicKey));
   });
 }
 
@@ -378,7 +395,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
+  const candidates = [artifact, legacyV32Artifact, legacyV31Artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);

@@ -17,6 +17,7 @@ import {
   buildNextTicketRootHex,
   bytesToHex,
   getRaffleCovenantStatus,
+  PARTICIPANT_FINALIZE_CONTRACT_VERSION,
   pubkeyHexFromAddress,
   raffleWinnerIndexFromSeed
 } from "../kaspa/covenant";
@@ -352,6 +353,7 @@ export function App() {
     network: "unknown",
     syncStatus: "unknown"
   });
+  const [virtualDaaScore, setVirtualDaaScore] = useState(0n);
   const [rpcError, setRpcError] = useState("");
   const [wallet, setWallet] = useState<BrowserTestWallet | null>(null);
   const [walletError, setWalletError] = useState("");
@@ -415,6 +417,29 @@ export function App() {
   useEffect(() => {
     setMetadataText(stringifyMetadata(metadata));
   }, [metadata]);
+
+  useEffect(() => {
+    if (!nodeStatus.connected || !rpcConnectionRef.current) {
+      setVirtualDaaScore(0n);
+      return;
+    }
+
+    let cancelled = false;
+    const refreshDaa = async () => {
+      const score = await currentVirtualDaaScore(rpcConnectionRef.current!);
+      if (!cancelled) {
+        setVirtualDaaScore(score);
+        setNodeStatus((current) => ({ ...current, daaScore: score.toString() }));
+      }
+    };
+
+    void refreshDaa().catch(() => undefined);
+    const interval = window.setInterval(() => void refreshDaa().catch(() => undefined), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [nodeStatus.connected]);
 
   useEffect(() => {
     loadSharedRoundFromUrl();
@@ -516,8 +541,15 @@ export function App() {
   }, [covenantCarrierSompi]);
   const createCostTooltip = `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} history marker reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} marker refund fee + funding transaction fees. Reserves return later.`;
   const buyCostTooltip = `${formatKas(purchaseTotal)} ticket price + ${formatKas(COVENANT_BUY_FEE_SOMPI)} covenant fee + funding transaction fee (varies with wallet UTXOs).`;
-  const payoutCostTooltip = `${formatKas(round.potAmount)} prize from the pot + ${formatKas(COVENANT_FINALIZE_FEE_SOMPI)} covenant fee from the carrier. Wallet payment: 0 KAS.`;
+  const payoutCostTooltip = `${formatKas(round.potAmount)} prize from the pot + ${formatKas(COVENANT_FINALIZE_FEE_SOMPI)} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.`;
   const refundCostTooltip = `${formatKas(round.potAmount)} ticket refunds from the pot + ${formatKas(COVENANT_REFUND_FEE_SOMPI)} covenant fee from the carrier. Wallet payment: 0 KAS.`;
+  const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
+  const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
+  const participantFinalizeEnabled = metadata.contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION;
+  const walletIsParticipant = Boolean(
+    wallet && metadata.covenant?.ticketOwnerPubkeys.includes(pubkeyHexFromAddress(wallet.address))
+  );
+  const drawTimeReached = round.soldTickets >= round.maxTickets || refundAvailable;
   const soldPercent = metadata.maxTickets > 0
     ? Math.min(100, (round.soldTickets / metadata.maxTickets) * 100)
     : 0;
@@ -1136,6 +1168,18 @@ export function App() {
         throw new Error("Create or import a covenant round first.");
       }
 
+      if (metadata.contractVersion !== PARTICIPANT_FINALIZE_CONTRACT_VERSION) {
+        throw new Error("This legacy round does not enforce participant-only drawing. Refund it after timeout or create a new round.");
+      }
+
+      if (!wallet) {
+        throw new Error("Connect a participant wallet before drawing this round.");
+      }
+
+      if (!covenant.ticketOwnerPubkeys.includes(pubkeyHexFromAddress(wallet.address))) {
+        throw new Error("Only a wallet that bought tickets in this round can draw and pay the winner.");
+      }
+
       if (covenant.status !== "Open" && covenant.status !== "Closed") {
         throw new Error("This round is no longer available to finalize.");
       }
@@ -1238,6 +1282,7 @@ export function App() {
 
       const result = await finalizeRaffleCovenantRound({
         connection: rpcConnectionRef.current,
+        wallet,
         round: closedRound,
         covenant,
         oracleSeedHex: finalizeOracleSeed,
@@ -2028,10 +2073,14 @@ export function App() {
           ) : (
             <>
               <p className="pane-copy">
-                {round.soldTickets >= round.maxTickets
-                  ? "All tickets are sold. The round can be drawn now."
+                {!participantFinalizeEnabled && metadata.covenant
+                  ? "This legacy round can be refunded by anyone after timeout, but does not support participant-authorized drawing."
+                  : round.soldTickets >= round.maxTickets
+                  ? walletIsParticipant ? "All tickets are sold. A connected participant can draw now." : "All tickets are sold. Connect a participant wallet to draw."
                   : round.soldTickets > 0
-                    ? `${remainingTickets.toLocaleString()} tickets remain, or draw after the timeout.`
+                    ? refundAvailable
+                      ? walletIsParticipant ? "The timeout has passed. A connected participant can draw, or anyone can refund." : "The timeout has passed. Connect a participant wallet to draw, or refund without a wallet."
+                      : `${remainingTickets.toLocaleString()} tickets remain. Draw and refund unlock at the timeout.`
                     : "Buy at least one ticket before drawing."}
               </p>
               <div className="button-row">
@@ -2044,6 +2093,9 @@ export function App() {
                     !covenantStatus.enabled ||
                     isFinalizing ||
                     !metadata.covenant ||
+                    !participantFinalizeEnabled ||
+                    !walletIsParticipant ||
+                    !drawTimeReached ||
                     (metadata.covenant.status !== "Open" && metadata.covenant.status !== "Closed") ||
                     metadata.covenant.soldTickets <= 0
                   }
@@ -2062,7 +2114,8 @@ export function App() {
                     metadata.covenant.status === "Finalized" ||
                     metadata.covenant.status === "Refunding" ||
                     metadata.covenant.status === "Refunded" ||
-                    metadata.covenant.soldTickets <= 0
+                    metadata.covenant.soldTickets <= 0 ||
+                    !refundAvailable
                   }
                 >
                   {isRefundingRound ? "Refunding..." : "Refund after timeout"}

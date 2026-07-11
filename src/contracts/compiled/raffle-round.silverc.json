@@ -3944,8 +3944,8 @@
     118,
     201,
     2,
-    71,
-    23,
+    171,
+    24,
     148,
     118,
     81,
@@ -3958,8 +3958,8 @@
     201,
     118,
     2,
-    71,
-    23,
+    171,
+    24,
     148,
     2,
     217,
@@ -4390,6 +4390,26 @@
     0,
     156,
     105,
+    179,
+    82,
+    156,
+    105,
+    81,
+    191,
+    1,
+    49,
+    121,
+    3,
+    0,
+    0,
+    32,
+    124,
+    126,
+    1,
+    172,
+    126,
+    135,
+    105,
     1,
     42,
     121,
@@ -4417,10 +4437,10 @@
     155,
     105,
     1,
-    51,
+    52,
     121,
     1,
-    51,
+    52,
     121,
     168,
     1,
@@ -4429,10 +4449,315 @@
     215,
     105,
     1,
-    40,
+    48,
+    121,
+    118,
+    1,
+    21,
+    121,
+    135,
+    1,
+    43,
+    121,
+    82,
+    162,
+    82,
     121,
     1,
-    51,
+    22,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    83,
+    162,
+    82,
+    121,
+    1,
+    21,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    84,
+    162,
+    82,
+    121,
+    1,
+    20,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    85,
+    162,
+    82,
+    121,
+    1,
+    19,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    86,
+    162,
+    82,
+    121,
+    1,
+    18,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    87,
+    162,
+    82,
+    121,
+    1,
+    17,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    88,
+    162,
+    82,
+    121,
+    96,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    89,
+    162,
+    82,
+    121,
+    95,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    90,
+    162,
+    82,
+    121,
+    94,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    91,
+    162,
+    82,
+    121,
+    93,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    92,
+    162,
+    82,
+    121,
+    92,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    93,
+    162,
+    82,
+    121,
+    91,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    94,
+    162,
+    82,
+    121,
+    90,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    95,
+    162,
+    82,
+    121,
+    89,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    96,
+    162,
+    82,
+    121,
+    88,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    1,
+    17,
+    162,
+    82,
+    121,
+    87,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    1,
+    18,
+    162,
+    82,
+    121,
+    86,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    1,
+    19,
+    162,
+    82,
+    121,
+    85,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    1,
+    43,
+    121,
+    1,
+    20,
+    162,
+    82,
+    121,
+    84,
+    121,
+    135,
+    154,
+    99,
+    81,
+    119,
+    104,
+    118,
+    105,
+    1,
+    42,
+    121,
+    1,
+    54,
     121,
     126,
     168,
@@ -4547,30 +4872,66 @@
     149,
     147,
     1,
-    48,
+    50,
     121,
     151,
     1,
-    55,
+    58,
     121,
     1,
-    49,
+    51,
     121,
     159,
     105,
     1,
-    55,
+    58,
     121,
     120,
     156,
     105,
     1,
-    25,
+    27,
     121,
     1,
-    48,
+    50,
     121,
     82,
+    162,
+    82,
+    121,
+    1,
+    50,
+    121,
+    162,
+    154,
+    99,
+    1,
+    27,
+    121,
+    119,
+    104,
+    1,
+    50,
+    121,
+    83,
+    162,
+    82,
+    121,
+    1,
+    49,
+    121,
+    162,
+    154,
+    99,
+    1,
+    26,
+    121,
+    119,
+    104,
+    1,
+    50,
+    121,
+    84,
     162,
     82,
     121,
@@ -4586,9 +4947,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    83,
+    85,
     162,
     82,
     121,
@@ -4604,9 +4965,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    84,
+    86,
     162,
     82,
     121,
@@ -4622,9 +4983,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    85,
+    87,
     162,
     82,
     121,
@@ -4640,9 +5001,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    86,
+    88,
     162,
     82,
     121,
@@ -4658,9 +5019,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    87,
+    89,
     162,
     82,
     121,
@@ -4676,9 +5037,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    88,
+    90,
     162,
     82,
     121,
@@ -4694,9 +5055,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    89,
+    91,
     162,
     82,
     121,
@@ -4712,9 +5073,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    90,
+    92,
     162,
     82,
     121,
@@ -4730,9 +5091,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    91,
+    93,
     162,
     82,
     121,
@@ -4747,9 +5108,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    92,
+    94,
     162,
     82,
     121,
@@ -4764,9 +5125,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    93,
+    95,
     162,
     82,
     121,
@@ -4781,9 +5142,9 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    94,
+    96,
     162,
     82,
     121,
@@ -4798,9 +5159,10 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    95,
+    1,
+    17,
     162,
     82,
     121,
@@ -4815,9 +5177,10 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
-    96,
+    1,
+    18,
     162,
     82,
     121,
@@ -4832,10 +5195,10 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
     1,
-    17,
+    19,
     162,
     82,
     121,
@@ -4850,10 +5213,10 @@
     119,
     104,
     1,
-    48,
+    50,
     121,
     1,
-    18,
+    20,
     162,
     82,
     121,
@@ -4868,52 +5231,16 @@
     119,
     104,
     1,
-    48,
-    121,
-    1,
-    19,
-    162,
-    82,
-    121,
-    1,
-    31,
-    121,
-    162,
-    154,
-    99,
-    88,
-    121,
-    119,
-    104,
-    1,
-    48,
-    121,
-    1,
-    20,
-    162,
-    82,
-    121,
-    1,
-    30,
-    121,
-    162,
-    154,
-    99,
-    87,
-    121,
-    119,
-    104,
-    1,
-    55,
+    58,
     121,
     120,
     135,
     105,
     1,
-    53,
+    55,
     121,
     1,
-    50,
+    52,
     121,
     149,
     185,
@@ -4922,22 +5249,22 @@
     148,
     4,
     0,
-    45,
-    49,
-    1,
+    90,
+    98,
+    2,
     148,
     118,
     0,
     162,
     105,
     180,
-    82,
+    83,
     156,
     105,
     0,
     195,
     1,
-    58,
+    61,
     121,
     3,
     0,
@@ -4959,7 +5286,7 @@
     81,
     195,
     1,
-    55,
+    57,
     121,
     3,
     0,
@@ -4977,6 +5304,28 @@
     120,
     156,
     105,
+    82,
+    195,
+    1,
+    60,
+    121,
+    3,
+    0,
+    0,
+    32,
+    124,
+    126,
+    1,
+    172,
+    126,
+    135,
+    105,
+    82,
+    194,
+    81,
+    190,
+    156,
+    105,
     0,
     122,
     117,
@@ -5003,6 +5352,13 @@
     117,
     0,
     122,
+    117,
+    0,
+    122,
+    117,
+    0,
+    122,
+    117,
     117,
     117,
     117,
@@ -13551,6 +13907,15 @@
             "span": "pubkey winner_pubkey",
             "type_span": "pubkey ",
             "name_span": "winner_pubkey"
+          },
+          {
+            "type_ref": {
+              "base": "pubkey"
+            },
+            "name": "caller_pubkey",
+            "span": "pubkey caller_pubkey",
+            "type_span": "pubkey ",
+            "name_span": "caller_pubkey"
           }
         ],
         "entrypoint": true,
@@ -13589,6 +13954,84 @@
               },
               "message": null,
               "span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "nullary",
+                    "data": "tx_inputs_length",
+                    "span": "tx.inputs.length"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 2,
+                    "span": "2"
+                  }
+                },
+                "span": "tx.inputs.length == 2"
+              },
+              "message": null,
+              "span": "require(tx.inputs.length == 2);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "introspection",
+                    "data": {
+                      "kind": "input_script_pub_key",
+                      "index": {
+                        "kind": "int",
+                        "data": 1,
+                        "span": "1"
+                      },
+                      "field_span": ".scriptPubKey"
+                    },
+                    "span": "tx.inputs[1].scriptPubKey"
+                  },
+                  "right": {
+                    "kind": "call",
+                    "data": {
+                      "name": "byte[]",
+                      "args": [
+                        {
+                          "kind": "new",
+                          "data": {
+                            "name": "ScriptPubKeyP2PK",
+                            "args": [
+                              {
+                                "kind": "identifier",
+                                "data": "caller_pubkey",
+                                "span": "caller_pubkey"
+                              }
+                            ],
+                            "name_span": "ScriptPubKeyP2PK"
+                          },
+                          "span": "new ScriptPubKeyP2PK(caller_pubkey)"
+                        }
+                      ],
+                      "name_span": "byte[]"
+                    },
+                    "span": "byte[](new ScriptPubKeyP2PK(caller_pubkey))"
+                  }
+                },
+                "span": "tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey))"
+              },
+              "message": null,
+              "span": "require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));",
               "message_span": null
             }
           },
@@ -13751,6 +14194,1320 @@
               },
               "message": null,
               "span": "require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "variable_definition",
+            "data": {
+              "type_ref": {
+                "base": "byte",
+                "array_dims": [
+                  {
+                    "kind": "fixed",
+                    "value": 32
+                  }
+                ]
+              },
+              "modifiers": [],
+              "name": "caller",
+              "expr": {
+                "kind": "call",
+                "data": {
+                  "name": "byte[32]",
+                  "args": [
+                    {
+                      "kind": "identifier",
+                      "data": "caller_pubkey",
+                      "span": "caller_pubkey"
+                    }
+                  ],
+                  "name_span": "byte[32]"
+                },
+                "span": "byte[32](caller_pubkey)"
+              },
+              "span": "byte[32] caller = byte[32](caller_pubkey);",
+              "type_span": "byte[32]",
+              "modifier_spans": [],
+              "name_span": "caller"
+            }
+          },
+          {
+            "kind": "variable_definition",
+            "data": {
+              "type_ref": {
+                "base": "bool"
+              },
+              "modifiers": [],
+              "name": "caller_is_participant",
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "identifier",
+                    "data": "caller",
+                    "span": "caller"
+                  },
+                  "right": {
+                    "kind": "identifier",
+                    "data": "owner_01",
+                    "span": "owner_01"
+                  }
+                },
+                "span": "caller == owner_01"
+              },
+              "span": "bool caller_is_participant = caller == owner_01;",
+              "type_span": "bool ",
+              "modifier_spans": [],
+              "name_span": "caller_is_participant"
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 2,
+                        "span": "2 "
+                      }
+                    },
+                    "span": "sold_batches >= 2 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_02",
+                        "span": "owner_02"
+                      }
+                    },
+                    "span": "caller == owner_02"
+                  }
+                },
+                "span": "sold_batches >= 2 && caller == owner_02"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 2 && caller == owner_02) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 3,
+                        "span": "3 "
+                      }
+                    },
+                    "span": "sold_batches >= 3 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_03",
+                        "span": "owner_03"
+                      }
+                    },
+                    "span": "caller == owner_03"
+                  }
+                },
+                "span": "sold_batches >= 3 && caller == owner_03"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 3 && caller == owner_03) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 4,
+                        "span": "4 "
+                      }
+                    },
+                    "span": "sold_batches >= 4 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_04",
+                        "span": "owner_04"
+                      }
+                    },
+                    "span": "caller == owner_04"
+                  }
+                },
+                "span": "sold_batches >= 4 && caller == owner_04"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 4 && caller == owner_04) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 5,
+                        "span": "5 "
+                      }
+                    },
+                    "span": "sold_batches >= 5 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_05",
+                        "span": "owner_05"
+                      }
+                    },
+                    "span": "caller == owner_05"
+                  }
+                },
+                "span": "sold_batches >= 5 && caller == owner_05"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 5 && caller == owner_05) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 6,
+                        "span": "6 "
+                      }
+                    },
+                    "span": "sold_batches >= 6 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_06",
+                        "span": "owner_06"
+                      }
+                    },
+                    "span": "caller == owner_06"
+                  }
+                },
+                "span": "sold_batches >= 6 && caller == owner_06"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 6 && caller == owner_06) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 7,
+                        "span": "7 "
+                      }
+                    },
+                    "span": "sold_batches >= 7 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_07",
+                        "span": "owner_07"
+                      }
+                    },
+                    "span": "caller == owner_07"
+                  }
+                },
+                "span": "sold_batches >= 7 && caller == owner_07"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 7 && caller == owner_07) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 8,
+                        "span": "8 "
+                      }
+                    },
+                    "span": "sold_batches >= 8 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_08",
+                        "span": "owner_08"
+                      }
+                    },
+                    "span": "caller == owner_08"
+                  }
+                },
+                "span": "sold_batches >= 8 && caller == owner_08"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 8 && caller == owner_08) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 9,
+                        "span": "9 "
+                      }
+                    },
+                    "span": "sold_batches >= 9 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_09",
+                        "span": "owner_09"
+                      }
+                    },
+                    "span": "caller == owner_09"
+                  }
+                },
+                "span": "sold_batches >= 9 && caller == owner_09"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 9 && caller == owner_09) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 10,
+                        "span": "10 "
+                      }
+                    },
+                    "span": "sold_batches >= 10 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_10",
+                        "span": "owner_10"
+                      }
+                    },
+                    "span": "caller == owner_10"
+                  }
+                },
+                "span": "sold_batches >= 10 && caller == owner_10"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 10 && caller == owner_10) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 11,
+                        "span": "11 "
+                      }
+                    },
+                    "span": "sold_batches >= 11 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_11",
+                        "span": "owner_11"
+                      }
+                    },
+                    "span": "caller == owner_11"
+                  }
+                },
+                "span": "sold_batches >= 11 && caller == owner_11"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 11 && caller == owner_11) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 12,
+                        "span": "12 "
+                      }
+                    },
+                    "span": "sold_batches >= 12 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_12",
+                        "span": "owner_12"
+                      }
+                    },
+                    "span": "caller == owner_12"
+                  }
+                },
+                "span": "sold_batches >= 12 && caller == owner_12"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 12 && caller == owner_12) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 13,
+                        "span": "13 "
+                      }
+                    },
+                    "span": "sold_batches >= 13 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_13",
+                        "span": "owner_13"
+                      }
+                    },
+                    "span": "caller == owner_13"
+                  }
+                },
+                "span": "sold_batches >= 13 && caller == owner_13"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 13 && caller == owner_13) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 14,
+                        "span": "14 "
+                      }
+                    },
+                    "span": "sold_batches >= 14 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_14",
+                        "span": "owner_14"
+                      }
+                    },
+                    "span": "caller == owner_14"
+                  }
+                },
+                "span": "sold_batches >= 14 && caller == owner_14"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 14 && caller == owner_14) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 15,
+                        "span": "15 "
+                      }
+                    },
+                    "span": "sold_batches >= 15 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_15",
+                        "span": "owner_15"
+                      }
+                    },
+                    "span": "caller == owner_15"
+                  }
+                },
+                "span": "sold_batches >= 15 && caller == owner_15"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 15 && caller == owner_15) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 16,
+                        "span": "16 "
+                      }
+                    },
+                    "span": "sold_batches >= 16 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_16",
+                        "span": "owner_16"
+                      }
+                    },
+                    "span": "caller == owner_16"
+                  }
+                },
+                "span": "sold_batches >= 16 && caller == owner_16"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 16 && caller == owner_16) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 17,
+                        "span": "17 "
+                      }
+                    },
+                    "span": "sold_batches >= 17 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_17",
+                        "span": "owner_17"
+                      }
+                    },
+                    "span": "caller == owner_17"
+                  }
+                },
+                "span": "sold_batches >= 17 && caller == owner_17"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 17 && caller == owner_17) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 18,
+                        "span": "18 "
+                      }
+                    },
+                    "span": "sold_batches >= 18 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_18",
+                        "span": "owner_18"
+                      }
+                    },
+                    "span": "caller == owner_18"
+                  }
+                },
+                "span": "sold_batches >= 18 && caller == owner_18"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 18 && caller == owner_18) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 19,
+                        "span": "19 "
+                      }
+                    },
+                    "span": "sold_batches >= 19 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_19",
+                        "span": "owner_19"
+                      }
+                    },
+                    "span": "caller == owner_19"
+                  }
+                },
+                "span": "sold_batches >= 19 && caller == owner_19"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 19 && caller == owner_19) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_batches",
+                        "span": "sold_batches"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 20,
+                        "span": "20 "
+                      }
+                    },
+                    "span": "sold_batches >= 20 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "caller",
+                        "span": "caller"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "owner_20",
+                        "span": "owner_20"
+                      }
+                    },
+                    "span": "caller == owner_20"
+                  }
+                },
+                "span": "sold_batches >= 20 && caller == owner_20"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "caller_is_participant",
+                    "expr": {
+                      "kind": "bool",
+                      "data": true,
+                      "span": "true"
+                    },
+                    "span": "caller_is_participant = true;",
+                    "name_span": "caller_is_participant"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_batches >= 20 && caller == owner_20) { caller_is_participant = true; }\n        ",
+              "then_span": "caller_is_participant = true;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "identifier",
+                "data": "caller_is_participant",
+                "span": "caller_is_participant"
+              },
+              "message": null,
+              "span": "require(caller_is_participant);",
               "message_span": null
             }
           },
@@ -15691,13 +17448,13 @@
                   },
                   "right": {
                     "kind": "int",
-                    "data": 20000000,
-                    "span": "20000000"
+                    "data": 40000000,
+                    "span": "40000000"
                   }
                 },
-                "span": "tx.inputs[this.activeInputIndex].value - prize - 20000000"
+                "span": "tx.inputs[this.activeInputIndex].value - prize - 40000000"
               },
-              "span": "int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 20000000;",
+              "span": "int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 40000000;",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "creator_refund"
@@ -15742,14 +17499,14 @@
                   },
                   "right": {
                     "kind": "int",
-                    "data": 2,
-                    "span": "2"
+                    "data": 3,
+                    "span": "3"
                   }
                 },
-                "span": "tx.outputs.length == 2"
+                "span": "tx.outputs.length == 3"
               },
               "message": null,
-              "span": "require(tx.outputs.length == 2);",
+              "span": "require(tx.outputs.length == 3);",
               "message_span": null
             }
           },
@@ -15934,12 +17691,106 @@
               "span": "require(tx.outputs[1].value == creator_refund);",
               "message_span": null
             }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "introspection",
+                    "data": {
+                      "kind": "output_script_pub_key",
+                      "index": {
+                        "kind": "int",
+                        "data": 2,
+                        "span": "2"
+                      },
+                      "field_span": ".scriptPubKey"
+                    },
+                    "span": "tx.outputs[2].scriptPubKey"
+                  },
+                  "right": {
+                    "kind": "call",
+                    "data": {
+                      "name": "byte[]",
+                      "args": [
+                        {
+                          "kind": "new",
+                          "data": {
+                            "name": "ScriptPubKeyP2PK",
+                            "args": [
+                              {
+                                "kind": "identifier",
+                                "data": "caller_pubkey",
+                                "span": "caller_pubkey"
+                              }
+                            ],
+                            "name_span": "ScriptPubKeyP2PK"
+                          },
+                          "span": "new ScriptPubKeyP2PK(caller_pubkey)"
+                        }
+                      ],
+                      "name_span": "byte[]"
+                    },
+                    "span": "byte[](new ScriptPubKeyP2PK(caller_pubkey))"
+                  }
+                },
+                "span": "tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey))"
+              },
+              "message": null,
+              "span": "require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "introspection",
+                    "data": {
+                      "kind": "output_value",
+                      "index": {
+                        "kind": "int",
+                        "data": 2,
+                        "span": "2"
+                      },
+                      "field_span": ".value"
+                    },
+                    "span": "tx.outputs[2].value"
+                  },
+                  "right": {
+                    "kind": "introspection",
+                    "data": {
+                      "kind": "input_value",
+                      "index": {
+                        "kind": "int",
+                        "data": 1,
+                        "span": "1"
+                      },
+                      "field_span": ".value"
+                    },
+                    "span": "tx.inputs[1].value"
+                  }
+                },
+                "span": "tx.outputs[2].value == tx.inputs[1].value"
+              },
+              "message": null,
+              "span": "require(tx.outputs[2].value == tx.inputs[1].value);",
+              "message_span": null
+            }
           }
         ],
         "return_type_spans": [],
-        "span": "entrypoint function finalize(\n        datasig oracle_sig,\n        byte[32] oracle_seed,\n        int winner_ticket_id,\n        pubkey winner_pubkey\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(sold_tickets > 0);\n        require(sold_batches > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        if (seed_0 < 0) {\n            seed_0 = -seed_0;\n        }\n        if (seed_1 < 0) {\n            seed_1 = -seed_1;\n        }\n        if (seed_2 < 0) {\n            seed_2 = -seed_2;\n        }\n        if (seed_3 < 0) {\n            seed_3 = -seed_3;\n        }\n\n        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;\n        require(winner_ticket_id < sold_tickets);\n        require(winner_ticket_id == winner_from_seed);\n\n        byte[32] winner_owner = owner_01;\n        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {\n            winner_owner = owner_02;\n        }\n        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {\n            winner_owner = owner_03;\n        }\n        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {\n            winner_owner = owner_04;\n        }\n        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {\n            winner_owner = owner_05;\n        }\n        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {\n            winner_owner = owner_06;\n        }\n        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {\n            winner_owner = owner_07;\n        }\n        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {\n            winner_owner = owner_08;\n        }\n        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {\n            winner_owner = owner_09;\n        }\n        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {\n            winner_owner = owner_10;\n        }\n        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {\n            winner_owner = owner_11;\n        }\n        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {\n            winner_owner = owner_12;\n        }\n        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {\n            winner_owner = owner_13;\n        }\n        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {\n            winner_owner = owner_14;\n        }\n        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {\n            winner_owner = owner_15;\n        }\n        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {\n            winner_owner = owner_16;\n        }\n        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {\n            winner_owner = owner_17;\n        }\n        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {\n            winner_owner = owner_18;\n        }\n        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {\n            winner_owner = owner_19;\n        }\n        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {\n            winner_owner = owner_20;\n        }\n        require(byte[32](winner_pubkey) == winner_owner);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 20000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 2);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n    }",
+        "span": "entrypoint function finalize(\n        datasig oracle_sig,\n        byte[32] oracle_seed,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        pubkey caller_pubkey\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(sold_batches > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));\n\n        byte[32] caller = byte[32](caller_pubkey);\n        bool caller_is_participant = caller == owner_01;\n        if (sold_batches >= 2 && caller == owner_02) { caller_is_participant = true; }\n        if (sold_batches >= 3 && caller == owner_03) { caller_is_participant = true; }\n        if (sold_batches >= 4 && caller == owner_04) { caller_is_participant = true; }\n        if (sold_batches >= 5 && caller == owner_05) { caller_is_participant = true; }\n        if (sold_batches >= 6 && caller == owner_06) { caller_is_participant = true; }\n        if (sold_batches >= 7 && caller == owner_07) { caller_is_participant = true; }\n        if (sold_batches >= 8 && caller == owner_08) { caller_is_participant = true; }\n        if (sold_batches >= 9 && caller == owner_09) { caller_is_participant = true; }\n        if (sold_batches >= 10 && caller == owner_10) { caller_is_participant = true; }\n        if (sold_batches >= 11 && caller == owner_11) { caller_is_participant = true; }\n        if (sold_batches >= 12 && caller == owner_12) { caller_is_participant = true; }\n        if (sold_batches >= 13 && caller == owner_13) { caller_is_participant = true; }\n        if (sold_batches >= 14 && caller == owner_14) { caller_is_participant = true; }\n        if (sold_batches >= 15 && caller == owner_15) { caller_is_participant = true; }\n        if (sold_batches >= 16 && caller == owner_16) { caller_is_participant = true; }\n        if (sold_batches >= 17 && caller == owner_17) { caller_is_participant = true; }\n        if (sold_batches >= 18 && caller == owner_18) { caller_is_participant = true; }\n        if (sold_batches >= 19 && caller == owner_19) { caller_is_participant = true; }\n        if (sold_batches >= 20 && caller == owner_20) { caller_is_participant = true; }\n        require(caller_is_participant);\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        if (seed_0 < 0) {\n            seed_0 = -seed_0;\n        }\n        if (seed_1 < 0) {\n            seed_1 = -seed_1;\n        }\n        if (seed_2 < 0) {\n            seed_2 = -seed_2;\n        }\n        if (seed_3 < 0) {\n            seed_3 = -seed_3;\n        }\n\n        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;\n        require(winner_ticket_id < sold_tickets);\n        require(winner_ticket_id == winner_from_seed);\n\n        byte[32] winner_owner = owner_01;\n        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {\n            winner_owner = owner_02;\n        }\n        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {\n            winner_owner = owner_03;\n        }\n        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {\n            winner_owner = owner_04;\n        }\n        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {\n            winner_owner = owner_05;\n        }\n        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {\n            winner_owner = owner_06;\n        }\n        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {\n            winner_owner = owner_07;\n        }\n        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {\n            winner_owner = owner_08;\n        }\n        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {\n            winner_owner = owner_09;\n        }\n        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {\n            winner_owner = owner_10;\n        }\n        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {\n            winner_owner = owner_11;\n        }\n        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {\n            winner_owner = owner_12;\n        }\n        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {\n            winner_owner = owner_13;\n        }\n        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {\n            winner_owner = owner_14;\n        }\n        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {\n            winner_owner = owner_15;\n        }\n        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {\n            winner_owner = owner_16;\n        }\n        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {\n            winner_owner = owner_17;\n        }\n        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {\n            winner_owner = owner_18;\n        }\n        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {\n            winner_owner = owner_19;\n        }\n        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {\n            winner_owner = owner_20;\n        }\n        require(byte[32](winner_pubkey) == winner_owner);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 40000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }",
         "name_span": "finalize",
-        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(sold_tickets > 0);\n        require(sold_batches > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        if (seed_0 < 0) {\n            seed_0 = -seed_0;\n        }\n        if (seed_1 < 0) {\n            seed_1 = -seed_1;\n        }\n        if (seed_2 < 0) {\n            seed_2 = -seed_2;\n        }\n        if (seed_3 < 0) {\n            seed_3 = -seed_3;\n        }\n\n        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;\n        require(winner_ticket_id < sold_tickets);\n        require(winner_ticket_id == winner_from_seed);\n\n        byte[32] winner_owner = owner_01;\n        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {\n            winner_owner = owner_02;\n        }\n        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {\n            winner_owner = owner_03;\n        }\n        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {\n            winner_owner = owner_04;\n        }\n        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {\n            winner_owner = owner_05;\n        }\n        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {\n            winner_owner = owner_06;\n        }\n        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {\n            winner_owner = owner_07;\n        }\n        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {\n            winner_owner = owner_08;\n        }\n        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {\n            winner_owner = owner_09;\n        }\n        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {\n            winner_owner = owner_10;\n        }\n        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {\n            winner_owner = owner_11;\n        }\n        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {\n            winner_owner = owner_12;\n        }\n        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {\n            winner_owner = owner_13;\n        }\n        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {\n            winner_owner = owner_14;\n        }\n        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {\n            winner_owner = owner_15;\n        }\n        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {\n            winner_owner = owner_16;\n        }\n        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {\n            winner_owner = owner_17;\n        }\n        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {\n            winner_owner = owner_18;\n        }\n        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {\n            winner_owner = owner_19;\n        }\n        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {\n            winner_owner = owner_20;\n        }\n        require(byte[32](winner_pubkey) == winner_owner);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 20000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 2);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);"
+        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(sold_batches > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));\n\n        byte[32] caller = byte[32](caller_pubkey);\n        bool caller_is_participant = caller == owner_01;\n        if (sold_batches >= 2 && caller == owner_02) { caller_is_participant = true; }\n        if (sold_batches >= 3 && caller == owner_03) { caller_is_participant = true; }\n        if (sold_batches >= 4 && caller == owner_04) { caller_is_participant = true; }\n        if (sold_batches >= 5 && caller == owner_05) { caller_is_participant = true; }\n        if (sold_batches >= 6 && caller == owner_06) { caller_is_participant = true; }\n        if (sold_batches >= 7 && caller == owner_07) { caller_is_participant = true; }\n        if (sold_batches >= 8 && caller == owner_08) { caller_is_participant = true; }\n        if (sold_batches >= 9 && caller == owner_09) { caller_is_participant = true; }\n        if (sold_batches >= 10 && caller == owner_10) { caller_is_participant = true; }\n        if (sold_batches >= 11 && caller == owner_11) { caller_is_participant = true; }\n        if (sold_batches >= 12 && caller == owner_12) { caller_is_participant = true; }\n        if (sold_batches >= 13 && caller == owner_13) { caller_is_participant = true; }\n        if (sold_batches >= 14 && caller == owner_14) { caller_is_participant = true; }\n        if (sold_batches >= 15 && caller == owner_15) { caller_is_participant = true; }\n        if (sold_batches >= 16 && caller == owner_16) { caller_is_participant = true; }\n        if (sold_batches >= 17 && caller == owner_17) { caller_is_participant = true; }\n        if (sold_batches >= 18 && caller == owner_18) { caller_is_participant = true; }\n        if (sold_batches >= 19 && caller == owner_19) { caller_is_participant = true; }\n        if (sold_batches >= 20 && caller == owner_20) { caller_is_participant = true; }\n        require(caller_is_participant);\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        if (seed_0 < 0) {\n            seed_0 = -seed_0;\n        }\n        if (seed_1 < 0) {\n            seed_1 = -seed_1;\n        }\n        if (seed_2 < 0) {\n            seed_2 = -seed_2;\n        }\n        if (seed_3 < 0) {\n            seed_3 = -seed_3;\n        }\n\n        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;\n        require(winner_ticket_id < sold_tickets);\n        require(winner_ticket_id == winner_from_seed);\n\n        byte[32] winner_owner = owner_01;\n        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {\n            winner_owner = owner_02;\n        }\n        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {\n            winner_owner = owner_03;\n        }\n        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {\n            winner_owner = owner_04;\n        }\n        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {\n            winner_owner = owner_05;\n        }\n        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {\n            winner_owner = owner_06;\n        }\n        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {\n            winner_owner = owner_07;\n        }\n        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {\n            winner_owner = owner_08;\n        }\n        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {\n            winner_owner = owner_09;\n        }\n        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {\n            winner_owner = owner_10;\n        }\n        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {\n            winner_owner = owner_11;\n        }\n        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {\n            winner_owner = owner_12;\n        }\n        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {\n            winner_owner = owner_13;\n        }\n        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {\n            winner_owner = owner_14;\n        }\n        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {\n            winner_owner = owner_15;\n        }\n        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {\n            winner_owner = owner_16;\n        }\n        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {\n            winner_owner = owner_17;\n        }\n        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {\n            winner_owner = owner_18;\n        }\n        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {\n            winner_owner = owner_19;\n        }\n        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {\n            winner_owner = owner_20;\n        }\n        require(byte[32](winner_pubkey) == winner_owner);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 40000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);"
       },
       {
         "name": "refund_all",
@@ -19290,7 +21141,7 @@
         "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(max_tickets <= 1000);\n        require(sold_batches > 0);\n        require(sold_batches <= 20);\n        require(tx.locktime >= refund_after_daa);\n\n        int refund_total = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - refund_total - 20000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == sold_batches + 1);\n\n        if (sold_batches >= 1) {\n            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_01))));\n            require(tx.outputs[0].value == ticket_price * (batch_end_01 - 0));\n        }\n        if (sold_batches >= 2) {\n            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_02))));\n            require(tx.outputs[1].value == ticket_price * (batch_end_02 - batch_end_01));\n        }\n        if (sold_batches >= 3) {\n            require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_03))));\n            require(tx.outputs[2].value == ticket_price * (batch_end_03 - batch_end_02));\n        }\n        if (sold_batches >= 4) {\n            require(tx.outputs[3].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_04))));\n            require(tx.outputs[3].value == ticket_price * (batch_end_04 - batch_end_03));\n        }\n        if (sold_batches >= 5) {\n            require(tx.outputs[4].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_05))));\n            require(tx.outputs[4].value == ticket_price * (batch_end_05 - batch_end_04));\n        }\n        if (sold_batches >= 6) {\n            require(tx.outputs[5].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_06))));\n            require(tx.outputs[5].value == ticket_price * (batch_end_06 - batch_end_05));\n        }\n        if (sold_batches >= 7) {\n            require(tx.outputs[6].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_07))));\n            require(tx.outputs[6].value == ticket_price * (batch_end_07 - batch_end_06));\n        }\n        if (sold_batches >= 8) {\n            require(tx.outputs[7].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_08))));\n            require(tx.outputs[7].value == ticket_price * (batch_end_08 - batch_end_07));\n        }\n        if (sold_batches >= 9) {\n            require(tx.outputs[8].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_09))));\n            require(tx.outputs[8].value == ticket_price * (batch_end_09 - batch_end_08));\n        }\n        if (sold_batches >= 10) {\n            require(tx.outputs[9].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_10))));\n            require(tx.outputs[9].value == ticket_price * (batch_end_10 - batch_end_09));\n        }\n        if (sold_batches >= 11) {\n            require(tx.outputs[10].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_11))));\n            require(tx.outputs[10].value == ticket_price * (batch_end_11 - batch_end_10));\n        }\n        if (sold_batches >= 12) {\n            require(tx.outputs[11].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_12))));\n            require(tx.outputs[11].value == ticket_price * (batch_end_12 - batch_end_11));\n        }\n        if (sold_batches >= 13) {\n            require(tx.outputs[12].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_13))));\n            require(tx.outputs[12].value == ticket_price * (batch_end_13 - batch_end_12));\n        }\n        if (sold_batches >= 14) {\n            require(tx.outputs[13].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_14))));\n            require(tx.outputs[13].value == ticket_price * (batch_end_14 - batch_end_13));\n        }\n        if (sold_batches >= 15) {\n            require(tx.outputs[14].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_15))));\n            require(tx.outputs[14].value == ticket_price * (batch_end_15 - batch_end_14));\n        }\n        if (sold_batches >= 16) {\n            require(tx.outputs[15].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_16))));\n            require(tx.outputs[15].value == ticket_price * (batch_end_16 - batch_end_15));\n        }\n        if (sold_batches >= 17) {\n            require(tx.outputs[16].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_17))));\n            require(tx.outputs[16].value == ticket_price * (batch_end_17 - batch_end_16));\n        }\n        if (sold_batches >= 18) {\n            require(tx.outputs[17].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_18))));\n            require(tx.outputs[17].value == ticket_price * (batch_end_18 - batch_end_17));\n        }\n        if (sold_batches >= 19) {\n            require(tx.outputs[18].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_19))));\n            require(tx.outputs[18].value == ticket_price * (batch_end_19 - batch_end_18));\n        }\n        if (sold_batches >= 20) {\n            require(tx.outputs[19].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_20))));\n            require(tx.outputs[19].value == ticket_price * (batch_end_20 - batch_end_19));\n        }\n\n        require(tx.outputs[sold_batches].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[sold_batches].value == creator_refund);"
       }
     ],
-    "span": "contract RaffleRound() {\n    int max_tickets = 0;\n    int ticket_price = 0;\n    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] oracle_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int refund_after_daa = 0;\n    int sold_tickets = 0;\n    int sold_batches = 0;\n    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int batch_end_01 = 0;\n    int batch_end_02 = 0;\n    int batch_end_03 = 0;\n    int batch_end_04 = 0;\n    int batch_end_05 = 0;\n    int batch_end_06 = 0;\n    int batch_end_07 = 0;\n    int batch_end_08 = 0;\n    int batch_end_09 = 0;\n    int batch_end_10 = 0;\n    int batch_end_11 = 0;\n    int batch_end_12 = 0;\n    int batch_end_13 = 0;\n    int batch_end_14 = 0;\n    int batch_end_15 = 0;\n    int batch_end_16 = 0;\n    int batch_end_17 = 0;\n    int batch_end_18 = 0;\n    int batch_end_19 = 0;\n    int batch_end_20 = 0;\n    byte[32] owner_01 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_02 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_03 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_04 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_05 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_06 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_07 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_08 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_09 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_10 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_11 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_12 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_13 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_14 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_15 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_16 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_17 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_18 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_19 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_20 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n\n    entrypoint function buy(byte[32] next_ticket_root, pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n\n        require(max_tickets <= 1000);\n        require(sold_batches < 20);\n        require(ticket_count > 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n\n        int next_batch_end_01 = batch_end_01;\n        int next_batch_end_02 = batch_end_02;\n        int next_batch_end_03 = batch_end_03;\n        int next_batch_end_04 = batch_end_04;\n        int next_batch_end_05 = batch_end_05;\n        int next_batch_end_06 = batch_end_06;\n        int next_batch_end_07 = batch_end_07;\n        int next_batch_end_08 = batch_end_08;\n        int next_batch_end_09 = batch_end_09;\n        int next_batch_end_10 = batch_end_10;\n        int next_batch_end_11 = batch_end_11;\n        int next_batch_end_12 = batch_end_12;\n        int next_batch_end_13 = batch_end_13;\n        int next_batch_end_14 = batch_end_14;\n        int next_batch_end_15 = batch_end_15;\n        int next_batch_end_16 = batch_end_16;\n        int next_batch_end_17 = batch_end_17;\n        int next_batch_end_18 = batch_end_18;\n        int next_batch_end_19 = batch_end_19;\n        int next_batch_end_20 = batch_end_20;\n        byte[32] next_owner_01 = owner_01;\n        byte[32] next_owner_02 = owner_02;\n        byte[32] next_owner_03 = owner_03;\n        byte[32] next_owner_04 = owner_04;\n        byte[32] next_owner_05 = owner_05;\n        byte[32] next_owner_06 = owner_06;\n        byte[32] next_owner_07 = owner_07;\n        byte[32] next_owner_08 = owner_08;\n        byte[32] next_owner_09 = owner_09;\n        byte[32] next_owner_10 = owner_10;\n        byte[32] next_owner_11 = owner_11;\n        byte[32] next_owner_12 = owner_12;\n        byte[32] next_owner_13 = owner_13;\n        byte[32] next_owner_14 = owner_14;\n        byte[32] next_owner_15 = owner_15;\n        byte[32] next_owner_16 = owner_16;\n        byte[32] next_owner_17 = owner_17;\n        byte[32] next_owner_18 = owner_18;\n        byte[32] next_owner_19 = owner_19;\n        byte[32] next_owner_20 = owner_20;\n        int next_sold_tickets = sold_tickets + ticket_count;\n        byte[32] buyer = byte[32](owner_pubkey);\n\n        if (sold_batches == 0) {\n            next_batch_end_01 = next_sold_tickets;\n            next_owner_01 = buyer;\n        }\n        if (sold_batches == 1) {\n            next_batch_end_02 = next_sold_tickets;\n            next_owner_02 = buyer;\n        }\n        if (sold_batches == 2) {\n            next_batch_end_03 = next_sold_tickets;\n            next_owner_03 = buyer;\n        }\n        if (sold_batches == 3) {\n            next_batch_end_04 = next_sold_tickets;\n            next_owner_04 = buyer;\n        }\n        if (sold_batches == 4) {\n            next_batch_end_05 = next_sold_tickets;\n            next_owner_05 = buyer;\n        }\n        if (sold_batches == 5) {\n            next_batch_end_06 = next_sold_tickets;\n            next_owner_06 = buyer;\n        }\n        if (sold_batches == 6) {\n            next_batch_end_07 = next_sold_tickets;\n            next_owner_07 = buyer;\n        }\n        if (sold_batches == 7) {\n            next_batch_end_08 = next_sold_tickets;\n            next_owner_08 = buyer;\n        }\n        if (sold_batches == 8) {\n            next_batch_end_09 = next_sold_tickets;\n            next_owner_09 = buyer;\n        }\n        if (sold_batches == 9) {\n            next_batch_end_10 = next_sold_tickets;\n            next_owner_10 = buyer;\n        }\n        if (sold_batches == 10) {\n            next_batch_end_11 = next_sold_tickets;\n            next_owner_11 = buyer;\n        }\n        if (sold_batches == 11) {\n            next_batch_end_12 = next_sold_tickets;\n            next_owner_12 = buyer;\n        }\n        if (sold_batches == 12) {\n            next_batch_end_13 = next_sold_tickets;\n            next_owner_13 = buyer;\n        }\n        if (sold_batches == 13) {\n            next_batch_end_14 = next_sold_tickets;\n            next_owner_14 = buyer;\n        }\n        if (sold_batches == 14) {\n            next_batch_end_15 = next_sold_tickets;\n            next_owner_15 = buyer;\n        }\n        if (sold_batches == 15) {\n            next_batch_end_16 = next_sold_tickets;\n            next_owner_16 = buyer;\n        }\n        if (sold_batches == 16) {\n            next_batch_end_17 = next_sold_tickets;\n            next_owner_17 = buyer;\n        }\n        if (sold_batches == 17) {\n            next_batch_end_18 = next_sold_tickets;\n            next_owner_18 = buyer;\n        }\n        if (sold_batches == 18) {\n            next_batch_end_19 = next_sold_tickets;\n            next_owner_19 = buyer;\n        }\n        if (sold_batches == 19) {\n            next_batch_end_20 = next_sold_tickets;\n            next_owner_20 = buyer;\n        }\n\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            oracle_pubkey: oracle_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: next_sold_tickets,\n            sold_batches: sold_batches + 1,\n            ticket_root: next_ticket_root,\n            batch_end_01: next_batch_end_01,\n            batch_end_02: next_batch_end_02,\n            batch_end_03: next_batch_end_03,\n            batch_end_04: next_batch_end_04,\n            batch_end_05: next_batch_end_05,\n            batch_end_06: next_batch_end_06,\n            batch_end_07: next_batch_end_07,\n            batch_end_08: next_batch_end_08,\n            batch_end_09: next_batch_end_09,\n            batch_end_10: next_batch_end_10,\n            batch_end_11: next_batch_end_11,\n            batch_end_12: next_batch_end_12,\n            batch_end_13: next_batch_end_13,\n            batch_end_14: next_batch_end_14,\n            batch_end_15: next_batch_end_15,\n            batch_end_16: next_batch_end_16,\n            batch_end_17: next_batch_end_17,\n            batch_end_18: next_batch_end_18,\n            batch_end_19: next_batch_end_19,\n            batch_end_20: next_batch_end_20,\n            owner_01: next_owner_01,\n            owner_02: next_owner_02,\n            owner_03: next_owner_03,\n            owner_04: next_owner_04,\n            owner_05: next_owner_05,\n            owner_06: next_owner_06,\n            owner_07: next_owner_07,\n            owner_08: next_owner_08,\n            owner_09: next_owner_09,\n            owner_10: next_owner_10,\n            owner_11: next_owner_11,\n            owner_12: next_owner_12,\n            owner_13: next_owner_13,\n            owner_14: next_owner_14,\n            owner_15: next_owner_15,\n            owner_16: next_owner_16,\n            owner_17: next_owner_17,\n            owner_18: next_owner_18,\n            owner_19: next_owner_19,\n            owner_20: next_owner_20,\n        });\n    }\n\n    entrypoint function close() {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(sold_tickets > 0);\n        require(tx.outputs[cov_out_idx].scriptPubKey == tx.inputs[this.activeInputIndex].scriptPubKey);\n        require(tx.outputs[cov_out_idx].value >= ticket_price * sold_tickets);\n    }\n\n    entrypoint function finalize(\n        datasig oracle_sig,\n        byte[32] oracle_seed,\n        int winner_ticket_id,\n        pubkey winner_pubkey\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(sold_tickets > 0);\n        require(sold_batches > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        if (seed_0 < 0) {\n            seed_0 = -seed_0;\n        }\n        if (seed_1 < 0) {\n            seed_1 = -seed_1;\n        }\n        if (seed_2 < 0) {\n            seed_2 = -seed_2;\n        }\n        if (seed_3 < 0) {\n            seed_3 = -seed_3;\n        }\n\n        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;\n        require(winner_ticket_id < sold_tickets);\n        require(winner_ticket_id == winner_from_seed);\n\n        byte[32] winner_owner = owner_01;\n        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {\n            winner_owner = owner_02;\n        }\n        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {\n            winner_owner = owner_03;\n        }\n        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {\n            winner_owner = owner_04;\n        }\n        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {\n            winner_owner = owner_05;\n        }\n        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {\n            winner_owner = owner_06;\n        }\n        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {\n            winner_owner = owner_07;\n        }\n        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {\n            winner_owner = owner_08;\n        }\n        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {\n            winner_owner = owner_09;\n        }\n        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {\n            winner_owner = owner_10;\n        }\n        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {\n            winner_owner = owner_11;\n        }\n        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {\n            winner_owner = owner_12;\n        }\n        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {\n            winner_owner = owner_13;\n        }\n        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {\n            winner_owner = owner_14;\n        }\n        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {\n            winner_owner = owner_15;\n        }\n        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {\n            winner_owner = owner_16;\n        }\n        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {\n            winner_owner = owner_17;\n        }\n        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {\n            winner_owner = owner_18;\n        }\n        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {\n            winner_owner = owner_19;\n        }\n        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {\n            winner_owner = owner_20;\n        }\n        require(byte[32](winner_pubkey) == winner_owner);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 20000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 2);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n    }\n\n    entrypoint function refund_all() {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(max_tickets <= 1000);\n        require(sold_batches > 0);\n        require(sold_batches <= 20);\n        require(tx.locktime >= refund_after_daa);\n\n        int refund_total = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - refund_total - 20000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == sold_batches + 1);\n\n        if (sold_batches >= 1) {\n            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_01))));\n            require(tx.outputs[0].value == ticket_price * (batch_end_01 - 0));\n        }\n        if (sold_batches >= 2) {\n            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_02))));\n            require(tx.outputs[1].value == ticket_price * (batch_end_02 - batch_end_01));\n        }\n        if (sold_batches >= 3) {\n            require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_03))));\n            require(tx.outputs[2].value == ticket_price * (batch_end_03 - batch_end_02));\n        }\n        if (sold_batches >= 4) {\n            require(tx.outputs[3].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_04))));\n            require(tx.outputs[3].value == ticket_price * (batch_end_04 - batch_end_03));\n        }\n        if (sold_batches >= 5) {\n            require(tx.outputs[4].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_05))));\n            require(tx.outputs[4].value == ticket_price * (batch_end_05 - batch_end_04));\n        }\n        if (sold_batches >= 6) {\n            require(tx.outputs[5].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_06))));\n            require(tx.outputs[5].value == ticket_price * (batch_end_06 - batch_end_05));\n        }\n        if (sold_batches >= 7) {\n            require(tx.outputs[6].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_07))));\n            require(tx.outputs[6].value == ticket_price * (batch_end_07 - batch_end_06));\n        }\n        if (sold_batches >= 8) {\n            require(tx.outputs[7].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_08))));\n            require(tx.outputs[7].value == ticket_price * (batch_end_08 - batch_end_07));\n        }\n        if (sold_batches >= 9) {\n            require(tx.outputs[8].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_09))));\n            require(tx.outputs[8].value == ticket_price * (batch_end_09 - batch_end_08));\n        }\n        if (sold_batches >= 10) {\n            require(tx.outputs[9].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_10))));\n            require(tx.outputs[9].value == ticket_price * (batch_end_10 - batch_end_09));\n        }\n        if (sold_batches >= 11) {\n            require(tx.outputs[10].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_11))));\n            require(tx.outputs[10].value == ticket_price * (batch_end_11 - batch_end_10));\n        }\n        if (sold_batches >= 12) {\n            require(tx.outputs[11].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_12))));\n            require(tx.outputs[11].value == ticket_price * (batch_end_12 - batch_end_11));\n        }\n        if (sold_batches >= 13) {\n            require(tx.outputs[12].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_13))));\n            require(tx.outputs[12].value == ticket_price * (batch_end_13 - batch_end_12));\n        }\n        if (sold_batches >= 14) {\n            require(tx.outputs[13].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_14))));\n            require(tx.outputs[13].value == ticket_price * (batch_end_14 - batch_end_13));\n        }\n        if (sold_batches >= 15) {\n            require(tx.outputs[14].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_15))));\n            require(tx.outputs[14].value == ticket_price * (batch_end_15 - batch_end_14));\n        }\n        if (sold_batches >= 16) {\n            require(tx.outputs[15].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_16))));\n            require(tx.outputs[15].value == ticket_price * (batch_end_16 - batch_end_15));\n        }\n        if (sold_batches >= 17) {\n            require(tx.outputs[16].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_17))));\n            require(tx.outputs[16].value == ticket_price * (batch_end_17 - batch_end_16));\n        }\n        if (sold_batches >= 18) {\n            require(tx.outputs[17].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_18))));\n            require(tx.outputs[17].value == ticket_price * (batch_end_18 - batch_end_17));\n        }\n        if (sold_batches >= 19) {\n            require(tx.outputs[18].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_19))));\n            require(tx.outputs[18].value == ticket_price * (batch_end_19 - batch_end_18));\n        }\n        if (sold_batches >= 20) {\n            require(tx.outputs[19].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_20))));\n            require(tx.outputs[19].value == ticket_price * (batch_end_20 - batch_end_19));\n        }\n\n        require(tx.outputs[sold_batches].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[sold_batches].value == creator_refund);\n    }\n}",
+    "span": "contract RaffleRound() {\n    int max_tickets = 0;\n    int ticket_price = 0;\n    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] oracle_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int refund_after_daa = 0;\n    int sold_tickets = 0;\n    int sold_batches = 0;\n    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int batch_end_01 = 0;\n    int batch_end_02 = 0;\n    int batch_end_03 = 0;\n    int batch_end_04 = 0;\n    int batch_end_05 = 0;\n    int batch_end_06 = 0;\n    int batch_end_07 = 0;\n    int batch_end_08 = 0;\n    int batch_end_09 = 0;\n    int batch_end_10 = 0;\n    int batch_end_11 = 0;\n    int batch_end_12 = 0;\n    int batch_end_13 = 0;\n    int batch_end_14 = 0;\n    int batch_end_15 = 0;\n    int batch_end_16 = 0;\n    int batch_end_17 = 0;\n    int batch_end_18 = 0;\n    int batch_end_19 = 0;\n    int batch_end_20 = 0;\n    byte[32] owner_01 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_02 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_03 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_04 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_05 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_06 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_07 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_08 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_09 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_10 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_11 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_12 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_13 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_14 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_15 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_16 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_17 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_18 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_19 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[32] owner_20 = 0x0000000000000000000000000000000000000000000000000000000000000000;\n\n    entrypoint function buy(byte[32] next_ticket_root, pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n\n        require(max_tickets <= 1000);\n        require(sold_batches < 20);\n        require(ticket_count > 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n\n        int next_batch_end_01 = batch_end_01;\n        int next_batch_end_02 = batch_end_02;\n        int next_batch_end_03 = batch_end_03;\n        int next_batch_end_04 = batch_end_04;\n        int next_batch_end_05 = batch_end_05;\n        int next_batch_end_06 = batch_end_06;\n        int next_batch_end_07 = batch_end_07;\n        int next_batch_end_08 = batch_end_08;\n        int next_batch_end_09 = batch_end_09;\n        int next_batch_end_10 = batch_end_10;\n        int next_batch_end_11 = batch_end_11;\n        int next_batch_end_12 = batch_end_12;\n        int next_batch_end_13 = batch_end_13;\n        int next_batch_end_14 = batch_end_14;\n        int next_batch_end_15 = batch_end_15;\n        int next_batch_end_16 = batch_end_16;\n        int next_batch_end_17 = batch_end_17;\n        int next_batch_end_18 = batch_end_18;\n        int next_batch_end_19 = batch_end_19;\n        int next_batch_end_20 = batch_end_20;\n        byte[32] next_owner_01 = owner_01;\n        byte[32] next_owner_02 = owner_02;\n        byte[32] next_owner_03 = owner_03;\n        byte[32] next_owner_04 = owner_04;\n        byte[32] next_owner_05 = owner_05;\n        byte[32] next_owner_06 = owner_06;\n        byte[32] next_owner_07 = owner_07;\n        byte[32] next_owner_08 = owner_08;\n        byte[32] next_owner_09 = owner_09;\n        byte[32] next_owner_10 = owner_10;\n        byte[32] next_owner_11 = owner_11;\n        byte[32] next_owner_12 = owner_12;\n        byte[32] next_owner_13 = owner_13;\n        byte[32] next_owner_14 = owner_14;\n        byte[32] next_owner_15 = owner_15;\n        byte[32] next_owner_16 = owner_16;\n        byte[32] next_owner_17 = owner_17;\n        byte[32] next_owner_18 = owner_18;\n        byte[32] next_owner_19 = owner_19;\n        byte[32] next_owner_20 = owner_20;\n        int next_sold_tickets = sold_tickets + ticket_count;\n        byte[32] buyer = byte[32](owner_pubkey);\n\n        if (sold_batches == 0) {\n            next_batch_end_01 = next_sold_tickets;\n            next_owner_01 = buyer;\n        }\n        if (sold_batches == 1) {\n            next_batch_end_02 = next_sold_tickets;\n            next_owner_02 = buyer;\n        }\n        if (sold_batches == 2) {\n            next_batch_end_03 = next_sold_tickets;\n            next_owner_03 = buyer;\n        }\n        if (sold_batches == 3) {\n            next_batch_end_04 = next_sold_tickets;\n            next_owner_04 = buyer;\n        }\n        if (sold_batches == 4) {\n            next_batch_end_05 = next_sold_tickets;\n            next_owner_05 = buyer;\n        }\n        if (sold_batches == 5) {\n            next_batch_end_06 = next_sold_tickets;\n            next_owner_06 = buyer;\n        }\n        if (sold_batches == 6) {\n            next_batch_end_07 = next_sold_tickets;\n            next_owner_07 = buyer;\n        }\n        if (sold_batches == 7) {\n            next_batch_end_08 = next_sold_tickets;\n            next_owner_08 = buyer;\n        }\n        if (sold_batches == 8) {\n            next_batch_end_09 = next_sold_tickets;\n            next_owner_09 = buyer;\n        }\n        if (sold_batches == 9) {\n            next_batch_end_10 = next_sold_tickets;\n            next_owner_10 = buyer;\n        }\n        if (sold_batches == 10) {\n            next_batch_end_11 = next_sold_tickets;\n            next_owner_11 = buyer;\n        }\n        if (sold_batches == 11) {\n            next_batch_end_12 = next_sold_tickets;\n            next_owner_12 = buyer;\n        }\n        if (sold_batches == 12) {\n            next_batch_end_13 = next_sold_tickets;\n            next_owner_13 = buyer;\n        }\n        if (sold_batches == 13) {\n            next_batch_end_14 = next_sold_tickets;\n            next_owner_14 = buyer;\n        }\n        if (sold_batches == 14) {\n            next_batch_end_15 = next_sold_tickets;\n            next_owner_15 = buyer;\n        }\n        if (sold_batches == 15) {\n            next_batch_end_16 = next_sold_tickets;\n            next_owner_16 = buyer;\n        }\n        if (sold_batches == 16) {\n            next_batch_end_17 = next_sold_tickets;\n            next_owner_17 = buyer;\n        }\n        if (sold_batches == 17) {\n            next_batch_end_18 = next_sold_tickets;\n            next_owner_18 = buyer;\n        }\n        if (sold_batches == 18) {\n            next_batch_end_19 = next_sold_tickets;\n            next_owner_19 = buyer;\n        }\n        if (sold_batches == 19) {\n            next_batch_end_20 = next_sold_tickets;\n            next_owner_20 = buyer;\n        }\n\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            oracle_pubkey: oracle_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: next_sold_tickets,\n            sold_batches: sold_batches + 1,\n            ticket_root: next_ticket_root,\n            batch_end_01: next_batch_end_01,\n            batch_end_02: next_batch_end_02,\n            batch_end_03: next_batch_end_03,\n            batch_end_04: next_batch_end_04,\n            batch_end_05: next_batch_end_05,\n            batch_end_06: next_batch_end_06,\n            batch_end_07: next_batch_end_07,\n            batch_end_08: next_batch_end_08,\n            batch_end_09: next_batch_end_09,\n            batch_end_10: next_batch_end_10,\n            batch_end_11: next_batch_end_11,\n            batch_end_12: next_batch_end_12,\n            batch_end_13: next_batch_end_13,\n            batch_end_14: next_batch_end_14,\n            batch_end_15: next_batch_end_15,\n            batch_end_16: next_batch_end_16,\n            batch_end_17: next_batch_end_17,\n            batch_end_18: next_batch_end_18,\n            batch_end_19: next_batch_end_19,\n            batch_end_20: next_batch_end_20,\n            owner_01: next_owner_01,\n            owner_02: next_owner_02,\n            owner_03: next_owner_03,\n            owner_04: next_owner_04,\n            owner_05: next_owner_05,\n            owner_06: next_owner_06,\n            owner_07: next_owner_07,\n            owner_08: next_owner_08,\n            owner_09: next_owner_09,\n            owner_10: next_owner_10,\n            owner_11: next_owner_11,\n            owner_12: next_owner_12,\n            owner_13: next_owner_13,\n            owner_14: next_owner_14,\n            owner_15: next_owner_15,\n            owner_16: next_owner_16,\n            owner_17: next_owner_17,\n            owner_18: next_owner_18,\n            owner_19: next_owner_19,\n            owner_20: next_owner_20,\n        });\n    }\n\n    entrypoint function close() {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(sold_tickets > 0);\n        require(tx.outputs[cov_out_idx].scriptPubKey == tx.inputs[this.activeInputIndex].scriptPubKey);\n        require(tx.outputs[cov_out_idx].value >= ticket_price * sold_tickets);\n    }\n\n    entrypoint function finalize(\n        datasig oracle_sig,\n        byte[32] oracle_seed,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        pubkey caller_pubkey\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(sold_batches > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));\n\n        byte[32] caller = byte[32](caller_pubkey);\n        bool caller_is_participant = caller == owner_01;\n        if (sold_batches >= 2 && caller == owner_02) { caller_is_participant = true; }\n        if (sold_batches >= 3 && caller == owner_03) { caller_is_participant = true; }\n        if (sold_batches >= 4 && caller == owner_04) { caller_is_participant = true; }\n        if (sold_batches >= 5 && caller == owner_05) { caller_is_participant = true; }\n        if (sold_batches >= 6 && caller == owner_06) { caller_is_participant = true; }\n        if (sold_batches >= 7 && caller == owner_07) { caller_is_participant = true; }\n        if (sold_batches >= 8 && caller == owner_08) { caller_is_participant = true; }\n        if (sold_batches >= 9 && caller == owner_09) { caller_is_participant = true; }\n        if (sold_batches >= 10 && caller == owner_10) { caller_is_participant = true; }\n        if (sold_batches >= 11 && caller == owner_11) { caller_is_participant = true; }\n        if (sold_batches >= 12 && caller == owner_12) { caller_is_participant = true; }\n        if (sold_batches >= 13 && caller == owner_13) { caller_is_participant = true; }\n        if (sold_batches >= 14 && caller == owner_14) { caller_is_participant = true; }\n        if (sold_batches >= 15 && caller == owner_15) { caller_is_participant = true; }\n        if (sold_batches >= 16 && caller == owner_16) { caller_is_participant = true; }\n        if (sold_batches >= 17 && caller == owner_17) { caller_is_participant = true; }\n        if (sold_batches >= 18 && caller == owner_18) { caller_is_participant = true; }\n        if (sold_batches >= 19 && caller == owner_19) { caller_is_participant = true; }\n        if (sold_batches >= 20 && caller == owner_20) { caller_is_participant = true; }\n        require(caller_is_participant);\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        if (seed_0 < 0) {\n            seed_0 = -seed_0;\n        }\n        if (seed_1 < 0) {\n            seed_1 = -seed_1;\n        }\n        if (seed_2 < 0) {\n            seed_2 = -seed_2;\n        }\n        if (seed_3 < 0) {\n            seed_3 = -seed_3;\n        }\n\n        int winner_from_seed = (seed_0 + seed_1 * 128 + seed_2 * 16384 + seed_3 * 2097152) % sold_tickets;\n        require(winner_ticket_id < sold_tickets);\n        require(winner_ticket_id == winner_from_seed);\n\n        byte[32] winner_owner = owner_01;\n        if (sold_batches >= 2 && winner_from_seed >= batch_end_01) {\n            winner_owner = owner_02;\n        }\n        if (sold_batches >= 3 && winner_from_seed >= batch_end_02) {\n            winner_owner = owner_03;\n        }\n        if (sold_batches >= 4 && winner_from_seed >= batch_end_03) {\n            winner_owner = owner_04;\n        }\n        if (sold_batches >= 5 && winner_from_seed >= batch_end_04) {\n            winner_owner = owner_05;\n        }\n        if (sold_batches >= 6 && winner_from_seed >= batch_end_05) {\n            winner_owner = owner_06;\n        }\n        if (sold_batches >= 7 && winner_from_seed >= batch_end_06) {\n            winner_owner = owner_07;\n        }\n        if (sold_batches >= 8 && winner_from_seed >= batch_end_07) {\n            winner_owner = owner_08;\n        }\n        if (sold_batches >= 9 && winner_from_seed >= batch_end_08) {\n            winner_owner = owner_09;\n        }\n        if (sold_batches >= 10 && winner_from_seed >= batch_end_09) {\n            winner_owner = owner_10;\n        }\n        if (sold_batches >= 11 && winner_from_seed >= batch_end_10) {\n            winner_owner = owner_11;\n        }\n        if (sold_batches >= 12 && winner_from_seed >= batch_end_11) {\n            winner_owner = owner_12;\n        }\n        if (sold_batches >= 13 && winner_from_seed >= batch_end_12) {\n            winner_owner = owner_13;\n        }\n        if (sold_batches >= 14 && winner_from_seed >= batch_end_13) {\n            winner_owner = owner_14;\n        }\n        if (sold_batches >= 15 && winner_from_seed >= batch_end_14) {\n            winner_owner = owner_15;\n        }\n        if (sold_batches >= 16 && winner_from_seed >= batch_end_15) {\n            winner_owner = owner_16;\n        }\n        if (sold_batches >= 17 && winner_from_seed >= batch_end_16) {\n            winner_owner = owner_17;\n        }\n        if (sold_batches >= 18 && winner_from_seed >= batch_end_17) {\n            winner_owner = owner_18;\n        }\n        if (sold_batches >= 19 && winner_from_seed >= batch_end_18) {\n            winner_owner = owner_19;\n        }\n        if (sold_batches >= 20 && winner_from_seed >= batch_end_19) {\n            winner_owner = owner_20;\n        }\n        require(byte[32](winner_pubkey) == winner_owner);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 40000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }\n\n    entrypoint function refund_all() {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(max_tickets <= 1000);\n        require(sold_batches > 0);\n        require(sold_batches <= 20);\n        require(tx.locktime >= refund_after_daa);\n\n        int refund_total = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - refund_total - 20000000;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == sold_batches + 1);\n\n        if (sold_batches >= 1) {\n            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_01))));\n            require(tx.outputs[0].value == ticket_price * (batch_end_01 - 0));\n        }\n        if (sold_batches >= 2) {\n            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_02))));\n            require(tx.outputs[1].value == ticket_price * (batch_end_02 - batch_end_01));\n        }\n        if (sold_batches >= 3) {\n            require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_03))));\n            require(tx.outputs[2].value == ticket_price * (batch_end_03 - batch_end_02));\n        }\n        if (sold_batches >= 4) {\n            require(tx.outputs[3].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_04))));\n            require(tx.outputs[3].value == ticket_price * (batch_end_04 - batch_end_03));\n        }\n        if (sold_batches >= 5) {\n            require(tx.outputs[4].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_05))));\n            require(tx.outputs[4].value == ticket_price * (batch_end_05 - batch_end_04));\n        }\n        if (sold_batches >= 6) {\n            require(tx.outputs[5].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_06))));\n            require(tx.outputs[5].value == ticket_price * (batch_end_06 - batch_end_05));\n        }\n        if (sold_batches >= 7) {\n            require(tx.outputs[6].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_07))));\n            require(tx.outputs[6].value == ticket_price * (batch_end_07 - batch_end_06));\n        }\n        if (sold_batches >= 8) {\n            require(tx.outputs[7].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_08))));\n            require(tx.outputs[7].value == ticket_price * (batch_end_08 - batch_end_07));\n        }\n        if (sold_batches >= 9) {\n            require(tx.outputs[8].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_09))));\n            require(tx.outputs[8].value == ticket_price * (batch_end_09 - batch_end_08));\n        }\n        if (sold_batches >= 10) {\n            require(tx.outputs[9].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_10))));\n            require(tx.outputs[9].value == ticket_price * (batch_end_10 - batch_end_09));\n        }\n        if (sold_batches >= 11) {\n            require(tx.outputs[10].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_11))));\n            require(tx.outputs[10].value == ticket_price * (batch_end_11 - batch_end_10));\n        }\n        if (sold_batches >= 12) {\n            require(tx.outputs[11].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_12))));\n            require(tx.outputs[11].value == ticket_price * (batch_end_12 - batch_end_11));\n        }\n        if (sold_batches >= 13) {\n            require(tx.outputs[12].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_13))));\n            require(tx.outputs[12].value == ticket_price * (batch_end_13 - batch_end_12));\n        }\n        if (sold_batches >= 14) {\n            require(tx.outputs[13].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_14))));\n            require(tx.outputs[13].value == ticket_price * (batch_end_14 - batch_end_13));\n        }\n        if (sold_batches >= 15) {\n            require(tx.outputs[14].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_15))));\n            require(tx.outputs[14].value == ticket_price * (batch_end_15 - batch_end_14));\n        }\n        if (sold_batches >= 16) {\n            require(tx.outputs[15].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_16))));\n            require(tx.outputs[15].value == ticket_price * (batch_end_16 - batch_end_15));\n        }\n        if (sold_batches >= 17) {\n            require(tx.outputs[16].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_17))));\n            require(tx.outputs[16].value == ticket_price * (batch_end_17 - batch_end_16));\n        }\n        if (sold_batches >= 18) {\n            require(tx.outputs[17].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_18))));\n            require(tx.outputs[17].value == ticket_price * (batch_end_18 - batch_end_17));\n        }\n        if (sold_batches >= 19) {\n            require(tx.outputs[18].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_19))));\n            require(tx.outputs[18].value == ticket_price * (batch_end_19 - batch_end_18));\n        }\n        if (sold_batches >= 20) {\n            require(tx.outputs[19].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(owner_20))));\n            require(tx.outputs[19].value == ticket_price * (batch_end_20 - batch_end_19));\n        }\n\n        require(tx.outputs[sold_batches].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[sold_batches].value == creator_refund);\n    }\n}",
     "name_span": "RaffleRound"
   },
   "abi": [
@@ -19332,6 +21183,10 @@
         },
         {
           "name": "winner_pubkey",
+          "type_name": "pubkey"
+        },
+        {
+          "name": "caller_pubkey",
           "type_name": "pubkey"
         }
       ]

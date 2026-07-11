@@ -50,6 +50,7 @@ const distHtml = distFiles.includes("index.html") ? readText("dist/index.html") 
 assert("Single-file SPA build exists", packageJson.scripts?.build === "tsc --noEmit && vite build && node scripts/inline-spa.mjs");
 assert("Build output is one self-contained HTML file", JSON.stringify(distFiles) === JSON.stringify(["index.html"]));
 assert("Kaspa WASM is embedded in the SPA", distHtml.includes("data:application/octet-stream;base64"));
+assert("Production SPA excludes the local private-key test adapter", !distHtml.includes("Local test key") && !distHtml.includes("__kaspa_raffle_local_test_wallet"));
 assert(
   "Browser WASM loader bypasses the package CommonJS require",
   viteSource.includes("patchOneKeyBrowserWasmLoader") &&
@@ -123,10 +124,31 @@ assert(
     transactionSource.includes("input.covenant.soldTickets >= input.round.maxTickets")
 );
 assert(
+  "Finalize requires a ticket-holder wallet on chain",
+  contractSource.includes("tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey))") &&
+    contractSource.includes("require(caller_is_participant)") &&
+    transactionSource.includes("input.wallet.signTransaction(tx, [1])") &&
+    appSource.includes("walletIsParticipant")
+);
+assert(
+  "Participant authorization UTXO is returned unchanged",
+  contractSource.includes("tx.outputs[2].value == tx.inputs[1].value") &&
+    transactionSource.includes("new TransactionOutput(authorizationUtxo.amount, callerScriptPublicKey)")
+);
+assert(
+  "Participant finalize uses the verified v1 fee and signature layout",
+  transactionSource.includes("COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n") &&
+    transactionSource.includes("sigOpCount: 0") &&
+    transactionSource.includes("tx.finalize();\n    await input.wallet.signTransaction(tx, [1])") &&
+    contractSource.includes("value - prize - 40000000")
+);
+assert(
   "Legacy covenant artifacts remain loadable",
     covenantSource.includes("raffle-round-v1.artifact.json") &&
     covenantSource.includes("raffle-round-v2.artifact.json") &&
     covenantSource.includes("raffle-round-v3-beta.artifact.json") &&
+    covenantSource.includes("raffle-round-v3.1.artifact.json") &&
+    covenantSource.includes("raffle-round-v3.2.artifact.json") &&
     covenantSource.includes("raffleArtifactForRedeemScript")
 );
 assert(
@@ -142,6 +164,13 @@ assert(
     contractSource.includes("require(byte[32](winner_pubkey) == winner_owner)")
 );
 assert("Timeout refund builder is wired", transactionSource.includes("refundRaffleCovenantRound") && appSource.includes("handleRefundTimedOutRound"));
+assert(
+  "Refund is walletless and disabled until live DAA timeout",
+  contractSource.includes("require(tx.locktime >= refund_after_daa)") &&
+    appSource.includes("const refundAvailable =") &&
+    appSource.includes("!refundAvailable") &&
+    !transactionSource.match(/interface RefundRaffleCovenantRoundInput[\s\S]{0,200}wallet:/)
+);
 assert(
   "Default test refund timeout is 10 minutes",
   appSource.includes("DEFAULT_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE")

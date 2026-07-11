@@ -246,13 +246,39 @@ contract RaffleRound() {
         datasig oracle_sig,
         byte[32] oracle_seed,
         int winner_ticket_id,
-        pubkey winner_pubkey
+        pubkey winner_pubkey,
+        pubkey caller_pubkey
     ) {
         require(OpAuthOutputCount(this.activeInputIndex) == 0);
+        require(tx.inputs.length == 2);
+        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));
         require(sold_tickets > 0);
         require(sold_batches > 0);
         require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);
         require(checkSigFromStack(oracle_sig, sha256(byte[](oracle_seed)), pubkey(oracle_pubkey)));
+
+        byte[32] caller = byte[32](caller_pubkey);
+        bool caller_is_participant = caller == owner_01;
+        if (sold_batches >= 2 && caller == owner_02) { caller_is_participant = true; }
+        if (sold_batches >= 3 && caller == owner_03) { caller_is_participant = true; }
+        if (sold_batches >= 4 && caller == owner_04) { caller_is_participant = true; }
+        if (sold_batches >= 5 && caller == owner_05) { caller_is_participant = true; }
+        if (sold_batches >= 6 && caller == owner_06) { caller_is_participant = true; }
+        if (sold_batches >= 7 && caller == owner_07) { caller_is_participant = true; }
+        if (sold_batches >= 8 && caller == owner_08) { caller_is_participant = true; }
+        if (sold_batches >= 9 && caller == owner_09) { caller_is_participant = true; }
+        if (sold_batches >= 10 && caller == owner_10) { caller_is_participant = true; }
+        if (sold_batches >= 11 && caller == owner_11) { caller_is_participant = true; }
+        if (sold_batches >= 12 && caller == owner_12) { caller_is_participant = true; }
+        if (sold_batches >= 13 && caller == owner_13) { caller_is_participant = true; }
+        if (sold_batches >= 14 && caller == owner_14) { caller_is_participant = true; }
+        if (sold_batches >= 15 && caller == owner_15) { caller_is_participant = true; }
+        if (sold_batches >= 16 && caller == owner_16) { caller_is_participant = true; }
+        if (sold_batches >= 17 && caller == owner_17) { caller_is_participant = true; }
+        if (sold_batches >= 18 && caller == owner_18) { caller_is_participant = true; }
+        if (sold_batches >= 19 && caller == owner_19) { caller_is_participant = true; }
+        if (sold_batches >= 20 && caller == owner_20) { caller_is_participant = true; }
+        require(caller_is_participant);
 
         byte[32] seed = sha256(byte[](ticket_root) + byte[](oracle_seed));
         int seed_0 = int(seed[0]);
@@ -337,13 +363,15 @@ contract RaffleRound() {
         require(byte[32](winner_pubkey) == winner_owner);
 
         int prize = ticket_price * sold_tickets;
-        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 20000000;
+        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 40000000;
         require(creator_refund >= 0);
-        require(tx.outputs.length == 2);
+        require(tx.outputs.length == 3);
         require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));
         require(tx.outputs[0].value == prize);
         require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
         require(tx.outputs[1].value == creator_refund);
+        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));
+        require(tx.outputs[2].value == tx.inputs[1].value);
     }
 
     entrypoint function refund_all() {

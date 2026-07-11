@@ -1,9 +1,10 @@
-import type { PendingTransaction } from "@onekeyfe/kaspa-wasm";
 import {
   createConnectedWallet,
   fillSignedTransaction,
+  serializeWalletTransaction,
   type BrowserTestWallet,
-  type KaspaWalletAdapter
+  type KaspaWalletAdapter,
+  type WalletSignableTransaction
 } from "./wallet-types";
 
 interface KastleAccount {
@@ -71,8 +72,13 @@ function signedTransactionJson(result: string | { txJson?: string; signedTx?: st
   return json;
 }
 
-async function signTransaction(walletProvider: KastleProvider, network: string, transaction: PendingTransaction): Promise<void> {
-  const txJson = transaction.serializeToSafeJSON();
+async function signTransaction(
+  walletProvider: KastleProvider,
+  network: string,
+  transaction: WalletSignableTransaction,
+  inputIndexes?: number[]
+): Promise<void> {
+  const txJson = serializeWalletTransaction(transaction);
   const networkId = signingNetworkId(network);
   const result = walletProvider.signTx
     ? await walletProvider.signTx(networkId, txJson)
@@ -82,7 +88,7 @@ async function signTransaction(walletProvider: KastleProvider, network: string, 
     throw new Error("This Kastle version does not expose a transaction signing API.");
   }
 
-  fillSignedTransaction(transaction, signedTransactionJson(result as string | { txJson?: string; signedTx?: string }));
+  fillSignedTransaction(transaction, signedTransactionJson(result as string | { txJson?: string; signedTx?: string }), inputIndexes);
 }
 
 async function walletFromAccount(walletProvider: KastleProvider, account: KastleAccount, network: string): Promise<BrowserTestWallet> {
@@ -92,7 +98,7 @@ async function walletFromAccount(walletProvider: KastleProvider, account: Kastle
     address: account.address,
     publicKey: account.publicKey,
     network,
-    signTransaction: (transaction) => signTransaction(walletProvider, network, transaction)
+    signTransaction: (transaction, inputIndexes) => signTransaction(walletProvider, network, transaction, inputIndexes)
   });
 }
 

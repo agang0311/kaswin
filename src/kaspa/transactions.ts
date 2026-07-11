@@ -81,6 +81,7 @@ export interface CloseRaffleCovenantRoundInput {
 
 export interface FinalizeRaffleCovenantRoundInput {
   connection: KaspaRpcConnection;
+  wallet: BrowserTestWallet;
   round: RoundState;
   covenant: RaffleCovenantCursor;
   oracleSeedHex: string;
@@ -109,7 +110,7 @@ export const MIN_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
 export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 500_000_000n;
 export const COVENANT_CREATE_FEE_SOMPI = 1_000_000n;
 export const COVENANT_BUY_FEE_SOMPI = 6_000_000n;
-export const COVENANT_FINALIZE_FEE_SOMPI = 20_000_000n;
+export const COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n;
 export const COVENANT_REFUND_FEE_SOMPI = 20_000_000n;
 const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
 const COVENANT_CLOSE_FEE_SOMPI = 6_000_000n;
@@ -118,7 +119,8 @@ const STANDARD_REFUND_MIN_SOMPI = 100_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
 const RAFFLE_BUY_COMPUTE_BUDGET = 400;
 const RAFFLE_CLOSE_COMPUTE_BUDGET = 400;
-const RAFFLE_FINALIZE_COMPUTE_BUDGET = 1_300;
+const RAFFLE_FINALIZE_COMPUTE_BUDGET = 2_500;
+const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 400;
 const RAFFLE_REFUND_COMPUTE_BUDGET = 1_600;
 
 function formatKasAmount(value: bigint): string {
@@ -863,6 +865,21 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     await assertRaffleRedeemScriptMatchesRound(closedRound, input.covenant.redeemScriptHex, "Finalize");
 
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
+    const callerPubkey = pubkeyHexFromAddress(input.wallet.address);
+
+    if (!input.covenant.ticketOwnerPubkeys.includes(callerPubkey)) {
+      throw new Error("Only a wallet that bought tickets in this round can draw and pay the winner.");
+    }
+
+    const walletUtxos = await input.connection.client.getUtxosByAddresses({ addresses: [input.wallet.address] });
+    const authorizationUtxo = [...(walletUtxos.entries ?? [])]
+      .filter((entry) => entry.amount >= STANDARD_REFUND_MIN_SOMPI)
+      .sort((left, right) => left.amount === right.amount ? 0 : left.amount > right.amount ? -1 : 1)[0];
+
+    if (!authorizationUtxo) {
+      throw new Error(`The participant wallet needs a spendable UTXO of at least ${formatKasAmount(STANDARD_REFUND_MIN_SOMPI)} to authorize the draw. It is returned unchanged.`);
+    }
+
     const randomSeed = await buildFinalizeSeedHex(closedRound, input.oracleSeedHex);
     const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, input.covenant.soldTickets);
 
@@ -885,6 +902,8 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     }
 
     outputs.push(new TransactionOutput(creatorRefundAmount, payToAddressScript(closedRound.creator)));
+    const callerScriptPublicKey = payToAddressScript(input.wallet.address);
+    outputs.push(new TransactionOutput(authorizationUtxo.amount, callerScriptPublicKey));
 
     const tx = buildManualTransaction({
       inputs: [
@@ -895,12 +914,21 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
             input.oracleSignatureHex,
             input.oracleSeedHex,
             winnerIndex,
-            winnerScriptPublicKey
+            winnerScriptPublicKey,
+            callerScriptPublicKey
           ),
           sequence: 0n,
           sigOpCount: 0,
           computeBudget: RAFFLE_FINALIZE_COMPUTE_BUDGET,
           utxo: asInputUtxo(covenantUtxo)
+        },
+        {
+          previousOutpoint: authorizationUtxo.outpoint,
+          signatureScript: "",
+          sequence: 0n,
+          sigOpCount: 0,
+          computeBudget: RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET,
+          utxo: asInputUtxo(authorizationUtxo)
         }
       ],
       outputs,
@@ -909,6 +937,8 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
         ? 0n
         : BigInt(input.covenant.refundAfterDaaScore)
     });
+    tx.finalize();
+    await input.wallet.signTransaction(tx, [1]);
     const txId = await submitTransaction(input.connection, tx);
 
     return {

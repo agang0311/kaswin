@@ -100,8 +100,8 @@ assert(
   JSON.stringify(buy?.inputs.map((input) => input.type_name)) === JSON.stringify(["byte[32]", "pubkey", "int"])
 );
 assert(
-  "Finalize ABI uses oracle signature, seed, winner id, and payout pubkey",
-  JSON.stringify(finalize?.inputs.map((input) => input.type_name)) === JSON.stringify(["datasig", "byte[32]", "int", "pubkey"])
+  "Finalize ABI uses oracle signature, seed, winner id, payout pubkey, and participant pubkey",
+  JSON.stringify(finalize?.inputs.map((input) => input.type_name)) === JSON.stringify(["datasig", "byte[32]", "int", "pubkey", "pubkey"])
 );
 assert("Refund-all ABI takes no arguments", JSON.stringify(refundAll?.inputs.map((input) => input.type_name)) === JSON.stringify([]));
 

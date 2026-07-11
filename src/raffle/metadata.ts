@@ -18,7 +18,7 @@ export function createEmptyMetadata(): RaffleMetadata {
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",
     treasuryAddress: "",
-    contractVersion: "raffle-v3.1-batch-1000"
+    contractVersion: "raffle-v3.3-participant-finalize-fee40"
   };
 }
 
