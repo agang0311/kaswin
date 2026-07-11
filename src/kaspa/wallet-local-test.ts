@@ -1,8 +1,7 @@
 import {
   createInputSignature,
   PrivateKey,
-  type PendingTransaction,
-  type Transaction
+  type PendingTransaction
 } from "@onekeyfe/kaspa-wasm";
 import { ensureKaspaWasmReady } from "./wasm";
 import {
@@ -11,9 +10,6 @@ import {
   type KaspaWalletAdapter,
   type WalletSignableTransaction
 } from "./wallet-types";
-
-let connectedWallet: BrowserTestWallet | null = null;
-let connectedPrivateKey = "";
 
 function isPendingTransaction(transaction: WalletSignableTransaction): transaction is PendingTransaction {
   return "transaction" in transaction;
@@ -40,47 +36,64 @@ function signLocalTransaction(
   transaction.inputs[inputIndex].signatureScript = createInputSignature(transaction, inputIndex, privateKey);
 }
 
-export const localTestWalletAdapter: KaspaWalletAdapter = {
-  id: "local-test-key",
-  name: "Local test key",
-  isInstalled: () => true,
-  async connect(network) {
-    await ensureKaspaWasmReady();
-    const response = await fetch("/__kaspa_raffle_local_test_wallet", { cache: "no-store" });
+function createLocalTestWalletAdapter(input: { id: string; name: string; wallet: "participant" | "outsider" }): KaspaWalletAdapter {
+  let connectedWallet: BrowserTestWallet | null = null;
+  let connectedPrivateKey = "";
 
-    if (!response.ok) {
-      throw new Error("The local test wallet is unavailable from this development server.");
-    }
+  return {
+    id: input.id,
+    name: input.name,
+    isInstalled: () => true,
+    async connect(network) {
+      await ensureKaspaWasmReady();
+      const response = await fetch(`/__kaspa_raffle_local_test_wallet?wallet=${input.wallet}`, { cache: "no-store" });
 
-    const privateKeyHex = (await response.text()).trim();
-
-    const privateKey = new PrivateKey(privateKeyHex);
-    const keypair = privateKey.toKeypair();
-    connectedPrivateKey = privateKeyHex;
-    connectedWallet = createConnectedWallet({
-      adapterId: "local-test-key",
-      providerName: "Local test key",
-      address: keypair.toAddress(network).toString(),
-      publicKey: keypair.publicKey,
-      network,
-      signTransaction: async (transaction, inputIndexes) => {
-        if (!connectedPrivateKey) {
-          throw new Error("The local test wallet is no longer connected.");
-        }
-
-        signLocalTransaction(transaction, connectedPrivateKey, inputIndexes);
+      if (!response.ok) {
+        throw new Error("The local test wallet is unavailable from this development server.");
       }
-    });
-    return connectedWallet;
-  },
-  async readConnected() {
-    return connectedWallet;
-  },
-  async disconnect() {
-    connectedPrivateKey = "";
-    connectedWallet = null;
-  },
-  subscribe() {
-    return () => undefined;
-  }
-};
+
+      const privateKeyHex = (await response.text()).trim();
+
+      const privateKey = new PrivateKey(privateKeyHex);
+      const keypair = privateKey.toKeypair();
+      connectedPrivateKey = privateKeyHex;
+      connectedWallet = createConnectedWallet({
+        adapterId: input.id,
+        providerName: input.name,
+        address: keypair.toAddress(network).toString(),
+        publicKey: keypair.publicKey,
+        network,
+        signTransaction: async (transaction, inputIndexes) => {
+          if (!connectedPrivateKey) {
+            throw new Error("The local test wallet is no longer connected.");
+          }
+
+          signLocalTransaction(transaction, connectedPrivateKey, inputIndexes);
+        }
+      });
+      return connectedWallet;
+    },
+    async readConnected() {
+      return connectedWallet;
+    },
+    async disconnect() {
+      connectedPrivateKey = "";
+      connectedWallet = null;
+    },
+    subscribe() {
+      return () => undefined;
+    }
+  };
+}
+
+export const localTestWalletAdapter = createLocalTestWalletAdapter({
+  id: "local-test-key",
+  name: "Local participant key",
+  wallet: "participant"
+});
+
+export const localOutsiderWalletAdapter = createLocalTestWalletAdapter({
+  id: "local-outsider-key",
+  name: "Local outsider key",
+  wallet: "outsider"
+});

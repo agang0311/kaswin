@@ -50,7 +50,12 @@ const distHtml = distFiles.includes("index.html") ? readText("dist/index.html") 
 assert("Single-file SPA build exists", packageJson.scripts?.build === "tsc --noEmit && vite build && node scripts/inline-spa.mjs");
 assert("Build output is one self-contained HTML file", JSON.stringify(distFiles) === JSON.stringify(["index.html"]));
 assert("Kaspa WASM is embedded in the SPA", distHtml.includes("data:application/octet-stream;base64"));
-assert("Production SPA excludes the local private-key test adapter", !distHtml.includes("Local test key") && !distHtml.includes("__kaspa_raffle_local_test_wallet"));
+assert(
+  "Production SPA excludes local private-key test adapters",
+  !distHtml.includes("Local participant key") &&
+    !distHtml.includes("Local outsider key") &&
+    !distHtml.includes("__kaspa_raffle_local_test_wallet")
+);
 assert(
   "Browser WASM loader bypasses the package CommonJS require",
   viteSource.includes("patchOneKeyBrowserWasmLoader") &&

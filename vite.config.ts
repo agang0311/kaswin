@@ -34,7 +34,11 @@ function localTestWalletPlugin(): Plugin {
           return;
         }
 
-        const walletPath = path.resolve("wallets", "experiment-testnet-12.json");
+        const requestUrl = new URL(request.url ?? "", "http://localhost");
+        const walletFile = requestUrl.searchParams.get("wallet") === "outsider"
+          ? "round-testnet-12.json"
+          : "experiment-testnet-12.json";
+        const walletPath = path.resolve("wallets", walletFile);
 
         try {
           const wallet = JSON.parse(fs.readFileSync(walletPath, "utf8")) as { privateKey?: string };
