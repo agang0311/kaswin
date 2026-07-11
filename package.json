@@ -1,6 +1,6 @@
 {
   "name": "kaspa-raffle-static-v0",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Static, testnet-first raffle dApp for Kaspa Toccata.",
   "private": true,
   "type": "module",
