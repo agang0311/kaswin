@@ -1,4 +1,4 @@
-import { verifyTicketProof } from "../raffle/merkle";
+import { verifyTicketProof, verifyTicketRange8 } from "../raffle/merkle";
 
 export const DEFAULT_RAFFLE_INDEX_API = "http://127.0.0.1:8787";
 
@@ -7,6 +7,15 @@ export interface IndexedTicketProof {
   ownerPubkey: string;
   owner: string;
   transactionId?: string;
+  proofHex: string;
+  rootHex: string;
+}
+
+export interface IndexedTicketRange8 {
+  firstTicketId: number;
+  ticketCount: 8;
+  ownerPubkeys: string[];
+  owners: string[];
   proofHex: string;
   rootHex: string;
 }
@@ -98,6 +107,26 @@ export async function loadIndexedOwnerProof(
   await assertIndexedProof(proof);
   if (proof.ownerPubkey !== ownerPubkey.toLowerCase()) throw new Error("Raffle index returned a proof for a different owner.");
   return proof;
+}
+
+export async function loadIndexedTicketRange8(
+  apiBase: string,
+  roundId: string,
+  firstTicketId: number
+): Promise<IndexedTicketRange8> {
+  const range = await fetchJson<IndexedTicketRange8>(
+    `${baseUrl(apiBase)}/rounds/${encodeURIComponent(roundId)}/ranges/${firstTicketId}/8`
+  );
+  if (
+    range.ticketCount !== 8 ||
+    range.firstTicketId !== firstTicketId ||
+    range.ownerPubkeys.length !== 8 ||
+    range.owners.length !== 8 ||
+    !await verifyTicketRange8(range.rootHex, range.ownerPubkeys, firstTicketId - 1, range.proofHex)
+  ) {
+    throw new Error("Raffle index returned an invalid 8-ticket range proof.");
+  }
+  return range;
 }
 
 async function assertIndexedProof(proof: IndexedTicketProof): Promise<void> {

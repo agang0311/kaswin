@@ -14,7 +14,7 @@ The release UI is a self-contained static HTML file. Users provide a browser-com
 
 ## Current Status
 
-The current v0.2.0 implementation includes:
+The current v0.3.0 implementation includes:
 
 - Single-file React + TypeScript SPA build
 - English and Chinese interfaces with a persistent language selector in the top-right corner
@@ -26,11 +26,11 @@ The current v0.2.0 implementation includes:
 - Funding transactions signed by the selected wallet; the page never receives the wallet private key
 - Creator-selected Registry address with explicit marker amount, payment fee, and refund behavior
 - Network-specific default Registry addresses; Mainnet uses `kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh`
-- One-ticket-per-user v4 purchases backed by a depth-20 append-only Merkle tree
+- One-ticket-per-purchase V5 rounds backed by a depth-20 append-only Merkle tree
 - A compact 787-byte covenant state supporting 1,000,000 distinct ticket owners
 - Participant-only finalize with winner and caller Merkle proofs
-- Sequential walletless timeout refunds that force each payment to the proven ticket owner
-- A confirmed-chain, reorg-aware disk indexer that serves the latest covenant cursor and 640-byte ticket proofs
+- Walletless timeout refunds that route once into a compact refund contract, repay 8 proven owners per transaction, and use single-ticket proofs only for a final 1-7 ticket tail
+- A confirmed-chain, reorg-aware disk indexer that serves the latest covenant cursor, 640-byte ticket proofs, and 544-byte aligned 8-ticket range proofs
 - Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
 - Shareable round links for participant entry
@@ -44,7 +44,9 @@ Mainnet creation now disables the development-oracle mode and requires an extern
 
 ## Covenant Direction
 
-The v4 covenant keeps the pot in one `RaffleRoundV4` UTXO. Every purchase appends `sha256(owner_pubkey)` to a depth-20 tree and stores only the root plus a 640-byte frontier. Finalize verifies both the winning ticket and the caller's participant proof, pays the prize, returns the caller authorization UTXO unchanged, and refunds the carrier atomically. After timeout, `refundNext` advances an on-chain cursor; anyone can broadcast the next proof, while the covenant forces payment to that ticket owner.
+The V5 normal path keeps the pot in one `RaffleRoundV5` UTXO. Every purchase appends `sha256(owner_pubkey)` to a depth-20 tree and stores only the root plus a 640-byte frontier. Finalize verifies both the winning ticket and the caller's participant proof, pays the prize, returns the caller authorization UTXO unchanged, and refunds the carrier atomically.
+
+After timeout, anyone can broadcast `startRefund` to move the reduced five-field state into `RaffleRefundV1`; `RaffleRoundV5` verifies the destination template hash and state on chain. The refund contract then accepts an aligned 8-ticket range proof and forces eight P2PK outputs to those owners. At 1,000,000 tickets this reduces the worst case from 1,000,000 refund transactions to 125,000. V4 rounds remain loadable and retain their sequential `refundNext` path.
 
 ## Network Setup
 
@@ -66,7 +68,7 @@ Default local testing targets the public Toccata testnet endpoint:
 - initial ticket price: `30000000` sompi, or `0.3 KAS`
 - default round size: 10 tickets
 - contract limit: 1,000,000 independent users, exactly one ticket per purchase
-- round carrier reserve: `0.2 KAS` by default with a `0.1 KAS` storage-safe minimum. V4 finalize uses `0.022 KAS`; each timeout refund uses `0.019 KAS` from that ticket and returns `0.281 KAS` at the default price.
+- round carrier reserve: `0.2 KAS` by default with a `0.1 KAS` storage-safe minimum. V5 finalize uses `0.022 KAS`. Starting timeout refunds uses `0.022 KAS`; each 8-ticket batch deducts `0.012 KAS` total (`0.0015 KAS` per ticket). Only a final 1-7 ticket tail uses the `0.019 KAS` single-ticket path.
 - registry marker: `0.05 KAS` is sent through a storage-safe staging transaction. The Testnet default registry returns `0.049 KAS` after a `0.001 KAS` refund fee. The Mainnet default and custom registries retain the marker under the destination address owner's control.
 - temporary covenant funding is sized from the payment plus the action fee, with a `0.2 KAS` minimum for small payments; eligible change is returned in the same covenant transaction.
 
@@ -74,7 +76,9 @@ Install KasWare or Kastle, select a Kaspa testnet account, then choose the detec
 
 As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 
-The v4 verification gate replays 1,000,000 distinct Merkle appends, validates first/middle/last proofs, runs nine SilverScript positive and negative paths, checks exact Toccata mass, and starts a persistent index API fixture. Exact minimum relay fees measured for representative v4 transactions are `0.015982 KAS` buy, `0.019258 KAS` finalize, and `0.017118 KAS` continuing refund; configured fees include a small margin.
+The verification gate replays 1,000,000 distinct Merkle appends, validates first/middle/last single and range proofs, runs both the V4 compatibility and V5 SilverScript suites, checks exact Toccata mass, and starts a persistent index API fixture. V5 exact minimum relay fees are `0.013106 KAS` buy, `0.016226 KAS` finalize, `0.020318 KAS` refund transition, and `0.010776 KAS` per 8-ticket batch. Configured fees include a small margin. The batch transaction's measured storage mass is `316,267`, below the `500,000` standard limit.
+
+The 2026-07-12 TN12 browser loop completed three V5 rounds: direct create/buy/finalize, History load followed by finalize, and an 8-ticket 10-second-timeout round followed by `startRefund` and one `refundBatch8`. The confirmed-chain index reported the final states as two `Finalized` rounds and one `Refunded` round with cursor 8.
 
 `npm run benchmark:indexer:1m` builds a real one-million-record disk fixture. The 2026-07-12 run used `164,003,779` bytes, rebuilt a missing derived tree in `298.15s`, restarted from its checkpoint in `0.27s`, served first/middle/last proofs in `5.00/1.93/1.36ms`, and used `79,523,840` bytes RSS. The append-only event log, migration baseline, and fixed confirmation queue allow the indexer to rebuild after a selected-chain reorganization without retaining all ticket nodes in memory.
 
@@ -109,6 +113,8 @@ npm run start:indexer
 
 It listens on `http://127.0.0.1:8787` by default. Configure `KASPA_RPC_URL`, `KASPA_NETWORK`, `RAFFLE_INDEX_PORT`, `RAFFLE_INDEX_DATA`, and `RAFFLE_INDEX_CONFIRMATIONS` as needed. `RAFFLE_INDEX_REMOVE_BLOCKS` is a repair/testing hook for explicitly removing comma-separated event block hashes; `RAFFLE_INDEX_OFFLINE=1` is reserved for deterministic fixtures.
 
+Witness endpoints include `GET /rounds/{roundId}/tickets/{ticketId}`, `GET /rounds/{roundId}/owners/{pubkey}/proof`, and `GET /rounds/{roundId}/ranges/{firstTicketId}/8`. Ticket ids are one-based; range starts must be aligned to 8 in zero-based contract space (`1`, `9`, `17`, ... in the API).
+
 Run the covenant release gate:
 
 ```bash
@@ -117,10 +123,11 @@ npm run verify:covenant
 
 The covenant release gate requires the compiled Silverscript artifact and wired browser-side covenant transaction builders. See [`docs/development-verification-loop.md`](docs/development-verification-loop.md).
 
-Compile the covenant source with the local Silverscript checkout:
+Compile the legacy/default contract or the V5 round/refund pair with the local Silverscript checkout:
 
 ```bash
 npm run compile:contract
+npm run compile:contract:v5
 ```
 
 The compiler toolchain runs locally now. The raffle source stores oracle public key and ticket root as fixed `byte[32]` covenant state fields and the browser encoder writes the same state layout produced by the compiler.

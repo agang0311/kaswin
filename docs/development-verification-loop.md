@@ -22,8 +22,11 @@ Runs the same checks with the release gate enabled. This command must fail if th
 ```bash
 npm run compile:contract
 npm run compile:contract:v4
+npm run compile:contract:v5
 npm run verify:contract:v4
+npm run verify:contract:v5
 npm run verify:fees:v4
+npm run verify:fees:v5
 npm run verify:users:1m
 npm run verify:indexer
 ```
@@ -42,12 +45,12 @@ Use a dedicated testnet wallet only. The public endpoint name contains `tn12`, b
 4. Load the shared round URL or paste the round metadata JSON.
 5. Connect a funded disposable TN10 wallet; local private-key adapters are development-only.
 6. Buy one ticket per transaction and confirm the Merkle cursor advances.
-7. Run at least three complete rounds; one must contain 10 tickets and one must exercise timeout refunds.
+7. Run at least three complete rounds; one must be loaded through History and one must exercise `startRefund` plus an 8-ticket batch.
 8. Load at least one round through the index-backed History view before finalize or refund.
-9. Run the v4 contract, fee, million-user, and indexer verifiers listed above.
+9. Run the V4 compatibility, V5 contract/fee, million-user, and indexer verifiers listed above.
 10. Confirm round creation uses the default `0.2 KAS` carrier and rejects values below `0.1 KAS`.
 11. Confirm finalize pays the winner, returns the authorization UTXO unchanged, and returns carrier minus the fixed fee.
-12. Confirm every refund pays the proven ticket owner, advances `refundCursor`, and returns carrier on the last ticket.
+12. Confirm the timeout transition preserves the root and sold count, every batch pays exactly 8 proven owners, `refundCursor` advances by 8, and the last batch returns carrier.
 
 ## Current Expected Result
 
@@ -60,8 +63,8 @@ A passing release run requires all of the following:
 - Browser transaction builders create the round covenant UTXO, ticket transition spends, direct finalize termination spend, and timeout refund spend.
 - The covenant permits finalize only after all tickets sell or the configured DAA deadline arrives.
 - The covenant supports 1,000,000 distinct one-ticket users with a depth-20 root/frontier state.
-- Finalize verifies independent winner and caller proofs; refund verifies the cursor ticket proof.
-- The confirmed-chain indexer serves the latest covenant cursor and proofs without browser-side million-hop address tracing.
+- Finalize verifies independent winner and caller proofs; V5 refund verifies aligned 8-ticket range proofs and uses single proofs only for a final 1-7 ticket tail.
+- The confirmed-chain indexer serves the latest covenant cursor plus single/range proofs without browser-side million-hop address tracing.
 - Finalize output 0 pays the winning ticket owner directly from the covenant pot.
 - No treasury private key or manual `Pay prize` path exists in the UI.
 - `dist/` contains only a self-contained `index.html` with the Kaspa WASM embedded.
@@ -79,6 +82,14 @@ The root-bound oracle template was then exercised in three additional rounds:
 - `round-c9312e27bce5542e`: one ticket, direct payout `e9ab80b00896bada834bd99b70df7557c6ad352b8a318325992cff15c7d3b07e`.
 - `round-33f0472457bb53c7`: one ticket, loaded through History, payout `5cb17ffe9ace35decf6c111a88f36b1833e2d439fbf26083d41865c11ddd4b4d`.
 - `round-52ef2093c0908a32`: one ticket, loaded through History, timeout refund `4fcc89d2d76c149ff7316344be665c58c1fe54af392487fd0e0d76567c3e05a8`; the reorg-aware index now reports `Refunded` with cursor 1.
+
+## Verified V5 Runs (2026-07-12)
+
+- `round-c8cfa47a234471f6`: one ticket, direct payout `4070495aad3abfb1babc535ea16de7ec38a856a845cc567caa31248128aa78e2`.
+- `round-66e12a5f76fe7953`: one ticket, loaded through index-backed History before payout `bbdb729a1d44c6d1e612a327a787de74d1567c2a73078aca21f7c79a1059c26f`.
+- `round-43db1065f74ba07e`: eight tickets, 10-second timeout, refund transition `4e455efba5768e50792fa0dfcf80d1cdc3256700528a952766b9445b4eddebe6`, and final batch refund `da2afb2361dad48d1b607acde5634bda819b2b488a4731b8694f5a7a1a3280aa`. History reports `Refunded` with cursor 8.
+
+Measured V5 minimum relay fees are `0.013106 KAS` buy, `0.016226 KAS` finalize, `0.020318 KAS` refund transition, and `0.010776 KAS` for an 8-ticket refund. The batch storage mass is `316,267`, below the `500,000` standard limit.
 
 ## Million-Record Index Benchmark (2026-07-12)
 

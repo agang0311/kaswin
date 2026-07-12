@@ -21,6 +21,7 @@ import {
   buildNextTicketRootHex,
   bytesToHex,
   getRaffleCovenantStatus,
+  isBatchRefundContractVersion,
   isMillionUserContractVersion,
   isParticipantFinalizeContractVersion,
   pubkeyHexFromAddress,
@@ -30,6 +31,7 @@ import { loadIndexedRaffleHistory, loadRaffleHistory, type RaffleHistoryRound } 
 import {
   DEFAULT_RAFFLE_INDEX_API,
   loadIndexedOwnerProof,
+  loadIndexedTicketRange8,
   loadIndexedTicketProof
 } from "../kaspa/indexer";
 import {
@@ -60,6 +62,8 @@ import {
   getRaffleRegistryConfig,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
+  V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI,
+  V5_REFUND_TRANSITION_FEE_SOMPI,
   refundRaffleCovenantRound,
   refundRaffleRegistryMarker,
   sendKaspaPayment
@@ -528,6 +532,7 @@ export function App() {
   const [isBuying, setIsBuying] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isRefundingRound, setIsRefundingRound] = useState(false);
+  const [refundProgress, setRefundProgress] = useState<{ cursor: number; total: number } | null>(null);
   const [covenantCarrierSompi, setCovenantCarrierSompi] = useState(DEFAULT_COVENANT_CARRIER_SOMPI.toString());
   const [refundTimeoutParts, setRefundTimeoutParts] = useState<RefundTimeoutParts>(DEFAULT_REFUND_TIMEOUT_PARTS);
   const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
@@ -554,7 +559,6 @@ export function App() {
     !metadata.covenant ||
     Boolean(finalized) ||
     metadata.covenant.status === "Finalized" ||
-    metadata.covenant.status === "Refunding" ||
     metadata.covenant.status === "Refunded";
   const selectedHistoryRound = useMemo(
     () => historyRounds.find((historyRound) => historyRound.roundId === selectedHistoryRoundId) ?? historyRounds[0],
@@ -753,9 +757,14 @@ export function App() {
       });
   const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(covenantBuyFeeSompi(round.contractVersion)) });
   const payoutCostTooltip = t("cost.payout", { prize: formatKas(round.potAmount), fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion)) });
-  const refundCostTooltip = t(isMillionUserContractVersion(round.contractVersion) ? "cost.refund.v4" : "cost.refund", {
+  const refundCostTooltip = t(isBatchRefundContractVersion(round.contractVersion)
+    ? "cost.refund.v5"
+    : isMillionUserContractVersion(round.contractVersion) ? "cost.refund.v4" : "cost.refund", {
     refund: formatKas(round.potAmount),
-    fee: formatKas(covenantRefundFeeSompi(round.contractVersion))
+    fee: formatKas(covenantRefundFeeSompi(round.contractVersion)),
+    transitionFee: formatKas(V5_REFUND_TRANSITION_FEE_SOMPI),
+    batchFee: formatKas(V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI * 8n),
+    perTicketFee: formatKas(V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI)
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
@@ -1827,6 +1836,7 @@ export function App() {
 
     isRefundingRoundRef.current = true;
     setIsRefundingRound(true);
+    setRefundProgress({ cursor: metadata.covenant?.refundCursor ?? 0, total: metadata.covenant?.soldTickets ?? 0 });
 
     try {
       assertRaffleCovenantReady();
@@ -1856,8 +1866,28 @@ export function App() {
 
       let refundTicket: TicketState | undefined;
       let ownerProofHex: string | undefined;
-      if (isMillionUserRound) {
-        const refundCursor = covenant.refundCursor ?? 0;
+      let batchTickets: TicketState[] | undefined;
+      let rangeProofHex: string | undefined;
+      const usesBatchRefund = isBatchRefundContractVersion(metadata.contractVersion);
+      const refundCursor = covenant.refundCursor ?? 0;
+      const needsBatch = usesBatchRefund && covenant.status === "Refunding" && covenant.soldTickets - refundCursor >= 8;
+      const needsSingleProof = isMillionUserRound && (!usesBatchRefund || covenant.status === "Refunding") && !needsBatch;
+      if (needsBatch) {
+        const indexedRange = await loadIndexedTicketRange8(indexApiBase, metadata.roundId, refundCursor + 1);
+        if (indexedRange.rootHex !== covenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
+        batchTickets = indexedRange.ownerPubkeys.map((ownerPubkey, index) => ({
+          appId: "KASPA_RAFFLE_TICKET_V1",
+          roundId: metadata.roundId,
+          ticketId: refundCursor + index + 1,
+          ticketCount: 1,
+          owner: indexedRange.owners[index],
+          ownerPubkey,
+          paidAmount: BigInt(metadata.ticketPrice),
+          buyerCommitment: "",
+          ticketTxId: ""
+        }));
+        rangeProofHex = indexedRange.proofHex;
+      } else if (needsSingleProof) {
         try {
           const indexedTicket = await loadIndexedTicketProof(indexApiBase, metadata.roundId, refundCursor + 1);
           if (indexedTicket.rootHex !== covenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
@@ -1899,7 +1929,7 @@ export function App() {
         );
       }
 
-      const result = await refundRaffleCovenantRound({
+      let result = await refundRaffleCovenantRound({
         connection: rpcConnectionRef.current,
         round: {
           ...round,
@@ -1919,18 +1949,129 @@ export function App() {
         tickets,
         ticket: refundTicket,
         ownerProofHex,
+        batchTickets,
+        rangeProofHex,
         payload: encodePayload({
           app: "kaspa-raffle-static",
-          type: isMillionUserContractVersion(metadata.contractVersion) ? "round-refund-ticket" : "round-refund",
+          type: usesBatchRefund
+            ? covenant.status !== "Refunding"
+              ? "round-refund-start"
+              : needsBatch
+                ? "round-refund-batch"
+                : "round-refund-ticket"
+            : isMillionUserContractVersion(metadata.contractVersion) ? "round-refund-ticket" : "round-refund",
           version: metadata.version,
           roundId: metadata.roundId,
           soldTickets: covenant.soldTickets,
           amount: covenant.potAmount,
-          refundCursor: covenant.refundCursor ?? 0,
+          refundCursor,
+          ticketCount: needsBatch ? 8 : undefined,
           refundAfterDaaScore: covenant.refundAfterDaaScore,
           refundedAt: new Date().toISOString()
         })
       });
+
+      let activeCovenant = result.covenant;
+      if (usesBatchRefund && activeCovenant) {
+        setRefundProgress({ cursor: activeCovenant.refundCursor ?? 0, total: activeCovenant.soldTickets });
+        setMetadata((current) => ({ ...current, covenant: activeCovenant }));
+        setChainMessage(activeCovenant.refundCursor === refundCursor
+          ? `Batch refund contract started: ${result.txId}`
+          : `Refund cursor ${activeCovenant.refundCursor}/${activeCovenant.soldTickets}: ${result.txId}`);
+      }
+
+      while (usesBatchRefund && activeCovenant) {
+        const activeRefundCursor = activeCovenant.refundCursor ?? 0;
+        const remainingTickets = activeCovenant.soldTickets - activeRefundCursor;
+        let nextTicket: TicketState | undefined;
+        let nextOwnerProofHex: string | undefined;
+        let nextBatchTickets: TicketState[] | undefined;
+        let nextRangeProofHex: string | undefined;
+
+        if (remainingTickets >= 8) {
+          const indexedRange = await loadIndexedTicketRange8(indexApiBase, metadata.roundId, activeRefundCursor + 1);
+          if (indexedRange.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
+          nextBatchTickets = indexedRange.ownerPubkeys.map((ownerPubkey, index) => ({
+            appId: "KASPA_RAFFLE_TICKET_V1",
+            roundId: metadata.roundId,
+            ticketId: activeRefundCursor + index + 1,
+            ticketCount: 1,
+            owner: indexedRange.owners[index],
+            ownerPubkey,
+            paidAmount: BigInt(metadata.ticketPrice),
+            buyerCommitment: "",
+            ticketTxId: ""
+          }));
+          nextRangeProofHex = indexedRange.proofHex;
+        } else {
+          const indexedTicket = await loadIndexedTicketProof(indexApiBase, metadata.roundId, activeRefundCursor + 1);
+          if (indexedTicket.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
+          nextTicket = {
+            appId: "KASPA_RAFFLE_TICKET_V1",
+            roundId: metadata.roundId,
+            ticketId: indexedTicket.ticketId,
+            ticketCount: 1,
+            owner: indexedTicket.owner,
+            ownerPubkey: indexedTicket.ownerPubkey,
+            paidAmount: BigInt(metadata.ticketPrice),
+            buyerCommitment: "",
+            ticketTxId: indexedTicket.transactionId || ""
+          };
+          nextOwnerProofHex = indexedTicket.proofHex;
+        }
+
+        const step = await refundRaffleCovenantRound({
+          connection: rpcConnectionRef.current,
+          round: {
+            ...round,
+            soldTickets: activeCovenant.soldTickets,
+            potAmount: BigInt(activeCovenant.potAmount),
+            status: activeCovenant.status,
+            ticketRoot: activeCovenant.ticketRoot,
+            ticketFrontier: activeCovenant.ticketFrontier,
+            refundCursor: activeRefundCursor,
+            creatorPubkey: activeCovenant.creatorPubkey,
+            refundAfterDaaScore: activeCovenant.refundAfterDaaScore,
+            soldBatches: 0,
+            ticketBatchEnds: [],
+            ticketOwnerPubkeys: []
+          },
+          covenant: activeCovenant,
+          tickets,
+          ticket: nextTicket,
+          ownerProofHex: nextOwnerProofHex,
+          batchTickets: nextBatchTickets,
+          rangeProofHex: nextRangeProofHex,
+          payload: encodePayload({
+            app: "kaspa-raffle-static",
+            type: remainingTickets >= 8 ? "round-refund-batch" : "round-refund-ticket",
+            version: metadata.version,
+            roundId: metadata.roundId,
+            soldTickets: activeCovenant.soldTickets,
+            amount: activeCovenant.potAmount,
+            refundCursor: activeRefundCursor,
+            ticketCount: remainingTickets >= 8 ? 8 : 1,
+            refundAfterDaaScore: activeCovenant.refundAfterDaaScore,
+            refundedAt: new Date().toISOString()
+          })
+        });
+
+        if (step.covenant && (step.covenant.refundCursor ?? 0) <= activeRefundCursor) {
+          throw new Error("Refund cursor did not advance after a successful transaction.");
+        }
+        result = step;
+        activeCovenant = step.covenant;
+        setRefundProgress(activeCovenant
+          ? { cursor: activeCovenant.refundCursor ?? 0, total: activeCovenant.soldTickets }
+          : { cursor: covenant.soldTickets, total: covenant.soldTickets });
+        setMetadata((current) => ({
+          ...current,
+          covenant: activeCovenant ?? (current.covenant ? { ...current.covenant, txId: step.txId, status: "Refunded" } : current.covenant)
+        }));
+        setChainMessage(activeCovenant
+          ? `Refund cursor ${activeCovenant.refundCursor}/${activeCovenant.soldTickets}: ${step.txId}`
+          : `Timed-out round refunded: ${step.txId}`);
+      }
 
       setMetadata((current) => ({
         ...current,
@@ -1948,13 +2089,16 @@ export function App() {
           : { ...historyRound, latestCovenant: undefined, refundTxId: result.txId }
         : historyRound));
       setChainMessage(result.covenant
-        ? `Ticket #${result.covenant.refundCursor} refunded: ${result.txId}`
+        ? result.covenant.refundCursor === refundCursor
+          ? `Batch refund contract started: ${result.txId}`
+          : `Tickets #${refundCursor + 1}-${result.covenant.refundCursor} refunded: ${result.txId}`
         : `Timed-out round refunded: ${result.txId}`);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to refund timed-out round."));
     } finally {
       isRefundingRoundRef.current = false;
       setIsRefundingRound(false);
+      setRefundProgress(null);
     }
   }
 
@@ -2841,7 +2985,9 @@ export function App() {
                     !refundAvailable
                   }
                 >
-                  {isRefundingRound ? t("refunding") : t("refundAfterTimeout")}
+                  {isRefundingRound && refundProgress
+                    ? t("refundingProgress", { cursor: refundProgress.cursor.toLocaleString(), total: refundProgress.total.toLocaleString() })
+                    : isRefundingRound ? t("refunding") : t("refundAfterTimeout")}
                 </button>
               </div>
             </>

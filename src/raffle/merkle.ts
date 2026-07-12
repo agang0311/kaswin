@@ -3,6 +3,8 @@ import { hexToBytes, sha256BytesHex } from "./randomness";
 export const TICKET_MERKLE_DEPTH = 20;
 export const TICKET_MERKLE_CAPACITY = 1 << TICKET_MERKLE_DEPTH;
 export const TICKET_MERKLE_PROOF_BYTES = TICKET_MERKLE_DEPTH * 32;
+export const TICKET_REFUND_BATCH_SIZE = 8;
+export const TICKET_RANGE_PROOF_BYTES = (TICKET_MERKLE_DEPTH - 3) * 32;
 
 export const TICKET_EMPTY_NODES_HEX = [
   "00".repeat(32),
@@ -107,6 +109,31 @@ export async function verifyTicketProof(
   proofHex: string
 ): Promise<boolean> {
   return (await merkleRootFromProof(ownerPubkeyHex, ticketId, proofHex)) === expectedRootHex.toLowerCase();
+}
+
+export async function verifyTicketRange8(
+  expectedRootHex: string,
+  ownerPubkeysHex: string[],
+  firstTicketId: number,
+  proofHex: string
+): Promise<boolean> {
+  if (ownerPubkeysHex.length !== TICKET_REFUND_BATCH_SIZE || firstTicketId % TICKET_REFUND_BATCH_SIZE !== 0) return false;
+  const proof = hexToBytes(proofHex);
+  if (proof.length !== TICKET_RANGE_PROOF_BYTES) return false;
+  let nodes = await Promise.all(ownerPubkeysHex.map(ticketLeaf));
+  for (let width = 8; width > 1; width /= 2) {
+    const parents: Uint8Array[] = [];
+    for (let index = 0; index < nodes.length; index += 2) parents.push(await hashPair(nodes[index], nodes[index + 1]));
+    nodes = parents;
+  }
+  let node = nodes[0];
+  let path = firstTicketId / TICKET_REFUND_BATCH_SIZE;
+  for (let level = 0; level < TICKET_MERKLE_DEPTH - 3; level += 1) {
+    const sibling = proof.slice(level * 32, level * 32 + 32);
+    node = (path & 1) === 0 ? await hashPair(node, sibling) : await hashPair(sibling, node);
+    path = Math.floor(path / 2);
+  }
+  return bytesToHex(node) === expectedRootHex.toLowerCase();
 }
 
 export async function buildTicketProof(

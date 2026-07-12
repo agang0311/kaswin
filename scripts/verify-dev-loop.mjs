@@ -34,6 +34,8 @@ const packageJson = readJson("package.json");
 const manifest = readJson("src/contracts/compiled/raffle-round.manifest.json");
 const artifact = readJson("src/contracts/compiled/raffle-round.artifact.json");
 const v4Artifact = readJson("src/contracts/compiled/raffle-round-v4.artifact.json");
+const v5Artifact = readJson("src/contracts/compiled/raffle-round-v5.artifact.json");
+const refundV1Artifact = readJson("src/contracts/compiled/raffle-refund-v1.artifact.json");
 const appSource = readText("src/app/App.tsx");
 const i18nSource = readText("src/app/i18n.ts");
 const covenantSource = readText("src/kaspa/covenant.ts");
@@ -47,6 +49,8 @@ const metadataSource = readText("src/raffle/metadata.ts");
 const ticketRangeSource = readText("src/raffle/tickets.ts");
 const contractSource = readText("src/contracts/raffle_round.sil");
 const v4ContractSource = readText("src/contracts/raffle_round_v4.sil");
+const v5ContractSource = readText("src/contracts/raffle_round_v5.sil");
+const refundV1ContractSource = readText("src/contracts/raffle_refund_v1.sil");
 const merkleSource = readText("src/raffle/merkle.ts");
 const indexerSource = readText("indexer/raffle-indexer.mjs");
 const viteSource = readText("vite.config.ts");
@@ -154,8 +158,8 @@ assert(
     transactionSource.includes('txIds: [stagingTxId, markerTxId]')
 );
 assert(
-  "V4 covenant fees and compute budgets are mass-tested",
-  metadataSource.includes('contractVersion: "raffle-v4-million-users"') &&
+  "V5 covenant fees and compute budgets are mass-tested",
+  metadataSource.includes('contractVersion: "raffle-v5-million-users-batch-refund"') &&
     transactionSource.includes('COVENANT_CREATE_FEE_SOMPI = 200_000n') &&
     transactionSource.includes('V4_COVENANT_BUY_FEE_SOMPI = 1_700_000n') &&
     transactionSource.includes('V4_COVENANT_FINALIZE_FEE_SOMPI = 2_200_000n') &&
@@ -164,7 +168,11 @@ assert(
     transactionSource.includes('V4_RAFFLE_FINALIZE_COMPUTE_BUDGET = 18') &&
     transactionSource.includes('RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11') &&
     transactionSource.includes('V4_RAFFLE_REFUND_COMPUTE_BUDGET = 7') &&
-    packageJson.scripts?.["verify:fees:v4"] === "node scripts/verify-v4-fees.mjs"
+    transactionSource.includes('V5_REFUND_TRANSITION_FEE_SOMPI = 2_200_000n') &&
+    transactionSource.includes('V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI = 150_000n') &&
+    transactionSource.includes('V5_REFUND_BATCH_COMPUTE_BUDGET = 5') &&
+    packageJson.scripts?.["verify:fees:v4"] === "node scripts/verify-v4-fees.mjs" &&
+    packageJson.scripts?.["verify:fees:v5"] === "node scripts/verify-v5-fees.mjs"
 );
 assert(
   "Visible amount labels use KAS instead of sompi",
@@ -264,23 +272,27 @@ assert(
 );
 assert(
   "One million independent users use a compact Merkle state",
-  v4ContractSource.includes("max_tickets <= 1000000") &&
+  v5ContractSource.includes("max_tickets <= 1000000") &&
     metadataSource.includes("maxTickets > 1_000_000") &&
-    v4ContractSource.includes("byte[640] frontier") &&
-    v4ContractSource.includes("entrypoint function refundNext") &&
+    v5ContractSource.includes("byte[640] frontier") &&
+    v5ContractSource.includes("entrypoint function startRefund") &&
+    refundV1ContractSource.includes("entrypoint function refundBatch8") &&
     merkleSource.includes("TICKET_MERKLE_DEPTH = 20") &&
     transactionSource.includes("appendTicketLeaf") &&
     transactionSource.includes("Million-user rounds accept exactly one ticket per purchase") &&
     indexerSource.includes("getVirtualChainFromBlockV2") &&
     indexerSource.includes("owners") &&
+    indexerSource.includes("rangeProof8") &&
     packageJson.scripts?.["verify:users:1m"] === "node scripts/verify-million-users.mjs" &&
     packageJson.scripts?.["verify:indexer"] === "node scripts/verify-indexer.mjs"
 );
 assert(
-  "Million-user and V4 fee verifiers are part of npm verify",
+  "Million-user, V4 compatibility, and V5 fee verifiers are part of npm verify",
   packageJson.scripts?.["verify:fees:1m"] === "node scripts/verify-million-ticket-fees.mjs" &&
     packageJson.scripts?.verify?.includes("verify-million-ticket-fees.mjs") &&
     packageJson.scripts?.verify?.includes("verify-v4-fees.mjs") &&
+    packageJson.scripts?.verify?.includes("verify-v5-contract.mjs") &&
+    packageJson.scripts?.verify?.includes("verify-v5-fees.mjs") &&
     packageJson.scripts?.verify?.includes("verify-million-users.mjs") &&
     packageJson.scripts?.verify?.includes("verify-indexer.mjs")
 );
@@ -290,6 +302,18 @@ assert(
     contractSource.includes("require(byte[32](winner_pubkey) == winner_owner)")
 );
 assert("Timeout refund builder is wired", transactionSource.includes("refundRaffleCovenantRound") && appSource.includes("handleRefundTimedOutRound"));
+assert(
+  "A new round stays disabled while batch refunds are in progress",
+  appSource.includes('metadata.covenant.status === "Refunded";') &&
+    !appSource.match(/const canStartNewRound[\s\S]{0,250}status === "Refunding"/)
+);
+assert(
+  "V5 refunds auto-advance with resumable cursor progress",
+  appSource.includes("while (usesBatchRefund && activeCovenant)") &&
+    appSource.includes("Refund cursor did not advance after a successful transaction") &&
+    appSource.includes('t("refundingProgress"') &&
+    transactionSource.includes("return waitForAddressUtxo(connection, covenant.address, covenant.txId, covenant.outputIndex)")
+);
 assert(
   "Refund is walletless and disabled until live DAA timeout",
   contractSource.includes("require(tx.locktime >= refund_after_daa)") &&
@@ -326,8 +350,10 @@ if (covenantCompiled) {
 
 assert(
   "Covenant status helper enables runtime artifact",
-  covenantSource.includes('artifact.contract === "RaffleRoundV4"') &&
+  covenantSource.includes('artifact.contract === "RaffleRoundV5"') &&
     v4Artifact.contract === "RaffleRoundV4" &&
+    v5Artifact.contract === "RaffleRoundV5" &&
+    refundV1Artifact.contract === "RaffleRefundV1" &&
     covenantSource.includes("assertRaffleCovenantReady")
 );
 

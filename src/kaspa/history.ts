@@ -225,7 +225,10 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       }
     }
 
-    if (payload.type === "round-refund" || (payload.type === "round-refund-ticket" && !outputZero(tx)?.covenant_id)) {
+    if (
+      payload.type === "round-refund" ||
+      ((payload.type === "round-refund-ticket" || payload.type === "round-refund-batch") && !outputZero(tx)?.covenant_id)
+    ) {
       round.refundTxId = tx.transaction_id;
     }
 
@@ -348,7 +351,13 @@ async function buildLatestCovenantCursor(
   const ticketBatchEnds = batchTickets.map(ticketRangeEnd);
   const soldTickets = totalTicketCount(orderedTickets);
   const txPayload = decodeHexPayload(tx.payload ?? "");
-  const refundCursor = status === "Refunding" ? Math.max(0, (txPayload?.refundCursor ?? -1) + 1) : 0;
+  const refundCursor = status === "Refunding"
+    ? txPayload?.type === "round-refund-batch"
+      ? Math.max(0, Number(txPayload.refundCursor || 0) + Number(txPayload.ticketCount || 8))
+      : txPayload?.type === "round-refund-ticket"
+        ? Math.max(0, Number(txPayload.refundCursor || 0) + 1)
+        : 0
+    : 0;
   const isMillionUserRound = isMillionUserContractVersion(round.contractVersion ?? "");
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
@@ -381,7 +390,7 @@ async function buildLatestCovenantCursor(
     txId: tx.transaction_id,
     outputIndex: output.index ?? 0,
     amountSompi,
-    redeemScriptHex: bytesToHex(buildRaffleRedeemScriptForContractVersion(covenantState, round.contractVersion)),
+    redeemScriptHex: bytesToHex(buildRaffleRedeemScriptForContractVersion(covenantState, round.contractVersion, status)),
     soldTickets: stateRound.soldTickets,
     potAmount: stateRound.potAmount.toString(),
     status,
@@ -431,7 +440,7 @@ async function traceRoundCovenantHistory(
           tx.transaction_id &&
           tx.transaction_id !== previousTxId &&
           !visitedTransactions.has(tx.transaction_id) &&
-          (payload.type === "ticket" || payload.type === "round-close" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-ticket")
+          (payload.type === "ticket" || payload.type === "round-close" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch" || payload.type === "round-refund-ticket")
         );
       })
       .sort((left, right) => compareByTimeAsc(eventTime(left), eventTime(right)))[0];
@@ -450,13 +459,17 @@ async function traceRoundCovenantHistory(
       break;
     }
 
-    if (payload?.type === "round-refund-ticket" && !outputZero(nextSpend)?.covenant_id) {
+    if ((payload?.type === "round-refund-ticket" || payload?.type === "round-refund-batch") && !outputZero(nextSpend)?.covenant_id) {
       finalized = true;
       break;
     }
 
     latestCovenantTransaction = nextSpend;
-    latestStatus = payload?.type === "round-close" ? "Closed" : payload?.type === "round-refund-ticket" ? "Refunding" : "Open";
+    latestStatus = payload?.type === "round-close"
+      ? "Closed"
+      : payload?.type === "round-refund-start" || payload?.type === "round-refund-batch" || payload?.type === "round-refund-ticket"
+        ? "Refunding"
+        : "Open";
     currentAddress = nextCovenantAddressFromTransaction(nextSpend);
   }
 
@@ -535,7 +548,7 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
       latestCovenant = {
         ...indexed.latestCovenant,
         covenantId: indexed.covenantId || indexed.latestCovenant.covenantId,
-        redeemScriptHex: bytesToHex(buildRaffleRedeemScriptForContractVersion(state, indexed.contractVersion)),
+        redeemScriptHex: bytesToHex(buildRaffleRedeemScriptForContractVersion(state, indexed.contractVersion, indexed.latestCovenant.status)),
         creatorPubkey: indexed.creatorPubkey,
         refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
         ticketOwnerPubkeys: []

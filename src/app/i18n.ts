@@ -133,6 +133,7 @@ const en: Record<string, string> = {
   "drawingPaying": "Drawing and paying...",
   "drawPay": "Draw & pay",
   "refunding": "Refunding...",
+  "refundingProgress": "Refunding {cursor} / {total}...",
   "refundAfterTimeout": "Refund after timeout",
   "oracleAttestation": "Oracle attestation",
   "oracleMode": "Oracle mode",
@@ -176,7 +177,8 @@ const en: Record<string, string> = {
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
   "cost.payout": "{prize} prize from the pot + {fee} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.",
   "cost.refund": "{refund} ticket refunds from the pot + {fee} covenant fee from the carrier. Wallet payment: 0 KAS.",
-  "cost.refund.v4": "The next ticket receives its price minus the {fee} covenant fee. Anyone may broadcast after timeout; wallet payment: 0 KAS."
+  "cost.refund.v4": "The next ticket receives its price minus the {fee} covenant fee. Anyone may broadcast after timeout; wallet payment: 0 KAS.",
+  "cost.refund.v5": "First call: {transitionFee} KAS to start refunds. Then each 8-ticket batch costs {batchFee} KAS ({perTicketFee} KAS per ticket); a final 1-7 ticket tail uses the single-ticket fee. Anyone may broadcast after timeout; wallet payment: 0 KAS."
 };
 
 const zh: Record<string, string> = {
@@ -285,6 +287,7 @@ const zh: Record<string, string> = {
   "restApi": "REST API",
   "raffleIndexApi": "抽奖索引 API",
   "cost.refund.v4": "下一张票退还票价并扣除 {fee} covenant 费用。超时后任何人都可广播；钱包支付：0 KAS。",
+  "cost.refund.v5": "首次调用扣除 {transitionFee} KAS 启动退款；之后每 8 张票共扣除 {batchFee} KAS（每票 {perTicketFee} KAS），最后不足 8 张按单票尾批处理。超时后任何人都可广播，钱包支付 0 KAS。",
   "actionTabs": "购票或派奖",
   "buyTickets": "购买抽奖票",
   "participant": "参与者",
@@ -312,6 +315,7 @@ const zh: Record<string, string> = {
   "drawingPaying": "正在开奖并派奖...",
   "drawPay": "开奖并派奖",
   "refunding": "正在退款...",
+  "refundingProgress": "正在退款 {cursor} / {total}...",
   "refundAfterTimeout": "超时后退款",
   "oracleAttestation": "Oracle 证明",
   "oracleMode": "Oracle 模式",

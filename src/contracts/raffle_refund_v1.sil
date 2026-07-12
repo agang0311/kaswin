@@ -1,0 +1,158 @@
+contract RaffleRefundV1() {
+    int ticket_price = 0;
+    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int sold_tickets = 0;
+    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int refund_cursor = 0;
+
+    function ticketLeaf(pubkey owner_pubkey) : byte[32] {
+        return(sha256(byte[](owner_pubkey)));
+    }
+
+    function merkleRoot(byte[32] leaf, int ticket_id, byte[] proof) : byte[32] {
+        require(proof.length == 640);
+        byte[32] node = leaf;
+        int path = ticket_id;
+
+        for(level, 0, 20, 20) {
+            int start = level * 32;
+            byte[32] sibling = byte[32](proof.slice(start, start + 32));
+            if (path % 2 == 0) {
+                node = sha256(byte[](node) + byte[](sibling));
+            } else {
+                node = sha256(byte[](sibling) + byte[](node));
+            }
+            path = path / 2;
+        }
+
+        return(node);
+    }
+
+    function merkleRoot8(byte[] owner_pubkeys, int first_ticket_id, byte[] proof) : byte[32] {
+        require(owner_pubkeys.length == 256);
+        require(proof.length == 544);
+        require(first_ticket_id % 8 == 0);
+
+        byte[] nodes_0 = 0x;
+        for(i, 0, 8, 8) {
+            int start = i * 32;
+            pubkey owner = pubkey(byte[32](owner_pubkeys.slice(start, start + 32)));
+            nodes_0 = nodes_0 + byte[](ticketLeaf(owner));
+        }
+
+        byte[] nodes_1 = 0x;
+        for(i, 0, 4, 4) {
+            int start = i * 64;
+            byte[32] left = byte[32](nodes_0.slice(start, start + 32));
+            byte[32] right = byte[32](nodes_0.slice(start + 32, start + 64));
+            nodes_1 = nodes_1 + byte[](sha256(byte[](left) + byte[](right)));
+        }
+
+        byte[] nodes_2 = 0x;
+        for(i, 0, 2, 2) {
+            int start = i * 64;
+            byte[32] left = byte[32](nodes_1.slice(start, start + 32));
+            byte[32] right = byte[32](nodes_1.slice(start + 32, start + 64));
+            nodes_2 = nodes_2 + byte[](sha256(byte[](left) + byte[](right)));
+        }
+
+        byte[32] left = byte[32](nodes_2.slice(0, 32));
+        byte[32] right = byte[32](nodes_2.slice(32, 64));
+        byte[32] node = sha256(byte[](left) + byte[](right));
+        int path = first_ticket_id / 8;
+
+        for(level, 0, 17, 17) {
+            int start = level * 32;
+            byte[32] sibling = byte[32](proof.slice(start, start + 32));
+            if (path % 2 == 0) {
+                node = sha256(byte[](node) + byte[](sibling));
+            } else {
+                node = sha256(byte[](sibling) + byte[](node));
+            }
+            path = path / 2;
+        }
+
+        return(node);
+    }
+
+    entrypoint function refundBatch8(byte[] owner_pubkeys, byte[] range_proof) {
+        require(sold_tickets - refund_cursor >= 8);
+        require(refund_cursor % 8 == 0);
+        require(merkleRoot8(owner_pubkeys, refund_cursor, range_proof) == ticket_root);
+
+        int refund_amount = ticket_price - 150000;
+        require(refund_amount > 0);
+
+        if (refund_cursor + 8 < sold_tickets) {
+            require(OpAuthOutputCount(this.activeInputIndex) == 1);
+            int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
+            require(cov_out_idx == 0);
+            require(tx.outputs.length == 9);
+            require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - ticket_price * 8);
+
+            for(i, 0, 8, 8) {
+                int start = i * 32;
+                pubkey owner = pubkey(byte[32](owner_pubkeys.slice(start, start + 32)));
+                require(tx.outputs[i + 1].scriptPubKey == byte[](new ScriptPubKeyP2PK(owner)));
+                require(tx.outputs[i + 1].value == refund_amount);
+            }
+
+            validateOutputState(0, {
+                ticket_price: ticket_price,
+                creator_pubkey: creator_pubkey,
+                sold_tickets: sold_tickets,
+                ticket_root: ticket_root,
+                refund_cursor: refund_cursor + 8,
+            });
+        } else {
+            require(refund_cursor + 8 == sold_tickets);
+            require(OpAuthOutputCount(this.activeInputIndex) == 0);
+            require(tx.outputs.length == 9);
+
+            for(i, 0, 8, 8) {
+                int start = i * 32;
+                pubkey owner = pubkey(byte[32](owner_pubkeys.slice(start, start + 32)));
+                require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2PK(owner)));
+                require(tx.outputs[i].value == refund_amount);
+            }
+
+            require(tx.outputs[8].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
+            require(tx.outputs[8].value == tx.inputs[this.activeInputIndex].value - ticket_price * 8);
+        }
+    }
+
+    entrypoint function refundNext(int ticket_id, pubkey owner_pubkey, byte[] owner_proof) {
+        require(ticket_id == refund_cursor);
+        require(ticket_id < sold_tickets);
+        require(sold_tickets - refund_cursor < 8);
+        require(merkleRoot(ticketLeaf(owner_pubkey), ticket_id, owner_proof) == ticket_root);
+
+        int refund_amount = ticket_price - 1900000;
+        require(refund_amount > 0);
+
+        if (ticket_id + 1 < sold_tickets) {
+            require(OpAuthOutputCount(this.activeInputIndex) == 1);
+            int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
+            require(cov_out_idx == 0);
+            require(tx.outputs.length == 2);
+            require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - ticket_price);
+            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(owner_pubkey)));
+            require(tx.outputs[1].value == refund_amount);
+
+            validateOutputState(0, {
+                ticket_price: ticket_price,
+                creator_pubkey: creator_pubkey,
+                sold_tickets: sold_tickets,
+                ticket_root: ticket_root,
+                refund_cursor: ticket_id + 1,
+            });
+        } else {
+            require(OpAuthOutputCount(this.activeInputIndex) == 0);
+            require(tx.outputs.length == 2);
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(owner_pubkey)));
+            require(tx.outputs[0].value == refund_amount);
+            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
+            require(tx.outputs[1].value == tx.inputs[this.activeInputIndex].value - ticket_price);
+        }
+    }
+}
