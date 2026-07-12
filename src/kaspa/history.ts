@@ -328,6 +328,7 @@ async function buildLatestCovenantCursor(
   });
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
+    contractVersion: round.contractVersion ?? "raffle-v1-timeout-refund",
     roundId: round.roundId,
     creator: round.creator || "no-wallet",
     ticketPrice: round.ticketPrice,

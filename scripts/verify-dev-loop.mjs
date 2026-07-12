@@ -135,11 +135,30 @@ assert(
     i18nSource.includes('"registryRetainedNote"')
 );
 assert(
-  "Carrier defaults to 2 KAS with a 1.4 KAS lifecycle floor",
-  transactionSource.includes('DEFAULT_COVENANT_CARRIER_SOMPI = 200_000_000n') &&
-    transactionSource.includes('MIN_COVENANT_CARRIER_SOMPI = COVENANT_FINALIZE_FEE_SOMPI + STANDARD_REFUND_MIN_SOMPI') &&
-    transactionSource.includes('COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n') &&
-    transactionSource.includes('STANDARD_REFUND_MIN_SOMPI = 100_000_000n')
+  "Carrier defaults to 0.2 KAS with a 0.1 KAS storage-safe floor",
+  transactionSource.includes('DEFAULT_COVENANT_CARRIER_SOMPI = 20_000_000n') &&
+    transactionSource.includes('MIN_COVENANT_CARRIER_SOMPI = 10_000_000n') &&
+    transactionSource.includes('STANDARD_REFUND_MIN_SOMPI = 5_000_000n')
+);
+assert(
+  "Registry marker uses low-cost staged funding",
+  transactionSource.includes('DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n') &&
+    transactionSource.includes('REGISTRY_MARKER_REFUND_FEE_SOMPI = 100_000n') &&
+    transactionSource.includes('REGISTRY_PAYMENT_FEE_SOMPI = 300_000n') &&
+    transactionSource.includes('const stagingAddress = lowCostFundingAddress(input.wallet.network)') &&
+    transactionSource.includes('txIds: [stagingTxId, markerTxId]')
+);
+assert(
+  "V3.4 covenant fees and compute budgets are mass-tested",
+  metadataSource.includes('contractVersion: "raffle-v3.4-low-fee"') &&
+    transactionSource.includes('COVENANT_CREATE_FEE_SOMPI = 200_000n') &&
+    transactionSource.includes('COVENANT_BUY_FEE_SOMPI = 2_000_000n') &&
+    transactionSource.includes('COVENANT_FINALIZE_FEE_SOMPI = 2_000_000n') &&
+    transactionSource.includes('COVENANT_REFUND_FEE_SOMPI = 3_000_000n') &&
+    transactionSource.includes('RAFFLE_BUY_COMPUTE_BUDGET = 50') &&
+    transactionSource.includes('RAFFLE_FINALIZE_COMPUTE_BUDGET = 12') &&
+    transactionSource.includes('RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11') &&
+    transactionSource.includes('RAFFLE_REFUND_COMPUTE_BUDGET = 20')
 );
 assert(
   "Visible amount labels use KAS instead of sompi",
@@ -200,10 +219,11 @@ assert(
 );
 assert(
   "Participant finalize uses the verified v1 fee and signature layout",
-  transactionSource.includes("COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n") &&
+  transactionSource.includes("COVENANT_FINALIZE_FEE_SOMPI = 2_000_000n") &&
+    transactionSource.includes("covenantFinalizeFeeSompi(closedRound.contractVersion)") &&
     transactionSource.includes("sigOpCount: 0") &&
     transactionSource.includes("tx.finalize();\n    await input.wallet.signTransaction(tx, [1])") &&
-    contractSource.includes("value - prize - 40000000")
+    contractSource.includes("value - prize - 2000000")
 );
 assert(
   "Legacy covenant artifacts remain loadable",
@@ -212,6 +232,9 @@ assert(
     covenantSource.includes("raffle-round-v3-beta.artifact.json") &&
     covenantSource.includes("raffle-round-v3.1.artifact.json") &&
     covenantSource.includes("raffle-round-v3.2.artifact.json") &&
+    covenantSource.includes("raffle-round-v3.3.artifact.json") &&
+    transactionSource.includes("LEGACY_V3_3_FINALIZE_FEE_SOMPI = 40_000_000n") &&
+    transactionSource.includes("LEGACY_V3_3_REFUND_FEE_SOMPI = 20_000_000n") &&
     covenantSource.includes("raffleArtifactForRedeemScript")
 );
 assert(

@@ -1,6 +1,6 @@
 # Current Project Status and Backlog
 
-This file reflects the current v3.3 implementation. The original milestone checklists in GitHub Issues were created before the covenant design stabilized and are being closed or rewritten where the implemented architecture superseded them.
+This file reflects the current v3.4 implementation. The original milestone checklists in GitHub Issues were created before the covenant design stabilized and are being closed or rewritten where the implemented architecture superseded them.
 
 ## Implemented
 

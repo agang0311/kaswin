@@ -3,6 +3,7 @@ export type RandomnessMode = "oracle";
 
 export interface RoundState {
   appId: "KASPA_RAFFLE_ROUND_V1";
+  contractVersion: string;
   roundId: string;
   creator: string;
   ticketPrice: bigint;

@@ -363,7 +363,7 @@ contract RaffleRound() {
         require(byte[32](winner_pubkey) == winner_owner);
 
         int prize = ticket_price * sold_tickets;
-        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 40000000;
+        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - 2000000;
         require(creator_refund >= 0);
         require(tx.outputs.length == 3);
         require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));
@@ -382,7 +382,7 @@ contract RaffleRound() {
         require(tx.locktime >= refund_after_daa);
 
         int refund_total = ticket_price * sold_tickets;
-        int creator_refund = tx.inputs[this.activeInputIndex].value - refund_total - 20000000;
+        int creator_refund = tx.inputs[this.activeInputIndex].value - refund_total - 3000000;
         require(creator_refund >= 0);
         require(tx.outputs.length == sold_batches + 1);
 

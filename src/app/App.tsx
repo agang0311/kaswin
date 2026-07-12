@@ -21,7 +21,7 @@ import {
   buildNextTicketRootHex,
   bytesToHex,
   getRaffleCovenantStatus,
-  PARTICIPANT_FINALIZE_CONTRACT_VERSION,
+  isParticipantFinalizeContractVersion,
   pubkeyHexFromAddress,
   raffleWinnerIndexFromSeed
 } from "../kaspa/covenant";
@@ -45,8 +45,8 @@ import {
   buyRaffleCovenantTicket,
   COVENANT_BUY_FEE_SOMPI,
   COVENANT_CREATE_FEE_SOMPI,
-  COVENANT_FINALIZE_FEE_SOMPI,
-  COVENANT_REFUND_FEE_SOMPI,
+  covenantFinalizeFeeSompi,
+  covenantRefundFeeSompi,
   createRaffleCovenantRound,
   DEFAULT_COVENANT_CARRIER_SOMPI,
   DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
@@ -595,6 +595,7 @@ export function App() {
 
     return {
       appId: "KASPA_RAFFLE_ROUND_V1",
+      contractVersion: metadata.contractVersion,
       roundId: metadata.roundId || "pending-round",
       creator: metadata.creatorAddress || wallet?.address || "no-wallet",
       ticketPrice,
@@ -645,11 +646,11 @@ export function App() {
         marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)
       });
   const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(COVENANT_BUY_FEE_SOMPI) });
-  const payoutCostTooltip = t("cost.payout", { prize: formatKas(round.potAmount), fee: formatKas(COVENANT_FINALIZE_FEE_SOMPI) });
-  const refundCostTooltip = t("cost.refund", { refund: formatKas(round.potAmount), fee: formatKas(COVENANT_REFUND_FEE_SOMPI) });
+  const payoutCostTooltip = t("cost.payout", { prize: formatKas(round.potAmount), fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion)) });
+  const refundCostTooltip = t("cost.refund", { refund: formatKas(round.potAmount), fee: formatKas(covenantRefundFeeSompi(round.contractVersion)) });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
-  const participantFinalizeEnabled = metadata.contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION;
+  const participantFinalizeEnabled = isParticipantFinalizeContractVersion(metadata.contractVersion);
   const walletIsParticipant = Boolean(
     wallet && metadata.covenant?.ticketOwnerPubkeys.includes(pubkeyHexFromAddress(wallet.address))
   );
@@ -1394,7 +1395,7 @@ export function App() {
         throw new Error("Create or import a covenant round first.");
       }
 
-      if (metadata.contractVersion !== PARTICIPANT_FINALIZE_CONTRACT_VERSION) {
+      if (!isParticipantFinalizeContractVersion(metadata.contractVersion)) {
         throw new Error("This legacy round does not enforce participant-only drawing. Refund it after timeout or create a new round.");
       }
 

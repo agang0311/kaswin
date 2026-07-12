@@ -84,7 +84,7 @@ Browser SPA
 
 ## 5. Covenant 状态模型
 
-当前合约版本：`raffle-v3.3-participant-finalize-fee40`。
+当前合约版本：`raffle-v3.4-low-fee`。`raffle-v3.3-participant-finalize-fee40` artifact 作为历史兼容版本保留。
 
 核心状态字段：
 
@@ -134,7 +134,7 @@ Browser SPA
 3. 钱包先创建临时 funding UTXO。
 4. funding UTXO 创建 v1 genesis covenant output。
 5. 另发一笔 registry marker 交易供历史扫描。
-6. Testnet 默认 registry 是公开可花费的索引脚本，marker 扣除 0.01 KAS 后立即退回 creator；Mainnet 默认 registry 和自定义 registry 不自动退款，5 KAS 留在目标地址。
+6. Registry payment 先创建可控 staging UTXO，再产生 marker 和即时找零，避免钱包碎片 UTXO 造成 storage-mass 失败。Testnet 默认 registry 扣除 0.001 KAS 后退回 marker；Mainnet 默认 registry 和自定义 registry 不自动退款，0.05 KAS 留在目标地址并由地址所有者控制。
 
 ### Buy
 
@@ -168,22 +168,23 @@ Browser SPA
 
 | 项目 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 默认 carrier | 2 KAS | 三轮 Testnet 10 完整流程验证通过；结束时扣费后退 creator |
-| 最低 carrier | 1.4 KAS | finalize fee 0.4 KAS + creator 最小退款 1 KAS |
-| registry marker transfer | 5 KAS | 发送到创建时指定的 Registry address |
-| registry marker refund fee | 0.01 KAS | 仅默认 registry 自动退款时收取，预计退回 4.99 KAS |
-| create covenant fee | 0.01 KAS | 从临时 funding 支付 |
-| buy covenant fee | 0.06 KAS | 票价之外支付 |
-| finalize covenant fee | 0.4 KAS | 从 carrier 扣除 |
-| refund covenant fee | 0.2 KAS | 从 carrier 扣除 |
-| 临时 funding 最小 reserve | 10 KAS | 降低 storage-mass 失败概率 |
-| finalize 授权 UTXO | 至少 1 KAS | 原额返回参与者 |
+| 默认 carrier | 0.2 KAS | 结束时扣费后退 creator，不属于永久消耗 |
+| 最低 carrier | 0.1 KAS | 当前 covenant output 的 storage-safe 下限 |
+| registry marker transfer | 0.05 KAS | Mainnet/自定义 Registry 由目标地址继续控制 |
+| registry marker refund fee | 0.001 KAS | Testnet 默认 registry 退回 0.049 KAS |
+| registry marker relay fee | 0.003 KAS | marker 手工交易固定费；另有 staging 交易动态网络费 |
+| create covenant fee | 0.002 KAS | 实测 compute mass 1,271，最低 relay 0.001271 KAS |
+| buy covenant fee | 0.02 KAS | 实测 compute mass 12,484，最低 relay 0.012484 KAS |
+| finalize covenant fee | 0.02 KAS | 实测 compute mass 10,872，最低 relay 0.010872 KAS |
+| refund covenant fee | 0.03 KAS | 单批次实测 compute mass 9,504，并为多输出保留余量 |
+| 临时 funding 最小 reserve | 0.2 KAS | staging 找零会在后续交易立即返回 |
+| finalize 授权 UTXO | 至少 0.05 KAS | 原额返回参与者，不构成费用 |
 
 钱包余额短时减少可能来自未确认交易、carrier 锁定、UTXO index 延迟或临时 funding。buy 的可退款余额若达到 1 KAS，会在 covenant spend 内立即作为输出返回；过小余额会并入费用以避免产生不可接受的小 UTXO。
 
-Registry payment 本身还会产生由钱包输入数量和交易 mass 决定的网络费，该费用在构造交易后才能精确得到。页面在创建前明确标为额外可变费用，提交后在成功消息中显示实际值。自定义 Registry address 可以是当前网络的任意有效地址：若是创建者自己的钱包地址，5 KAS 仍由该钱包控制；若是第三方地址，则构成真实转账。
+Registry staging payment 还会产生由钱包输入数量和交易 mass 决定的动态网络费，该费用在构造后显示。实测 staging + marker relay 合计 0.005047 KAS；Testnet 再支付 0.001 KAS 自动退款费。自定义 Registry address 可以是当前网络的任意有效地址：若是创建者自己的钱包地址，0.05 KAS marker 仍由该钱包控制；若是第三方地址，则构成真实转账。
 
-Compute budget 当前为 buy 400、finalize 2,500、参与者授权 400、refund 1,600。它们是 Toccata v1 交易 input 的预算单位，不等于交易费；实际 compute mass 由节点执行脚本后验证。
+Compute budget 当前为 buy 50、finalize 12、参与者授权 11、refund 20。节点实测参与者 P2PK 授权需要 100,000 script units；这些预算值覆盖实测执行量，同时把 normalized compute mass 降到固定费率可以安全承载的范围。
 
 ## 8. 随机数与信任假设
 
@@ -236,7 +237,7 @@ npm run verify:covenant
 - scanner 依赖中心化 REST 索引服务，缺少 checkpoint/reorg 恢复。
 - covenant UTXO 天然串行，热门轮次会出现购买竞争。
 - 最多 20 个购买批次；每批可含多张票。
-- storage mass 和 relay 规则可能随网络升级改变。2 KAS 是当前构建的安全默认值；1.4 KAS 同时受 finalize 输出约束，不应在未修改合约和验证流程时继续降低。
+- storage mass 和 relay 规则可能随网络升级改变。0.2 KAS 是当前构建的安全默认 carrier，0.1 KAS 是结合当前 plurality 公式设置的下限；继续降低前必须重新跑 create/buy/finalize/refund 回归。
 - release HTML 虽可离线分发，但使用者仍应核对来源、版本和哈希。
 
 ## 12. 兼容性

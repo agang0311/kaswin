@@ -39,7 +39,7 @@ Use a dedicated testnet wallet only. The public endpoint name contains `tn12`, b
 6. Buy a ticket batch and confirm the page displays one ticket-number range instead of one row per ticket.
 7. Run at least three complete create/buy/finalize rounds; one round must contain 10 tickets.
 8. Run a final 1,000-ticket round and confirm it can be bought in one batch, reconstructed from history, and paid out.
-9. Confirm round creation uses the default `2 KAS` carrier reserve, rejects values below `1.4 KAS`, and stores the creator address for refund.
+9. Confirm v3.4 round creation uses the default `0.2 KAS` carrier reserve, rejects values below `0.1 KAS`, and stores the creator address for refund.
 10. Finalize after the round sells out; the page should create the development oracle attestation automatically.
 11. Load at least one sold-out round through History before finalizing it.
 12. Confirm the winning output is paid by the covenant finalize transaction itself and any large carrier remainder is refunded to the creator.
@@ -88,6 +88,24 @@ The same run confirmed that an invalid custom Registry address is rejected befor
 - `round-bab654c0bd673db3`: 1 ticket, loaded through History before finalize, payout `0b7132970a7094bedde9fcbefac8aee31d534e633eb625ea6adcfb1b55d514b2`; a later history refresh reported `Paid`.
 
 All three rounds used the `2 KAS` default carrier and completed create, buy, covenant finalize, direct payout, and creator carrier refund without storage-mass rejection.
+
+## Verified V3.4 Low-Fee Runs (2026-07-12)
+
+- `round-3e068dc0f56bf371`: 0.2 KAS carrier, 0.1 KAS staged marker, 1 ticket, payout `8e20ed5aaa53c7352b036b0b0970f9bb3e71dcb584d7018bdea9523813e4ab06`.
+- `round-f0ec30c1c73dae8c`: loaded through History before finalize, payout `9b840b93cdf84f0b0ac4a9fd30e8abdef437a10f1785632981f66554fce5e163`.
+- `round-c197a6e80b685156`: 30-second timeout, walletless refund `c3f044fa933eb372a2a623c4c6fe81fc21e21bb042b49261a0915d8fd885a87d`.
+- `round-b48d9a5605cb5f6b`: final 0.05 KAS staged marker test; Testnet returned 0.049 KAS after a 0.001 KAS fee, payout `51a0aea9019dee3824d7f4ca4dfa402c1b9558ce4853ad94bbbb5087b85ce74c`.
+
+Accepted transaction masses and fixed-fee margins:
+
+| Path | Compute mass | Fixed fee | Minimum relay fee | Margin |
+| --- | ---: | ---: | ---: | ---: |
+| create | 1,271 | 0.002 KAS | 0.001271 KAS | 1.57x |
+| buy | 12,484 | 0.02 KAS | 0.012484 KAS | 1.60x |
+| finalize | 10,872 | 0.02 KAS | 0.010872 KAS | 1.84x |
+| refund (one batch) | 9,504 | 0.03 KAS | 0.009504 KAS | 3.16x |
+
+The staged Registry payment used 0.005047 KAS in combined wallet-funding and marker relay fees. The final Testnet marker refund used 0.001 KAS. Mainnet and custom Registry markers remain controlled by the destination address rather than being burned.
 
 ## Bilingual UI Verification (2026-07-12)
 

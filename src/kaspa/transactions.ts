@@ -24,6 +24,7 @@ import {
   buildRaffleRedeemScript,
   buildRaffleScriptPublicKey,
   bytesToHex,
+  PARTICIPANT_FINALIZE_CONTRACT_VERSION,
   pubkeyHexFromAddress,
   raffleCovenantStateFromRound,
   raffleWinnerIndexFromSeed
@@ -106,26 +107,37 @@ export interface RaffleCovenantSpendResult {
   randomSeed?: string;
 }
 
-export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 500_000_000n;
-export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 1_000_000n;
-export const COVENANT_CREATE_FEE_SOMPI = 1_000_000n;
-export const COVENANT_BUY_FEE_SOMPI = 6_000_000n;
-export const COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n;
-export const COVENANT_REFUND_FEE_SOMPI = 20_000_000n;
-const STANDARD_REFUND_MIN_SOMPI = 100_000_000n;
-export const MIN_COVENANT_CARRIER_SOMPI = COVENANT_FINALIZE_FEE_SOMPI + STANDARD_REFUND_MIN_SOMPI;
-export const DEFAULT_COVENANT_CARRIER_SOMPI = 200_000_000n;
+export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n;
+export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 100_000n;
+export const REGISTRY_PAYMENT_FEE_SOMPI = 300_000n;
+export const COVENANT_CREATE_FEE_SOMPI = 200_000n;
+export const COVENANT_BUY_FEE_SOMPI = 2_000_000n;
+export const COVENANT_FINALIZE_FEE_SOMPI = 2_000_000n;
+export const COVENANT_REFUND_FEE_SOMPI = 3_000_000n;
+const LEGACY_V3_3_FINALIZE_FEE_SOMPI = 40_000_000n;
+const LEGACY_V3_3_REFUND_FEE_SOMPI = 20_000_000n;
+const STANDARD_REFUND_MIN_SOMPI = 5_000_000n;
+export const MIN_COVENANT_CARRIER_SOMPI = 10_000_000n;
+export const DEFAULT_COVENANT_CARRIER_SOMPI = 20_000_000n;
 export const MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS =
   "kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh";
 const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
-const COVENANT_CLOSE_FEE_SOMPI = 6_000_000n;
-const LOW_COST_FUNDING_MIN_SOMPI = 1_000_000_000n;
+const COVENANT_CLOSE_FEE_SOMPI = 2_000_000n;
+const LOW_COST_FUNDING_MIN_SOMPI = 20_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
-const RAFFLE_BUY_COMPUTE_BUDGET = 400;
-const RAFFLE_CLOSE_COMPUTE_BUDGET = 400;
-const RAFFLE_FINALIZE_COMPUTE_BUDGET = 2_500;
-const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 400;
-const RAFFLE_REFUND_COMPUTE_BUDGET = 1_600;
+const RAFFLE_BUY_COMPUTE_BUDGET = 50;
+const RAFFLE_CLOSE_COMPUTE_BUDGET = 2;
+const RAFFLE_FINALIZE_COMPUTE_BUDGET = 12;
+const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11;
+const RAFFLE_REFUND_COMPUTE_BUDGET = 20;
+
+export function covenantFinalizeFeeSompi(contractVersion: string): bigint {
+  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ? COVENANT_FINALIZE_FEE_SOMPI : LEGACY_V3_3_FINALIZE_FEE_SOMPI;
+}
+
+export function covenantRefundFeeSompi(contractVersion: string): bigint {
+  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ? COVENANT_REFUND_FEE_SOMPI : LEGACY_V3_3_REFUND_FEE_SOMPI;
+}
 
 function formatKasAmount(value: bigint): string {
   const whole = value / 100_000_000n;
@@ -490,28 +502,66 @@ export async function sendKaspaPayment(input: SendKaspaPaymentInput): Promise<Se
   await ensureKaspaWasmReady();
 
   try {
+    const stagingAmount = lowCostFundingAmount(input.amountSompi, REGISTRY_PAYMENT_FEE_SOMPI);
+    const stagingAddress = lowCostFundingAddress(input.wallet.network);
     const utxos = await input.connection.client.getUtxosByAddresses({ addresses: [input.wallet.address] });
-    const selectedEntries = selectPaymentEntries(utxos.entries ?? [], input.amountSompi);
+    const selectedEntries = selectPaymentEntries(utxos.entries ?? [], stagingAmount);
     const { transactions } = await createTransactions({
       entries: selectedEntries,
-      outputs: [{ address: input.toAddress, amount: input.amountSompi }],
+      outputs: [{ address: stagingAddress, amount: stagingAmount }],
       changeAddress: input.wallet.address,
       priorityFee: 0n,
-      payload: input.payload,
       networkId: transactionNetworkId(input.wallet.network)
     });
-    const txIds: string[] = [];
-    let feeSompi = 0n;
+    const stagingTransaction = transactions[0];
 
-    for (const transaction of transactions) {
-      await input.wallet.signTransaction(transaction);
-      txIds.push(await transaction.submit(input.connection.client));
-      feeSompi += transaction.feeAmount;
+    if (!stagingTransaction) {
+      throw new Error("Unable to build registry funding transaction.");
+    }
+
+    await input.wallet.signTransaction(stagingTransaction);
+    const stagingTxId = await stagingTransaction.submit(input.connection.client);
+    const stagingUtxo = await waitForAddressUtxo(input.connection, stagingAddress, stagingTxId, 0);
+    const changeAmount = stagingAmount - input.amountSompi - REGISTRY_PAYMENT_FEE_SOMPI;
+    const outputs = [new TransactionOutput(input.amountSompi, payToAddressScript(input.toAddress))];
+
+    if (changeAmount >= STANDARD_REFUND_MIN_SOMPI) {
+      outputs.push(new TransactionOutput(changeAmount, payToAddressScript(input.wallet.address)));
+    }
+
+    const markerTx = buildManualTransaction({
+      inputs: [
+        {
+          previousOutpoint: stagingUtxo.outpoint,
+          signatureScript: lowCostFundingSignatureScript(),
+          sequence: 0n,
+          sigOpCount: 0,
+          utxo: asInputUtxo(stagingUtxo)
+        }
+      ],
+      outputs,
+      payload: input.payload
+    });
+    let markerTxId: string;
+
+    try {
+      markerTxId = await submitTransaction(input.connection, markerTx);
+    } catch (error) {
+      let refundTxId = "";
+
+      try {
+        refundTxId = await refundLowCostFundingUtxo(input.connection, stagingUtxo, input.wallet.address);
+      } catch {
+        // Preserve the marker error; the staging output remains spendable by the low-cost script.
+      }
+
+      const normalized = normalizeTransactionError(error);
+      throw new Error(refundTxId ? `${normalized.message} Temporary funding was refunded in ${refundTxId}.` : normalized.message);
     }
 
     return {
-      txIds,
-      feeSompi,
+      txIds: [stagingTxId, markerTxId],
+      feeSompi: stagingTransaction.feeAmount + REGISTRY_PAYMENT_FEE_SOMPI,
       selectedUtxoCount: selectedEntries.length
     };
   } catch (error) {
@@ -927,7 +977,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
 
     const winnerScriptPublicKey = payToAddressScript(input.winner.owner);
     const outputs = [new TransactionOutput(closedRound.potAmount, winnerScriptPublicKey)];
-    const creatorRefundAmount = currentAmount - closedRound.potAmount - COVENANT_FINALIZE_FEE_SOMPI;
+    const creatorRefundAmount = currentAmount - closedRound.potAmount - covenantFinalizeFeeSompi(closedRound.contractVersion);
 
     if (creatorRefundAmount < STANDARD_REFUND_MIN_SOMPI || !closedRound.creator || closedRound.creator === "no-wallet") {
       throw new Error("Covenant carrier refund is too small or the creator address is missing.");
@@ -1051,7 +1101,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
     const currentAmount = BigInt(input.covenant.amountSompi);
     const ticketRefundAmount = input.round.ticketPrice * BigInt(input.covenant.soldTickets);
-    const creatorRefundAmount = currentAmount - ticketRefundAmount - COVENANT_REFUND_FEE_SOMPI;
+    const creatorRefundAmount = currentAmount - ticketRefundAmount - covenantRefundFeeSompi(currentRound.contractVersion);
 
     if (creatorRefundAmount < 0n) {
       throw new Error("The covenant carrier amount is too small to refund this round.");
