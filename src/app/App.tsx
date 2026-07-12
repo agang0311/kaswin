@@ -51,7 +51,7 @@ import {
   DEFAULT_COVENANT_CARRIER_SOMPI,
   DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
   finalizeRaffleCovenantRound,
-  getRaffleRegistryAddress,
+  getRaffleRegistryConfig,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
   refundRaffleCovenantRound,
@@ -452,6 +452,7 @@ export function App() {
   const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
   const [historyAddress, setHistoryAddress] = useState("");
   const [registryAddress, setRegistryAddress] = useState("");
+  const [registryAutoRefund, setRegistryAutoRefund] = useState(false);
   const [createRegistryAddress, setCreateRegistryAddress] = useState("");
   const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>([]);
   const [selectedHistoryRoundId, setSelectedHistoryRoundId] = useState("");
@@ -558,16 +559,18 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    void getRaffleRegistryAddress(networkId)
-      .then((address) => {
+    void getRaffleRegistryConfig(networkId)
+      .then((config) => {
         if (!cancelled) {
-          setRegistryAddress(address);
-          setCreateRegistryAddress((current) => current || address);
+          setRegistryAddress(config.address);
+          setRegistryAutoRefund(config.autoRefund);
+          setCreateRegistryAddress((current) => current || config.address);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setRegistryAddress("");
+          setRegistryAutoRefund(false);
         }
       });
 
@@ -626,8 +629,9 @@ export function App() {
   }, [covenantCarrierSompi]);
   const activeCreateRegistryAddress = createRegistryAddress.trim() || registryAddress;
   const usesDefaultRegistry = Boolean(registryAddress) && activeCreateRegistryAddress === registryAddress;
+  const usesAutoRefundRegistry = usesDefaultRegistry && registryAutoRefund;
   const registryMarkerRefundAmount = DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI - REGISTRY_MARKER_REFUND_FEE_SOMPI;
-  const createCostTooltip = usesDefaultRegistry
+  const createCostTooltip = usesAutoRefundRegistry
     ? t("cost.create.default", {
         carrier: formatKas(createCarrierAmount),
         createFee: formatKas(COVENANT_CREATE_FEE_SOMPI),
@@ -635,7 +639,7 @@ export function App() {
         refund: formatKas(registryMarkerRefundAmount),
         refundFee: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)
       })
-    : t("cost.create.custom", {
+    : t(usesDefaultRegistry ? "cost.create.retained" : "cost.create.custom", {
         carrier: formatKas(createCarrierAmount),
         createFee: formatKas(COVENANT_CREATE_FEE_SOMPI),
         marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)
@@ -778,6 +782,7 @@ export function App() {
     setHistoryApiBase(nextProfile.historyApiBase);
     setHistoryAddress("");
     setRegistryAddress("");
+    setRegistryAutoRefund(false);
     setCreateRegistryAddress("");
     setHistoryRounds([]);
     setSelectedHistoryRoundId("");
@@ -1066,7 +1071,7 @@ export function App() {
         throw new Error(`Registry address must belong to ${networkLabel(selectedNetwork.id)}.`);
       }
 
-      const autoRefundRegistryMarker = targetRegistryAddress === registryAddress;
+      const autoRefundRegistryMarker = usesAutoRefundRegistry;
       const refundDelaySeconds = refundTimeoutSecondsFromParts(refundTimeoutParts);
       const refundDelayDaa = refundDelaySeconds * KASPA_DAA_PER_SECOND;
 
@@ -2160,15 +2165,15 @@ export function App() {
                   <div>
                     <dt>{t("automaticMarkerRefund")}</dt>
                     <dd>
-                      {usesDefaultRegistry
+                      {usesAutoRefundRegistry
                         ? t("registryRefundDefault", { refund: formatKas(registryMarkerRefundAmount), fee: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI) })
-                        : t("registryRefundCustom", { amount: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI) })}
+                        : t(usesDefaultRegistry ? "registryRefundRetained" : "registryRefundCustom", { amount: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI) })}
                     </dd>
                   </div>
                 </dl>
                 <p className="registry-note">
                   {usesDefaultRegistry
-                    ? t("registryDefaultNote")
+                    ? t(usesAutoRefundRegistry ? "registryDefaultNote" : "registryRetainedNote")
                     : t("registryCustomNote")}
                 </p>
               </section>

@@ -39,7 +39,7 @@ Use a dedicated testnet wallet only. The public endpoint name contains `tn12`, b
 6. Buy a ticket batch and confirm the page displays one ticket-number range instead of one row per ticket.
 7. Run at least three complete create/buy/finalize rounds; one round must contain 10 tickets.
 8. Run a final 1,000-ticket round and confirm it can be bought in one batch, reconstructed from history, and paid out.
-9. Confirm round creation uses the default `5000000000` sompi carrier reserve and stores the creator address for refund.
+9. Confirm round creation uses the default `2 KAS` carrier reserve, rejects values below `1.4 KAS`, and stores the creator address for refund.
 10. Finalize after the round sells out; the page should create the development oracle attestation automatically.
 11. Load at least one sold-out round through History before finalizing it.
 12. Confirm the winning output is paid by the covenant finalize transaction itself and any large carrier remainder is refunded to the creator.
@@ -80,6 +80,14 @@ The same browser run switched to Mainnet, connected read-only to `ws://127.0.0.1
 - `round-642fbddce847b69c`: custom registry set to the creator wallet, loaded through History from that address before finalize, payout `4420b0e60948f6c465ff46022afac173babb8054b523a516ca478f117beb5a6c`; a later index refresh reported `Paid`.
 
 The same run confirmed that an invalid custom Registry address is rejected before any create transaction is submitted.
+
+## Verified 2 KAS Carrier Runs (2026-07-12)
+
+- `round-833bbc8bc79a10e9`: 1 ticket, payout `afe653644b827404dd37f0528250834d1928860760449e88f3186cf88561af68`.
+- `round-3c0feb896c7a7904`: 1 ticket, payout `5082b448d6fcaf460b78da41d4b8ee94fb6deaa63a1aeec94498b72f1be16ddf`.
+- `round-bab654c0bd673db3`: 1 ticket, loaded through History before finalize, payout `0b7132970a7094bedde9fcbefac8aee31d534e633eb625ea6adcfb1b55d514b2`; a later history refresh reported `Paid`.
+
+All three rounds used the `2 KAS` default carrier and completed create, buy, covenant finalize, direct payout, and creator carrier refund without storage-mass rejection.
 
 ## Bilingual UI Verification (2026-07-12)
 

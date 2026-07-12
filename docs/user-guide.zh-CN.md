@@ -46,10 +46,11 @@ Registry 区域会直接列出成本：
 
 - 固定发送 **5 KAS** 到所填地址。
 - Registry payment 另有一笔根据钱包 UTXO 计算的网络费，提交后显示精确值。
-- 使用默认 Registry 时自动退回 **4.99 KAS**，退款交易费为 **0.01 KAS**。
+- Testnet 使用默认 Registry 时自动退回 **4.99 KAS**，退款交易费为 **0.01 KAS**。
+- Mainnet 默认 Registry 为 `kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh`，5 KAS marker 留在该地址用于公开索引，不自动退款。
 - 使用自定义 Registry 时不自动退款，5 KAS 会留在目标地址；若填写自己的钱包地址，资金仍由自己控制。
 
-点击 **Create round** 前，把鼠标放在按钮上可查看完整费用明细。创建会暂时锁定默认 50 KAS carrier。carrier 不是奖池，正常 finalize 或 refund 后会扣除 covenant fee 并退回创建者。
+点击 **Create round** 前，把鼠标放在按钮上可查看完整费用明细。创建会暂时锁定默认 2 KAS carrier。carrier 不是奖池，正常 finalize 或 refund 后会扣除 covenant fee 并退回创建者。页面允许的最低 carrier 是 1.4 KAS：其中 finalize 固定扣除 0.4 KAS，并要求至少退回创建者 1 KAS。
 
 创建成功后保存分享链接。其他人也可从 **Load history** 找到该轮。
 
@@ -99,8 +100,8 @@ Registry 区域会直接列出成本：
 
 页面为了满足 Toccata storage-mass 规则，会使用临时 funding UTXO 和较大的 carrier：
 
-- 创建后，约 50 KAS carrier 会锁在 round covenant 中，结束时才退回。
-- 默认 registry 会退回 4.99 KAS；自定义 registry 的 5 KAS 留在目标地址。
+- 创建后，默认 2 KAS carrier 会锁在 round covenant 中，结束时才退回。
+- Testnet 默认 registry 会退回 4.99 KAS；Mainnet 默认 registry 和自定义 registry 的 5 KAS 留在目标地址。
 - buy 的临时 funding 找零通常在购票 covenant 交易中立即返回。
 - 钱包或节点的余额索引可能有延迟，可等待确认后点刷新。
 

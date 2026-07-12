@@ -134,7 +134,7 @@ Browser SPA
 3. 钱包先创建临时 funding UTXO。
 4. funding UTXO 创建 v1 genesis covenant output。
 5. 另发一笔 registry marker 交易供历史扫描。
-6. 默认 registry 是公开可花费的索引脚本，marker 扣除 0.01 KAS 后立即退回 creator；自定义 registry 不自动退款，5 KAS 留在目标地址。
+6. Testnet 默认 registry 是公开可花费的索引脚本，marker 扣除 0.01 KAS 后立即退回 creator；Mainnet 默认 registry 和自定义 registry 不自动退款，5 KAS 留在目标地址。
 
 ### Buy
 
@@ -168,7 +168,8 @@ Browser SPA
 
 | 项目 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 默认/min carrier | 50 KAS | 满足当前 storage-mass 下限；结束时扣费后退 creator |
+| 默认 carrier | 2 KAS | 三轮 Testnet 10 完整流程验证通过；结束时扣费后退 creator |
+| 最低 carrier | 1.4 KAS | finalize fee 0.4 KAS + creator 最小退款 1 KAS |
 | registry marker transfer | 5 KAS | 发送到创建时指定的 Registry address |
 | registry marker refund fee | 0.01 KAS | 仅默认 registry 自动退款时收取，预计退回 4.99 KAS |
 | create covenant fee | 0.01 KAS | 从临时 funding 支付 |
@@ -235,7 +236,7 @@ npm run verify:covenant
 - scanner 依赖中心化 REST 索引服务，缺少 checkpoint/reorg 恢复。
 - covenant UTXO 天然串行，热门轮次会出现购买竞争。
 - 最多 20 个购买批次；每批可含多张票。
-- storage mass 和 relay 规则可能随网络升级改变，50 KAS carrier 不是永久协议常量。
+- storage mass 和 relay 规则可能随网络升级改变。2 KAS 是当前构建的安全默认值；1.4 KAS 同时受 finalize 输出约束，不应在未修改合约和验证流程时继续降低。
 - release HTML 虽可离线分发，但使用者仍应核对来源、版本和哈希。
 
 ## 12. 兼容性

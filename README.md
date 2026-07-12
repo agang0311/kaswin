@@ -14,7 +14,7 @@ The app is designed to run without a project-controlled backend. Users provide a
 
 ## Current Status
 
-The current v0.1.11 implementation includes:
+The current v0.1.12 implementation includes:
 
 - Single-file React + TypeScript SPA build
 - English and Chinese interfaces with a persistent language selector in the top-right corner
@@ -25,6 +25,7 @@ The current v0.1.11 implementation includes:
 - KasWare `signPskt` and Kastle `signTx` / `kas:sign_tx` adapters
 - Funding transactions signed by the selected wallet; the page never receives the wallet private key
 - Creator-selected Registry address with explicit marker amount, payment fee, and refund behavior
+- Network-specific default Registry addresses; Mainnet uses `kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh`
 - Browser-side testnet ticket purchase transactions
 - Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
@@ -59,15 +60,15 @@ Default local testing targets the public Toccata testnet endpoint:
 - initial ticket price: `30000000` sompi, or `0.3 KAS`
 - default round size: 10 tickets
 - contract limit: 1,000 tickets across at most 20 purchase batches
-- round carrier reserve: `5000000000` sompi, or `50 KAS`; this keeps the covenant UTXO above current storage-mass limits and is refunded to the creator at finalize when large enough.
-- registry marker: `5 KAS` is sent to the creator-selected Registry address. The default registry returns `4.99 KAS` after a `0.01 KAS` refund fee; custom registries do not auto-refund. The registry payment transaction has an additional UTXO-dependent network fee.
+- round carrier reserve: `2 KAS` by default with a `1.4 KAS` lifecycle minimum. Finalize deducts `0.4 KAS` and requires at least `1 KAS` to return to the creator.
+- registry marker: `5 KAS` is sent to the creator-selected Registry address. The Testnet default registry returns `4.99 KAS` after a `0.01 KAS` refund fee. The Mainnet default and custom registries retain the marker at the destination. The registry payment transaction has an additional UTXO-dependent network fee.
 - temporary covenant funding reserve: at least `1000000000` sompi, or `10 KAS`; this is returned during the ticket or registry transaction when possible.
 
 Install KasWare or Kastle, select a Kaspa testnet account, then choose the detected provider from **Connect wallet**. Wallet connection is requested only after a wallet is selected.
 
 As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 
-Manual transaction testing on 2026-07-09 and 2026-07-10 showed that low-value covenant outputs can be rejected by current Toccata storage-mass rules. Local end-to-end ticket testing starts at `0.3 KAS`, and round creation uses a configurable carrier reserve that defaults to `50 KAS` for the covenant output.
+Manual transaction testing on 2026-07-12 confirmed three complete create/buy/finalize rounds with a `2 KAS` carrier, including one round loaded through History before finalize. Local end-to-end ticket testing starts at `0.3 KAS`; the carrier remains configurable but cannot be lower than `1.4 KAS` because the finalize path must cover its fee and creator refund.
 
 ## Development
 

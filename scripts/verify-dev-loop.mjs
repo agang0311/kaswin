@@ -127,6 +127,21 @@ assert(
     metadataSource.includes('registryAddress: ""')
 );
 assert(
+  "Mainnet has the requested retained-marker default registry",
+  transactionSource.includes('MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS') &&
+    transactionSource.includes('kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh') &&
+    transactionSource.includes('return { address: MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS, autoRefund: false }') &&
+    appSource.includes('usesAutoRefundRegistry') &&
+    i18nSource.includes('"registryRetainedNote"')
+);
+assert(
+  "Carrier defaults to 2 KAS with a 1.4 KAS lifecycle floor",
+  transactionSource.includes('DEFAULT_COVENANT_CARRIER_SOMPI = 200_000_000n') &&
+    transactionSource.includes('MIN_COVENANT_CARRIER_SOMPI = COVENANT_FINALIZE_FEE_SOMPI + STANDARD_REFUND_MIN_SOMPI') &&
+    transactionSource.includes('COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n') &&
+    transactionSource.includes('STANDARD_REFUND_MIN_SOMPI = 100_000_000n')
+);
+assert(
   "Visible amount labels use KAS instead of sompi",
   i18nSource.includes('"carrierReserveKas": "Carrier reserve (KAS)"') &&
     !appSource.includes("Carrier reserve (sompi)") &&

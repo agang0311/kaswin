@@ -106,18 +106,20 @@ export interface RaffleCovenantSpendResult {
   randomSeed?: string;
 }
 
-export const DEFAULT_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
-export const MIN_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
 export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 500_000_000n;
 export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 1_000_000n;
 export const COVENANT_CREATE_FEE_SOMPI = 1_000_000n;
 export const COVENANT_BUY_FEE_SOMPI = 6_000_000n;
 export const COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n;
 export const COVENANT_REFUND_FEE_SOMPI = 20_000_000n;
+const STANDARD_REFUND_MIN_SOMPI = 100_000_000n;
+export const MIN_COVENANT_CARRIER_SOMPI = COVENANT_FINALIZE_FEE_SOMPI + STANDARD_REFUND_MIN_SOMPI;
+export const DEFAULT_COVENANT_CARRIER_SOMPI = 200_000_000n;
+export const MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS =
+  "kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh";
 const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
 const COVENANT_CLOSE_FEE_SOMPI = 6_000_000n;
 const LOW_COST_FUNDING_MIN_SOMPI = 1_000_000_000n;
-const STANDARD_REFUND_MIN_SOMPI = 100_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
 const RAFFLE_BUY_COMPUTE_BUDGET = 400;
 const RAFFLE_CLOSE_COMPUTE_BUDGET = 400;
@@ -252,9 +254,23 @@ function lowCostFundingAddress(network: string): string {
   return address.toString();
 }
 
-export async function getRaffleRegistryAddress(network: string): Promise<string> {
+export interface RaffleRegistryConfig {
+  address: string;
+  autoRefund: boolean;
+}
+
+export async function getRaffleRegistryConfig(network: string): Promise<RaffleRegistryConfig> {
   await ensureKaspaWasmReady();
-  return lowCostFundingAddress(network);
+
+  if (transactionNetworkId(network) === "mainnet") {
+    return { address: MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS, autoRefund: false };
+  }
+
+  return { address: lowCostFundingAddress(network), autoRefund: true };
+}
+
+export async function getRaffleRegistryAddress(network: string): Promise<string> {
+  return (await getRaffleRegistryConfig(network)).address;
 }
 
 export async function assertValidKaspaAddress(address: string, label = "Kaspa address"): Promise<void> {
