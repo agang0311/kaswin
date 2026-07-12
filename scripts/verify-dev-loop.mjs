@@ -38,6 +38,7 @@ const covenantSource = readText("src/kaspa/covenant.ts");
 const transactionSource = readText("src/kaspa/transactions.ts");
 const walletSource = readText("src/kaspa/wallet.ts");
 const walletTypesSource = readText("src/kaspa/wallet-types.ts");
+const networkSource = readText("src/kaspa/networks.ts");
 const kasWareWalletSource = readText("src/kaspa/wallet-kasware.ts");
 const kastleWalletSource = readText("src/kaspa/wallet-kastle.ts");
 const metadataSource = readText("src/raffle/metadata.ts");
@@ -63,7 +64,27 @@ assert(
     wasmSource.includes("module_or_path: bytes")
 );
 assert("Contract compile script exists", packageJson.scripts?.["compile:contract"] === "node scripts/compile-raffle-contract.mjs");
-assert("Default TN12 wRPC is present", appSource.includes("ws://tn12-node.kaspa.com:18210"));
+assert(
+  "Network registry exposes Mainnet and Testnet 10",
+  networkSource.includes('id: "mainnet"') &&
+    networkSource.includes('id: "testnet-10"') &&
+    networkSource.includes('ws://127.0.0.1:18110') &&
+    networkSource.includes('ws://tn12-node.kaspa.com:18210')
+);
+assert(
+  "KasWare-style network switcher is wired",
+  appSource.includes('role="menu" aria-label="Switch network"') &&
+    appSource.includes('role="menuitemradio"') &&
+    appSource.includes("handleSelectNetwork") &&
+    appSource.includes("networkSettingsId")
+);
+assert(
+  "Node and wallet networks are validated",
+  appSource.includes("The node reports") &&
+    appSource.includes("normalizeNetworkId") &&
+    walletTypesSource.includes("requireNetworkProfile(network)") &&
+    walletTypesSource.includes("profile.addressPrefix")
+);
 assert("Default ticket price is 0.3 KAS", metadataSource.includes('ticketPrice: "30000000"'));
 assert("Default round has 10 tickets", metadataSource.includes("maxTickets: 10"));
 assert("Browser covenant ticket path exists", transactionSource.includes("buyRaffleCovenantTicket") && appSource.includes("handleBuyTicket"));

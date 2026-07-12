@@ -1,5 +1,6 @@
 import { Transaction, type PendingTransaction } from "@onekeyfe/kaspa-wasm";
 import { pubkeyHexFromAddress } from "./covenant";
+import { requireNetworkProfile } from "./networks";
 
 export type WalletSignableTransaction = PendingTransaction | Transaction;
 
@@ -44,13 +45,15 @@ export function normalizedXOnlyPublicKey(publicKey: string): string {
   throw new Error("The connected wallet returned an invalid public key.");
 }
 
-export function validateWalletAccount(address: string, publicKey: string, providerName: string): void {
+export function validateWalletAccount(address: string, publicKey: string, providerName: string, network: string): void {
   if (!address) {
     throw new Error(`No ${providerName} account was selected.`);
   }
 
-  if (!address.startsWith("kaspatest:")) {
-    throw new Error(`Switch ${providerName} to a Kaspa testnet account before connecting.`);
+  const profile = requireNetworkProfile(network);
+
+  if (!address.startsWith(profile.addressPrefix)) {
+    throw new Error(`Switch ${providerName} to ${profile.label} before connecting.`);
   }
 
   if (pubkeyHexFromAddress(address).toLowerCase() !== publicKey) {
@@ -111,7 +114,7 @@ export function createConnectedWallet(input: {
 }): BrowserTestWallet {
   const address = input.address.trim();
   const publicKey = normalizedXOnlyPublicKey(input.publicKey);
-  validateWalletAccount(address, publicKey, input.providerName);
+  validateWalletAccount(address, publicKey, input.providerName, input.network);
 
   return {
     id: `${input.adapterId}:${publicKey.slice(0, 16)}`,

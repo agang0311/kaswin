@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as secp from "@noble/secp256k1";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Link2,
   Plug,
   RefreshCw,
+  Settings,
   ShieldCheck,
   Ticket,
   Upload,
@@ -29,6 +32,13 @@ import {
   type KaspaNodeStatus,
   type KaspaRpcConnection
 } from "../kaspa/rpc";
+import {
+  NETWORK_PROFILES,
+  networkFromAddress,
+  normalizeNetworkId,
+  requireNetworkProfile,
+  type SupportedNetworkId
+} from "../kaspa/networks";
 import {
   buyRaffleCovenantTicket,
   COVENANT_BUY_FEE_SOMPI,
@@ -67,6 +77,37 @@ const SECONDS_PER_HOUR = 60n * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY = 24n * SECONDS_PER_HOUR;
 const SECONDS_PER_MONTH = 30n * SECONDS_PER_DAY;
 const DEFAULT_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE;
+const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
+
+type NetworkEndpoints = Record<SupportedNetworkId, string>;
+
+function defaultNetworkEndpoints(): NetworkEndpoints {
+  return Object.fromEntries(NETWORK_PROFILES.map((profile) => [profile.id, profile.defaultRpcUrl])) as NetworkEndpoints;
+}
+
+function loadNetworkEndpoints(): NetworkEndpoints {
+  const defaults = defaultNetworkEndpoints();
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(NETWORK_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkEndpoints>;
+    return {
+      mainnet: saved.mainnet?.trim() || defaults.mainnet,
+      "testnet-10": saved["testnet-10"]?.trim() || defaults["testnet-10"]
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function validateRpcUrl(value: string): string {
+  const normalized = value.trim();
+
+  if (!/^wss?:\/\//i.test(normalized)) {
+    throw new Error("The node endpoint must start with ws:// or wss://.");
+  }
+
+  return normalized;
+}
 
 type RefundTimeoutPart = "months" | "days" | "hours" | "minutes" | "seconds";
 type RefundTimeoutParts = Record<RefundTimeoutPart, string>;
@@ -346,8 +387,12 @@ function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "refund
 
 export function App() {
   const rpcConnectionRef = useRef<KaspaRpcConnection | null>(null);
-  const [rpcUrl, setRpcUrl] = useState("ws://tn12-node.kaspa.com:18210");
-  const [networkId, setNetworkId] = useState("testnet-12");
+  const [networkEndpoints, setNetworkEndpoints] = useState<NetworkEndpoints>(() => loadNetworkEndpoints());
+  const [networkId, setNetworkId] = useState<SupportedNetworkId>("testnet-10");
+  const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"]);
+  const [isNetworkMenuOpen, setIsNetworkMenuOpen] = useState(false);
+  const [networkSettingsId, setNetworkSettingsId] = useState<SupportedNetworkId | null>(null);
+  const [networkEndpointDraft, setNetworkEndpointDraft] = useState("");
   const [nodeStatus, setNodeStatus] = useState<KaspaNodeStatus>({
     connected: false,
     network: "unknown",
@@ -379,7 +424,7 @@ export function App() {
   const [isRefundingRound, setIsRefundingRound] = useState(false);
   const [covenantCarrierSompi, setCovenantCarrierSompi] = useState(DEFAULT_COVENANT_CARRIER_SOMPI.toString());
   const [refundTimeoutParts, setRefundTimeoutParts] = useState<RefundTimeoutParts>(DEFAULT_REFUND_TIMEOUT_PARTS);
-  const [historyApiBase, setHistoryApiBase] = useState("https://api-tn10.kaspa.org");
+  const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
   const [historyAddress, setHistoryAddress] = useState("");
   const [registryAddress, setRegistryAddress] = useState("");
   const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>([]);
@@ -413,6 +458,8 @@ export function App() {
   }, [refundTimeoutParts]);
   const refundTimeoutDaa = useMemo(() => refundTimeoutSeconds * KASPA_DAA_PER_SECOND, [refundTimeoutSeconds]);
   const refundTimeoutDisplay = useMemo(() => formatRefundTimeoutParts(refundTimeoutParts), [refundTimeoutParts]);
+  const selectedNetwork = requireNetworkProfile(networkId);
+  const networkSwitchDisabled = isCreatingRound || isBuying || isFinalizing || isRefundingRound;
 
   useEffect(() => {
     setMetadataText(stringifyMetadata(metadata));
@@ -609,29 +656,125 @@ export function App() {
 
   const verification = useMemo(() => verifyRaffleState({ round, tickets, finalized }), [finalized, round, tickets]);
 
+  function persistNetworkEndpoints(next: NetworkEndpoints) {
+    setNetworkEndpoints(next);
+    localStorage.setItem(NETWORK_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
+  }
+
+  function handleRpcUrlInput(value: string) {
+    setRpcUrl(value);
+    persistNetworkEndpoints({ ...networkEndpoints, [networkId]: value });
+  }
+
+  function openNetworkSettings(profileId: SupportedNetworkId) {
+    setNetworkSettingsId(profileId);
+    setNetworkEndpointDraft(networkEndpoints[profileId]);
+    setRpcError("");
+  }
+
+  function saveNetworkSettings() {
+    if (!networkSettingsId) {
+      return;
+    }
+
+    try {
+      const endpoint = validateRpcUrl(networkEndpointDraft);
+      const next = { ...networkEndpoints, [networkSettingsId]: endpoint };
+      persistNetworkEndpoints(next);
+
+      if (networkSettingsId === networkId) {
+        setRpcUrl(endpoint);
+      }
+
+      setNetworkSettingsId(null);
+      setRpcError("");
+    } catch (error) {
+      setRpcError(errorMessage(error, "Unable to save the node endpoint."));
+    }
+  }
+
+  async function handleSelectNetwork(nextNetwork: SupportedNetworkId) {
+    if (nextNetwork === networkId) {
+      setIsNetworkMenuOpen(false);
+      return;
+    }
+
+    if (metadata.covenant && !canStartNewRound) {
+      const confirmed = window.confirm(
+        "Switch networks and clear the current local round view? The round remains on chain and can be loaded again from history."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const nextProfile = requireNetworkProfile(nextNetwork);
+    await disconnectBrowserRpc(rpcConnectionRef.current).catch(() => undefined);
+
+    if (wallet) {
+      await disconnectBrowserWallet(wallet).catch(() => undefined);
+    }
+
+    rpcConnectionRef.current = null;
+    setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
+    setVirtualDaaScore(0n);
+    setWallet(null);
+    setNetworkId(nextNetwork);
+    setRpcUrl(networkEndpoints[nextNetwork]);
+    setHistoryApiBase(nextProfile.historyApiBase);
+    setHistoryAddress("");
+    setRegistryAddress("");
+    setHistoryRounds([]);
+    setSelectedHistoryRoundId("");
+    setMetadata(createEmptyMetadata(nextNetwork));
+    setTickets([]);
+    setFinalized(undefined);
+    setOraclePrivateKey("");
+    setOracleSeed("");
+    setOracleSignature("");
+    setBuyerSecret("");
+    setChainError("");
+    setChainMessage("");
+    setRpcError("");
+    setWalletError("");
+    setMetadataError("");
+    setMetadataMessage("");
+    setHistoryError("");
+    setHistoryMessage("");
+    setRoundSourceTab("create");
+    setRoundActionTab("buy");
+    setNetworkSettingsId(null);
+    setIsNetworkMenuOpen(false);
+  }
+
   async function handleConnect() {
     setRpcError("");
 
     try {
       await disconnectBrowserRpc(rpcConnectionRef.current);
-      const connection = await connectBrowserRpc(rpcUrl, networkId);
+      const endpoint = validateRpcUrl(rpcUrl);
+      const connection = await connectBrowserRpc(endpoint, networkId);
+      const connectedNetwork = normalizeNetworkId(connection.status.network);
+
+      if (connectedNetwork !== networkId) {
+        await disconnectBrowserRpc(connection);
+        throw new Error(`The node reports ${connection.status.network}, but ${selectedNetwork.label} is selected.`);
+      }
+
       rpcConnectionRef.current = connection;
-      setNodeStatus(connection.status);
+      setNodeStatus({ ...connection.status, network: connectedNetwork });
+      handleRpcUrlInput(endpoint);
 
-      const connectedNetwork = connection.status.network;
+      setMetadata((current) => (
+        current.createTxId || current.covenant
+          ? current
+          : { ...current, network: connectedNetwork }
+      ));
 
-      if (connectedNetwork && connectedNetwork !== "unknown") {
-        setNetworkId(connectedNetwork);
-        setMetadata((current) => (
-          current.createTxId || current.covenant
-            ? current
-            : { ...current, network: connectedNetwork }
-        ));
-
-        if (wallet) {
-          const balanceSompi = await getAddressBalanceSompi(connection, wallet.address);
-          setWallet(withWalletBalance({ ...wallet, network: connectedNetwork }, balanceSompi));
-        }
+      if (wallet) {
+        const balanceSompi = await getAddressBalanceSompi(connection, wallet.address);
+        setWallet(withWalletBalance({ ...wallet, network: connectedNetwork }, balanceSompi));
       }
     } catch (error) {
       setRpcError(error instanceof Error ? error.message : "Unable to connect to node.");
@@ -760,12 +903,16 @@ export function App() {
   }
 
   function applyMetadata(nextMetadata: RaffleMetadata, message: string) {
-    const restoredOraclePrivateKey = restoreDevOracleKey(nextMetadata.roundId, nextMetadata.oraclePublicKey);
-    const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromMetadata(nextMetadata);
+    const profile = requireNetworkProfile(nextMetadata.network);
+    const normalizedMetadata = { ...nextMetadata, network: profile.id };
+    const restoredOraclePrivateKey = restoreDevOracleKey(normalizedMetadata.roundId, normalizedMetadata.oraclePublicKey);
+    const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromMetadata(normalizedMetadata);
 
-    setMetadata(nextMetadata);
+    setMetadata(normalizedMetadata);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
-    setNetworkId(nextMetadata.network);
+    setNetworkId(profile.id);
+    setRpcUrl(networkEndpoints[profile.id]);
+    setHistoryApiBase(profile.historyApiBase);
     setTickets([]);
     setFinalized(undefined);
     setOraclePrivateKey(restoredOraclePrivateKey);
@@ -1456,7 +1603,7 @@ export function App() {
   }
 
   function networkFromKaspaAddress(address: string) {
-    return address.startsWith("kaspatest:") ? "testnet-12" : networkId;
+    return networkFromAddress(address) ?? networkId;
   }
 
   function refundTimeoutSecondsFromHistoryRound(historyRound: RaffleHistoryRound): bigint {
@@ -1507,6 +1654,7 @@ export function App() {
     }
 
     const loadedNetwork = networkFromKaspaAddress(covenant.address);
+    const loadedProfile = requireNetworkProfile(loadedNetwork);
     const restoredOraclePrivateKey = await recoverDevOracleKey(
       selectedHistoryRound.roundId,
       selectedHistoryRound.oraclePublicKey
@@ -1514,6 +1662,8 @@ export function App() {
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound);
 
     setNetworkId(loadedNetwork);
+    setRpcUrl(networkEndpoints[loadedNetwork]);
+    setHistoryApiBase(loadedProfile.historyApiBase);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setMetadata({
       app: "kaspa-raffle-static",
@@ -1615,7 +1765,7 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="kicker">Kaspa Toccata testnet</p>
+          <p className="kicker">Kaspa Toccata · {selectedNetwork.label}</p>
           <h1>Kaspa Raffle</h1>
         </div>
         <div className="header-status">
@@ -1627,16 +1777,91 @@ export function App() {
         </div>
       </header>
 
-      <section className="notice-band">
+      <section className={`notice-band${networkId === "mainnet" ? " mainnet" : ""}`}>
         <AlertTriangle size={18} />
-        <p>Testnet only. Use a dedicated wallet with small amounts.</p>
+        <p>
+          {networkId === "mainnet"
+            ? "Mainnet uses real KAS. Verify the selected node, wallet, and transaction amounts before signing."
+            : "Testnet 10. Use a dedicated wallet with small amounts."}
+        </p>
       </section>
 
       <section className="setup-strip" aria-label="Connection and wallet">
+        <div className="network-picker">
+          <button
+            type="button"
+            className="network-trigger secondary"
+            onClick={() => {
+              setIsNetworkMenuOpen((current) => !current);
+              setNetworkSettingsId(null);
+              setRpcError("");
+            }}
+            disabled={networkSwitchDisabled}
+            aria-haspopup="menu"
+            aria-expanded={isNetworkMenuOpen}
+          >
+            <span>
+              <small>Network</small>
+              <strong>{selectedNetwork.label}</strong>
+            </span>
+            <ChevronDown size={17} />
+          </button>
+
+          {isNetworkMenuOpen ? (
+            <div className="network-menu" role="menu" aria-label="Switch network">
+              <div className="network-menu-title">Switch network</div>
+              {NETWORK_PROFILES.map((profile) => {
+                const selected = profile.id === networkId;
+                const editing = profile.id === networkSettingsId;
+
+                return (
+                  <div className="network-menu-row" key={profile.id}>
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      className={`network-option${selected ? " selected" : ""}`}
+                      onClick={() => void handleSelectNetwork(profile.id)}
+                    >
+                      <span className="network-check" aria-hidden="true">{selected ? <Check size={16} /> : null}</span>
+                      <span className="network-option-copy">
+                        <strong>{profile.label}{profile.id === "testnet-10" ? <small className="network-code">TN10</small> : null}</strong>
+                        <small>{networkEndpoints[profile.id]}</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="network-settings-button"
+                      onClick={() => openNetworkSettings(profile.id)}
+                      title={`Configure ${profile.label} node`}
+                      aria-label={`Configure ${profile.label} node`}
+                    >
+                      <Settings size={18} />
+                    </button>
+                    {editing ? (
+                      <div className="network-endpoint-editor">
+                        <label className="field">
+                          <span>{profile.label} node</span>
+                          <input
+                            value={networkEndpointDraft}
+                            onChange={(event) => setNetworkEndpointDraft(event.target.value)}
+                            autoFocus
+                          />
+                        </label>
+                        <button type="button" onClick={saveNetworkSettings}>Apply</button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
         <div className="setup-primary">
           <label className="field inline-field">
             <span>Kaspa node</span>
-            <input value={rpcUrl} onChange={(event) => setRpcUrl(event.target.value)} />
+            <input value={rpcUrl} onChange={(event) => handleRpcUrlInput(event.target.value)} />
           </label>
           {nodeStatus.connected ? (
             <button type="button" className="secondary" onClick={handleDisconnect}>Disconnect</button>

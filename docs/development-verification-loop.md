@@ -64,3 +64,11 @@ A passing release run requires all of the following:
 - `round-e58e5261eb6c6e1e`: 10 tickets, one batch, payout `9100ff8d511fd101f29a76281baac777ee13a50f6c6f9c2469d0a4711d086cc7`.
 - `round-a57468eb2c262611`: 3 tickets, loaded through History before finalize, payout `fec95efa66655439f80ad015835e0baf1ccc936baddcc533dccc9603412d330a`.
 - `round-66ce07a8daa5b00b`: 1,000 tickets, one batch, winner #495, payout `f197bdbdd9a08e16a9e9c441a09d524fb75e9e3a885b101495f5d99f9a9cbb17`.
+
+## Verified TN10 Network-Switch Runs (2026-07-12)
+
+- `round-6e6afc21598c8dd6`: 1 ticket, payout `754ae72780f8e0b8e0af2358c96471df297e4ed2693fa5279250cae9101477fd`.
+- `round-25447582f3b2087c`: 1 ticket, payout `2b02fd63a94a0ca2eff62e9f30b669c0b9e28dcede6eeed20a545db3876e7a79`.
+- `round-8e274e30421325df`: 1 ticket, loaded through History before finalize, payout `73d63c2288b24c7b13d35426eb6ceed54acd7e873ae92befa4d69e9506f2bae0`; a subsequent history refresh reported `Paid`.
+
+The same browser run switched to Mainnet, connected read-only to `ws://127.0.0.1:18110`, then switched back and completed all three Testnet 10 transaction loops. No Mainnet transaction was submitted.
