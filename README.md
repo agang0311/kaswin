@@ -93,6 +93,8 @@ npm run build
 
 The build output is a self-contained `dist/index.html` with JavaScript, CSS, and Kaspa WASM embedded. It can be deployed as one file to GitHub Pages, IPFS, Arweave, Nginx, or any static file host.
 
+Pushing a `v*` tag runs the release workflow, repeats `npm run verify`, and attaches the versioned single HTML plus its SHA-256 file to a GitHub prerelease.
+
 Run the current development gate:
 
 ```bash
