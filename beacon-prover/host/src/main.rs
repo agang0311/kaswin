@@ -42,7 +42,9 @@ fn main() -> Result<()> {
     let round = args[1].parse::<u64>().context("round must be an unsigned integer")?;
     let signature = hex::decode(&args[2]).context("signature must be hex")?;
     let signature: [u8; 48] = signature.try_into().map_err(|_| anyhow::anyhow!("quicknet signature must be 48 bytes"))?;
-    let env = ExecutorEnv::builder().write(&round)?.write(&signature)?.build()?;
+    let mut env_builder = ExecutorEnv::builder();
+    env_builder.write(&round)?.write_slice(&signature);
+    let env = env_builder.build()?;
     let receipt = default_prover()
         .prove_with_opts(env, KASPA_RAFFLE_DRAND_GUEST_ELF, &ProverOpts::succinct())?
         .receipt;

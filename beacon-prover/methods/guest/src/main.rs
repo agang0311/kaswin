@@ -17,11 +17,11 @@ const QUICKNET_PUBLIC_KEY: [u8; 96] = [
 
 fn main() {
     let round: u64 = env::read();
-    let signature: [u8; 48] = env::read();
+    let mut signature = [0u8; 48];
+    env::read_slice(&mut signature);
     let public_key = G2PubkeyRfc::from_fixed(QUICKNET_PUBLIC_KEY).expect("embedded quicknet public key is valid");
     assert!(public_key.verify(round, b"", &signature).expect("signature encoding is valid"));
 
     env::commit_slice(&round.to_le_bytes());
     env::commit_slice(&derive_randomness(&signature));
 }
-
