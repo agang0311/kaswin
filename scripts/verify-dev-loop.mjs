@@ -33,6 +33,7 @@ function assert(name, condition, detail) {
 const packageJson = readJson("package.json");
 const manifest = readJson("src/contracts/compiled/raffle-round.manifest.json");
 const artifact = readJson("src/contracts/compiled/raffle-round.artifact.json");
+const v4Artifact = readJson("src/contracts/compiled/raffle-round-v4.artifact.json");
 const appSource = readText("src/app/App.tsx");
 const i18nSource = readText("src/app/i18n.ts");
 const covenantSource = readText("src/kaspa/covenant.ts");
@@ -45,6 +46,9 @@ const kastleWalletSource = readText("src/kaspa/wallet-kastle.ts");
 const metadataSource = readText("src/raffle/metadata.ts");
 const ticketRangeSource = readText("src/raffle/tickets.ts");
 const contractSource = readText("src/contracts/raffle_round.sil");
+const v4ContractSource = readText("src/contracts/raffle_round_v4.sil");
+const merkleSource = readText("src/raffle/merkle.ts");
+const indexerSource = readText("indexer/raffle-indexer.mjs");
 const viteSource = readText("vite.config.ts");
 const wasmSource = readText("src/kaspa/wasm.ts");
 const distFiles = fs.existsSync(path.join(root, "dist")) ? fs.readdirSync(path.join(root, "dist")) : [];
@@ -150,16 +154,17 @@ assert(
     transactionSource.includes('txIds: [stagingTxId, markerTxId]')
 );
 assert(
-  "V3.5 covenant fees and compute budgets are mass-tested",
-  metadataSource.includes('contractVersion: "raffle-v3.5-million-ticket"') &&
+  "V4 covenant fees and compute budgets are mass-tested",
+  metadataSource.includes('contractVersion: "raffle-v4-million-users"') &&
     transactionSource.includes('COVENANT_CREATE_FEE_SOMPI = 200_000n') &&
-    transactionSource.includes('COVENANT_BUY_FEE_SOMPI = 2_000_000n') &&
-    transactionSource.includes('COVENANT_FINALIZE_FEE_SOMPI = 2_000_000n') &&
-    transactionSource.includes('COVENANT_REFUND_FEE_SOMPI = 3_000_000n') &&
-    transactionSource.includes('RAFFLE_BUY_COMPUTE_BUDGET = 50') &&
-    transactionSource.includes('RAFFLE_FINALIZE_COMPUTE_BUDGET = 12') &&
+    transactionSource.includes('V4_COVENANT_BUY_FEE_SOMPI = 1_700_000n') &&
+    transactionSource.includes('V4_COVENANT_FINALIZE_FEE_SOMPI = 2_200_000n') &&
+    transactionSource.includes('V4_COVENANT_REFUND_FEE_SOMPI = 1_900_000n') &&
+    transactionSource.includes('V4_RAFFLE_BUY_COMPUTE_BUDGET = 7') &&
+    transactionSource.includes('V4_RAFFLE_FINALIZE_COMPUTE_BUDGET = 18') &&
     transactionSource.includes('RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11') &&
-    transactionSource.includes('RAFFLE_REFUND_COMPUTE_BUDGET = 20')
+    transactionSource.includes('V4_RAFFLE_REFUND_COMPUTE_BUDGET = 7') &&
+    packageJson.scripts?.["verify:fees:v4"] === "node scripts/verify-v4-fees.mjs"
 );
 assert(
   "Visible amount labels use KAS instead of sompi",
@@ -199,7 +204,9 @@ assert("Finalize is gated by covenant readiness", appSource.includes("assertRaff
 assert("Finalize builder is wired", transactionSource.includes("finalizeRaffleCovenantRound") && !appSource.includes("builder is not wired yet"));
 assert(
   "Finalize automatically creates a local oracle attestation",
-  appSource.includes("finalizeOracleSeed = randomHex(32)") && appSource.includes("signOracleSeed(signingOracleKey, finalizeOracleSeed)")
+  appSource.includes("finalizeOracleSeed = randomHex(32)") &&
+    appSource.includes("signOracleSeed(signingOracleKey, closedRound.ticketRoot, finalizeOracleSeed)") &&
+    v4ContractSource.includes("sha256(byte[](ticket_root) + byte[](oracle_seed))")
 );
 assert(
   "Finalize is allowed only when sold out or timed out",
@@ -240,21 +247,26 @@ assert(
     covenantSource.includes("raffleArtifactForRedeemScript")
 );
 assert(
-  "Batch purchases scale to 1000000 tickets without expanding browser records",
-  contractSource.includes("max_tickets <= 1000000") &&
+  "One million independent users use a compact Merkle state",
+  v4ContractSource.includes("max_tickets <= 1000000") &&
     metadataSource.includes("maxTickets > 1_000_000") &&
-    appSource.includes("max={1_000_000}") &&
-    contractSource.includes("sold_batches < 20") &&
-    transactionSource.includes("ticketCount: number") &&
-    transactionSource.includes("lowCostFundingAmount(purchaseAmount, COVENANT_BUY_FEE_SOMPI)") &&
-    ticketRangeSource.includes("totalTicketCount") &&
-    appSource.includes("findTicketRange(tickets, winnerIndex + 1)") &&
-    !appSource.includes("Array.from({ length: quantity }")
+    v4ContractSource.includes("byte[640] frontier") &&
+    v4ContractSource.includes("entrypoint function refundNext") &&
+    merkleSource.includes("TICKET_MERKLE_DEPTH = 20") &&
+    transactionSource.includes("appendTicketLeaf") &&
+    transactionSource.includes("Million-user rounds accept exactly one ticket per purchase") &&
+    indexerSource.includes("getVirtualChainFromBlockV2") &&
+    indexerSource.includes("owners") &&
+    packageJson.scripts?.["verify:users:1m"] === "node scripts/verify-million-users.mjs" &&
+    packageJson.scripts?.["verify:indexer"] === "node scripts/verify-indexer.mjs"
 );
 assert(
-  "Million-ticket Toccata fee verifier is part of npm verify",
+  "Million-user and V4 fee verifiers are part of npm verify",
   packageJson.scripts?.["verify:fees:1m"] === "node scripts/verify-million-ticket-fees.mjs" &&
-    packageJson.scripts?.verify?.includes("verify-million-ticket-fees.mjs")
+    packageJson.scripts?.verify?.includes("verify-million-ticket-fees.mjs") &&
+    packageJson.scripts?.verify?.includes("verify-v4-fees.mjs") &&
+    packageJson.scripts?.verify?.includes("verify-million-users.mjs") &&
+    packageJson.scripts?.verify?.includes("verify-indexer.mjs")
 );
 assert(
   "Winner owner is enforced on chain",
@@ -298,7 +310,9 @@ if (covenantCompiled) {
 
 assert(
   "Covenant status helper enables runtime artifact",
-  covenantSource.includes('artifact.contract === "RaffleRound"') && covenantSource.includes("assertRaffleCovenantReady")
+  covenantSource.includes('artifact.contract === "RaffleRoundV4"') &&
+    v4Artifact.contract === "RaffleRoundV4" &&
+    covenantSource.includes("assertRaffleCovenantReady")
 );
 
 for (const check of checks) {

@@ -1,19 +1,19 @@
 # Current Project Status and Backlog
 
-This file reflects the current v3.5 implementation. The original milestone checklists in GitHub Issues were created before the covenant design stabilized and are being closed or rewritten where the implemented architecture superseded them.
+This file reflects the current v4 million-user implementation.
 
 ## Implemented
 
 - Self-contained static React/TypeScript SPA and single-file release build.
 - Mainnet/Testnet 10 network profiles with strict node and wallet validation.
 - KasWare and Kastle wallet adapter registry.
-- Compiled Silverscript `RaffleRound` artifact and legacy artifact compatibility.
-- Stateful covenant create and batched buy flow.
-- Up to 1,000,000 tickets in at most 20 purchase batches, stored as compact ticket ranges in the browser and History loader.
-- Participant-only direct finalize with winner payment in the covenant transaction.
-- Walletless all-buyer refund after the DAA timeout.
-- Registry-based browser history and shared round links.
-- Three-round real-network regression loop, including History load before finalize.
+- Compiled `RaffleRoundV4` artifact with legacy v1-v3.5 compatibility.
+- Depth-20 append-only ticket tree for 1,000,000 independent one-ticket users.
+- Participant-only direct finalize with winner and caller Merkle proofs.
+- Walletless sequential refunds after the DAA timeout.
+- Confirmed-chain cursor and proof indexer with fixed-size ticket records, disk Merkle levels, crash checkpoints, and deep-reorg rebuild.
+- Full one-million-record index benchmark with cold rebuild, warm restart, proof latency, disk, and RSS measurements.
+- Three-round v4 real-network regression: 10-ticket History-loaded finalize, 3-ticket finalize, and 2-ticket History-loaded refund.
 
 ## Superseded Original Tasks
 
@@ -24,10 +24,9 @@ This file reflects the current v3.5 implementation. The original milestone check
 
 ## Open Hardening Work
 
-- Define and test a chain reorganization rollback strategy.
-- Persist scanner checkpoints and resume long histories incrementally.
+- Replace the recoverable development oracle with an independent verifiable or threshold randomness service.
+- Investigate storage-safe multiproof refund batches to reduce one transaction per refunded ticket.
 - Improve stale-round contention guidance and optionally offer an explicit reload-and-retry action.
-- Replace the deterministic development oracle with a production-grade randomness source.
 - Arrange independent covenant and transaction-builder security review.
 - Add repeatable automated browser transaction tests where a funded disposable test network is available.
 

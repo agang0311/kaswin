@@ -6,9 +6,11 @@ import process from "node:process";
 
 const root = process.cwd();
 const silverscriptDir = path.join(root, ".tools", "silverscript");
-const sourcePath = path.join(root, "src", "contracts", "raffle_round.sil");
-const outputPath = path.join(root, "src", "contracts", "compiled", "raffle-round.silverc.json");
-const runtimeArtifactPath = path.join(root, "src", "contracts", "compiled", "raffle-round.artifact.json");
+const sourceName = process.argv[2] ?? "raffle_round";
+const artifactName = sourceName.replaceAll("_", "-");
+const sourcePath = path.join(root, "src", "contracts", `${sourceName}.sil`);
+const outputPath = path.join(root, "src", "contracts", "compiled", `${artifactName}.silverc.json`);
+const runtimeArtifactPath = path.join(root, "src", "contracts", "compiled", `${artifactName}.artifact.json`);
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -117,7 +119,7 @@ const stateFields = compiled.ast.fields.map((field) => ({
 const runtimeArtifact = {
   contract: compiled.contract_name,
   compilerVersion: compiled.compiler_version,
-  source: "../raffle_round.sil",
+  source: `../${sourceName}.sil`,
   generatedAt: new Date().toISOString(),
   script: Buffer.from(compiled.script).toString("hex"),
   scriptLength: compiled.script.length,

@@ -6,6 +6,7 @@ import {
   type ScriptPublicKey
 } from "@onekeyfe/kaspa-wasm";
 import raffleRoundArtifact from "../contracts/compiled/raffle-round.artifact.json";
+import raffleRoundV4Artifact from "../contracts/compiled/raffle-round-v4.artifact.json";
 import raffleRoundV1Artifact from "../contracts/compiled/raffle-round-v1.artifact.json";
 import raffleRoundV2Artifact from "../contracts/compiled/raffle-round-v2.artifact.json";
 import raffleRoundV3BetaArtifact from "../contracts/compiled/raffle-round-v3-beta.artifact.json";
@@ -15,6 +16,7 @@ import raffleRoundV33Artifact from "../contracts/compiled/raffle-round-v3.3.arti
 import raffleRoundV34Artifact from "../contracts/compiled/raffle-round-v3.4.artifact.json";
 import raffleRoundManifest from "../contracts/compiled/raffle-round.manifest.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
+import { TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX, TICKET_MERKLE_PROOF_BYTES } from "../raffle/merkle";
 import type { RoundState } from "../raffle/types";
 import { ensureKaspaWasmReady } from "./wasm";
 
@@ -64,12 +66,13 @@ interface RaffleRoundRuntimeArtifact {
   stateFields: RuntimeStateField[];
 }
 
-export type RaffleCovenantEntrypoint = "buy" | "close" | "finalize" | "refund_all";
+export type RaffleCovenantEntrypoint = "buy" | "close" | "finalize" | "refund_all" | "refund_next";
 export type RaffleCovenantStateValue = bigint | Uint8Array;
 export type RaffleCovenantStateValues = Record<string, RaffleCovenantStateValue>;
 
 const manifest = raffleRoundManifest as RaffleRoundManifest;
-const artifact = raffleRoundArtifact as RaffleRoundRuntimeArtifact;
+const artifact = raffleRoundV4Artifact as RaffleRoundRuntimeArtifact;
+const legacyV35Artifact = raffleRoundArtifact as RaffleRoundRuntimeArtifact;
 const legacyV1Artifact = raffleRoundV1Artifact as RaffleRoundRuntimeArtifact;
 const legacyV2Artifact = raffleRoundV2Artifact as RaffleRoundRuntimeArtifact;
 const legacyV3BetaArtifact = raffleRoundV3BetaArtifact as RaffleRoundRuntimeArtifact;
@@ -85,19 +88,20 @@ const LEGACY_V3_2_CONTRACT_VERSION = "raffle-v3.2-participant-finalize";
 export const LEGACY_V3_3_CONTRACT_VERSION = "raffle-v3.3-participant-finalize-fee40";
 export const LEGACY_V3_4_CONTRACT_VERSION = "raffle-v3.4-low-fee";
 export const PARTICIPANT_FINALIZE_CONTRACT_VERSION = "raffle-v3.5-million-ticket";
+export const MILLION_USER_CONTRACT_VERSION = "raffle-v4-million-users";
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
-const BYTES32_STATE_BYTES = 32;
 
 const entrypointNames: Record<RaffleCovenantEntrypoint, string> = {
   buy: "buy",
   close: "close",
   finalize: "finalize",
-  refund_all: "refund_all"
+  refund_all: "refund_all",
+  refund_next: "refundNext"
 };
 
 export function getRaffleCovenantStatus(): CovenantArtifactStatus {
-  const enabled = artifact.contract === "RaffleRound" && Boolean(artifact.script) && artifact.abi.length > 0;
+  const enabled = artifact.contract === "RaffleRoundV4" && Boolean(artifact.script) && artifact.abi.length > 0;
 
   return {
     enabled,
@@ -111,13 +115,20 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
 }
 
 export function isParticipantFinalizeContractVersion(contractVersion: string): boolean {
-  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ||
+  return contractVersion === MILLION_USER_CONTRACT_VERSION ||
+    contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ||
     contractVersion === LEGACY_V3_4_CONTRACT_VERSION ||
     contractVersion === LEGACY_V3_3_CONTRACT_VERSION;
 }
 
 export function isLowFeeContractVersion(contractVersion: string): boolean {
-  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION || contractVersion === LEGACY_V3_4_CONTRACT_VERSION;
+  return contractVersion === MILLION_USER_CONTRACT_VERSION ||
+    contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ||
+    contractVersion === LEGACY_V3_4_CONTRACT_VERSION;
+}
+
+export function isMillionUserContractVersion(contractVersion: string): boolean {
+  return contractVersion === MILLION_USER_CONTRACT_VERSION;
 }
 
 export function assertRaffleCovenantReady(): void {
@@ -165,31 +176,43 @@ export function raffleStatusCode(status: RoundState["status"]): bigint {
   }
 }
 
-export function emptyRaffleCovenantState(): RaffleCovenantStateValues {
+export function emptyRaffleCovenantState(
+  runtimeArtifact: RaffleRoundRuntimeArtifact = artifact
+): RaffleCovenantStateValues {
   return Object.fromEntries(
-    artifact.stateFields.map((field) => [
+    runtimeArtifact.stateFields.map((field) => [
       field.name,
-      field.type === "byte[32]" ? hexToBytes(ZERO32_HEX) : 0n
+      field.type === "int" ? 0n : new Uint8Array(fixedByteStateLength(field.type, field.name))
     ])
   );
 }
 
 export async function raffleCovenantStateFromRound(round: RoundState): Promise<RaffleCovenantStateValues> {
-  const state = emptyRaffleCovenantState();
+  const runtimeArtifact = raffleArtifactForContractVersion(round.contractVersion);
+  const state = emptyRaffleCovenantState(runtimeArtifact);
   const creatorPublicKey = bytes32FromHex(round.creatorPubkey, "creator public key");
   const oraclePublicKey = bytes32FromHex(round.oraclePublicKey, "oracle public key");
-  const ticketRoot = round.ticketRoot ? bytes32FromHex(round.ticketRoot, "ticket root") : hexToBytes(ZERO32_HEX);
+  const ticketRoot = round.ticketRoot
+    ? bytes32FromHex(round.ticketRoot, "ticket root")
+    : hexToBytes(isMillionUserContractVersion(round.contractVersion) ? TICKET_EMPTY_ROOT_HEX : ZERO32_HEX);
 
   state.max_tickets = BigInt(round.maxTickets);
   state.ticket_price = round.ticketPrice;
   state.creator_pubkey = creatorPublicKey;
   state.refund_after_daa = BigInt(round.refundAfterDaaScore || "0");
   state.sold_tickets = BigInt(round.soldTickets);
-  state.sold_batches = BigInt(round.soldBatches);
+  if ("sold_batches" in state) state.sold_batches = BigInt(round.soldBatches);
   state.oracle_pubkey = oraclePublicKey;
   state.ticket_root = ticketRoot;
 
-  for (let index = 0; index < 20; index += 1) {
+  if ("frontier" in state) {
+    const frontier = hexToBytes(round.ticketFrontier || TICKET_EMPTY_FRONTIER_HEX);
+    if (frontier.length !== TICKET_MERKLE_PROOF_BYTES) throw new Error("Ticket frontier must be exactly 640 bytes.");
+    state.frontier = frontier;
+  }
+  if ("refund_cursor" in state) state.refund_cursor = BigInt(round.refundCursor ?? 0);
+
+  for (let index = 0; index < 20 && `owner_${String(index + 1).padStart(2, "0")}` in state; index += 1) {
     const suffix = String(index + 1).padStart(2, "0");
     const fieldName = `owner_${suffix}`;
     const ownerPubkey = round.ticketOwnerPubkeys[index];
@@ -236,21 +259,7 @@ export function buildRaffleRedeemScriptForContractVersion(
   state: RaffleCovenantStateValues,
   contractVersion?: string
 ): Uint8Array {
-  const runtimeArtifact = contractVersion === LEGACY_V1_CONTRACT_VERSION
-    ? legacyV1Artifact
-    : contractVersion === LEGACY_V2_CONTRACT_VERSION
-      ? legacyV2Artifact
-      : contractVersion === LEGACY_V3_BETA_CONTRACT_VERSION
-        ? legacyV3BetaArtifact
-        : contractVersion === LEGACY_V3_1_CONTRACT_VERSION
-          ? legacyV31Artifact
-          : contractVersion === LEGACY_V3_2_CONTRACT_VERSION
-            ? legacyV32Artifact
-          : contractVersion === LEGACY_V3_3_CONTRACT_VERSION
-            ? legacyV33Artifact
-          : contractVersion === LEGACY_V3_4_CONTRACT_VERSION
-            ? legacyV34Artifact
-          : artifact;
+  const runtimeArtifact = raffleArtifactForContractVersion(contractVersion);
 
   return buildRaffleRedeemScript(state, runtimeArtifact);
 }
@@ -303,6 +312,12 @@ export function buildRaffleBuySignatureScript(
   const ownerPubkey = bytes32FromHex(ownerPubkeyHex, "ticket owner public key");
 
   return buildRaffleP2shSignatureScript("buy", currentRedeemScript, (builder, _runtimeArtifact, entry) => {
+    if (entry.inputs.length === 1) {
+      if (ticketCount !== 1) throw new Error("Million-user rounds accept exactly one ticket per purchase.");
+      builder.addData(ownerPubkey);
+      return;
+    }
+
     builder.addData(nextTicketRoot);
     builder.addData(ownerPubkey);
 
@@ -324,7 +339,10 @@ export function buildRaffleFinalizeSignatureScript(
   oracleSeedHex: string,
   winnerTicketId: number,
   winnerScriptPublicKey: ScriptPublicKey,
-  callerScriptPublicKey: ScriptPublicKey
+  callerScriptPublicKey: ScriptPublicKey,
+  winnerProofHex?: string,
+  callerTicketId?: number,
+  callerProofHex?: string
 ): string {
   const oracleSignature = hexToBytes(oracleSignatureHex);
   const oracleSeed = bytes32FromHex(oracleSeedHex, "oracle seed");
@@ -342,12 +360,37 @@ export function buildRaffleFinalizeSignatureScript(
     builder.addData(oracleSeed);
     builder.addI64(BigInt(winnerTicketId));
     builder.addData(pubkeyFromP2pkScriptPublicKey(winnerScriptPublicKey));
+
+    if (entry.inputs.length >= 8) {
+      if (!winnerProofHex || callerTicketId === undefined || !callerProofHex) {
+        throw new Error("Million-user finalize requires winner and caller Merkle proofs.");
+      }
+      builder.addData(ticketProofFromHex(winnerProofHex, "winner"));
+      builder.addI64(BigInt(callerTicketId));
+      builder.addData(pubkeyFromP2pkScriptPublicKey(callerScriptPublicKey));
+      builder.addData(ticketProofFromHex(callerProofHex, "caller"));
+      return;
+    }
+
     builder.addData(pubkeyFromP2pkScriptPublicKey(callerScriptPublicKey));
   });
 }
 
 export function buildRaffleRefundAllSignatureScript(currentRedeemScript: Uint8Array): string {
   return buildRaffleP2shSignatureScript("refund_all", currentRedeemScript);
+}
+
+export function buildRaffleRefundNextSignatureScript(
+  currentRedeemScript: Uint8Array,
+  ticketId: number,
+  ownerPubkeyHex: string,
+  ownerProofHex: string
+): string {
+  return buildRaffleP2shSignatureScript("refund_next", currentRedeemScript, (builder) => {
+    builder.addI64(BigInt(ticketId));
+    builder.addData(bytes32FromHex(ownerPubkeyHex, "refund owner public key"));
+    builder.addData(ticketProofFromHex(ownerProofHex, "refund owner"));
+  });
 }
 
 export function buildNextTicketRootHex(
@@ -415,7 +458,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [artifact, legacyV34Artifact, legacyV33Artifact, legacyV32Artifact, legacyV31Artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
+  const candidates = [artifact, legacyV35Artifact, legacyV34Artifact, legacyV33Artifact, legacyV32Artifact, legacyV31Artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);
@@ -459,18 +502,62 @@ function encodeStateField(field: RuntimeStateField, value: RaffleCovenantStateVa
     return encoded;
   }
 
-  if (field.type === "byte[32]") {
-    if (!(value instanceof Uint8Array) || value.length !== BYTES32_STATE_BYTES) {
-      throw new Error(`State field ${field.name} must be exactly 32 bytes.`);
+  if (field.type.startsWith("byte[")) {
+    const length = fixedByteStateLength(field.type, field.name);
+    if (!(value instanceof Uint8Array) || value.length !== length) {
+      throw new Error(`State field ${field.name} must be exactly ${length} bytes.`);
     }
-
-    const encoded = new Uint8Array(1 + BYTES32_STATE_BYTES);
-    encoded[0] = BYTES32_STATE_BYTES;
-    encoded.set(value, 1);
-    return encoded;
+    return encodeScriptDataPush(value);
   }
 
   throw new Error(`Unsupported covenant state field type ${field.type} for ${field.name}.`);
+}
+
+function raffleArtifactForContractVersion(contractVersion?: string): RaffleRoundRuntimeArtifact {
+  return contractVersion === LEGACY_V1_CONTRACT_VERSION
+    ? legacyV1Artifact
+    : contractVersion === LEGACY_V2_CONTRACT_VERSION
+      ? legacyV2Artifact
+      : contractVersion === LEGACY_V3_BETA_CONTRACT_VERSION
+        ? legacyV3BetaArtifact
+        : contractVersion === LEGACY_V3_1_CONTRACT_VERSION
+          ? legacyV31Artifact
+          : contractVersion === LEGACY_V3_2_CONTRACT_VERSION
+            ? legacyV32Artifact
+            : contractVersion === LEGACY_V3_3_CONTRACT_VERSION
+              ? legacyV33Artifact
+              : contractVersion === LEGACY_V3_4_CONTRACT_VERSION
+                ? legacyV34Artifact
+                : contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION
+                  ? legacyV35Artifact
+                  : artifact;
+}
+
+function fixedByteStateLength(type: string, fieldName: string): number {
+  const match = /^byte\[(\d+)]$/.exec(type);
+  if (!match) throw new Error(`Unsupported covenant state field type ${type} for ${fieldName}.`);
+  return Number(match[1]);
+}
+
+function encodeScriptDataPush(value: Uint8Array): Uint8Array {
+  let prefix: Uint8Array;
+  if (value.length <= 75) prefix = new Uint8Array([value.length]);
+  else if (value.length <= 0xff) prefix = new Uint8Array([0x4c, value.length]);
+  else if (value.length <= 0xffff) prefix = new Uint8Array([0x4d, value.length & 0xff, value.length >> 8]);
+  else throw new Error(`Covenant state byte array is too large: ${value.length}.`);
+
+  const encoded = new Uint8Array(prefix.length + value.length);
+  encoded.set(prefix, 0);
+  encoded.set(value, prefix.length);
+  return encoded;
+}
+
+function ticketProofFromHex(proofHex: string, label: string): Uint8Array {
+  const proof = hexToBytes(proofHex);
+  if (proof.length !== TICKET_MERKLE_PROOF_BYTES) {
+    throw new Error(`${label} ticket proof must be exactly ${TICKET_MERKLE_PROOF_BYTES} bytes.`);
+  }
+  return proof;
 }
 
 function encodeScriptI64Le(value: bigint, fieldName: string): Uint8Array {

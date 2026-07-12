@@ -18,6 +18,8 @@ export interface RoundState {
   oraclePublicKey: string;
   refundAfterDaaScore: string;
   ticketRoot: string;
+  ticketFrontier?: string;
+  refundCursor?: number;
   soldBatches: number;
   ticketBatchEnds: number[];
   ticketOwnerPubkeys: string[];
@@ -57,6 +59,8 @@ export interface RaffleCovenantCursor {
   potAmount: string;
   status: RoundStatus;
   ticketRoot: string;
+  ticketFrontier?: string;
+  refundCursor?: number;
   creatorPubkey: string;
   refundAfterDaaScore: string;
   soldBatches?: number;

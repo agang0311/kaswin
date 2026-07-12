@@ -2,10 +2,13 @@ import {
   buildNextTicketRootHex,
   buildRaffleRedeemScriptForContractVersion,
   bytesToHex,
+  isMillionUserContractVersion,
   raffleCovenantStateFromRound
 } from "./covenant";
+import { appendTicketLeaf, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
 import { ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
+import { loadIndexedRaffleRounds } from "./indexer";
 
 export interface RaffleHistoryTicket {
   txId: string;
@@ -49,9 +52,11 @@ export interface RaffleHistoryRound {
   minTickets?: number;
   version?: string;
   contractVersion?: string;
+  refundCursor?: number;
   tickets: RaffleHistoryTicket[];
   payouts: RaffleHistoryPayout[];
   potAmount: bigint;
+  soldTickets?: number;
   lastBlockTime?: number;
 }
 
@@ -101,6 +106,7 @@ interface RafflePayload {
   minTickets?: number;
   createTxId?: string;
   contractVersion?: string;
+  refundCursor?: number;
 }
 
 function decodeHexPayload(hex: string): RafflePayload | null {
@@ -216,7 +222,7 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       }
     }
 
-    if (payload.type === "round-refund") {
+    if (payload.type === "round-refund" || (payload.type === "round-refund-ticket" && !outputZero(tx)?.covenant_id)) {
       round.refundTxId = tx.transaction_id;
     }
 
@@ -286,10 +292,30 @@ async function replayTicketRoot(round: RaffleHistoryRound): Promise<string> {
   return root;
 }
 
+async function replayTicketTree(round: RaffleHistoryRound): Promise<{ root: string; frontier?: string }> {
+  if (!isMillionUserContractVersion(round.contractVersion ?? "")) {
+    return { root: await replayTicketRoot(round) };
+  }
+
+  const orderedTickets = [...round.tickets].sort((left, right) => left.ticketId - right.ticketId);
+  let root = TICKET_EMPTY_ROOT_HEX;
+  let frontier = TICKET_EMPTY_FRONTIER_HEX;
+  for (let index = 0; index < orderedTickets.length; index += 1) {
+    const ticket = orderedTickets[index];
+    if (ticket.ticketId !== index + 1 || (ticket.ticketCount ?? 1) !== 1 || !ticket.buyerPubkey) {
+      throw new Error(`Round ${round.roundId} is missing canonical ticket #${index + 1}.`);
+    }
+    const appended = await appendTicketLeaf(frontier, index, ticket.buyerPubkey);
+    frontier = appended.frontierHex;
+    root = appended.rootHex;
+  }
+  return { root, frontier };
+}
+
 async function buildLatestCovenantCursor(
   round: RaffleHistoryRound,
   tx: RestTransaction,
-  status: Extract<RoundStatus, "Open" | "Closed">
+  status: Extract<RoundStatus, "Open" | "Closed" | "Refunding">
 ): Promise<RaffleCovenantCursor | undefined> {
   const output = outputZero(tx);
   const address = output?.script_public_key_address;
@@ -312,11 +338,15 @@ async function buildLatestCovenantCursor(
     return undefined;
   }
 
-  const ticketRoot = await replayTicketRoot(round);
+  const ticketTree = await replayTicketTree(round);
+  const ticketRoot = ticketTree.root;
   const orderedTickets = [...round.tickets].sort((left, right) => left.ticketId - right.ticketId);
   const batchTickets = orderedTickets;
   const ticketBatchEnds = batchTickets.map(ticketRangeEnd);
   const soldTickets = totalTicketCount(orderedTickets);
+  const txPayload = decodeHexPayload(tx.payload ?? "");
+  const refundCursor = status === "Refunding" ? Math.max(0, (txPayload?.refundCursor ?? -1) + 1) : 0;
+  const isMillionUserRound = isMillionUserContractVersion(round.contractVersion ?? "");
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
     contractVersion: round.contractVersion ?? "raffle-v1-timeout-refund",
@@ -326,7 +356,7 @@ async function buildLatestCovenantCursor(
     maxTickets: round.maxTickets,
     minTickets: round.minTickets,
     soldTickets,
-    potAmount: round.potAmount,
+    potAmount: round.ticketPrice * BigInt(Math.max(0, soldTickets - refundCursor)),
     feeBps: 0,
     status,
     randomnessMode: "oracle",
@@ -334,9 +364,11 @@ async function buildLatestCovenantCursor(
     oraclePublicKey: round.oraclePublicKey,
     refundAfterDaaScore: round.refundAfterDaaScore,
     ticketRoot,
-    soldBatches: batchTickets.length,
-    ticketBatchEnds,
-    ticketOwnerPubkeys: batchTickets.map((ticket) => ticket.buyerPubkey ?? "")
+    ticketFrontier: ticketTree.frontier,
+    refundCursor,
+    soldBatches: isMillionUserRound ? 0 : batchTickets.length,
+    ticketBatchEnds: isMillionUserRound ? [] : ticketBatchEnds,
+    ticketOwnerPubkeys: isMillionUserRound ? [] : batchTickets.map((ticket) => ticket.buyerPubkey ?? "")
   };
   const covenantState = await raffleCovenantStateFromRound(stateRound);
 
@@ -351,6 +383,8 @@ async function buildLatestCovenantCursor(
     potAmount: stateRound.potAmount.toString(),
     status,
     ticketRoot,
+    ticketFrontier: ticketTree.frontier,
+    refundCursor,
     creatorPubkey: stateRound.creatorPubkey,
     refundAfterDaaScore: stateRound.refundAfterDaaScore,
     soldBatches: stateRound.soldBatches,
@@ -368,7 +402,7 @@ async function traceRoundCovenantHistory(
   let currentAddress = round.treasuryAddress;
   let previousTxId = round.createTxId;
   let latestCovenantTransaction: RestTransaction | undefined;
-  let latestStatus: Extract<RoundStatus, "Open" | "Closed"> | undefined = "Open";
+  let latestStatus: Extract<RoundStatus, "Open" | "Closed" | "Refunding"> | undefined = "Open";
   let finalized = false;
   const visitedAddresses = new Set<string>();
   const visitedTransactions = new Set<string>();
@@ -394,7 +428,7 @@ async function traceRoundCovenantHistory(
           tx.transaction_id &&
           tx.transaction_id !== previousTxId &&
           !visitedTransactions.has(tx.transaction_id) &&
-          (payload.type === "ticket" || payload.type === "round-close" || payload.type === "round-finalize" || payload.type === "round-refund")
+          (payload.type === "ticket" || payload.type === "round-close" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-ticket")
         );
       })
       .sort((left, right) => compareByTimeAsc(eventTime(left), eventTime(right)))[0];
@@ -413,8 +447,13 @@ async function traceRoundCovenantHistory(
       break;
     }
 
+    if (payload?.type === "round-refund-ticket" && !outputZero(nextSpend)?.covenant_id) {
+      finalized = true;
+      break;
+    }
+
     latestCovenantTransaction = nextSpend;
-    latestStatus = payload?.type === "round-close" ? "Closed" : "Open";
+    latestStatus = payload?.type === "round-close" ? "Closed" : payload?.type === "round-refund-ticket" ? "Refunding" : "Open";
     currentAddress = nextCovenantAddressFromTransaction(nextSpend);
   }
 
@@ -439,6 +478,7 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
   applyHistoryTransactions(rounds, registryTransactions);
 
   for (const round of [...rounds.values()]) {
+    if (isMillionUserContractVersion(round.contractVersion ?? "")) continue;
     await traceRoundCovenantHistory(apiBaseUrl, rounds, round, limit);
   }
 
@@ -449,4 +489,83 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
       payouts: round.payouts.sort((left, right) => compareByTimeDesc(left.blockTime, right.blockTime))
     }))
     .sort((left, right) => compareByTimeDesc(left.lastBlockTime, right.lastBlockTime));
+}
+
+export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<RaffleHistoryRound[]> {
+  const indexedRounds = await loadIndexedRaffleRounds(apiBaseUrl);
+  return Promise.all(indexedRounds.map(async (indexed): Promise<RaffleHistoryRound> => {
+    const ticketPrice = BigInt(indexed.ticketPrice || "0");
+    let latestCovenant: RaffleCovenantCursor | undefined;
+
+    if (
+      indexed.latestCovenant &&
+      indexed.creator &&
+      indexed.creatorPubkey &&
+      indexed.oraclePublicKey &&
+      indexed.maxTickets !== undefined &&
+      indexed.minTickets !== undefined
+    ) {
+      const stateRound: RoundState = {
+        appId: "KASPA_RAFFLE_ROUND_V1",
+        contractVersion: indexed.contractVersion,
+        roundId: indexed.roundId,
+        creator: indexed.creator,
+        ticketPrice,
+        maxTickets: indexed.maxTickets,
+        minTickets: indexed.minTickets,
+        soldTickets: indexed.soldTickets,
+        potAmount: BigInt(indexed.latestCovenant.potAmount),
+        feeBps: 0,
+        status: indexed.latestCovenant.status,
+        randomnessMode: "oracle",
+        creatorPubkey: indexed.creatorPubkey,
+        oraclePublicKey: indexed.oraclePublicKey,
+        refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
+        ticketRoot: indexed.ticketRoot,
+        ticketFrontier: indexed.ticketFrontier,
+        refundCursor: indexed.refundCursor,
+        soldBatches: 0,
+        ticketBatchEnds: [],
+        ticketOwnerPubkeys: []
+      };
+      const state = await raffleCovenantStateFromRound(stateRound);
+      latestCovenant = {
+        ...indexed.latestCovenant,
+        covenantId: indexed.covenantId || indexed.latestCovenant.covenantId,
+        redeemScriptHex: bytesToHex(buildRaffleRedeemScriptForContractVersion(state, indexed.contractVersion)),
+        creatorPubkey: indexed.creatorPubkey,
+        refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
+        ticketOwnerPubkeys: []
+      };
+    }
+
+    return {
+      roundId: indexed.roundId,
+      registryAddress: indexed.registryAddress,
+      createTxId: indexed.createTxId,
+      refundTxId: indexed.refundTxId,
+      covenantId: indexed.covenantId,
+      latestCovenant,
+      creator: indexed.creator,
+      creatorPubkey: indexed.creatorPubkey,
+      oraclePublicKey: indexed.oraclePublicKey,
+      refundTimeoutSeconds: indexed.refundTimeoutSeconds,
+      createdAtDaaScore: indexed.createdAtDaaScore,
+      refundAfterDaaScore: indexed.refundAfterDaaScore,
+      ticketPrice,
+      maxTickets: indexed.maxTickets,
+      minTickets: indexed.minTickets,
+      version: indexed.version,
+      contractVersion: indexed.contractVersion,
+      tickets: [],
+      payouts: indexed.finalized ? [{
+        txId: indexed.finalized.txId,
+        winnerTicketId: indexed.finalized.winnerTicketId,
+        winnerAddress: indexed.finalized.winnerAddress,
+        amount: BigInt(indexed.finalized.amount)
+      }] : [],
+      potAmount: ticketPrice * BigInt(indexed.soldTickets),
+      soldTickets: indexed.soldTickets
+    };
+  }));
 }

@@ -105,6 +105,7 @@ const en: Record<string, string> = {
   "noIndexedRounds": "No indexed rounds loaded yet.",
   "historySource": "History source",
   "restApi": "REST API",
+  "raffleIndexApi": "Raffle index API",
   "actionTabs": "Participate or pay out",
   "buyTickets": "Buy tickets",
   "participant": "Participant",
@@ -168,7 +169,8 @@ const en: Record<string, string> = {
   "cost.create.retained": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the default registry + variable registry payment fee. The registry marker remains at the destination. Carrier returns when the round ends.",
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
   "cost.payout": "{prize} prize from the pot + {fee} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.",
-  "cost.refund": "{refund} ticket refunds from the pot + {fee} covenant fee from the carrier. Wallet payment: 0 KAS."
+  "cost.refund": "{refund} ticket refunds from the pot + {fee} covenant fee from the carrier. Wallet payment: 0 KAS.",
+  "cost.refund.v4": "The next ticket receives its price minus the {fee} covenant fee. Anyone may broadcast after timeout; wallet payment: 0 KAS."
 };
 
 const zh: Record<string, string> = {
@@ -275,6 +277,8 @@ const zh: Record<string, string> = {
   "noIndexedRounds": "尚未加载已索引的抽奖。",
   "historySource": "历史数据源",
   "restApi": "REST API",
+  "raffleIndexApi": "抽奖索引 API",
+  "cost.refund.v4": "下一张票退还票价并扣除 {fee} covenant 费用。超时后任何人都可广播；钱包支付：0 KAS。",
   "actionTabs": "购票或派奖",
   "buyTickets": "购买抽奖票",
   "participant": "参与者",

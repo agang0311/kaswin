@@ -21,6 +21,11 @@ Runs the same checks with the release gate enabled. This command must fail if th
 
 ```bash
 npm run compile:contract
+npm run compile:contract:v4
+npm run verify:contract:v4
+npm run verify:fees:v4
+npm run verify:users:1m
+npm run verify:indexer
 ```
 
 Runs the local `kaspanet/silverscript` compiler from `.tools/silverscript`. On Windows, the script uses Rust GNU plus MSYS2 MinGW and injects a temporary RISC0 allocation stub required by the current `kaspa-txscript` dependency graph.
@@ -35,15 +40,14 @@ Use a dedicated testnet wallet only. The public endpoint name contains `tn12`, b
 2. Open the app in Chrome.
 3. Select Testnet 10 and connect to `ws://tn12-node.kaspa.com:18210`; the node must report the selected network.
 4. Load the shared round URL or paste the round metadata JSON.
-5. Import a funded TN12 buyer wallet.
-6. Buy a ticket batch and confirm the page displays one ticket-number range instead of one row per ticket.
-7. Run at least three complete create/buy/finalize rounds; one round must contain 10 tickets.
-8. Run `npm run verify:fees:1m` to construct the one-million-ticket and 20-batch worst-case transaction fixtures.
-9. Confirm v3.5 round creation uses the default `0.2 KAS` carrier reserve, rejects values below `0.1 KAS`, and stores the creator address for refund.
-10. Confirm the fee verifier distinguishes fee insufficiency from the expected storage rejection for a maximally skewed 20-batch refund.
-10. Finalize after the round sells out; the page should create the development oracle attestation automatically.
-11. Load at least one sold-out round through History before finalizing it.
-12. Confirm the winning output is paid by the covenant finalize transaction itself and any large carrier remainder is refunded to the creator.
+5. Connect a funded disposable TN10 wallet; local private-key adapters are development-only.
+6. Buy one ticket per transaction and confirm the Merkle cursor advances.
+7. Run at least three complete rounds; one must contain 10 tickets and one must exercise timeout refunds.
+8. Load at least one round through the index-backed History view before finalize or refund.
+9. Run the v4 contract, fee, million-user, and indexer verifiers listed above.
+10. Confirm round creation uses the default `0.2 KAS` carrier and rejects values below `0.1 KAS`.
+11. Confirm finalize pays the winner, returns the authorization UTXO unchanged, and returns carrier minus the fixed fee.
+12. Confirm every refund pays the proven ticket owner, advances `refundCursor`, and returns carrier on the last ticket.
 
 ## Current Expected Result
 
@@ -55,10 +59,41 @@ A passing release run requires all of the following:
 - The compiled runtime artifact has script bytes, ABI data, and the expected primitive state layout.
 - Browser transaction builders create the round covenant UTXO, ticket transition spends, direct finalize termination spend, and timeout refund spend.
 - The covenant permits finalize only after all tickets sell or the configured DAA deadline arrives.
-- The covenant supports up to 1,000,000 tickets through at most 20 purchase batches, keeps browser records compressed by range, and verifies the winning batch owner on chain.
+- The covenant supports 1,000,000 distinct one-ticket users with a depth-20 root/frontier state.
+- Finalize verifies independent winner and caller proofs; refund verifies the cursor ticket proof.
+- The confirmed-chain indexer serves the latest covenant cursor and proofs without browser-side million-hop address tracing.
 - Finalize output 0 pays the winning ticket owner directly from the covenant pot.
 - No treasury private key or manual `Pay prize` path exists in the UI.
 - `dist/` contains only a self-contained `index.html` with the Kaspa WASM embedded.
+
+## Verified V4 Runs (2026-07-12)
+
+- `round-d8769ebd3aa34421`: 10 separate purchases, loaded from History, winner #2, payout `62e8f9e45f365c79ae814643b662463cd08b0a6a7a48539f3cea28ae434c4095` (`3 KAS`).
+- `round-cdacdd9b6a09331e`: 3 separate purchases, winner #3, payout `1de1141ef0ddcbc63cb3546bfd72540d998c4d7f81fc256f2990bcf7cd9527ce` (`0.9 KAS`).
+- `round-cb1cc2194edbce86`: 2 separate purchases, 30-second timeout, loaded from History, first refund `902d32c553586369b3a40cb41e9d467186027548de4a28a1c7724aee23e19f91`, final refund `f62c7646d55ad230272b356a0656d56e9a394dffb6aa2eac7e7e0c17153ed7ff`.
+
+The first finalize attempt exposed a real-node unit total of `150587` against a `149999` commitment. V4 now commits budget 18 (`189999` total allowance); transient mass still determines the `0.022 KAS` configured finalize fee.
+
+The root-bound oracle template was then exercised in three additional rounds:
+
+- `round-c9312e27bce5542e`: one ticket, direct payout `e9ab80b00896bada834bd99b70df7557c6ad352b8a318325992cff15c7d3b07e`.
+- `round-33f0472457bb53c7`: one ticket, loaded through History, payout `5cb17ffe9ace35decf6c111a88f36b1833e2d439fbf26083d41865c11ddd4b4d`.
+- `round-52ef2093c0908a32`: one ticket, loaded through History, timeout refund `4fcc89d2d76c149ff7316344be665c58c1fe54af392487fd0e0d76567c3e05a8`; the reorg-aware index now reports `Refunded` with cursor 1.
+
+## Million-Record Index Benchmark (2026-07-12)
+
+`npm run benchmark:indexer:1m` generated 1,000,000 fixed 64-byte ticket records and verified the first, middle, and last depth-20 proofs plus owner lookup against root `8b5aedb02306c1dedef54f80f1667cbf30494b533e42705dafed16094cced900`.
+
+| Metric | Result |
+| --- | ---: |
+| cold derived-index rebuild | 298.15 s |
+| checkpoint restart | 0.27 s |
+| first / middle / last proof | 5.00 / 1.93 / 1.36 ms |
+| millionth-owner lookup | 19.60 ms |
+| fixture disk bytes | 164,003,779 |
+| warm indexer RSS | 79,523,840 |
+
+The deterministic index fixture also simulates a crash after event-log append but before state checkpoint, then removes the third ticket's confirmed block and rebuilds the correct two-ticket root from the migration baseline.
 
 ## Verified TN12 Runs (2026-07-11)
 

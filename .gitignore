@@ -8,5 +8,7 @@ wallets/
 !.env.example
 *.local
 coverage/
+.tmp/
+.index-data/
 *.log
 *.tsbuildinfo

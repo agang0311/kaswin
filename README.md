@@ -2,7 +2,7 @@
 
 Static raffle dApp for Kaspa Toccata with Mainnet and Testnet 10 profiles.
 
-The app is designed to run without a project-controlled backend. Users provide a browser-compatible Kaspa wRPC endpoint, connect a supported browser wallet, approve funding transaction signatures in the wallet, and reconstruct raffle state from chain data.
+The release UI is a self-contained static HTML file. Users provide a browser-compatible Kaspa wRPC endpoint and connect a supported browser wallet. Small rounds can still be reconstructed directly from explorer data; million-user rounds use the included optional indexer for current covenant cursors and Merkle witnesses.
 
 ## Documentation
 
@@ -14,7 +14,7 @@ The app is designed to run without a project-controlled backend. Users provide a
 
 ## Current Status
 
-The current v0.1.14 implementation includes:
+The current v0.2.0 implementation includes:
 
 - Single-file React + TypeScript SPA build
 - English and Chinese interfaces with a persistent language selector in the top-right corner
@@ -26,7 +26,11 @@ The current v0.1.14 implementation includes:
 - Funding transactions signed by the selected wallet; the page never receives the wallet private key
 - Creator-selected Registry address with explicit marker amount, payment fee, and refund behavior
 - Network-specific default Registry addresses; Mainnet uses `kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh`
-- Browser-side testnet ticket purchase transactions
+- One-ticket-per-user v4 purchases backed by a depth-20 append-only Merkle tree
+- A compact 787-byte covenant state supporting 1,000,000 distinct ticket owners
+- Participant-only finalize with winner and caller Merkle proofs
+- Sequential walletless timeout refunds that force each payment to the proven ticket owner
+- A confirmed-chain, reorg-aware disk indexer that serves the latest covenant cursor and 640-byte ticket proofs
 - Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
 - Shareable round links for participant entry
@@ -34,11 +38,11 @@ The current v0.1.14 implementation includes:
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-The current flow builds browser-side Toccata covenant transactions for round creation, batched ticket buys, direct finalize, and timeout refunds. One purchase can cover many sequential ticket numbers, allowing up to 1,000,000 tickets while keeping at most 20 on-chain purchase batches. New testnet rounds use a round-specific open development oracle key that any browser can reconstruct after loading history, so the creator does not need to return for finalization. This convenience mode is not a production randomness oracle; legacy rounds created with random creator-only oracle keys still require the original browser, an external attestation, or timeout refund. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
+The current flow builds browser-side Toccata v1 transactions for round creation, single-ticket buys, direct finalize, and cursor-based timeout refunds. New testnet rounds still use a round-specific open development oracle key so the creator does not need to return. This key is intentionally recoverable and is not a production randomness source: a production release must use an independent verifiable or threshold oracle before real-value deployment.
 
 ## Covenant Direction
 
-The covenant keeps the pot in a `RaffleRound` covenant UTXO. Ticket purchases spend the current round state into the next state. Each purchase stores its ending ticket number and owner public key, so finalize can prove that the payout address owns the winning ticket without storing one owner per ticket. The oracle public key and ticket root remain native `byte[32]` state fields. Finalization is valid only when all tickets have sold or the configured DAA deadline has arrived. It computes the winner, verifies the owner, pays the prize, and refunds the carrier to the creator in the same transaction.
+The v4 covenant keeps the pot in one `RaffleRoundV4` UTXO. Every purchase appends `sha256(owner_pubkey)` to a depth-20 tree and stores only the root plus a 640-byte frontier. Finalize verifies both the winning ticket and the caller's participant proof, pays the prize, returns the caller authorization UTXO unchanged, and refunds the carrier atomically. After timeout, `refundNext` advances an on-chain cursor; anyone can broadcast the next proof, while the covenant forces payment to that ticket owner.
 
 ## Network Setup
 
@@ -59,8 +63,8 @@ Default local testing targets the public Toccata testnet endpoint:
 - network id: use the network reported after connecting; as of 2026-07-09 this endpoint reports `testnet-10`
 - initial ticket price: `30000000` sompi, or `0.3 KAS`
 - default round size: 10 tickets
-- contract limit: 1,000,000 tickets across at most 20 purchase batches
-- round carrier reserve: `0.2 KAS` by default with a `0.1 KAS` storage-safe minimum. New v3.5 rounds deduct `0.02 KAS` at finalize and return the remainder to the creator.
+- contract limit: 1,000,000 independent users, exactly one ticket per purchase
+- round carrier reserve: `0.2 KAS` by default with a `0.1 KAS` storage-safe minimum. V4 finalize uses `0.022 KAS`; each timeout refund uses `0.019 KAS` from that ticket and returns `0.281 KAS` at the default price.
 - registry marker: `0.05 KAS` is sent through a storage-safe staging transaction. The Testnet default registry returns `0.049 KAS` after a `0.001 KAS` refund fee. The Mainnet default and custom registries retain the marker under the destination address owner's control.
 - temporary covenant funding is sized from the payment plus the action fee, with a `0.2 KAS` minimum for small payments; eligible change is returned in the same covenant transaction.
 
@@ -68,7 +72,9 @@ Install KasWare or Kastle, select a Kaspa testnet account, then choose the detec
 
 As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 
-Manual transaction testing on 2026-07-12 confirmed the v3.4 low-fee create, marker, buy, finalize, History-load, and timeout-refund paths. The v3.5 build additionally runs `npm run verify:fees:1m`, which constructs 1,000,000-ticket Toccata v1 fixtures for create, one-batch buy, the twentieth buy, finalize, and timeout refund. The fixed fees remain `0.002`, `0.02`, `0.02`, and `0.03 KAS`; v3.4 and v3.3 artifacts remain available for historical rounds. A maximally skewed 20-batch refund is also tested and correctly reported as non-standard because its small outputs exceed storage mass; increasing its fee would not fix that transaction shape.
+The v4 verification gate replays 1,000,000 distinct Merkle appends, validates first/middle/last proofs, runs nine SilverScript positive and negative paths, checks exact Toccata mass, and starts a persistent index API fixture. Exact minimum relay fees measured for representative v4 transactions are `0.015982 KAS` buy, `0.019258 KAS` finalize, and `0.017118 KAS` continuing refund; configured fees include a small margin.
+
+`npm run benchmark:indexer:1m` builds a real one-million-record disk fixture. The 2026-07-12 run used `164,003,779` bytes, rebuilt a missing derived tree in `298.15s`, restarted from its checkpoint in `0.27s`, served first/middle/last proofs in `5.00/1.93/1.36ms`, and used `79,523,840` bytes RSS. The append-only event log, migration baseline, and fixed confirmation queue allow the indexer to rebuild after a selected-chain reorganization without retaining all ticket nodes in memory.
 
 ## Development
 
@@ -90,6 +96,14 @@ Run the current development gate:
 ```bash
 npm run verify
 ```
+
+Run the confirmed-chain raffle indexer (required for practical million-user History, finalize, and refund witnesses):
+
+```bash
+npm run start:indexer
+```
+
+It listens on `http://127.0.0.1:8787` by default. Configure `KASPA_RPC_URL`, `KASPA_NETWORK`, `RAFFLE_INDEX_PORT`, `RAFFLE_INDEX_DATA`, and `RAFFLE_INDEX_CONFIRMATIONS` as needed. `RAFFLE_INDEX_REMOVE_BLOCKS` is a repair/testing hook for explicitly removing comma-separated event block hashes; `RAFFLE_INDEX_OFFLINE=1` is reserved for deterministic fixtures.
 
 Run the covenant release gate:
 
