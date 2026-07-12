@@ -23,6 +23,7 @@ The current v0.1.9 implementation includes:
 - KasWare-style network menu with independent Mainnet and Testnet 10 node settings
 - KasWare `signPskt` and Kastle `signTx` / `kas:sign_tx` adapters
 - Funding transactions signed by the selected wallet; the page never receives the wallet private key
+- Creator-selected Registry address with explicit marker amount, payment fee, and refund behavior
 - Browser-side testnet ticket purchase transactions
 - Raffle covenant source draft in Silverscript
 - REST explorer history grouped by raffle round
@@ -58,6 +59,7 @@ Default local testing targets the public Toccata testnet endpoint:
 - default round size: 10 tickets
 - contract limit: 1,000 tickets across at most 20 purchase batches
 - round carrier reserve: `5000000000` sompi, or `50 KAS`; this keeps the covenant UTXO above current storage-mass limits and is refunded to the creator at finalize when large enough.
+- registry marker: `5 KAS` is sent to the creator-selected Registry address. The default registry returns `4.99 KAS` after a `0.01 KAS` refund fee; custom registries do not auto-refund. The registry payment transaction has an additional UTXO-dependent network fee.
 - temporary covenant funding reserve: at least `1000000000` sompi, or `10 KAS`; this is returned during the ticket or registry transaction when possible.
 
 Install KasWare or Kastle, select a Kaspa testnet account, then choose the detected provider from **Connect wallet**. Wallet connection is requested only after a wallet is selected.

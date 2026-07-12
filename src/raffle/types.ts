@@ -81,6 +81,7 @@ export interface RaffleMetadata {
   oraclePublicKey: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
+  registryAddress?: string;
   covenant?: RaffleCovenantCursor;
   contractVersion: string;
 }

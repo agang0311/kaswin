@@ -40,6 +40,7 @@ import {
   type SupportedNetworkId
 } from "../kaspa/networks";
 import {
+  assertValidKaspaAddress,
   buyRaffleCovenantTicket,
   COVENANT_BUY_FEE_SOMPI,
   COVENANT_CREATE_FEE_SOMPI,
@@ -51,6 +52,7 @@ import {
   finalizeRaffleCovenantRound,
   getRaffleRegistryAddress,
   MIN_COVENANT_CARRIER_SOMPI,
+  REGISTRY_MARKER_REFUND_FEE_SOMPI,
   refundRaffleCovenantRound,
   refundRaffleRegistryMarker,
   sendKaspaPayment
@@ -427,6 +429,7 @@ export function App() {
   const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
   const [historyAddress, setHistoryAddress] = useState("");
   const [registryAddress, setRegistryAddress] = useState("");
+  const [createRegistryAddress, setCreateRegistryAddress] = useState("");
   const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>([]);
   const [selectedHistoryRoundId, setSelectedHistoryRoundId] = useState("");
   const [historyError, setHistoryError] = useState("");
@@ -525,6 +528,7 @@ export function App() {
       .then((address) => {
         if (!cancelled) {
           setRegistryAddress(address);
+          setCreateRegistryAddress((current) => current || address);
         }
       })
       .catch(() => {
@@ -586,7 +590,12 @@ export function App() {
       return 0n;
     }
   }, [covenantCarrierSompi]);
-  const createCostTooltip = `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} history marker reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} marker refund fee + funding transaction fees. Reserves return later.`;
+  const activeCreateRegistryAddress = createRegistryAddress.trim() || registryAddress;
+  const usesDefaultRegistry = Boolean(registryAddress) && activeCreateRegistryAddress === registryAddress;
+  const registryMarkerRefundAmount = DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI - REGISTRY_MARKER_REFUND_FEE_SOMPI;
+  const createCostTooltip = usesDefaultRegistry
+    ? `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} sent to the default registry + variable registry payment fee. The registry returns ${formatKas(registryMarkerRefundAmount)} after a ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee. Carrier returns when the round ends.`
+    : `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} sent to the custom registry + variable registry payment fee. A custom registry marker is not automatically refunded and remains at the destination. Carrier returns when the round ends.`;
   const buyCostTooltip = `${formatKas(purchaseTotal)} ticket price + ${formatKas(COVENANT_BUY_FEE_SOMPI)} covenant fee + funding transaction fee (varies with wallet UTXOs).`;
   const payoutCostTooltip = `${formatKas(round.potAmount)} prize from the pot + ${formatKas(COVENANT_FINALIZE_FEE_SOMPI)} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.`;
   const refundCostTooltip = `${formatKas(round.potAmount)} ticket refunds from the pot + ${formatKas(COVENANT_REFUND_FEE_SOMPI)} covenant fee from the carrier. Wallet payment: 0 KAS.`;
@@ -725,6 +734,7 @@ export function App() {
     setHistoryApiBase(nextProfile.historyApiBase);
     setHistoryAddress("");
     setRegistryAddress("");
+    setCreateRegistryAddress("");
     setHistoryRounds([]);
     setSelectedHistoryRoundId("");
     setMetadata(createEmptyMetadata(nextNetwork));
@@ -913,6 +923,8 @@ export function App() {
     setNetworkId(profile.id);
     setRpcUrl(networkEndpoints[profile.id]);
     setHistoryApiBase(profile.historyApiBase);
+    setCreateRegistryAddress(normalizedMetadata.registryAddress ?? "");
+    setHistoryAddress(normalizedMetadata.registryAddress ?? "");
     setTickets([]);
     setFinalized(undefined);
     setOraclePrivateKey(restoredOraclePrivateKey);
@@ -998,6 +1010,19 @@ export function App() {
         "Carrier reserve",
         MIN_COVENANT_CARRIER_SOMPI
       );
+      const targetRegistryAddress = activeCreateRegistryAddress;
+
+      if (!targetRegistryAddress) {
+        throw new Error("Set a Registry address before creating the round.");
+      }
+
+      await assertValidKaspaAddress(targetRegistryAddress, "Registry address");
+
+      if (networkFromAddress(targetRegistryAddress) !== networkId) {
+        throw new Error(`Registry address must belong to ${selectedNetwork.label}.`);
+      }
+
+      const autoRefundRegistryMarker = targetRegistryAddress === registryAddress;
       const refundDelaySeconds = refundTimeoutSecondsFromParts(refundTimeoutParts);
       const refundDelayDaa = refundDelaySeconds * KASPA_DAA_PER_SECOND;
 
@@ -1039,6 +1064,7 @@ export function App() {
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         refundTimeoutSeconds: refundDelaySeconds.toString(),
         refundTimeoutDaa: refundDelayDaa.toString(),
+        registryAddress: targetRegistryAddress,
         createdAt: new Date().toISOString()
       });
       const result = await createRaffleCovenantRound({
@@ -1055,8 +1081,8 @@ export function App() {
 
       let registryTxIds: string[] = [];
       let registryRefundTxId = "";
+      let registryPaymentFeeSompi = 0n;
       let registryWarning = "";
-      const targetRegistryAddress = registryAddress || await getRaffleRegistryAddress(wallet.network);
 
       try {
         const registryResult = await sendKaspaPayment({
@@ -1082,15 +1108,17 @@ export function App() {
             refundAfterDaaScore: refundAfterDaaScore.toString(),
             refundTimeoutSeconds: refundDelaySeconds.toString(),
             refundTimeoutDaa: refundDelayDaa.toString(),
+            registryAddress: targetRegistryAddress,
             contractVersion: metadata.contractVersion,
             registeredAt: new Date().toISOString()
           })
         });
         registryTxIds = registryResult.txIds;
+        registryPaymentFeeSompi = registryResult.feeSompi;
 
         const markerTxId = registryTxIds[registryTxIds.length - 1];
 
-        if (markerTxId) {
+        if (markerTxId && autoRefundRegistryMarker) {
           try {
             registryRefundTxId = await refundRaffleRegistryMarker({
               connection: rpcConnectionRef.current,
@@ -1122,17 +1150,19 @@ export function App() {
         refundTimeoutSeconds: refundDelaySeconds.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         treasuryAddress: result.covenant?.address ?? current.treasuryAddress,
+        registryAddress: targetRegistryAddress,
         covenant: result.covenant
       }));
       setTickets([]);
       setFinalized(undefined);
       setRoundActionTab("buy");
-      setHistoryAddress((current) => current || targetRegistryAddress);
-      setChainMessage(
-        registryTxIds.length
-          ? `Covenant round created: ${result.txId}. Registry tx: ${registryTxIds.join(", ")}${registryRefundTxId ? `. Registry marker refunded: ${registryRefundTxId}` : ""}`
-          : `Covenant round created: ${result.txId}.`
-      );
+      setHistoryAddress(targetRegistryAddress);
+      const registryResultMessage = registryTxIds.length
+        ? autoRefundRegistryMarker
+          ? `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. ${registryRefundTxId ? `${formatKas(registryMarkerRefundAmount)} returned after the ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee: ${registryRefundTxId}.` : "Automatic marker refund is pending or failed."}`
+          : `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. Custom registry markers are not automatically refunded.`
+        : "Registry marker was not submitted.";
+      setChainMessage(`Covenant round created: ${result.txId}. ${registryResultMessage}`);
       setChainError(registryWarning);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to create covenant round."));
@@ -1660,10 +1690,12 @@ export function App() {
       selectedHistoryRound.oraclePublicKey
     );
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound);
+    const loadedRegistryAddress = selectedHistoryRound.registryAddress ?? (historyAddress || registryAddress);
 
     setNetworkId(loadedNetwork);
     setRpcUrl(networkEndpoints[loadedNetwork]);
     setHistoryApiBase(loadedProfile.historyApiBase);
+    setCreateRegistryAddress(loadedRegistryAddress);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setMetadata({
       app: "kaspa-raffle-static",
@@ -1683,6 +1715,7 @@ export function App() {
       oraclePublicKey: selectedHistoryRound.oraclePublicKey,
       refundAfterDaaScore: selectedHistoryRound.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
       treasuryAddress: covenant.address,
+      registryAddress: loadedRegistryAddress,
       covenant,
       contractVersion: selectedHistoryRound.contractVersion ?? emptyMetadata.contractVersion
     });
@@ -2035,6 +2068,53 @@ export function App() {
                 </label>
               </div>
 
+              <section className="registry-config" aria-labelledby="registry-config-title">
+                <div className="registry-field-row">
+                  <label className="field">
+                    <span id="registry-config-title">Registry address</span>
+                    <input
+                      value={createRegistryAddress}
+                      onChange={(event) => setCreateRegistryAddress(event.target.value.trim())}
+                      placeholder={networkId === "mainnet" ? "kaspa:..." : "kaspatest:..."}
+                      aria-describedby="registry-cost-details"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-button secondary"
+                    onClick={() => setCreateRegistryAddress(registryAddress)}
+                    disabled={!registryAddress || usesDefaultRegistry}
+                    title="Use the default refundable registry"
+                    aria-label="Use the default refundable registry"
+                  >
+                    <RefreshCw size={17} />
+                  </button>
+                </div>
+                <dl id="registry-cost-details" className="registry-cost-details">
+                  <div>
+                    <dt>Sent to registry</dt>
+                    <dd>{formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)}</dd>
+                  </div>
+                  <div>
+                    <dt>Registry payment fee</dt>
+                    <dd>Additional; calculated from wallet UTXOs and reported after submission</dd>
+                  </div>
+                  <div>
+                    <dt>Automatic marker refund</dt>
+                    <dd>
+                      {usesDefaultRegistry
+                        ? `${formatKas(registryMarkerRefundAmount)} returned; ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee`
+                        : `None; ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} remains at the custom destination`}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="registry-note">
+                  {usesDefaultRegistry
+                    ? "The default registry is a public indexing script. Its marker is automatically reclaimed after creation."
+                    : "A custom registry receives the marker permanently unless its owner later spends it. Use the same address when loading this round's history."}
+                </p>
+              </section>
+
               <details className="disclosure compact-disclosure">
                 <summary>Draw / refund timeout: {refundTimeoutDisplay}</summary>
                 <div className="duration-grid disclosure-body">
@@ -2180,9 +2260,9 @@ export function App() {
             <label className="field">
               <span>Registry address</span>
               <input
-                value={historyAddress || registryAddress || metadata.treasuryAddress || ""}
+                value={historyAddress || metadata.registryAddress || registryAddress || metadata.treasuryAddress || ""}
                 onChange={(event) => setHistoryAddress(event.target.value)}
-                placeholder="kaspatest:..."
+                placeholder={networkId === "mainnet" ? "kaspa:..." : "kaspatest:..."}
               />
             </label>
           </div>

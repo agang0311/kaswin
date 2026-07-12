@@ -1,4 +1,5 @@
 import {
+  Address,
   CovenantBinding,
   createTransactions,
   GenesisCovenantGroup,
@@ -108,6 +109,7 @@ export interface RaffleCovenantSpendResult {
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 5_000_000_000n;
 export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 500_000_000n;
+export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 1_000_000n;
 export const COVENANT_CREATE_FEE_SOMPI = 1_000_000n;
 export const COVENANT_BUY_FEE_SOMPI = 6_000_000n;
 export const COVENANT_FINALIZE_FEE_SOMPI = 40_000_000n;
@@ -255,6 +257,14 @@ export async function getRaffleRegistryAddress(network: string): Promise<string>
   return lowCostFundingAddress(network);
 }
 
+export async function assertValidKaspaAddress(address: string, label = "Kaspa address"): Promise<void> {
+  await ensureKaspaWasmReady();
+
+  if (!Address.validate(address.trim())) {
+    throw new Error(`${label} is not a valid Kaspa address.`);
+  }
+}
+
 function lowCostFundingAmount(requiredAmount: bigint, feeReserve = MANUAL_TX_FEE_SOMPI): bigint {
   const amountWithFee = requiredAmount + feeReserve;
   return amountWithFee > LOW_COST_FUNDING_MIN_SOMPI ? amountWithFee : LOW_COST_FUNDING_MIN_SOMPI;
@@ -269,9 +279,10 @@ function requireAtLeastSompi(value: bigint, minimum: bigint, label: string): voi
 async function refundLowCostFundingUtxo(
   connection: KaspaRpcConnection,
   stagingUtxo: IUtxoEntry,
-  refundAddress: string
+  refundAddress: string,
+  feeSompi = MANUAL_TX_FEE_SOMPI
 ): Promise<string> {
-  const refundAmount = stagingUtxo.amount - MANUAL_TX_FEE_SOMPI;
+  const refundAmount = stagingUtxo.amount - feeSompi;
 
   if (refundAmount <= 0n) {
     throw new Error("Temporary funding UTXO is too small to refund.");
@@ -498,7 +509,12 @@ export async function refundRaffleRegistryMarker(input: RefundRaffleRegistryMark
   try {
     const markerUtxo = await waitForAddressUtxo(input.connection, input.registryAddress, input.markerTxId, 0);
 
-    return refundLowCostFundingUtxo(input.connection, markerUtxo, input.refundAddress);
+    return refundLowCostFundingUtxo(
+      input.connection,
+      markerUtxo,
+      input.refundAddress,
+      REGISTRY_MARKER_REFUND_FEE_SOMPI
+    );
   } catch (error) {
     throw normalizeTransactionError(error);
   }

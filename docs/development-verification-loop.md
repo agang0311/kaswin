@@ -72,3 +72,11 @@ A passing release run requires all of the following:
 - `round-8e274e30421325df`: 1 ticket, loaded through History before finalize, payout `73d63c2288b24c7b13d35426eb6ceed54acd7e873ae92befa4d69e9506f2bae0`; a subsequent history refresh reported `Paid`.
 
 The same browser run switched to Mainnet, connected read-only to `ws://127.0.0.1:18110`, then switched back and completed all three Testnet 10 transaction loops. No Mainnet transaction was submitted.
+
+## Verified Configurable Registry Runs (2026-07-12)
+
+- `round-d3cf3feec27c88d3`: default registry, 5 KAS marker, `0.004005 KAS` payment fee, 4.99 KAS marker refund after 0.01 KAS refund fee, payout `2b32422e79f10a5f0f1959565073ca892d496342de95bba7babca4f98bb68b45`.
+- `round-7beb4751df9d0adc`: custom registry set to the creator wallet, 5 KAS marker retained at that address, `0.003994 KAS` payment fee, payout `da24e593c90c661c4bcaa9e1590edc32607b036e10246887cd0b1e6cddd48063`.
+- `round-642fbddce847b69c`: custom registry set to the creator wallet, loaded through History from that address before finalize, payout `4420b0e60948f6c465ff46022afac173babb8054b523a516ca478f117beb5a6c`; a later index refresh reported `Paid`.
+
+The same run confirmed that an invalid custom Registry address is rejected before any create transaction is submitted.

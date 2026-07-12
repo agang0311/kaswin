@@ -105,6 +105,18 @@ assert(
     transactionSource.includes("export const COVENANT_BUY_FEE_SOMPI")
 );
 assert(
+  "Round creation supports a custom registry with explicit costs",
+  appSource.includes('Registry address') &&
+    appSource.includes('Sent to registry') &&
+    appSource.includes('Registry payment fee') &&
+    appSource.includes('Automatic marker refund') &&
+    appSource.includes('setCreateRegistryAddress') &&
+    appSource.includes('registryAddress: targetRegistryAddress') &&
+    appSource.includes('markerTxId && autoRefundRegistryMarker') &&
+    transactionSource.includes('REGISTRY_MARKER_REFUND_FEE_SOMPI') &&
+    metadataSource.includes('registryAddress: ""')
+);
+assert(
   "Visible amount labels use KAS instead of sompi",
   appSource.includes("Carrier reserve (KAS)") &&
     !appSource.includes("Carrier reserve (sompi)") &&

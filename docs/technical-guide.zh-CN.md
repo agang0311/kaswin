@@ -133,7 +133,7 @@ Browser SPA
 3. 钱包先创建临时 funding UTXO。
 4. funding UTXO 创建 v1 genesis covenant output。
 5. 另发一笔 registry marker 交易供历史扫描。
-6. marker 可花费部分立即退回 creator。
+6. 默认 registry 是公开可花费的索引脚本，marker 扣除 0.01 KAS 后立即退回 creator；自定义 registry 不自动退款，5 KAS 留在目标地址。
 
 ### Buy
 
@@ -168,7 +168,8 @@ Browser SPA
 | 项目 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 默认/min carrier | 50 KAS | 满足当前 storage-mass 下限；结束时扣费后退 creator |
-| registry marker reserve | 5 KAS | 创建后尝试立即退款 |
+| registry marker transfer | 5 KAS | 发送到创建时指定的 Registry address |
+| registry marker refund fee | 0.01 KAS | 仅默认 registry 自动退款时收取，预计退回 4.99 KAS |
 | create covenant fee | 0.01 KAS | 从临时 funding 支付 |
 | buy covenant fee | 0.06 KAS | 票价之外支付 |
 | finalize covenant fee | 0.4 KAS | 从 carrier 扣除 |
@@ -177,6 +178,8 @@ Browser SPA
 | finalize 授权 UTXO | 至少 1 KAS | 原额返回参与者 |
 
 钱包余额短时减少可能来自未确认交易、carrier 锁定、UTXO index 延迟或临时 funding。buy 的可退款余额若达到 1 KAS，会在 covenant spend 内立即作为输出返回；过小余额会并入费用以避免产生不可接受的小 UTXO。
+
+Registry payment 本身还会产生由钱包输入数量和交易 mass 决定的网络费，该费用在构造交易后才能精确得到。页面在创建前明确标为额外可变费用，提交后在成功消息中显示实际值。自定义 Registry address 可以是当前网络的任意有效地址：若是创建者自己的钱包地址，5 KAS 仍由该钱包控制；若是第三方地址，则构成真实转账。
 
 Compute budget 当前为 buy 400、finalize 2,500、参与者授权 400、refund 1,600。它们是 Toccata v1 交易 input 的预算单位，不等于交易费；实际 compute mass 由节点执行脚本后验证。
 
@@ -190,7 +193,7 @@ Compute budget 当前为 buy 400、finalize 2,500、参与者授权 400、refund
 
 创建时向网络级 registry 地址写入 `round-register` payload。History scanner：
 
-1. 查询 registry 地址的 full transactions。
+1. 查询该 round 创建时指定的 registry 地址的 full transactions。
 2. 解析 `kaspa-raffle-static` JSON payload。
 3. 获取 round 的初始 covenant 地址和 covenant id。
 4. 沿 covenant output 的 spend 链追踪 ticket/finalize/refund。

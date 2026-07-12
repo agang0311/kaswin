@@ -14,6 +14,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 button,
@@ -638,6 +639,50 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.registry-config {
+  border-bottom: 1px solid #e4e8e4;
+  border-top: 1px solid #e4e8e4;
+  margin: 4px 0 14px;
+  padding: 14px 0 12px;
+}
+
+.registry-field-row {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+
+.registry-field-row .field {
+  margin-bottom: 0;
+}
+
+.registry-cost-details {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 0.7fr 1.35fr 1.1fr;
+  margin: 12px 0 0;
+}
+
+.registry-cost-details div {
+  border-left: 3px solid #d79b2d;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding-left: 9px;
+}
+
+.registry-cost-details dd {
+  font-size: 0.83rem;
+  font-weight: 750;
+}
+
+.registry-note {
+  color: #59665f;
+  font-size: 0.8rem;
+  margin: 10px 0 0;
+}
+
 .field {
   display: grid;
   gap: 7px;
@@ -1050,6 +1095,10 @@ dd {
     justify-content: flex-start;
   }
 
+  .setup-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .workspace-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1076,11 +1125,25 @@ dd {
     justify-content: space-between;
   }
 
+  .wallet-summary > div {
+    align-items: start;
+    display: grid;
+    gap: 1px;
+  }
+
+  .wallet-actions,
+  .wallet-actions > button,
+  .wallet-picker,
+  .wallet-picker > button {
+    width: 100%;
+  }
+
   .key-metrics,
   .form-grid,
   .purchase-form,
   .purchase-summary,
-  .duration-grid {
+  .duration-grid,
+  .registry-cost-details {
     grid-template-columns: 1fr;
   }
 

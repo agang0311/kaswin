@@ -3,7 +3,7 @@ import type { RaffleMetadata } from "./types";
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.1.0",
+    version: "0.1.10",
     network,
     roundId: "",
     createTxId: "",
@@ -18,6 +18,7 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",
     treasuryAddress: "",
+    registryAddress: "",
     contractVersion: "raffle-v3.3-participant-finalize-fee40"
   };
 }

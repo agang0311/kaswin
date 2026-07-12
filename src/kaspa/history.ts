@@ -27,6 +27,7 @@ export interface RaffleHistoryPayout {
 export interface RaffleHistoryRound {
   roundId: string;
   registryTxId?: string;
+  registryAddress?: string;
   createTxId?: string;
   closeTxId?: string;
   refundTxId?: string;
@@ -82,6 +83,7 @@ interface RafflePayload {
   winnerAddress?: string;
   amount?: string;
   treasuryAddress?: string;
+  registryAddress?: string;
   covenantAddress?: string;
   covenantId?: string;
   creator?: string;
@@ -165,6 +167,7 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
 
     if (payload.type === "round-register" || payload.type === "round-create") {
       round.registryTxId = payload.type === "round-register" ? tx.transaction_id : round.registryTxId;
+      round.registryAddress = payload.registryAddress ?? round.registryAddress;
       round.createTxId = payload.createTxId ?? (payload.type === "round-create" ? tx.transaction_id : round.createTxId);
       round.treasuryAddress =
         payload.treasuryAddress ??
