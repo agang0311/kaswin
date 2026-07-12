@@ -8,7 +8,7 @@ round as little-endian u64 || SHA-256(drand signature)
 
 The raffle covenant fixes a future round after every ticket purchase, computes the expected journal digest, and verifies the receipt with Toccata `OpZkPrecompile`. A prover can submit the unique valid result or remain silent; it cannot choose another winner. Silence is handled by the existing timeout refund path.
 
-Builds require the RISC Zero 3.0.4 toolchain on Linux. Generate a proof with:
+Builds require the RISC Zero 3.0.5 toolchain on Linux. Generate a proof with:
 
 ```bash
 cargo run --release -p kaspa-raffle-beacon-prover --features risc0-zkvm/prove -- \
