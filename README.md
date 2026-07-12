@@ -14,7 +14,7 @@ The app is designed to run without a project-controlled backend. Users provide a
 
 ## Current Status
 
-The current v0.1.13 implementation includes:
+The current v0.1.14 implementation includes:
 
 - Single-file React + TypeScript SPA build
 - English and Chinese interfaces with a persistent language selector in the top-right corner
@@ -34,11 +34,11 @@ The current v0.1.13 implementation includes:
 - Original product spec in [`docs/kaspa_toccata_static_raffle_spec.md`](docs/kaspa_toccata_static_raffle_spec.md)
 - Development backlog in [`docs/backlog.md`](docs/backlog.md)
 
-The current flow builds browser-side Toccata covenant transactions for round creation, batched ticket buys, direct finalize, and timeout refunds. One purchase can cover many sequential ticket numbers, allowing up to 1,000 tickets while keeping at most 20 on-chain purchase batches. New testnet rounds use a round-specific open development oracle key that any browser can reconstruct after loading history, so the creator does not need to return for finalization. This convenience mode is not a production randomness oracle; legacy rounds created with random creator-only oracle keys still require the original browser, an external attestation, or timeout refund. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
+The current flow builds browser-side Toccata covenant transactions for round creation, batched ticket buys, direct finalize, and timeout refunds. One purchase can cover many sequential ticket numbers, allowing up to 1,000,000 tickets while keeping at most 20 on-chain purchase batches. New testnet rounds use a round-specific open development oracle key that any browser can reconstruct after loading history, so the creator does not need to return for finalization. This convenience mode is not a production randomness oracle; legacy rounds created with random creator-only oracle keys still require the original browser, an external attestation, or timeout refund. Historical ticket and payout lookup currently uses `https://api-tn10.kaspa.org` full-transaction indexing because the node RPC is UTXO-focused.
 
 ## Covenant Direction
 
-The covenant keeps the pot in a `RaffleRound` covenant UTXO. Ticket purchases spend the current round state into the next state. Each purchase stores its ending ticket number and owner public key, so finalize can prove that the payout address owns the winning ticket without storing 1,000 owners. The oracle public key and ticket root remain native `byte[32]` state fields. Finalization is valid only when all tickets have sold or the configured DAA deadline has arrived. It computes the winner, verifies the owner, pays the prize, and refunds the carrier to the creator in the same transaction.
+The covenant keeps the pot in a `RaffleRound` covenant UTXO. Ticket purchases spend the current round state into the next state. Each purchase stores its ending ticket number and owner public key, so finalize can prove that the payout address owns the winning ticket without storing one owner per ticket. The oracle public key and ticket root remain native `byte[32]` state fields. Finalization is valid only when all tickets have sold or the configured DAA deadline has arrived. It computes the winner, verifies the owner, pays the prize, and refunds the carrier to the creator in the same transaction.
 
 ## Network Setup
 
@@ -59,16 +59,16 @@ Default local testing targets the public Toccata testnet endpoint:
 - network id: use the network reported after connecting; as of 2026-07-09 this endpoint reports `testnet-10`
 - initial ticket price: `30000000` sompi, or `0.3 KAS`
 - default round size: 10 tickets
-- contract limit: 1,000 tickets across at most 20 purchase batches
-- round carrier reserve: `0.2 KAS` by default with a `0.1 KAS` storage-safe minimum. New v3.4 rounds deduct `0.02 KAS` at finalize and return the remainder to the creator.
+- contract limit: 1,000,000 tickets across at most 20 purchase batches
+- round carrier reserve: `0.2 KAS` by default with a `0.1 KAS` storage-safe minimum. New v3.5 rounds deduct `0.02 KAS` at finalize and return the remainder to the creator.
 - registry marker: `0.05 KAS` is sent through a storage-safe staging transaction. The Testnet default registry returns `0.049 KAS` after a `0.001 KAS` refund fee. The Mainnet default and custom registries retain the marker under the destination address owner's control.
-- temporary covenant funding reserve: at least `1000000000` sompi, or `10 KAS`; this is returned during the ticket or registry transaction when possible.
+- temporary covenant funding is sized from the payment plus the action fee, with a `0.2 KAS` minimum for small payments; eligible change is returned in the same covenant transaction.
 
 Install KasWare or Kastle, select a Kaspa testnet account, then choose the detected provider from **Connect wallet**. Wallet connection is requested only after a wallet is selected.
 
 As of the manual check on 2026-07-08, `https://faucet-tn12.kaspanet.io/` returned HTTP 403, `https://faucet-tn11.kaspanet.io/` reported maintenance, and the generic faucet redirected to TN10 with 0 TKAS available for the current IP. TN12 funds may need to come from mining or the Kaspa Discord `#testnet` channel until a faucet is available again.
 
-Manual transaction testing on 2026-07-12 confirmed the v3.4 low-fee create, marker, buy, finalize, History-load, and timeout-refund paths. The default carrier is `0.2 KAS`; create, buy, finalize, and refund fixed fees are `0.002`, `0.02`, `0.02`, and `0.03 KAS` respectively. Historical v3.3 rounds retain their original fee schedule and artifact.
+Manual transaction testing on 2026-07-12 confirmed the v3.4 low-fee create, marker, buy, finalize, History-load, and timeout-refund paths. The v3.5 build additionally runs `npm run verify:fees:1m`, which constructs 1,000,000-ticket Toccata v1 fixtures for create, one-batch buy, the twentieth buy, finalize, and timeout refund. The fixed fees remain `0.002`, `0.02`, `0.02`, and `0.03 KAS`; v3.4 and v3.3 artifacts remain available for historical rounds. A maximally skewed 20-batch refund is also tested and correctly reported as non-standard because its small outputs exceed storage mass; increasing its fee would not fix that transaction shape.
 
 ## Development
 

@@ -3,7 +3,7 @@ import type { RaffleMetadata } from "./types";
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.1.13",
+    version: "0.1.14",
     network,
     roundId: "",
     createTxId: "",
@@ -19,7 +19,7 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     refundAfterDaaScore: "",
     treasuryAddress: "",
     registryAddress: "",
-    contractVersion: "raffle-v3.4-low-fee"
+    contractVersion: "raffle-v3.5-million-ticket"
   };
 }
 
@@ -58,8 +58,8 @@ export function parseMetadata(raw: string): RaffleMetadata {
     throw new Error("Metadata maxTickets must be a positive integer.");
   }
 
-  if (maxTickets > 1000) {
-    throw new Error("Metadata maxTickets cannot exceed 1000.");
+  if (maxTickets > 1_000_000) {
+    throw new Error("Metadata maxTickets cannot exceed 1000000.");
   }
 
   if (typeof minTickets !== "number" || !Number.isInteger(minTickets) || minTickets < 1) {

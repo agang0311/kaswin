@@ -1,6 +1,6 @@
 {
   "name": "kaspa-raffle-static-v0",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Static Mainnet and Testnet 10 raffle dApp for Kaspa Toccata.",
   "private": true,
   "type": "module",
@@ -8,8 +8,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/inline-spa.mjs",
     "compile:contract": "node scripts/compile-raffle-contract.mjs",
-    "verify": "npm run build && node scripts/verify-dev-loop.mjs && node scripts/verify-covenant-artifact.mjs",
+    "verify": "npm run build && node scripts/verify-dev-loop.mjs && node scripts/verify-covenant-artifact.mjs && node scripts/verify-million-ticket-fees.mjs",
     "verify:artifact": "node scripts/verify-covenant-artifact.mjs",
+    "verify:fees:1m": "node scripts/verify-million-ticket-fees.mjs",
     "verify:covenant": "npm run build && node scripts/verify-dev-loop.mjs --require-covenant && node scripts/verify-covenant-artifact.mjs",
     "preview": "vite preview"
   },

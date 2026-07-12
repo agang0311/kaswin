@@ -24,7 +24,7 @@ import {
   buildRaffleRedeemScript,
   buildRaffleScriptPublicKey,
   bytesToHex,
-  PARTICIPANT_FINALIZE_CONTRACT_VERSION,
+  isLowFeeContractVersion,
   pubkeyHexFromAddress,
   raffleCovenantStateFromRound,
   raffleWinnerIndexFromSeed
@@ -32,6 +32,7 @@ import {
 import type { KaspaRpcConnection } from "./rpc";
 import { hexToBytes } from "../raffle/randomness";
 import type { RaffleCovenantCursor, RoundState, TicketState } from "../raffle/types";
+import { findTicketRange, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import type { BrowserTestWallet } from "./wallet";
 import { ensureKaspaWasmReady } from "./wasm";
 
@@ -132,11 +133,11 @@ const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11;
 const RAFFLE_REFUND_COMPUTE_BUDGET = 20;
 
 export function covenantFinalizeFeeSompi(contractVersion: string): bigint {
-  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ? COVENANT_FINALIZE_FEE_SOMPI : LEGACY_V3_3_FINALIZE_FEE_SOMPI;
+  return isLowFeeContractVersion(contractVersion) ? COVENANT_FINALIZE_FEE_SOMPI : LEGACY_V3_3_FINALIZE_FEE_SOMPI;
 }
 
 export function covenantRefundFeeSompi(contractVersion: string): bigint {
-  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ? COVENANT_REFUND_FEE_SOMPI : LEGACY_V3_3_REFUND_FEE_SOMPI;
+  return isLowFeeContractVersion(contractVersion) ? COVENANT_REFUND_FEE_SOMPI : LEGACY_V3_3_REFUND_FEE_SOMPI;
 }
 
 function formatKasAmount(value: bigint): string {
@@ -1056,7 +1057,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       throw new Error("There are no tickets to refund.");
     }
 
-    if (input.tickets.length < input.covenant.soldTickets) {
+    if (totalTicketCount(input.tickets) < input.covenant.soldTickets) {
       throw new Error("All ticket details must be loaded before refund so each buyer can be repaid.");
     }
 
@@ -1064,22 +1065,22 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       .filter((ticket) => ticket.ticketId <= input.covenant.soldTickets)
       .sort((left, right) => left.ticketId - right.ticketId);
 
-    for (let ticketId = 1; ticketId <= input.covenant.soldTickets; ticketId += 1) {
-      if (orderedTickets[ticketId - 1]?.ticketId !== ticketId) {
-        throw new Error(`Ticket #${ticketId} is missing from the loaded round state.`);
-      }
-    }
-
     const batchEnds = covenantBatchEnds(input.covenant);
     const batchRefunds: Array<{ owner: string; amount: bigint }> = [];
     let previousEnd = 0;
 
     for (let batchIndex = 0; batchIndex < batchEnds.length; batchIndex += 1) {
       const batchEnd = batchEnds[batchIndex];
-      const firstTicket = orderedTickets[previousEnd];
+      const firstTicket = findTicketRange(orderedTickets, previousEnd + 1);
       const expectedPubkey = input.covenant.ticketOwnerPubkeys[batchIndex];
 
-      if (!firstTicket || batchEnd <= previousEnd || batchEnd > input.covenant.soldTickets) {
+      if (
+        !firstTicket ||
+        firstTicket.ticketId !== previousEnd + 1 ||
+        ticketRangeEnd(firstTicket) !== batchEnd ||
+        batchEnd <= previousEnd ||
+        batchEnd > input.covenant.soldTickets
+      ) {
         throw new Error(`Ticket batch #${batchIndex + 1} is invalid.`);
       }
 

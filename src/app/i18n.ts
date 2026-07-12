@@ -361,7 +361,7 @@ const exactRuntimeZh: Record<string, string> = {
   "Connect a funded creator wallet first.": "请先连接有余额的创建者钱包。",
   "Connect to a Kaspa wRPC node first.": "请先连接 Kaspa wRPC 节点。",
   "This round already has a covenant UTXO.": "本轮已经存在 covenant UTXO。",
-  "This covenant supports at most 1000 tickets per round.": "该 covenant 每轮最多支持 1,000 张票。",
+  "This covenant supports at most 1000000 tickets per round.": "该 covenant 每轮最多支持 1,000,000 张票。",
   "Set a Registry address before creating the round.": "创建抽奖前请设置 Registry 地址。",
   "Refund timeout must be greater than zero seconds.": "退款超时必须大于 0 秒。",
   "Covenant round was created without a cursor.": "Covenant 抽奖已创建，但未返回状态游标。",

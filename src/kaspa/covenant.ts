@@ -12,6 +12,7 @@ import raffleRoundV3BetaArtifact from "../contracts/compiled/raffle-round-v3-bet
 import raffleRoundV31Artifact from "../contracts/compiled/raffle-round-v3.1.artifact.json";
 import raffleRoundV32Artifact from "../contracts/compiled/raffle-round-v3.2.artifact.json";
 import raffleRoundV33Artifact from "../contracts/compiled/raffle-round-v3.3.artifact.json";
+import raffleRoundV34Artifact from "../contracts/compiled/raffle-round-v3.4.artifact.json";
 import raffleRoundManifest from "../contracts/compiled/raffle-round.manifest.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
 import type { RoundState } from "../raffle/types";
@@ -75,13 +76,15 @@ const legacyV3BetaArtifact = raffleRoundV3BetaArtifact as RaffleRoundRuntimeArti
 const legacyV31Artifact = raffleRoundV31Artifact as RaffleRoundRuntimeArtifact;
 const legacyV32Artifact = raffleRoundV32Artifact as RaffleRoundRuntimeArtifact;
 const legacyV33Artifact = raffleRoundV33Artifact as RaffleRoundRuntimeArtifact;
+const legacyV34Artifact = raffleRoundV34Artifact as RaffleRoundRuntimeArtifact;
 const LEGACY_V1_CONTRACT_VERSION = "raffle-v1-timeout-refund";
 const LEGACY_V2_CONTRACT_VERSION = "raffle-v2-direct-finalize";
 const LEGACY_V3_BETA_CONTRACT_VERSION = "raffle-v3-batch-1000";
 const LEGACY_V3_1_CONTRACT_VERSION = "raffle-v3.1-batch-1000";
 const LEGACY_V3_2_CONTRACT_VERSION = "raffle-v3.2-participant-finalize";
 export const LEGACY_V3_3_CONTRACT_VERSION = "raffle-v3.3-participant-finalize-fee40";
-export const PARTICIPANT_FINALIZE_CONTRACT_VERSION = "raffle-v3.4-low-fee";
+export const LEGACY_V3_4_CONTRACT_VERSION = "raffle-v3.4-low-fee";
+export const PARTICIPANT_FINALIZE_CONTRACT_VERSION = "raffle-v3.5-million-ticket";
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
 const BYTES32_STATE_BYTES = 32;
@@ -108,7 +111,13 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
 }
 
 export function isParticipantFinalizeContractVersion(contractVersion: string): boolean {
-  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION || contractVersion === LEGACY_V3_3_CONTRACT_VERSION;
+  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ||
+    contractVersion === LEGACY_V3_4_CONTRACT_VERSION ||
+    contractVersion === LEGACY_V3_3_CONTRACT_VERSION;
+}
+
+export function isLowFeeContractVersion(contractVersion: string): boolean {
+  return contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION || contractVersion === LEGACY_V3_4_CONTRACT_VERSION;
 }
 
 export function assertRaffleCovenantReady(): void {
@@ -239,6 +248,8 @@ export function buildRaffleRedeemScriptForContractVersion(
             ? legacyV32Artifact
           : contractVersion === LEGACY_V3_3_CONTRACT_VERSION
             ? legacyV33Artifact
+          : contractVersion === LEGACY_V3_4_CONTRACT_VERSION
+            ? legacyV34Artifact
           : artifact;
 
   return buildRaffleRedeemScript(state, runtimeArtifact);
@@ -404,7 +415,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [artifact, legacyV33Artifact, legacyV32Artifact, legacyV31Artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
+  const candidates = [artifact, legacyV34Artifact, legacyV33Artifact, legacyV32Artifact, legacyV31Artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);

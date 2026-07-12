@@ -38,8 +38,9 @@ Use a dedicated testnet wallet only. The public endpoint name contains `tn12`, b
 5. Import a funded TN12 buyer wallet.
 6. Buy a ticket batch and confirm the page displays one ticket-number range instead of one row per ticket.
 7. Run at least three complete create/buy/finalize rounds; one round must contain 10 tickets.
-8. Run a final 1,000-ticket round and confirm it can be bought in one batch, reconstructed from history, and paid out.
-9. Confirm v3.4 round creation uses the default `0.2 KAS` carrier reserve, rejects values below `0.1 KAS`, and stores the creator address for refund.
+8. Run `npm run verify:fees:1m` to construct the one-million-ticket and 20-batch worst-case transaction fixtures.
+9. Confirm v3.5 round creation uses the default `0.2 KAS` carrier reserve, rejects values below `0.1 KAS`, and stores the creator address for refund.
+10. Confirm the fee verifier distinguishes fee insufficiency from the expected storage rejection for a maximally skewed 20-batch refund.
 10. Finalize after the round sells out; the page should create the development oracle attestation automatically.
 11. Load at least one sold-out round through History before finalizing it.
 12. Confirm the winning output is paid by the covenant finalize transaction itself and any large carrier remainder is refunded to the creator.
@@ -54,7 +55,7 @@ A passing release run requires all of the following:
 - The compiled runtime artifact has script bytes, ABI data, and the expected primitive state layout.
 - Browser transaction builders create the round covenant UTXO, ticket transition spends, direct finalize termination spend, and timeout refund spend.
 - The covenant permits finalize only after all tickets sell or the configured DAA deadline arrives.
-- The covenant supports up to 1,000 tickets through at most 20 purchase batches and verifies the winning batch owner on chain.
+- The covenant supports up to 1,000,000 tickets through at most 20 purchase batches, keeps browser records compressed by range, and verifies the winning batch owner on chain.
 - Finalize output 0 pays the winning ticket owner directly from the covenant pot.
 - No treasury private key or manual `Pay prize` path exists in the UI.
 - `dist/` contains only a self-contained `index.html` with the Kaspa WASM embedded.

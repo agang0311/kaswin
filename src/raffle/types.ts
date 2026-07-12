@@ -27,6 +27,7 @@ export interface TicketState {
   appId: "KASPA_RAFFLE_TICKET_V1";
   roundId: string;
   ticketId: number;
+  ticketCount?: number;
   owner: string;
   ownerPubkey?: string;
   paidAmount: bigint;

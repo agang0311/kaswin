@@ -71,6 +71,7 @@ import {
 import { createEmptyMetadata, parseMetadata, stringifyMetadata } from "../raffle/metadata";
 import { hexToBytes, randomHex, sha256Hex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
+import { findTicketRange, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
 import { translate, translateRuntimeText, type Language, type TranslationValues } from "./i18n";
 
@@ -583,15 +584,16 @@ export function App() {
     const ticketPrice = BigInt(metadata.ticketPrice || "0");
     const covenant = metadata.covenant;
     const covenantStatus = covenant?.status;
+    const localSoldTickets = totalTicketCount(tickets);
     const status: RoundState["status"] = finalized
       ? "Finalized"
       : covenantStatus === "Refunding" || covenantStatus === "Refunded"
         ? covenantStatus
-      : covenantStatus === "Closed" || tickets.length >= metadata.maxTickets
+      : covenantStatus === "Closed" || localSoldTickets >= metadata.maxTickets
         ? "Closed"
         : "Open";
-    const soldTickets = Math.max(tickets.length, covenant?.soldTickets ?? 0);
-    const potAmount = covenant ? BigInt(covenant.potAmount) : BigInt(tickets.length) * ticketPrice;
+    const soldTickets = Math.max(localSoldTickets, covenant?.soldTickets ?? 0);
+    const potAmount = covenant ? BigInt(covenant.potAmount) : BigInt(localSoldTickets) * ticketPrice;
 
     return {
       appId: "KASPA_RAFFLE_ROUND_V1",
@@ -611,10 +613,10 @@ export function App() {
       refundAfterDaaScore: covenant?.refundAfterDaaScore ?? metadata.refundAfterDaaScore ?? "0",
       ticketRoot: covenant?.ticketRoot ?? "",
       soldBatches: covenant?.soldBatches ?? covenant?.ticketOwnerPubkeys.length ?? tickets.length,
-      ticketBatchEnds: covenant?.ticketBatchEnds ?? (covenant?.ticketOwnerPubkeys ?? tickets).map((_, index) => index + 1),
+      ticketBatchEnds: covenant?.ticketBatchEnds ?? tickets.map(ticketRangeEnd),
       ticketOwnerPubkeys: covenant?.ticketOwnerPubkeys ?? tickets.map((ticket) => ticket.ownerPubkey).filter(Boolean) as string[]
     };
-  }, [finalized, metadata, tickets.length, wallet]);
+  }, [finalized, metadata, tickets, wallet]);
 
   const remainingTickets = Math.max(0, metadata.maxTickets - round.soldTickets);
   const parsedTicketQuantity = Number(ticketQuantity);
@@ -664,19 +666,20 @@ export function App() {
     for (const ticket of [...tickets].sort((left, right) => left.ticketId - right.ticketId)) {
       const key = ticket.ticketTxId || `ticket-${ticket.ticketId}`;
       const existing = batches.get(key);
+      const count = ticketRangeCount(ticket);
 
       if (existing) {
-        existing.end = ticket.ticketId;
-        existing.count += 1;
-        existing.amount += ticket.paidAmount;
+        existing.end = ticketRangeEnd(ticket);
+        existing.count += count;
+        existing.amount += ticket.paidAmount * BigInt(count);
       } else {
         batches.set(key, {
           txId: ticket.ticketTxId,
           start: ticket.ticketId,
-          end: ticket.ticketId,
+          end: ticketRangeEnd(ticket),
           owner: ticket.owner,
-          count: 1,
-          amount: ticket.paidAmount
+          count,
+          amount: ticket.paidAmount * BigInt(count)
         });
       }
     }
@@ -692,19 +695,20 @@ export function App() {
 
     for (const ticket of [...selectedHistoryRound.tickets].sort((left, right) => left.ticketId - right.ticketId)) {
       const existing = batches.get(ticket.txId);
+      const count = ticketRangeCount(ticket);
 
       if (existing) {
-        existing.end = ticket.ticketId;
-        existing.count += 1;
-        existing.amount += ticket.paidAmount;
+        existing.end = ticketRangeEnd(ticket);
+        existing.count += count;
+        existing.amount += ticket.paidAmount * BigInt(count);
       } else {
         batches.set(ticket.txId, {
           txId: ticket.txId,
           start: ticket.ticketId,
-          end: ticket.ticketId,
+          end: ticketRangeEnd(ticket),
           owner: ticket.buyer,
-          count: 1,
-          amount: ticket.paidAmount
+          count,
+          amount: ticket.paidAmount * BigInt(count)
         });
       }
     }
@@ -1051,8 +1055,8 @@ export function App() {
         throw new Error("This round already has a covenant UTXO.");
       }
 
-      if (metadata.maxTickets > 1000) {
-        throw new Error("This covenant supports at most 1000 tickets per round.");
+      if (metadata.maxTickets > 1_000_000) {
+        throw new Error("This covenant supports at most 1000000 tickets per round.");
       }
 
       const carrierAmountSompi = parseMinimumSompi(
@@ -1293,6 +1297,7 @@ export function App() {
         appId: "KASPA_RAFFLE_TICKET_V1",
         roundId: metadata.roundId,
         ticketId,
+        ticketCount: quantity,
         owner: wallet.address,
         ownerPubkey,
         paidAmount,
@@ -1348,14 +1353,7 @@ export function App() {
         covenant: payment.covenant,
         treasuryAddress: payment.covenant?.address ?? current.treasuryAddress
       }));
-      setTickets((current) => [
-        ...current,
-        ...Array.from({ length: quantity }, (_, offset) => ({
-          ...nextTicket,
-          ticketId: ticketId + offset,
-          ticketTxId: txId
-        }))
-      ]);
+      setTickets((current) => [...current, { ...nextTicket, ticketTxId: txId }]);
       setTicketQuantity("1");
       setChainMessage(
         quantity === 1
@@ -1431,7 +1429,7 @@ export function App() {
         }
       }
 
-      if (tickets.length < covenant.soldTickets) {
+      if (totalTicketCount(tickets) < covenant.soldTickets) {
         throw new Error("All ticket details must be loaded before finalize so the winner address can be verified.");
       }
 
@@ -1485,7 +1483,8 @@ export function App() {
 
       const randomSeed = await buildFinalizeSeedHex(closedRound, finalizeOracleSeed);
       const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, covenant.soldTickets);
-      const winner = tickets[winnerIndex];
+      const winnerRange = findTicketRange(tickets, winnerIndex + 1);
+      const winner = winnerRange ? { ...winnerRange, ticketId: winnerIndex + 1, ticketCount: 1 } : undefined;
 
       if (!winner) {
         throw new Error("Winner ticket details are not loaded in this browser yet.");
@@ -1586,7 +1585,7 @@ export function App() {
         throw new Error("There are no tickets to refund.");
       }
 
-      if (tickets.length < covenant.soldTickets) {
+      if (totalTicketCount(tickets) < covenant.soldTickets) {
         throw new Error("All ticket details must be loaded before refund.");
       }
 
@@ -1774,6 +1773,7 @@ export function App() {
         appId: "KASPA_RAFFLE_TICKET_V1",
         roundId: selectedHistoryRound.roundId,
         ticketId: ticket.ticketId,
+        ticketCount: ticket.ticketCount,
         owner: ticket.buyer,
         ownerPubkey: ticket.buyerPubkey,
         paidAmount: ticket.paidAmount,
@@ -1819,20 +1819,15 @@ export function App() {
     let root = "";
 
     if (contractVersion.startsWith("raffle-v3")) {
-      const batches = orderedTickets.filter(
-        (ticket, index) => index === 0 || ticket.ticketTxId !== orderedTickets[index - 1]?.ticketTxId
-      );
-
-      for (const batch of batches) {
-        const ticketCount = orderedTickets.filter((ticket) => ticket.ticketTxId === batch.ticketTxId).length;
-        root = await buildNextTicketRootHex(roundId, root, { ...batch, ticketCount });
+      for (const batch of orderedTickets) {
+        root = await buildNextTicketRootHex(roundId, root, { ...batch, ticketCount: ticketRangeCount(batch) });
       }
 
       return root;
     }
 
     for (let ticketId = 1; ticketId <= soldTickets; ticketId += 1) {
-      const ticket = orderedTickets[ticketId - 1];
+      const ticket = findTicketRange(orderedTickets, ticketId);
 
       if (!ticket || ticket.ticketId !== ticketId) {
         throw new Error(`Ticket #${ticketId} is missing from the loaded round state.`);
@@ -2125,7 +2120,7 @@ export function App() {
                   <input
                     type="number"
                     min={1}
-                    max={1000}
+                    max={1_000_000}
                     value={metadata.maxTickets}
                     onChange={(event) => updateMetadata("maxTickets", Number(event.target.value))}
                   />
@@ -2252,7 +2247,7 @@ export function App() {
               >
                 {historyRounds.map((historyRound) => (
                   <option key={historyRound.roundId} value={historyRound.roundId}>
-                    {historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t(historyRound.tickets.length === 1 ? "ticketCount.one" : "ticketCount", { count: historyRound.tickets.length.toLocaleString() })}
+                    {historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t(totalTicketCount(historyRound.tickets) === 1 ? "ticketCount.one" : "ticketCount", { count: totalTicketCount(historyRound.tickets).toLocaleString() })}
                   </option>
                 ))}
               </select>
@@ -2262,7 +2257,7 @@ export function App() {
               <div className="history-detail">
                 <div className="key-metrics history-metrics">
                   <div><span>{t("status")}</span><strong>{t(`status.${historyRoundStatus(selectedHistoryRound)}`)}</strong></div>
-                  <div><span>{t("tickets")}</span><strong>{selectedHistoryRound.tickets.length.toLocaleString()}</strong></div>
+                  <div><span>{t("tickets")}</span><strong>{totalTicketCount(selectedHistoryRound.tickets).toLocaleString()}</strong></div>
                   <div><span>{t("pot")}</span><strong>{formatKas(selectedHistoryRound.potAmount)}</strong></div>
                   <div>
                     <span>{t("winner")}</span>

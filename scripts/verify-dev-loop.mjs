@@ -43,6 +43,7 @@ const networkSource = readText("src/kaspa/networks.ts");
 const kasWareWalletSource = readText("src/kaspa/wallet-kasware.ts");
 const kastleWalletSource = readText("src/kaspa/wallet-kastle.ts");
 const metadataSource = readText("src/raffle/metadata.ts");
+const ticketRangeSource = readText("src/raffle/tickets.ts");
 const contractSource = readText("src/contracts/raffle_round.sil");
 const viteSource = readText("vite.config.ts");
 const wasmSource = readText("src/kaspa/wasm.ts");
@@ -149,8 +150,8 @@ assert(
     transactionSource.includes('txIds: [stagingTxId, markerTxId]')
 );
 assert(
-  "V3.4 covenant fees and compute budgets are mass-tested",
-  metadataSource.includes('contractVersion: "raffle-v3.4-low-fee"') &&
+  "V3.5 covenant fees and compute budgets are mass-tested",
+  metadataSource.includes('contractVersion: "raffle-v3.5-million-ticket"') &&
     transactionSource.includes('COVENANT_CREATE_FEE_SOMPI = 200_000n') &&
     transactionSource.includes('COVENANT_BUY_FEE_SOMPI = 2_000_000n') &&
     transactionSource.includes('COVENANT_FINALIZE_FEE_SOMPI = 2_000_000n') &&
@@ -233,16 +234,27 @@ assert(
     covenantSource.includes("raffle-round-v3.1.artifact.json") &&
     covenantSource.includes("raffle-round-v3.2.artifact.json") &&
     covenantSource.includes("raffle-round-v3.3.artifact.json") &&
+    covenantSource.includes("raffle-round-v3.4.artifact.json") &&
     transactionSource.includes("LEGACY_V3_3_FINALIZE_FEE_SOMPI = 40_000_000n") &&
     transactionSource.includes("LEGACY_V3_3_REFUND_FEE_SOMPI = 20_000_000n") &&
     covenantSource.includes("raffleArtifactForRedeemScript")
 );
 assert(
-  "Batch purchases scale to 1000 tickets",
-  contractSource.includes("max_tickets <= 1000") &&
+  "Batch purchases scale to 1000000 tickets without expanding browser records",
+  contractSource.includes("max_tickets <= 1000000") &&
+    metadataSource.includes("maxTickets > 1_000_000") &&
+    appSource.includes("max={1_000_000}") &&
     contractSource.includes("sold_batches < 20") &&
     transactionSource.includes("ticketCount: number") &&
-    transactionSource.includes("lowCostFundingAmount(purchaseAmount, COVENANT_BUY_FEE_SOMPI)")
+    transactionSource.includes("lowCostFundingAmount(purchaseAmount, COVENANT_BUY_FEE_SOMPI)") &&
+    ticketRangeSource.includes("totalTicketCount") &&
+    appSource.includes("findTicketRange(tickets, winnerIndex + 1)") &&
+    !appSource.includes("Array.from({ length: quantity }")
+);
+assert(
+  "Million-ticket Toccata fee verifier is part of npm verify",
+  packageJson.scripts?.["verify:fees:1m"] === "node scripts/verify-million-ticket-fees.mjs" &&
+    packageJson.scripts?.verify?.includes("verify-million-ticket-fees.mjs")
 );
 assert(
   "Winner owner is enforced on chain",

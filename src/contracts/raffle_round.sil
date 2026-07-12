@@ -52,7 +52,7 @@ contract RaffleRound() {
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
 
-        require(max_tickets <= 1000);
+        require(max_tickets <= 1000000);
         require(sold_batches < 20);
         require(ticket_count > 0);
         require(sold_tickets + ticket_count <= max_tickets);
@@ -376,7 +376,7 @@ contract RaffleRound() {
 
     entrypoint function refund_all() {
         require(OpAuthOutputCount(this.activeInputIndex) == 0);
-        require(max_tickets <= 1000);
+        require(max_tickets <= 1000000);
         require(sold_batches > 0);
         require(sold_batches <= 20);
         require(tx.locktime >= refund_after_daa);

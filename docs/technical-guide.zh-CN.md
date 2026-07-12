@@ -8,7 +8,7 @@
 - 支持 Mainnet 和 Testnet 10，网络、节点、钱包地址前缀会交叉校验。
 - 支持 KasWare、Kastle；钱包私钥不会交给页面。
 - 使用一个持续演进的 `RaffleRound` covenant UTXO 保存奖池和轮次状态。
-- 支持每轮最多 1,000 张票、最多 20 个购买批次。
+- 支持每轮最多 1,000,000 张票、最多 20 个购买批次。
 - 满票或超时后，任意购票参与者可以发起开奖；奖金由 finalize 交易直接支付。
 - 超时后任何人都可以广播无钱包签名的全额退款交易。
 - 历史记录由浏览器通过 Kaspa REST 索引器重建。
@@ -84,7 +84,7 @@ Browser SPA
 
 ## 5. Covenant 状态模型
 
-当前合约版本：`raffle-v3.4-low-fee`。`raffle-v3.3-participant-finalize-fee40` artifact 作为历史兼容版本保留。
+当前合约版本：`raffle-v3.5-million-ticket`。v3.4 与 v3.3 artifact 作为历史兼容版本保留。
 
 核心状态字段：
 
@@ -97,7 +97,7 @@ Browser SPA
 - `batch_end_01..20`：每个购买批次的结束票号。
 - `owner_01..20`：每个购买批次的 x-only public key。
 
-使用批次而非每张票一个 covenant 输出，可以避免 UTXO 膨胀和 1,000 个 owner 状态字段。一笔 buy 可以购买多张连续票，但一轮最多有 20 笔 buy。
+使用批次而非每张票一个 covenant 输出，可以避免 UTXO 和浏览器对象随票数膨胀。一笔 buy 可以购买多张连续票，但一轮最多有 20 笔 buy；页面与 History 使用“起始票号 + 数量”保存一个批次，不会把 1,000,000 张票展开成 1,000,000 个对象。
 
 ### Entrypoints
 
@@ -185,6 +185,8 @@ Browser SPA
 Registry staging payment 还会产生由钱包输入数量和交易 mass 决定的动态网络费，该费用在构造后显示。实测 staging + marker relay 合计 0.005047 KAS；Testnet 再支付 0.001 KAS 自动退款费。自定义 Registry address 可以是当前网络的任意有效地址：若是创建者自己的钱包地址，0.05 KAS marker 仍由该钱包控制；若是第三方地址，则构成真实转账。
 
 Compute budget 当前为 buy 50、finalize 12、参与者授权 11、refund 20。节点实测参与者 P2PK 授权需要 100,000 script units；这些预算值覆盖实测执行量，同时把 normalized compute mass 降到固定费率可以安全承载的范围。
+
+`npm run verify:fees:1m` 使用当前编译 artifact 构造 1,000,000 票精确交易形状，并按 rusty-kaspa Toccata v1 规则分别计算 compute、transient、storage mass。当前结果：create 最低费 0.001926 KAS、20 批最后一次 buy 0.014350 KAS、20 批 finalize 0.015102 KAS、20 输出 timeout refund 0.017391 KAS，均低于当前固定费。20 批平均分票的 refund storage mass 为 58,823，可以提交；但前 19 批各一张、最后一批买剩余票的偏斜 refund storage mass 为 692,150，会超过 500,000 标准交易上限。该失败来自小额退款输出结构，增加 fee 无法解决，脚本会明确报告 `EXPECTED STORAGE REJECT`。
 
 ## 8. 随机数与信任假设
 

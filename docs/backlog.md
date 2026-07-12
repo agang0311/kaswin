@@ -1,6 +1,6 @@
 # Current Project Status and Backlog
 
-This file reflects the current v3.4 implementation. The original milestone checklists in GitHub Issues were created before the covenant design stabilized and are being closed or rewritten where the implemented architecture superseded them.
+This file reflects the current v3.5 implementation. The original milestone checklists in GitHub Issues were created before the covenant design stabilized and are being closed or rewritten where the implemented architecture superseded them.
 
 ## Implemented
 
@@ -9,7 +9,7 @@ This file reflects the current v3.4 implementation. The original milestone check
 - KasWare and Kastle wallet adapter registry.
 - Compiled Silverscript `RaffleRound` artifact and legacy artifact compatibility.
 - Stateful covenant create and batched buy flow.
-- Up to 1,000 tickets in at most 20 purchase batches.
+- Up to 1,000,000 tickets in at most 20 purchase batches, stored as compact ticket ranges in the browser and History loader.
 - Participant-only direct finalize with winner payment in the covenant transaction.
 - Walletless all-buyer refund after the DAA timeout.
 - Registry-based browser history and shared round links.

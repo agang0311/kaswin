@@ -1,6 +1,6 @@
 # Kaspa Toccata Static Raffle dApp Spec
 
-> **Historical design document.** This file is the original product specification and includes flows that were later replaced, including separate Ticket covenants, creator reveal, and manual Close. For the current v3.4 implementation, use [technical-guide.zh-CN.md](technical-guide.zh-CN.md). For end-user instructions, use [user-guide.zh-CN.md](user-guide.zh-CN.md).
+> **Historical design document.** This file is the original product specification and includes flows that were later replaced, including separate Ticket covenants, creator reveal, and manual Close. For the current v3.5 implementation, use [technical-guide.zh-CN.md](technical-guide.zh-CN.md). For end-user instructions, use [user-guide.zh-CN.md](user-guide.zh-CN.md).
 
 ## 1. Project Goal
 

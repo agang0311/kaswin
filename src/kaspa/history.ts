@@ -5,10 +5,12 @@ import {
   raffleCovenantStateFromRound
 } from "./covenant";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
+import { ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 
 export interface RaffleHistoryTicket {
   txId: string;
   ticketId: number;
+  ticketCount?: number;
   buyer: string;
   buyerPubkey?: string;
   paidAmount: bigint;
@@ -200,17 +202,16 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       const paidPerTicket = paidAmount / BigInt(ticketCount);
 
       if (!round.tickets.some((ticket) => ticket.txId === tx.transaction_id)) {
-        for (let offset = 0; offset < ticketCount; offset += 1) {
-          round.tickets.push({
-            txId: tx.transaction_id,
-            ticketId: payload.ticketId + offset,
-            buyer: payload.buyer,
-            buyerPubkey: payload.buyerPubkey,
-            paidAmount: paidPerTicket,
-            buyerCommitment: payload.buyerCommitment,
-            blockTime
-          });
-        }
+        round.tickets.push({
+          txId: tx.transaction_id,
+          ticketId: payload.ticketId,
+          ticketCount,
+          buyer: payload.buyer,
+          buyerPubkey: payload.buyerPubkey,
+          paidAmount: paidPerTicket,
+          buyerCommitment: payload.buyerCommitment,
+          blockTime
+        });
         round.potAmount += paidAmount;
       }
     }
@@ -252,20 +253,14 @@ async function replayTicketRoot(round: RaffleHistoryRound): Promise<string> {
   let root = "";
 
   if (round.contractVersion?.startsWith("raffle-v3")) {
-    const batches = orderedTickets.filter(
-      (ticket, index) => index === 0 || ticket.txId !== orderedTickets[index - 1]?.txId
-    );
-
-    for (const batch of batches) {
-      const ticketCount = orderedTickets.filter((ticket) => ticket.txId === batch.txId).length;
-
+    for (const batch of orderedTickets) {
       if (!batch.buyerCommitment) {
         throw new Error(`Round ${round.roundId} is missing ticket batch commitment ${batch.txId}.`);
       }
 
       root = await buildNextTicketRootHex(round.roundId, root, {
         ticketId: batch.ticketId,
-        ticketCount,
+        ticketCount: ticketRangeCount(batch),
         owner: batch.buyer,
         buyerCommitment: batch.buyerCommitment
       });
@@ -274,7 +269,7 @@ async function replayTicketRoot(round: RaffleHistoryRound): Promise<string> {
     return root;
   }
 
-  for (let ticketId = 1; ticketId <= orderedTickets.length; ticketId += 1) {
+  for (let ticketId = 1; ticketId <= totalTicketCount(orderedTickets); ticketId += 1) {
     const ticket = orderedTickets[ticketId - 1];
 
     if (!ticket || ticket.ticketId !== ticketId || !ticket.buyerCommitment) {
@@ -319,13 +314,9 @@ async function buildLatestCovenantCursor(
 
   const ticketRoot = await replayTicketRoot(round);
   const orderedTickets = [...round.tickets].sort((left, right) => left.ticketId - right.ticketId);
-  const batchTickets = round.contractVersion?.startsWith("raffle-v3")
-    ? orderedTickets.filter((ticket, index) => index === 0 || ticket.txId !== orderedTickets[index - 1]?.txId)
-    : orderedTickets;
-  const ticketBatchEnds = batchTickets.map((batchTicket) => {
-    const lastTicket = [...orderedTickets].reverse().find((ticket) => ticket.txId === batchTicket.txId);
-    return lastTicket?.ticketId ?? batchTicket.ticketId;
-  });
+  const batchTickets = orderedTickets;
+  const ticketBatchEnds = batchTickets.map(ticketRangeEnd);
+  const soldTickets = totalTicketCount(orderedTickets);
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
     contractVersion: round.contractVersion ?? "raffle-v1-timeout-refund",
@@ -334,7 +325,7 @@ async function buildLatestCovenantCursor(
     ticketPrice: round.ticketPrice,
     maxTickets: round.maxTickets,
     minTickets: round.minTickets,
-    soldTickets: round.tickets.length,
+    soldTickets,
     potAmount: round.potAmount,
     feeBps: 0,
     status,
