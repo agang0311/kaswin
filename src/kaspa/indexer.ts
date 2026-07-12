@@ -18,6 +18,7 @@ export interface IndexedRaffleRound {
   creator?: string;
   creatorPubkey?: string;
   oraclePublicKey?: string;
+  oracleEndpoint?: string;
   ticketPrice?: string;
   maxTickets?: number;
   minTickets?: number;

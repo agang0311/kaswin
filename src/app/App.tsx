@@ -137,6 +137,7 @@ function validateRpcUrl(value: string): string {
 
 type RefundTimeoutPart = "months" | "days" | "hours" | "minutes" | "seconds";
 type RefundTimeoutParts = Record<RefundTimeoutPart, string>;
+type OracleMode = "development" | "external";
 
 const DEFAULT_REFUND_TIMEOUT_PARTS: RefundTimeoutParts = {
   months: "0",
@@ -303,6 +304,73 @@ async function signOracleSeed(privateKeyHex: string, ticketRootHex: string, orac
   return bytesToHex(await secp.schnorr.signAsync(digest, hexToBytes(privateKeyHex)));
 }
 
+async function verifyOracleAttestation(
+  oraclePublicKey: string,
+  ticketRootHex: string,
+  oracleSeedHex: string,
+  oracleSignatureHex: string
+) {
+  if (
+    !/^[0-9a-f]{64}$/.test(oraclePublicKey) ||
+    !/^[0-9a-f]{64}$/.test(ticketRootHex) ||
+    !/^[0-9a-f]{64}$/.test(oracleSeedHex) ||
+    !/^[0-9a-f]{128}$/.test(oracleSignatureHex)
+  ) {
+    return false;
+  }
+  const message = new Uint8Array(64);
+  message.set(hexToBytes(ticketRootHex), 0);
+  message.set(hexToBytes(oracleSeedHex), 32);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", message));
+  return secp.schnorr.verifyAsync(
+    hexToBytes(oracleSignatureHex),
+    digest,
+    hexToBytes(oraclePublicKey)
+  );
+}
+
+function normalizedOracleEndpoint(value: string, network: SupportedNetworkId) {
+  const endpoint = value.trim().replace(/\/+$/, "");
+  const url = new URL(endpoint);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("Oracle endpoint must start with https:// or http://.");
+  }
+  if (network === "mainnet" && url.protocol !== "https:") {
+    throw new Error("Mainnet oracle endpoint must use HTTPS.");
+  }
+  return endpoint;
+}
+
+async function fetchOracleAttestation(
+  endpoint: string,
+  network: SupportedNetworkId,
+  roundId: string,
+  ticketRootHex: string,
+  oraclePublicKey: string
+) {
+  const base = normalizedOracleEndpoint(endpoint, network);
+  const url = new URL(`${base}/attestations/${encodeURIComponent(roundId)}`);
+  url.searchParams.set("ticketRoot", ticketRootHex);
+  const response = await fetch(url, { headers: { accept: "application/json" } });
+  const value = await response.json() as {
+    seed?: string;
+    oracleSeed?: string;
+    signature?: string;
+    oracleSignature?: string;
+    publicKey?: string;
+  };
+  if (!response.ok) throw new Error(`Oracle returned HTTP ${response.status}.`);
+  const seed = (value.oracleSeed || value.seed || "").toLowerCase();
+  const signature = (value.oracleSignature || value.signature || "").toLowerCase();
+  if (value.publicKey && value.publicKey.toLowerCase() !== oraclePublicKey) {
+    throw new Error("Oracle response public key does not match this round.");
+  }
+  if (!await verifyOracleAttestation(oraclePublicKey, ticketRootHex, seed, signature)) {
+    throw new Error("Oracle returned an invalid root-bound Schnorr attestation.");
+  }
+  return { seed, signature };
+}
+
 function encodePayload(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value));
 }
@@ -447,6 +515,7 @@ export function App() {
   const [metadataError, setMetadataError] = useState("");
   const [metadataMessage, setMetadataMessage] = useState("");
   const [oraclePrivateKey, setOraclePrivateKey] = useState("");
+  const [oracleMode, setOracleMode] = useState<OracleMode>("development");
   const [oracleSeed, setOracleSeed] = useState("");
   const [oracleSignature, setOracleSignature] = useState("");
   const [buyerSecret, setBuyerSecret] = useState("");
@@ -480,6 +549,7 @@ export function App() {
   const isFinalizingRef = useRef(false);
   const isRefundingRoundRef = useRef(false);
   const covenantStatus = useMemo(() => getRaffleCovenantStatus(), []);
+  const activeOracleMode: OracleMode = networkId === "mainnet" ? "external" : oracleMode;
   const canStartNewRound =
     !metadata.covenant ||
     Boolean(finalized) ||
@@ -826,6 +896,7 @@ export function App() {
     setVirtualDaaScore(0n);
     setWallet(null);
     setNetworkId(nextNetwork);
+    setOracleMode(nextNetwork === "mainnet" ? "external" : "development");
     setRpcUrl(networkEndpoints[nextNetwork]);
     setHistoryApiBase(nextProfile.historyApiBase);
     setHistoryAddress("");
@@ -959,6 +1030,34 @@ export function App() {
 
   async function prepareOracleForCreate(forceNew = false) {
     const roundId = forceNew || !metadata.roundId ? `round-${randomHex(8)}` : metadata.roundId;
+    const effectiveMode: OracleMode = networkId === "mainnet" ? "external" : oracleMode;
+
+    if (effectiveMode === "external") {
+      const publicKey = metadata.oraclePublicKey.trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(publicKey)) {
+        throw new Error("External oracle public key must be 32 bytes of hex.");
+      }
+      const endpoint = normalizedOracleEndpoint(metadata.oracleEndpoint || "", networkId);
+      setOraclePrivateKey("");
+      if (forceNew || !metadata.roundId) {
+        setTickets([]);
+        setFinalized(undefined);
+        setOracleSeed("");
+        setOracleSignature("");
+        setMetadata((current) => ({
+          ...current,
+          roundId,
+          createTxId: "",
+          creatorCommitment: "",
+          oraclePublicKey: publicKey,
+          oracleEndpoint: endpoint,
+          treasuryAddress: "",
+          covenant: undefined
+        }));
+      }
+      return { privateKey: "", publicKey, endpoint, roundId };
+    }
+
     const canReuseKey =
       !forceNew &&
       /^[0-9a-f]{64}$/.test(oraclePrivateKey) &&
@@ -985,7 +1084,7 @@ export function App() {
       }));
     }
 
-    return { privateKey, publicKey, roundId };
+    return { privateKey, publicKey, endpoint: "", roundId };
   }
 
   function handleOraclePrivateKeyInput(value: string) {
@@ -1012,12 +1111,15 @@ export function App() {
   function applyMetadata(nextMetadata: RaffleMetadata, message: string) {
     const profile = requireNetworkProfile(nextMetadata.network);
     const normalizedMetadata = { ...nextMetadata, network: profile.id };
-    const restoredOraclePrivateKey = restoreDevOracleKey(normalizedMetadata.roundId, normalizedMetadata.oraclePublicKey);
+    const restoredOraclePrivateKey = normalizedMetadata.oracleEndpoint
+      ? ""
+      : restoreDevOracleKey(normalizedMetadata.roundId, normalizedMetadata.oraclePublicKey);
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromMetadata(normalizedMetadata);
 
     setMetadata(normalizedMetadata);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setNetworkId(profile.id);
+    setOracleMode(profile.id === "mainnet" || Boolean(normalizedMetadata.oracleEndpoint) ? "external" : "development");
     setRpcUrl(networkEndpoints[profile.id]);
     setHistoryApiBase(profile.historyApiBase);
     setCreateRegistryAddress(normalizedMetadata.registryAddress ?? "");
@@ -1159,6 +1261,7 @@ export function App() {
         minTickets: metadata.minTickets,
         creatorPubkey,
         oraclePublicKey: prepared.publicKey,
+        oracleEndpoint: prepared.endpoint,
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         refundTimeoutSeconds: refundDelaySeconds.toString(),
@@ -1204,6 +1307,7 @@ export function App() {
             minTickets: metadata.minTickets,
             creatorPubkey,
             oraclePublicKey: prepared.publicKey,
+            oracleEndpoint: prepared.endpoint,
             createdAtDaaScore: createdAtDaaScore.toString(),
             refundAfterDaaScore: refundAfterDaaScore.toString(),
             refundTimeoutSeconds: refundDelaySeconds.toString(),
@@ -1243,6 +1347,7 @@ export function App() {
         roundId: prepared.roundId,
         creatorCommitment: "",
         oraclePublicKey: prepared.publicKey,
+        oracleEndpoint: prepared.endpoint,
         createTxId: result.txId,
         creatorAddress: wallet.address,
         creatorPubkey,
@@ -1544,7 +1649,7 @@ export function App() {
         /^[0-9a-f]{64}$/.test(signingOracleKey) &&
         oraclePublicKeyFromPrivateKey(signingOracleKey) === metadata.oraclePublicKey;
 
-      if (!hasMatchingLocalOracleKey) {
+      if (!hasMatchingLocalOracleKey && !metadata.oracleEndpoint) {
         signingOracleKey = await recoverDevOracleKey(metadata.roundId, metadata.oraclePublicKey);
         hasMatchingLocalOracleKey = Boolean(signingOracleKey);
 
@@ -1558,8 +1663,31 @@ export function App() {
         finalizeOracleSignature = await signOracleSeed(signingOracleKey, closedRound.ticketRoot, finalizeOracleSeed);
         setOracleSeed(finalizeOracleSeed);
         setOracleSignature(finalizeOracleSignature);
-      } else if (!finalizeOracleSeed || !finalizeOracleSignature) {
-        throw new Error("This legacy round uses a creator-only oracle key. Finalize it in the creator browser, provide an external attestation, or refund it after timeout.");
+      } else {
+        if ((!finalizeOracleSeed || !finalizeOracleSignature) && metadata.oracleEndpoint) {
+          const attestation = await fetchOracleAttestation(
+            metadata.oracleEndpoint,
+            networkId,
+            metadata.roundId,
+            closedRound.ticketRoot,
+            metadata.oraclePublicKey
+          );
+          finalizeOracleSeed = attestation.seed;
+          finalizeOracleSignature = attestation.signature;
+          setOracleSeed(attestation.seed);
+          setOracleSignature(attestation.signature);
+        }
+        if (!finalizeOracleSeed || !finalizeOracleSignature) {
+          throw new Error("No oracle attestation is available. Configure the round oracle endpoint or provide a seed and signature.");
+        }
+        if (!await verifyOracleAttestation(
+          metadata.oraclePublicKey,
+          closedRound.ticketRoot,
+          finalizeOracleSeed,
+          finalizeOracleSignature
+        )) {
+          throw new Error("The external oracle attestation is invalid for the current ticket root.");
+        }
       }
 
       const randomSeed = await buildFinalizeSeedHex(closedRound, finalizeOracleSeed);
@@ -1943,14 +2071,14 @@ export function App() {
 
     const loadedNetwork = networkFromKaspaAddress(covenant.address);
     const loadedProfile = requireNetworkProfile(loadedNetwork);
-    const restoredOraclePrivateKey = await recoverDevOracleKey(
-      selectedHistoryRound.roundId,
-      selectedHistoryRound.oraclePublicKey
-    );
+    const restoredOraclePrivateKey = selectedHistoryRound.oracleEndpoint
+      ? ""
+      : await recoverDevOracleKey(selectedHistoryRound.roundId, selectedHistoryRound.oraclePublicKey);
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound);
     const loadedRegistryAddress = selectedHistoryRound.registryAddress ?? (historyAddress || registryAddress);
 
     setNetworkId(loadedNetwork);
+    setOracleMode(loadedNetwork === "mainnet" || Boolean(selectedHistoryRound.oracleEndpoint) ? "external" : "development");
     setRpcUrl(networkEndpoints[loadedNetwork]);
     setHistoryApiBase(loadedProfile.historyApiBase);
     setCreateRegistryAddress(loadedRegistryAddress);
@@ -1971,6 +2099,7 @@ export function App() {
       creatorPubkey: selectedHistoryRound.creatorPubkey ?? covenant.creatorPubkey,
       creatorCommitment: "",
       oraclePublicKey: selectedHistoryRound.oraclePublicKey,
+      oracleEndpoint: selectedHistoryRound.oracleEndpoint,
       refundAfterDaaScore: selectedHistoryRound.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
       treasuryAddress: covenant.address,
       registryAddress: loadedRegistryAddress,
@@ -2772,6 +2901,48 @@ export function App() {
                 />
               </label>
             </div>
+            <div className="segmented-control" aria-label={t("oracleMode")}>
+              <button
+                type="button"
+                className={activeOracleMode === "development" ? "active" : ""}
+                disabled={networkId === "mainnet" || Boolean(metadata.covenant)}
+                onClick={() => setOracleMode("development")}
+              >
+                {t("oracleModeDevelopment")}
+              </button>
+              <button
+                type="button"
+                className={activeOracleMode === "external" ? "active" : ""}
+                disabled={Boolean(metadata.covenant)}
+                onClick={() => {
+                  setOracleMode("external");
+                  setOraclePrivateKey("");
+                }}
+              >
+                {t("oracleModeExternal")}
+              </button>
+            </div>
+            {activeOracleMode === "external" ? <div className="form-grid">
+              <label className="field">
+                <span>{t("oraclePublicKey")}</span>
+                <input
+                  value={metadata.oraclePublicKey}
+                  disabled={Boolean(metadata.covenant)}
+                  onChange={(event) => updateMetadata("oraclePublicKey", event.target.value.trim().toLowerCase())}
+                  placeholder={t("oraclePublicKeyPlaceholder")}
+                />
+              </label>
+              <label className="field">
+                <span>{t("oracleEndpoint")}</span>
+                <input
+                  type="url"
+                  value={metadata.oracleEndpoint ?? ""}
+                  disabled={Boolean(metadata.covenant)}
+                  onChange={(event) => updateMetadata("oracleEndpoint", event.target.value.trim())}
+                  placeholder="https://oracle.example"
+                />
+              </label>
+            </div> : null}
             <dl className="stat-list dense">
               <div><dt>{t("network")}</dt><dd>{networkLabel(networkId)}</dd></div>
               <div><dt>{t("roundId")}</dt><dd className="mono">{metadata.roundId || t("pending")}</dd></div>

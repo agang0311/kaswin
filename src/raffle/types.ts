@@ -85,6 +85,7 @@ export interface RaffleMetadata {
   creatorPubkey?: string;
   creatorCommitment?: string;
   oraclePublicKey: string;
+  oracleEndpoint?: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
   registryAddress?: string;

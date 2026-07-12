@@ -11,6 +11,7 @@ This file reflects the current v4 million-user implementation.
 - Depth-20 append-only ticket tree for 1,000,000 independent one-ticket users.
 - Participant-only direct finalize with winner and caller Merkle proofs.
 - Walletless sequential refunds after the DAA timeout.
+- External root-bound oracle client flow; Mainnet creation requires a public key and HTTPS attestation endpoint.
 - Confirmed-chain cursor and proof indexer with fixed-size ticket records, disk Merkle levels, crash checkpoints, and deep-reorg rebuild.
 - Full one-million-record index benchmark with cold rebuild, warm restart, proof latency, disk, and RSS measurements.
 - Three-round v4 real-network regression: 10-ticket History-loaded finalize, 3-ticket finalize, and 2-ticket History-loaded refund.
@@ -24,7 +25,7 @@ This file reflects the current v4 million-user implementation.
 
 ## Open Hardening Work
 
-- Replace the recoverable development oracle with an independent verifiable or threshold randomness service.
+- Deploy and independently audit a verifiable or threshold randomness service that implements the external attestation API.
 - Investigate storage-safe multiproof refund batches to reduce one transaction per refunded ticket.
 - Improve stale-round contention guidance and optionally offer an explicit reload-and-retry action.
 - Arrange independent covenant and transaction-builder security review.

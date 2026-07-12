@@ -14,6 +14,7 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     creatorPubkey: "",
     creatorCommitment: "",
     oraclePublicKey: "",
+    oracleEndpoint: "",
     refundTimeoutSeconds: "600",
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",

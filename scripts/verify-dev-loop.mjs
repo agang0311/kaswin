@@ -194,7 +194,23 @@ assert(
   appSource.includes("deriveOpenDevOracleKey") &&
     appSource.includes("recoverDevOracleKey") &&
     appSource.includes("signingOracleKey = await recoverDevOracleKey") &&
-    appSource.includes("const restoredOraclePrivateKey = await recoverDevOracleKey")
+    appSource.includes(": await recoverDevOracleKey(")
+);
+assert(
+  "Mainnet creation requires an external HTTPS oracle",
+  appSource.includes('networkId === "mainnet" ? "external" : oracleMode') &&
+    appSource.includes('network === "mainnet" && url.protocol !== "https:"') &&
+    appSource.includes('External oracle public key must be 32 bytes of hex.') &&
+    appSource.includes('oracleEndpoint: prepared.endpoint') &&
+    i18nSource.includes('"oracleModeExternal": "External"')
+);
+assert(
+  "External oracle attestations are fetched and verified against the ticket root",
+  appSource.includes('fetchOracleAttestation(') &&
+    appSource.includes('/attestations/${encodeURIComponent(roundId)}') &&
+    appSource.includes('verifyOracleAttestation(') &&
+    appSource.includes('secp.schnorr.verifyAsync(') &&
+    appSource.includes('Oracle returned an invalid root-bound Schnorr attestation.')
 );
 assert("Loaded rounds restore local dev oracle keys", appSource.includes("restoreDevOracleKey") && appSource.includes("Oracle key restored; finalize is ready"));
 assert("Treasury private key UI removed", !appSource.includes("Treasury private key"));

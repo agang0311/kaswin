@@ -40,6 +40,8 @@ The current v0.2.0 implementation includes:
 
 The current flow builds browser-side Toccata v1 transactions for round creation, single-ticket buys, direct finalize, and cursor-based timeout refunds. New testnet rounds still use a round-specific open development oracle key so the creator does not need to return. This key is intentionally recoverable and is not a production randomness source: a production release must use an independent verifiable or threshold oracle before real-value deployment.
 
+Mainnet creation now disables the development-oracle mode and requires an external 32-byte x-only Schnorr public key plus an HTTPS endpoint. Any participant can fetch `GET /attestations/{roundId}?ticketRoot={hex}` during Draw & pay. The response accepts `{ "seed", "signature", "publicKey" }` (or `oracleSeed` / `oracleSignature` aliases); the browser verifies `signature` over `sha256(ticketRoot || seed)`, and the covenant verifies the same attestation again on chain. This repository defines and consumes that interface but does not operate or endorse an independent oracle service.
+
 ## Covenant Direction
 
 The v4 covenant keeps the pot in one `RaffleRoundV4` UTXO. Every purchase appends `sha256(owner_pubkey)` to a depth-20 tree and stores only the root plus a 640-byte frontier. Finalize verifies both the winning ticket and the caller's participant proof, pays the prize, returns the caller authorization UTXO unchanged, and refunds the carrier atomically. After timeout, `refundNext` advances an on-chain cursor; anyone can broadcast the next proof, while the covenant forces payment to that ticket owner.

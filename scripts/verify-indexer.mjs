@@ -27,6 +27,7 @@ const createPayload = {
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
   creatorPubkey: owners[0].toString("hex"),
   oraclePublicKey: owners[2].toString("hex"),
+  oracleEndpoint: "https://oracle.example",
   ticketPrice: "30000000",
   maxTickets: 1_000_000,
   minTickets: 1,
@@ -63,6 +64,7 @@ fs.writeFileSync(path.join(fixtureDir, "state.json"), JSON.stringify({
       creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
       creatorPubkey: owners[0].toString("hex"),
       oraclePublicKey: owners[2].toString("hex"),
+      oracleEndpoint: createPayload.oracleEndpoint,
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -92,6 +94,7 @@ fs.writeFileSync(path.join(fixtureDir, "base-state.json"), JSON.stringify({
       creator: createPayload.creator,
       creatorPubkey: owners[0].toString("hex"),
       oraclePublicKey: owners[2].toString("hex"),
+      oracleEndpoint: createPayload.oracleEndpoint,
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -156,7 +159,12 @@ try {
     throw new Error("Indexer migration baseline was not preserved.");
   }
   const rounds = await (await fetch(`http://127.0.0.1:${port}/rounds`)).json();
-  if (rounds.length !== 1 || rounds[0].soldTickets !== 2 || !rounds[0].latestCovenant) {
+  if (
+    rounds.length !== 1 ||
+    rounds[0].soldTickets !== 2 ||
+    rounds[0].oracleEndpoint !== createPayload.oracleEndpoint ||
+    !rounds[0].latestCovenant
+  ) {
     throw new Error("Indexer did not restore the round cursor and ticket count.");
   }
   const ticket = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/tickets/2`)).json();

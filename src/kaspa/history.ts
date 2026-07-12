@@ -43,6 +43,7 @@ export interface RaffleHistoryRound {
   creatorPubkey?: string;
   creatorCommitment?: string;
   oraclePublicKey?: string;
+  oracleEndpoint?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
@@ -97,6 +98,7 @@ interface RafflePayload {
   creatorPubkey?: string;
   creatorCommitment?: string;
   oraclePublicKey?: string;
+  oracleEndpoint?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
@@ -187,6 +189,7 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.creatorPubkey = payload.creatorPubkey ?? round.creatorPubkey;
       round.creatorCommitment = payload.creatorCommitment ?? round.creatorCommitment;
       round.oraclePublicKey = payload.oraclePublicKey ?? round.oraclePublicKey;
+      round.oracleEndpoint = payload.oracleEndpoint ?? round.oracleEndpoint;
       round.createdAtDaaScore = payload.createdAtDaaScore ?? round.createdAtDaaScore;
       round.refundTimeoutSeconds = payload.refundTimeoutSeconds ?? round.refundTimeoutSeconds;
       round.refundAfterDaaScore = payload.refundAfterDaaScore ?? round.refundAfterDaaScore;
@@ -549,6 +552,7 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
       creator: indexed.creator,
       creatorPubkey: indexed.creatorPubkey,
       oraclePublicKey: indexed.oraclePublicKey,
+      oracleEndpoint: indexed.oracleEndpoint,
       refundTimeoutSeconds: indexed.refundTimeoutSeconds,
       createdAtDaaScore: indexed.createdAtDaaScore,
       refundAfterDaaScore: indexed.refundAfterDaaScore,

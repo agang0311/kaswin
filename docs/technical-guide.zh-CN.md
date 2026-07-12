@@ -8,12 +8,14 @@
 - 支持 Mainnet 和 Testnet 10，网络、节点、钱包地址前缀会交叉校验。
 - 支持 KasWare、Kastle；钱包私钥不会交给页面。
 - 使用一个持续演进的 `RaffleRound` covenant UTXO 保存奖池和轮次状态。
-- 支持每轮最多 1,000,000 张票、最多 20 个购买批次。
+- V4 支持每轮最多 1,000,000 个独立用户，每笔 buy 固定购买一张票。
 - 满票或超时后，任意购票参与者可以发起开奖；奖金由 finalize 交易直接支付。
-- 超时后任何人都可以广播无钱包签名的全额退款交易。
-- 历史记录由浏览器通过 Kaspa REST 索引器重建。
+- 超时后任何人都可以广播无钱包签名的顺序退款交易，covenant 强制支付给 proof 对应的票主。
+- 百万用户历史、当前 covenant cursor 和 Merkle witness 由可替换的 raffle indexer 提供，proof 会在链上再次验证。
 
 当前随机数方案是可公开推导密钥的开发 oracle，适合功能验证，不适合承载需要抗操纵保证的生产抽奖。主网入口存在是为了协议兼容和联调，不代表已经完成安全审计。
+
+主网创建流程已禁止开发 oracle，必须填写外部 Schnorr 公钥和 HTTPS 服务地址。开奖浏览器请求 `GET /attestations/{roundId}?ticketRoot={hex}`，并先验证 `sha256(ticketRoot || seed)` 的签名；covenant 随后在链上再次验证同一签名。仓库只实现该客户端协议，不包含或背书任何独立 oracle 服务。
 
 ## 2. 系统结构
 
