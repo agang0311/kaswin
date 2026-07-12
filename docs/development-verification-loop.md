@@ -27,13 +27,13 @@ Runs the local `kaspanet/silverscript` compiler from `.tools/silverscript`. On W
 
 As of 2026-07-09, the raffle contract compiles locally. The 32-byte oracle public key and ticket-root values are stored as fixed `byte[32]` covenant state fields, and the browser encoder mirrors the compiler state layout.
 
-## Manual TN12 Browser Loop
+## Manual Testnet 10 Browser Loop
 
-Use a dedicated testnet wallet only.
+Use a dedicated testnet wallet only. The public endpoint name contains `tn12`, but currently reports network id `testnet-10`.
 
 1. Start the static app locally.
 2. Open the app in Chrome.
-3. Connect to `ws://tn12-node.kaspa.com:18210`; the app should adopt the network reported by the node.
+3. Select Testnet 10 and connect to `ws://tn12-node.kaspa.com:18210`; the node must report the selected network.
 4. Load the shared round URL or paste the round metadata JSON.
 5. Import a funded TN12 buyer wallet.
 6. Buy a ticket batch and confirm the page displays one ticket-number range instead of one row per ticket.

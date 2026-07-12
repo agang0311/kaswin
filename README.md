@@ -4,9 +4,17 @@ Static raffle dApp for Kaspa Toccata with Mainnet and Testnet 10 profiles.
 
 The app is designed to run without a project-controlled backend. Users provide a browser-compatible Kaspa wRPC endpoint, connect a supported browser wallet, approve funding transaction signatures in the wallet, and reconstruct raffle state from chain data.
 
+## Documentation
+
+- [中文用户指南](docs/user-guide.zh-CN.md)
+- [中文技术指南](docs/technical-guide.zh-CN.md)
+- [Development verification loop](docs/development-verification-loop.md)
+- [Current project status and backlog](docs/backlog.md)
+- [Original design specification](docs/kaspa_toccata_static_raffle_spec.md) - historical design input; some flows have since been superseded.
+
 ## Current Status
 
-This repository starts Milestone 1:
+The current v0.1.9 implementation includes:
 
 - Single-file React + TypeScript SPA build
 - Focused one-page raffle workspace with technical details collapsed by default

@@ -17,11 +17,13 @@ Current verification:
 2. Browser verification covers create, buy, automatic local oracle attestation, direct finalize, winner payout, and history load on the currently reachable public testnet node.
 3. Historical lookup is available through the explorer REST API; fuller chain reconstruction after arbitrary page reloads is still future work.
 
-Windows TN12 compiler note:
+Windows compiler note:
 
 - Rust/Cargo can build `silverc` with the `stable-x86_64-pc-windows-gnu` toolchain plus MSYS2 MinGW.
 - `kaspa-txscript` currently pulls RISC0 dependencies on Windows. The compile script injects a no-runtime RISC0 allocation stub so the compiler binary can link.
 - `raffle_round.sil` stores the oracle public key and ticket root as fixed `byte[32]` covenant state fields, matching the compiler's encoded state layout directly.
 - Finalize is valid only after all tickets sell or the round deadline is reached. The timeout path shares its DAA deadline with the all-buyer refund path.
-- The current v3.1 state stores up to 20 purchase-batch end indexes and owner public keys. A batch may contain many tickets, allowing 1,000 total tickets without a 1,000-output refund transaction.
+- The current v3.3 state stores up to 20 purchase-batch end indexes and owner public keys. A batch may contain many tickets, allowing 1,000 total tickets without a 1,000-field covenant state.
 - Finalize derives the winning ticket index, resolves its batch owner inside the covenant, and requires the prize output to use that public key.
+- Finalize also requires the caller to own at least one recorded purchase batch. The caller signs an authorization UTXO that is returned unchanged.
+- Refund is valid only after the DAA timeout and pays each purchase batch back without requiring a wallet signature.

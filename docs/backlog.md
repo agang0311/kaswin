@@ -1,69 +1,34 @@
-# Development Backlog
+# Current Project Status and Backlog
 
-## Milestone 1: Static App Skeleton
+This file reflects the current v3.3 implementation. The original milestone checklists in GitHub Issues were created before the covenant design stabilized and are being closed or rewritten where the implemented architecture superseded them.
 
-- [x] Create Vite + React + TypeScript project skeleton
-- [x] Add one-page operations UI
-- [x] Add metadata/type helper modules
-- [x] Add placeholder Kaspa RPC and wallet boundaries
-- [ ] Install dependencies and verify local dev server
-- [ ] Connect to a browser-compatible Kaspa wRPC endpoint
-- [ ] Display network, sync status, DAA score, and latency
-- [ ] Generate/import a dedicated browser-local test wallet
-- [ ] Display test wallet address and balance
+## Implemented
 
-## Milestone 2: Round Metadata and Local State
+- Self-contained static React/TypeScript SPA and single-file release build.
+- Mainnet/Testnet 10 network profiles with strict node and wallet validation.
+- KasWare and Kastle wallet adapter registry.
+- Compiled Silverscript `RaffleRound` artifact and legacy artifact compatibility.
+- Stateful covenant create and batched buy flow.
+- Up to 1,000 tickets in at most 20 purchase batches.
+- Participant-only direct finalize with winner payment in the covenant transaction.
+- Walletless all-buyer refund after the DAA timeout.
+- Registry-based browser history and shared round links.
+- Three-round real-network regression loop, including History load before finalize.
 
-- [ ] Define final metadata schema and validation errors
-- [ ] Export and import round metadata JSON
-- [ ] Support share-link query parameters
-- [x] Add share-link import/export for round metadata
-- [ ] Implement local raffle event reducer
-- [ ] Add mock scanner events for UI development
-- [ ] Add verification panel checks for local state
+## Superseded Original Tasks
 
-## Milestone 3: Toccata Contract Templates
+- Separate Round, Ticket, Finalize, and Refund covenant templates were replaced by one stateful `RaffleRound` covenant with entrypoints.
+- Creator reveal and manual Close were replaced by oracle-backed direct finalize after sellout or timeout.
+- Browser-local imported private keys were replaced by wallet adapters. Private-key test wallets exist only in the local development server.
+- Mock scanner events were replaced by REST-backed on-chain history reconstruction.
 
-- [x] Draft Round covenant source
-- [ ] Compile Round covenant with `kaspanet/silverscript`
-- [ ] Implement Ticket inclusion/root strategy in the covenant state
-- [ ] Implement Refund covenant path
-- [ ] Compile artifacts into `src/contracts/compiled/`
-- [ ] Add contract version metadata
+## Open Hardening Work
 
-## Milestone 4: Create and Buy Flow
+- Define and test a chain reorganization rollback strategy.
+- Persist scanner checkpoints and resume long histories incrementally.
+- Improve stale-round contention guidance and optionally offer an explicit reload-and-retry action.
+- Replace the deterministic development oracle with a production-grade randomness source.
+- Arrange independent covenant and transaction-builder security review.
+- Add repeatable automated browser transaction tests where a funded disposable test network is available.
 
-- [ ] Build create-round transaction
-- [ ] Broadcast create-round transaction
-- [ ] Wait for acceptance and export metadata
-- [ ] Build buy-ticket transaction
-- [ ] Broadcast buy-ticket transaction
-- [ ] Reconstruct ticket list from chain data
-- [ ] Handle Round UTXO contention with a reload-and-retry flow
-
-## Milestone 5: Close and Finalize Flow
-
-- [ ] Build close-round transaction
-- [ ] Verify creator reveal against commitment
-- [ ] Compute ticket root
-- [ ] Compute seed and winning ticket
-- [ ] Build finalize transaction
-- [ ] Pay winner directly in finalize transaction
-- [ ] Display final verification details
-- [x] Add release gate that fails until covenant payout artifacts are compiled
-
-## Milestone 6: Refund Flow
-
-- [ ] Define V0 refund fallback condition
-- [ ] Detect refund eligibility
-- [ ] Build refund transaction
-- [ ] Broadcast refund transaction
-- [ ] Mark refunded tickets after acceptance
-
-## Milestone 7: Hardening
-
-- [ ] Reorg handling strategy
-- [ ] Better scanner checkpoints
-- [ ] Clearer error messages
-- [ ] Security warning placement
-- [ ] Testnet end-to-end test plan
+See GitHub Issues for ownership and discussion. Completed historical milestones are kept in git history and release notes rather than as permanently open checklists.
