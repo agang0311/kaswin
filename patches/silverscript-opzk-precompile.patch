@@ -1,0 +1,33 @@
+diff --git a/silverscript-lang/src/compiler/compile.rs b/silverscript-lang/src/compiler/compile.rs
+index 5393545..f48fe83 100644
+--- a/silverscript-lang/src/compiler/compile.rs
++++ b/silverscript-lang/src/compiler/compile.rs
+@@ -468,6 +468,7 @@ fn infer_expr_type_ref_for_comparison<'i>(
+                 | "OpNum2Bin"
+                 | "OpBin2Num"
+                 | "OpChainblockSeqCommit"
++                | "OpZkPrecompile"
+                 | "LockingBytecodeNullData"
+                 | "ScriptPubKeyP2PK"
+                 | "ScriptPubKeyP2SH"
+@@ -3587,6 +3588,7 @@ fn compile_call_expr<'i>(
+         "OpNum2Bin" => compile_opcode_builtin_call(&mut ctx, name, args, 2, OpNum2Bin),
+         "OpBin2Num" => compile_opcode_builtin_call(&mut ctx, name, args, 1, OpBin2Num),
+         "OpChainblockSeqCommit" => compile_opcode_builtin_call(&mut ctx, name, args, 1, OpChainblockSeqCommit),
++        "OpZkPrecompile" => compile_opcode_builtin_call(&mut ctx, name, args, 9, OpZkPrecompile),
+         "bytes" => compile_bytes_call(&mut ctx, args),
+         "length" => compile_length_call(&mut ctx, args),
+         "int" | "byte" | "bool" | "string" | "sig" | "pubkey" | "datasig" => compile_passthrough_cast_call(&mut ctx, name, args),
+diff --git a/silverscript-lang/src/compiler/debug_value_types.rs b/silverscript-lang/src/compiler/debug_value_types.rs
+index bb05076..2345bc9 100644
+--- a/silverscript-lang/src/compiler/debug_value_types.rs
++++ b/silverscript-lang/src/compiler/debug_value_types.rs
+@@ -54,7 +54,7 @@ fn builtin_call_value_type(name: &str) -> &'static str {
+         | "OpCovInputIdx"
+         | "OpCovOutputCount"
+         | "OpCovOutputIdx" => "int",
+-        "OpTxInputIsCoinbase" | "checkSig" | "checkSigFromStack" | "checkSigFromStackECDSA" => "bool",
++        "OpTxInputIsCoinbase" | "OpZkPrecompile" | "checkSig" | "checkSigFromStack" | "checkSigFromStackECDSA" => "bool",
+         "blake2b" | "sha256" | "OpSha256" => "byte[32]",
+         "bytes"
+         | "OpTxSubnetId"

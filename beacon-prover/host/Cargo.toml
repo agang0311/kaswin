@@ -1,0 +1,15 @@
+[package]
+name = "kaspa-raffle-beacon-prover"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+hex.workspace = true
+kaspa-raffle-beacon-methods = { path = "../methods" }
+risc0-binfmt = "=3.0.4"
+risc0-zkvm = { workspace = true, features = ["prove"] }
+serde.workspace = true
+serde_json.workspace = true
+

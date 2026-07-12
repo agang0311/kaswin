@@ -1,0 +1,11 @@
+[package]
+name = "kaspa-raffle-drand-guest"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+drand-verify = { path = "../../drand-verify" }
+risc0-zkvm = { version = "=3.0.4", default-features = false }
+
