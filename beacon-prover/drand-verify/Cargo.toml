@@ -8,12 +8,12 @@ license = "Apache-2.0"
 repository = "https://github.com/noislabs/drand-verify"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 pairing = "0.23.0"
 bls12_381 = { version = "0.8.0", features = ["experimental"] }
-sha2 = "0.9.1" # Must be compatible with bls12_381, see https://github.com/zkcrypto/bls12_381/issues/102
+sha2 = { version = "0.9.1", default-features = false } # Must match bls12_381's digest version.
 
 [dev-dependencies]
 hex = "0.4"
