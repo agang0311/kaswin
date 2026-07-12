@@ -5,21 +5,38 @@ import react from "@vitejs/plugin-react";
 
 const brokenOneKeyWasmLoader =
   'return await WebAssembly.instantiate(require("./kaspa_bg.wasm.js")(), imports);';
+const unusedOneKeyDefaultWasmUrl =
+  "module_or_path = new URL('kaspa_bg.wasm.bin', import.meta.url);";
 
 function patchOneKeyBrowserWasmLoader(): Plugin {
+  const unusedWasmModule = "\0kaspa-raffle-unused-default-wasm";
   return {
     name: "patch-onekey-browser-wasm-loader",
     enforce: "pre",
+    resolveId(source, importer) {
+      if (source === "./kaspa_bg.wasm.js" && importer?.includes("@onekeyfe/kaspa-wasm/kaspa.js")) {
+        return unusedWasmModule;
+      }
+      return null;
+    },
+    load(id) {
+      if (id === unusedWasmModule) {
+        return "export default function unusedDefaultWasmLoader() { throw new Error('Use explicit Kaspa WASM initialization.'); }";
+      }
+      return null;
+    },
     transform(code, id) {
       if (!id.includes("@onekeyfe/kaspa-wasm/kaspa.js")) {
         return null;
       }
 
-      if (!code.includes(brokenOneKeyWasmLoader)) {
+      if (!code.includes(brokenOneKeyWasmLoader) || !code.includes(unusedOneKeyDefaultWasmUrl)) {
         throw new Error("The OneKey Kaspa WASM loader changed; review the browser patch.");
       }
 
-      return code.replace(brokenOneKeyWasmLoader, "");
+      return code
+        .replace(brokenOneKeyWasmLoader, "")
+        .replace(unusedOneKeyDefaultWasmUrl, "throw new Error('Kaspa WASM must be initialized explicitly.');");
     }
   };
 }

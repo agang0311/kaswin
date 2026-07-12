@@ -3,7 +3,7 @@ import type { RaffleMetadata } from "./types";
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.3.0",
+    version: "0.4.0",
     network,
     roundId: "",
     createTxId: "",
@@ -20,7 +20,7 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     refundAfterDaaScore: "",
     treasuryAddress: "",
     registryAddress: "",
-    contractVersion: "raffle-v5-million-users-batch-refund"
+    contractVersion: "raffle-v6-aligned-batch-buy"
   };
 }
 
@@ -46,6 +46,10 @@ export function parseMetadata(raw: string): RaffleMetadata {
     if (parsed[field] === undefined || parsed[field] === "") {
       throw new Error(`Metadata is missing ${field}.`);
     }
+  }
+
+  if (parsed.contractVersion !== "raffle-v6-aligned-batch-buy") {
+    throw new Error("This build only supports new V6 raffle rounds. Recreate legacy rounds with the current page.");
   }
 
   if (Number(parsed.ticketPrice) <= 0) {

@@ -24,6 +24,7 @@ function pair(left, right) { return hash(Buffer.concat([left, right])); }
 
 const emptyNodes = [Buffer.alloc(32)];
 for (let level = 1; level < 20; level += 1) emptyNodes.push(pair(emptyNodes[level - 1], emptyNodes[level - 1]));
+const emptyRoot = pair(emptyNodes[19], emptyNodes[19]);
 const leaf = hash(Buffer.from(owner, "hex"));
 
 function buildTree(count) {
@@ -36,6 +37,32 @@ function buildTree(count) {
     levels.push(nodes);
   }
   return { root: nodes[0], levels };
+}
+
+function buildAppendState(count) {
+  let frontier = Buffer.alloc(640);
+  let root = emptyRoot;
+  for (let ticketId = 0; ticketId < count; ticketId += 1) {
+    const nextFrontier = Buffer.from(frontier);
+    let node = leaf;
+    let path = ticketId;
+    let carrying = true;
+    for (let level = 0; level < 20; level += 1) {
+      if (path % 2 === 0) {
+        if (carrying) {
+          node.copy(nextFrontier, level * 32);
+          carrying = false;
+        }
+        node = pair(node, emptyNodes[level]);
+      } else {
+        node = pair(frontier.subarray(level * 32, level * 32 + 32), node);
+      }
+      path >>= 1;
+    }
+    frontier = nextFrontier;
+    root = node;
+  }
+  return { root, frontier };
 }
 
 function rangeProof8(tree, firstTicketId) {
@@ -68,7 +95,7 @@ function refundState(soldTickets, ticketRoot, refundCursor) {
   };
 }
 
-function roundState(soldTickets, ticketRoot) {
+function roundState(soldTickets, ticketRoot, ticketFrontier = Buffer.alloc(640)) {
   return {
     max_tickets: 1_000_000,
     ticket_price: ticketPrice,
@@ -77,7 +104,7 @@ function roundState(soldTickets, ticketRoot) {
     refund_after_daa: 1000,
     sold_tickets: soldTickets,
     ticket_root: `0x${ticketRoot.toString("hex")}`,
-    frontier: `0x${"00".repeat(640)}`,
+    frontier: `0x${ticketFrontier.toString("hex")}`,
     refund_cursor: 0
   };
 }
@@ -123,6 +150,40 @@ const second16 = refundState(16, tree16.root, 8);
 const first10 = refundState(10, tree10.root, 0);
 const afterBatch10 = refundState(10, tree10.root, 8);
 const afterOne10 = refundState(10, tree10.root, 9);
+
+const buyTests = { tests: [1, 2, 4, 8].map((ticketCount) => {
+  const next = buildAppendState(ticketCount);
+  return {
+    name: `buy_${ticketCount}_tickets`,
+    function: "buy",
+    args: [`0x${owner}`, ticketCount],
+    expect: "pass",
+    tx: {
+      active_input_index: 0,
+      inputs: [{ utxo_value: 20_000_000, covenant_id: covenantId, state: roundState(0, emptyRoot) }],
+      outputs: [{
+        value: 20_000_000 + ticketPrice * ticketCount,
+        covenant_id: covenantId,
+        authorizing_input: 0,
+        state: roundState(ticketCount, next.root, next.frontier)
+      }]
+    }
+  };
+}).concat([{
+  name: "buy_2_tickets_unaligned_rejected",
+  function: "buy",
+  args: [`0x${owner}`, 2],
+  expect: "fail",
+  tx: {
+    active_input_index: 0,
+    inputs: [{
+      utxo_value: 20_000_000 + ticketPrice,
+      covenant_id: covenantId,
+      state: roundState(1, buildAppendState(1).root, buildAppendState(1).frontier)
+    }],
+    outputs: []
+  }
+}]) };
 
 function ownerOutput(value = ticketPrice - 150_000) { return { value, p2pk_pubkey: `0x${owner}` }; }
 
@@ -262,5 +323,6 @@ function run(source, name, tests) {
 }
 
 if (!fs.existsSync(debuggerPath)) throw new Error("Build the SilverScript cli-debugger before running V5 tests.");
+run(roundSource, "raffle_round_v5_buy", buyTests);
 run(refundSource, "raffle_refund_v1", batchTests);
 run(roundSource, "raffle_round_v5_transition", transitionTests);

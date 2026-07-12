@@ -60,7 +60,7 @@ function writeTicketFixture() {
 
   const summary = {
     roundId,
-    contractVersion: "raffle-v5-million-users-batch-refund",
+    contractVersion: "raffle-v6-aligned-batch-buy",
     version: "0.2.0",
     status: "Open",
     refundCursor: 0,

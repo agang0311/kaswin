@@ -1,14 +1,13 @@
 import {
-  buildNextTicketRootHex,
   buildRaffleRedeemScriptForContractVersion,
   bytesToHex,
-  isMillionUserContractVersion,
+  MILLION_USER_CONTRACT_VERSION,
   raffleCovenantStateFromRound
 } from "./covenant";
 import { appendTicketLeaf, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
-import { ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
-import { loadIndexedRaffleRounds } from "./indexer";
+import { ticketRangeCount, totalTicketCount } from "../raffle/tickets";
+import { loadIndexedRaffleRounds, requiresRaffleIndexer } from "./indexer";
 
 export interface RaffleHistoryTicket {
   txId: string;
@@ -260,60 +259,21 @@ function nextCovenantAddressFromTransaction(tx: RestTransaction): string | undef
   return outputZero(tx)?.script_public_key_address;
 }
 
-async function replayTicketRoot(round: RaffleHistoryRound): Promise<string> {
-  const orderedTickets = [...round.tickets].sort((left, right) => left.ticketId - right.ticketId);
-  let root = "";
-
-  if (round.contractVersion?.startsWith("raffle-v3")) {
-    for (const batch of orderedTickets) {
-      if (!batch.buyerCommitment) {
-        throw new Error(`Round ${round.roundId} is missing ticket batch commitment ${batch.txId}.`);
-      }
-
-      root = await buildNextTicketRootHex(round.roundId, root, {
-        ticketId: batch.ticketId,
-        ticketCount: ticketRangeCount(batch),
-        owner: batch.buyer,
-        buyerCommitment: batch.buyerCommitment
-      });
-    }
-
-    return root;
-  }
-
-  for (let ticketId = 1; ticketId <= totalTicketCount(orderedTickets); ticketId += 1) {
-    const ticket = orderedTickets[ticketId - 1];
-
-    if (!ticket || ticket.ticketId !== ticketId || !ticket.buyerCommitment) {
-      throw new Error(`Round ${round.roundId} is missing ticket #${ticketId} commitment.`);
-    }
-
-    root = await buildNextTicketRootHex(round.roundId, root, {
-      ticketId: ticket.ticketId,
-      owner: ticket.buyer,
-      buyerCommitment: ticket.buyerCommitment
-    });
-  }
-
-  return root;
-}
-
 async function replayTicketTree(round: RaffleHistoryRound): Promise<{ root: string; frontier?: string }> {
-  if (!isMillionUserContractVersion(round.contractVersion ?? "")) {
-    return { root: await replayTicketRoot(round) };
-  }
-
   const orderedTickets = [...round.tickets].sort((left, right) => left.ticketId - right.ticketId);
   let root = TICKET_EMPTY_ROOT_HEX;
   let frontier = TICKET_EMPTY_FRONTIER_HEX;
-  for (let index = 0; index < orderedTickets.length; index += 1) {
-    const ticket = orderedTickets[index];
-    if (ticket.ticketId !== index + 1 || (ticket.ticketCount ?? 1) !== 1 || !ticket.buyerPubkey) {
-      throw new Error(`Round ${round.roundId} is missing canonical ticket #${index + 1}.`);
+  let nextTicketId = 1;
+  for (const ticket of orderedTickets) {
+    if (ticket.ticketId !== nextTicketId || !ticket.buyerPubkey) {
+      throw new Error(`Round ${round.roundId} is missing canonical ticket #${nextTicketId}.`);
     }
-    const appended = await appendTicketLeaf(frontier, index, ticket.buyerPubkey);
-    frontier = appended.frontierHex;
-    root = appended.rootHex;
+    for (let offset = 0; offset < ticketRangeCount(ticket); offset += 1) {
+      const appended = await appendTicketLeaf(frontier, nextTicketId - 1, ticket.buyerPubkey);
+      frontier = appended.frontierHex;
+      root = appended.rootHex;
+      nextTicketId += 1;
+    }
   }
   return { root, frontier };
 }
@@ -347,8 +307,6 @@ async function buildLatestCovenantCursor(
   const ticketTree = await replayTicketTree(round);
   const ticketRoot = ticketTree.root;
   const orderedTickets = [...round.tickets].sort((left, right) => left.ticketId - right.ticketId);
-  const batchTickets = orderedTickets;
-  const ticketBatchEnds = batchTickets.map(ticketRangeEnd);
   const soldTickets = totalTicketCount(orderedTickets);
   const txPayload = decodeHexPayload(tx.payload ?? "");
   const refundCursor = status === "Refunding"
@@ -358,10 +316,9 @@ async function buildLatestCovenantCursor(
         ? Math.max(0, Number(txPayload.refundCursor || 0) + 1)
         : 0
     : 0;
-  const isMillionUserRound = isMillionUserContractVersion(round.contractVersion ?? "");
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
-    contractVersion: round.contractVersion ?? "raffle-v1-timeout-refund",
+    contractVersion: MILLION_USER_CONTRACT_VERSION,
     roundId: round.roundId,
     creator: round.creator || "no-wallet",
     ticketPrice: round.ticketPrice,
@@ -378,9 +335,9 @@ async function buildLatestCovenantCursor(
     ticketRoot,
     ticketFrontier: ticketTree.frontier,
     refundCursor,
-    soldBatches: isMillionUserRound ? 0 : batchTickets.length,
-    ticketBatchEnds: isMillionUserRound ? [] : ticketBatchEnds,
-    ticketOwnerPubkeys: isMillionUserRound ? [] : batchTickets.map((ticket) => ticket.buyerPubkey ?? "")
+    soldBatches: 0,
+    ticketBatchEnds: [],
+    ticketOwnerPubkeys: []
   };
   const covenantState = await raffleCovenantStateFromRound(stateRound);
 
@@ -494,7 +451,11 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
   applyHistoryTransactions(rounds, registryTransactions);
 
   for (const round of [...rounds.values()]) {
-    if (isMillionUserContractVersion(round.contractVersion ?? "")) continue;
+    if (round.contractVersion !== MILLION_USER_CONTRACT_VERSION) {
+      rounds.delete(round.roundId);
+      continue;
+    }
+    if (requiresRaffleIndexer(round.maxTickets ?? 1_000_000)) continue;
     await traceRoundCovenantHistory(apiBaseUrl, rounds, round, limit);
   }
 
@@ -508,7 +469,9 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
 }
 
 export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<RaffleHistoryRound[]> {
-  const indexedRounds = await loadIndexedRaffleRounds(apiBaseUrl);
+  const indexedRounds = (await loadIndexedRaffleRounds(apiBaseUrl)).filter((round) => (
+    round.contractVersion === MILLION_USER_CONTRACT_VERSION
+  ));
   return Promise.all(indexedRounds.map(async (indexed): Promise<RaffleHistoryRound> => {
     const ticketPrice = BigInt(indexed.ticketPrice || "0");
     let latestCovenant: RaffleCovenantCursor | undefined;

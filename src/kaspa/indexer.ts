@@ -1,6 +1,11 @@
 import { verifyTicketProof, verifyTicketRange8 } from "../raffle/merkle";
 
 export const DEFAULT_RAFFLE_INDEX_API = "http://127.0.0.1:8787";
+export const INDEXER_FREE_TICKET_LIMIT = 1_000;
+
+export function requiresRaffleIndexer(maxTickets: number): boolean {
+  return maxTickets > INDEXER_FREE_TICKET_LIMIT;
+}
 
 export interface IndexedTicketProof {
   ticketId: number;

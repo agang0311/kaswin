@@ -19,7 +19,7 @@ const BATCH_FEE_PER_TICKET = 150_000n;
 const SINGLE_FEE = 1_900_000n;
 const STORAGE_MASS_PARAMETER = 1_000_000_000_000n;
 const MASS_LIMITS = { storage: 500_000, compute: 500_000, transient: 1_000_000 };
-const BUDGETS = { buy: 7, finalize: 18, auth: 11, transition: 4, batch: 5, single: 4 };
+const BUDGETS = { finalize: 18, auth: 11, transition: 4, batch: 5, single: 4 };
 const ZERO_SUBNETWORK_ID = "00".repeat(20);
 const key = new PrivateKey("01".padStart(64, "0"));
 const address = key.toAddress(NETWORK);
@@ -30,6 +30,7 @@ function hash(bytes) { return createHash("sha256").update(bytes).digest(); }
 function pair(left, right) { return hash(Buffer.concat([left, right])); }
 const emptyNodes = [Buffer.alloc(32)];
 for (let level = 1; level < 20; level += 1) emptyNodes.push(pair(emptyNodes[level - 1], emptyNodes[level - 1]));
+const emptyRoot = pair(emptyNodes[19], emptyNodes[19]);
 const leaf = hash(pubkey);
 
 function tree(count) {
@@ -149,16 +150,29 @@ function tx(inputs, outputs, payloadType) {
 }
 
 const covenantId = "aa".repeat(32);
-function buyTx() {
-  const source = utxo(10, CARRIER + TICKET_PRICE * 10n, roundRedeem, covenantId);
+function buyFee(ticketCount) {
+  void ticketCount;
+  return 1_500_000n;
+}
+function buyBudget(ticketCount) {
+  return 8 + (ticketCount === 8 ? 2 : ticketCount >= 2 ? 1 : 0);
+}
+function buyTx(ticketCount) {
+  const sourceRedeem = roundRedeemFor(0, emptyRoot);
+  const nextRedeem = roundRedeemFor(ticketCount, tree(ticketCount).root);
+  const purchase = TICKET_PRICE * BigInt(ticketCount);
+  const source = utxo(10, CARRIER, sourceRedeem, covenantId);
   const fundingRedeem = Buffer.from([0x51]);
-  const funding = plainUtxo(11, TICKET_PRICE + 1_700_000n, payToScriptHashScript(fundingRedeem));
+  const funding = plainUtxo(11, purchase + buyFee(ticketCount), payToScriptHashScript(fundingRedeem));
   const fundingBuilder = new ScriptBuilder();
   fundingBuilder.addData(fundingRedeem);
-  const sig = action(roundArtifact, "buy", roundRedeem, (builder) => builder.addData(pubkey));
+  const sig = action(roundArtifact, "buy", sourceRedeem, (builder) => {
+    builder.addData(pubkey);
+    builder.addI64(BigInt(ticketCount));
+  });
   return tx(
-    [input(source, sig, BUDGETS.buy), input(funding, fundingBuilder.drain(), 0)],
-    [covenantOutput(source.amount + TICKET_PRICE, roundRedeem11, covenantId)],
+    [input(source, sig, buyBudget(ticketCount)), input(funding, fundingBuilder.drain(), 0)],
+    [covenantOutput(source.amount + purchase, nextRedeem, covenantId)],
     "ticket"
   );
 }
@@ -244,7 +258,9 @@ function mass(transaction) {
 }
 
 const cases = [
-  ["buy-ticket", buyTx(), 1_700_000n],
+  ["buy-1-ticket", buyTx(1), buyFee(1)],
+  ["buy-2-tickets", buyTx(2), buyFee(2)],
+  ["buy-8-tickets", buyTx(8), buyFee(8)],
   ["finalize", finalizeTx(), 2_200_000n],
   ["start-refund", transitionTx(), TRANSITION_FEE],
   ["batch8-refund", batchTx(), BATCH_FEE_PER_TICKET * 8n],

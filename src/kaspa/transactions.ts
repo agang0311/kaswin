@@ -29,7 +29,6 @@ import {
   bytesToHex,
   getRaffleRefundRuntimeArtifact,
   isBatchRefundContractVersion,
-  isLowFeeContractVersion,
   isMillionUserContractVersion,
   pubkeyHexFromAddress,
   raffleCovenantStateFromRound,
@@ -39,7 +38,7 @@ import type { KaspaRpcConnection } from "./rpc";
 import { hexToBytes } from "../raffle/randomness";
 import type { RaffleCovenantCursor, RoundState, TicketState } from "../raffle/types";
 import { findTicketRange, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
-import { appendTicketLeaf, verifyTicketProof, verifyTicketRange8 } from "../raffle/merkle";
+import { appendTicketLeaves, verifyTicketProof, verifyTicketRange8 } from "../raffle/merkle";
 import type { BrowserTestWallet } from "./wallet";
 import { ensureKaspaWasmReady } from "./wasm";
 
@@ -134,8 +133,6 @@ export const V4_COVENANT_FINALIZE_FEE_SOMPI = 2_200_000n;
 export const V4_COVENANT_REFUND_FEE_SOMPI = 1_900_000n;
 export const V5_REFUND_TRANSITION_FEE_SOMPI = 2_200_000n;
 export const V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI = 150_000n;
-const LEGACY_V3_3_FINALIZE_FEE_SOMPI = 40_000_000n;
-const LEGACY_V3_3_REFUND_FEE_SOMPI = 20_000_000n;
 const STANDARD_REFUND_MIN_SOMPI = 5_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 10_000_000n;
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 20_000_000n;
@@ -157,26 +154,28 @@ const V5_REFUND_TRANSITION_COMPUTE_BUDGET = 4;
 const V5_REFUND_BATCH_COMPUTE_BUDGET = 5;
 const V5_REFUND_SINGLE_COMPUTE_BUDGET = 4;
 
-export function covenantBuyFeeSompi(contractVersion: string): bigint {
+export function covenantBuyFeeSompi(contractVersion: string, ticketCount = 1): bigint {
+  if (isBatchRefundContractVersion(contractVersion)) {
+    void ticketCount;
+    return 1_500_000n;
+  }
   return isMillionUserContractVersion(contractVersion) ? V4_COVENANT_BUY_FEE_SOMPI : COVENANT_BUY_FEE_SOMPI;
 }
 
 export function covenantFinalizeFeeSompi(contractVersion: string): bigint {
-  return isMillionUserContractVersion(contractVersion)
-    ? V4_COVENANT_FINALIZE_FEE_SOMPI
-    : isLowFeeContractVersion(contractVersion) ? COVENANT_FINALIZE_FEE_SOMPI : LEGACY_V3_3_FINALIZE_FEE_SOMPI;
+  void contractVersion;
+  return V4_COVENANT_FINALIZE_FEE_SOMPI;
 }
 
 export function covenantRefundFeeSompi(contractVersion: string): bigint {
-  return isBatchRefundContractVersion(contractVersion)
-    ? V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI
-    : isMillionUserContractVersion(contractVersion)
-    ? V4_COVENANT_REFUND_FEE_SOMPI
-    : isLowFeeContractVersion(contractVersion) ? COVENANT_REFUND_FEE_SOMPI : LEGACY_V3_3_REFUND_FEE_SOMPI;
+  void contractVersion;
+  return V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI;
 }
 
-function raffleBuyComputeBudget(contractVersion: string): number {
-  return isMillionUserContractVersion(contractVersion) ? V4_RAFFLE_BUY_COMPUTE_BUDGET : RAFFLE_BUY_COMPUTE_BUDGET;
+function raffleBuyComputeBudget(contractVersion: string, ticketCount = 1): number {
+  return isBatchRefundContractVersion(contractVersion)
+    ? 8 + (ticketCount === 8 ? 2 : ticketCount >= 2 ? 1 : 0)
+    : isMillionUserContractVersion(contractVersion) ? V4_RAFFLE_BUY_COMPUTE_BUDGET : RAFFLE_BUY_COMPUTE_BUDGET;
 }
 
 function raffleFinalizeComputeBudget(contractVersion: string): number {
@@ -757,8 +756,8 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
     }
 
     const isMillionUserRound = isMillionUserContractVersion(input.round.contractVersion);
-    if (isMillionUserRound && input.ticketCount !== 1) {
-      throw new Error("Million-user rounds accept exactly one ticket per purchase.");
+    if (isMillionUserRound && input.ticketCount > 8) {
+      throw new Error("A single purchase can contain at most 8 tickets.");
     }
 
     if (input.covenant.soldTickets + input.ticketCount > input.round.maxTickets) {
@@ -777,7 +776,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
 
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
     const walletUtxos = await input.connection.client.getUtxosByAddresses({ addresses: [input.wallet.address] });
-    const buyFee = covenantBuyFeeSompi(input.round.contractVersion);
+    const buyFee = covenantBuyFeeSompi(input.round.contractVersion, input.ticketCount);
     const stagingAmount = lowCostFundingAmount(purchaseAmount, buyFee);
     const stagingAddress = lowCostFundingAddress(input.wallet.network);
     const walletEntries = selectPaymentEntries(walletUtxos.entries ?? [], stagingAmount);
@@ -799,7 +798,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
     const stagingUtxo = await waitForAddressUtxo(input.connection, stagingAddress, stagingTxId, 0);
     const buyerPubkey = pubkeyHexFromAddress(input.wallet.address);
     const merkleAppend = isMillionUserRound
-      ? await appendTicketLeaf(input.covenant.ticketFrontier || "", input.covenant.soldTickets, buyerPubkey)
+      ? await appendTicketLeaves(input.covenant.ticketFrontier || "", input.covenant.soldTickets, buyerPubkey, input.ticketCount)
       : undefined;
     const nextTicketRoot = merkleAppend?.rootHex ?? await buildNextTicketRootHex(input.round.roundId, input.covenant.ticketRoot, {
       ...input.ticket,
@@ -848,7 +847,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
           ),
           sequence: 0n,
           sigOpCount: 0,
-          computeBudget: raffleBuyComputeBudget(input.round.contractVersion),
+          computeBudget: raffleBuyComputeBudget(input.round.contractVersion, input.ticketCount),
           utxo: asInputUtxo(covenantUtxo)
         },
         {

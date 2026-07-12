@@ -83,6 +83,22 @@ export async function appendTicketLeaf(
   return { frontierHex: bytesToHex(nextFrontier), rootHex: bytesToHex(node) };
 }
 
+export async function appendTicketLeaves(
+  frontierHex: string,
+  firstTicketId: number,
+  ownerPubkeyHex: string,
+  ticketCount: number
+): Promise<{ frontierHex: string; rootHex: string }> {
+  if (!Number.isInteger(ticketCount) || ticketCount < 1 || ticketCount > 8) {
+    throw new Error("A purchase must contain between 1 and 8 tickets.");
+  }
+  let next = { frontierHex, rootHex: TICKET_EMPTY_ROOT_HEX };
+  for (let offset = 0; offset < ticketCount; offset += 1) {
+    next = await appendTicketLeaf(next.frontierHex, firstTicketId + offset, ownerPubkeyHex);
+  }
+  return next;
+}
+
 export async function merkleRootFromProof(
   ownerPubkeyHex: string,
   ticketId: number,
@@ -164,6 +180,45 @@ export async function buildTicketProof(
   }
 
   const proofBytes = new Uint8Array(TICKET_MERKLE_PROOF_BYTES);
+  proof.forEach((sibling, level) => proofBytes.set(sibling, level * 32));
+  return { proofHex: bytesToHex(proofBytes), rootHex: bytesToHex(nodes[0]) };
+}
+
+export async function buildTicketRange8Proof(
+  ownerPubkeys: string[],
+  firstTicketId: number
+): Promise<{ proofHex: string; rootHex: string }> {
+  if (!Number.isInteger(firstTicketId) || firstTicketId < 0 || firstTicketId % TICKET_REFUND_BATCH_SIZE !== 0) {
+    throw new Error("The first ticket in an 8-ticket proof must be zero-based and aligned to 8.");
+  }
+  if (firstTicketId + TICKET_REFUND_BATCH_SIZE > ownerPubkeys.length) {
+    throw new Error("The loaded ticket set does not contain this 8-ticket range.");
+  }
+
+  let nodes = await Promise.all(ownerPubkeys.map(ticketLeaf));
+  let path = firstTicketId;
+
+  for (let level = 0; level < 3; level += 1) {
+    const parents: Uint8Array[] = [];
+    for (let index = 0; index < nodes.length; index += 2) {
+      parents.push(await hashPair(nodes[index], nodes[index + 1] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level])));
+    }
+    nodes = parents;
+    path = Math.floor(path / 2);
+  }
+
+  const proof: Uint8Array[] = [];
+  for (let level = 3; level < TICKET_MERKLE_DEPTH; level += 1) {
+    proof.push(nodes[path ^ 1] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level]));
+    const parents: Uint8Array[] = [];
+    for (let index = 0; index < nodes.length; index += 2) {
+      parents.push(await hashPair(nodes[index], nodes[index + 1] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level])));
+    }
+    nodes = parents;
+    path = Math.floor(path / 2);
+  }
+
+  const proofBytes = new Uint8Array(TICKET_RANGE_PROOF_BYTES);
   proof.forEach((sibling, level) => proofBytes.set(sibling, level * 32));
   return { proofHex: bytesToHex(proofBytes), rootHex: bytesToHex(nodes[0]) };
 }

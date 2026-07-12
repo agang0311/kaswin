@@ -23,7 +23,7 @@ const createPayload = {
   type: "round-create",
   version: "0.2.0",
   roundId,
-  contractVersion: "raffle-v5-million-users-batch-refund",
+  contractVersion: "raffle-v6-aligned-batch-buy",
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
   creatorPubkey: owners[0].toString("hex"),
   oraclePublicKey: owners[2].toString("hex"),
@@ -72,7 +72,7 @@ fs.writeFileSync(path.join(fixtureDir, "state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v5-million-users-batch-refund",
+      contractVersion: "raffle-v6-aligned-batch-buy",
       version: "0.2.0",
       creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
       creatorPubkey: owners[0].toString("hex"),
@@ -102,7 +102,7 @@ fs.writeFileSync(path.join(fixtureDir, "base-state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v5-million-users-batch-refund",
+      contractVersion: "raffle-v6-aligned-batch-buy",
       version: "0.2.0",
       creator: createPayload.creator,
       creatorPubkey: owners[0].toString("hex"),

@@ -5,18 +5,8 @@ import {
   ScriptBuilder,
   type ScriptPublicKey
 } from "@onekeyfe/kaspa-wasm";
-import raffleRoundArtifact from "../contracts/compiled/raffle-round.artifact.json";
-import raffleRoundV4Artifact from "../contracts/compiled/raffle-round-v4.artifact.json";
 import raffleRoundV5Artifact from "../contracts/compiled/raffle-round-v5.artifact.json";
 import raffleRefundV1Artifact from "../contracts/compiled/raffle-refund-v1.artifact.json";
-import raffleRoundV1Artifact from "../contracts/compiled/raffle-round-v1.artifact.json";
-import raffleRoundV2Artifact from "../contracts/compiled/raffle-round-v2.artifact.json";
-import raffleRoundV3BetaArtifact from "../contracts/compiled/raffle-round-v3-beta.artifact.json";
-import raffleRoundV31Artifact from "../contracts/compiled/raffle-round-v3.1.artifact.json";
-import raffleRoundV32Artifact from "../contracts/compiled/raffle-round-v3.2.artifact.json";
-import raffleRoundV33Artifact from "../contracts/compiled/raffle-round-v3.3.artifact.json";
-import raffleRoundV34Artifact from "../contracts/compiled/raffle-round-v3.4.artifact.json";
-import raffleRoundManifest from "../contracts/compiled/raffle-round.manifest.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
 import { TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX, TICKET_MERKLE_PROOF_BYTES } from "../raffle/merkle";
 import type { RoundState } from "../raffle/types";
@@ -28,14 +18,6 @@ export interface CovenantArtifactStatus {
   network: string;
   status: string;
   message: string;
-}
-
-interface RaffleRoundManifest {
-  contract: string;
-  network: string;
-  status: string;
-  script: string | null;
-  abi: unknown;
 }
 
 interface RuntimeAbiInput {
@@ -72,28 +54,9 @@ export type RaffleCovenantEntrypoint = "buy" | "close" | "finalize" | "refund_al
 export type RaffleCovenantStateValue = bigint | Uint8Array;
 export type RaffleCovenantStateValues = Record<string, RaffleCovenantStateValue>;
 
-const manifest = raffleRoundManifest as RaffleRoundManifest;
 const artifact = raffleRoundV5Artifact as RaffleRoundRuntimeArtifact;
 const refundArtifact = raffleRefundV1Artifact as RaffleRoundRuntimeArtifact;
-const legacyV4Artifact = raffleRoundV4Artifact as RaffleRoundRuntimeArtifact;
-const legacyV35Artifact = raffleRoundArtifact as RaffleRoundRuntimeArtifact;
-const legacyV1Artifact = raffleRoundV1Artifact as RaffleRoundRuntimeArtifact;
-const legacyV2Artifact = raffleRoundV2Artifact as RaffleRoundRuntimeArtifact;
-const legacyV3BetaArtifact = raffleRoundV3BetaArtifact as RaffleRoundRuntimeArtifact;
-const legacyV31Artifact = raffleRoundV31Artifact as RaffleRoundRuntimeArtifact;
-const legacyV32Artifact = raffleRoundV32Artifact as RaffleRoundRuntimeArtifact;
-const legacyV33Artifact = raffleRoundV33Artifact as RaffleRoundRuntimeArtifact;
-const legacyV34Artifact = raffleRoundV34Artifact as RaffleRoundRuntimeArtifact;
-const LEGACY_V1_CONTRACT_VERSION = "raffle-v1-timeout-refund";
-const LEGACY_V2_CONTRACT_VERSION = "raffle-v2-direct-finalize";
-const LEGACY_V3_BETA_CONTRACT_VERSION = "raffle-v3-batch-1000";
-const LEGACY_V3_1_CONTRACT_VERSION = "raffle-v3.1-batch-1000";
-const LEGACY_V3_2_CONTRACT_VERSION = "raffle-v3.2-participant-finalize";
-export const LEGACY_V3_3_CONTRACT_VERSION = "raffle-v3.3-participant-finalize-fee40";
-export const LEGACY_V3_4_CONTRACT_VERSION = "raffle-v3.4-low-fee";
-export const PARTICIPANT_FINALIZE_CONTRACT_VERSION = "raffle-v3.5-million-ticket";
-export const LEGACY_V4_CONTRACT_VERSION = "raffle-v4-million-users";
-export const MILLION_USER_CONTRACT_VERSION = "raffle-v5-million-users-batch-refund";
+export const MILLION_USER_CONTRACT_VERSION = "raffle-v6-aligned-batch-buy";
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
 
@@ -112,9 +75,9 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
 
   return {
     enabled,
-    contract: manifest.contract,
-    network: manifest.network,
-    status: enabled ? "compiled-runtime" : manifest.status,
+    contract: artifact.contract,
+    network: "toccata-v1",
+    status: enabled ? "compiled-runtime" : "unavailable",
     message: enabled
       ? "Covenant artifacts are available. Finalize will build a Toccata covenant spend."
       : "Covenant bytecode is compiled, but the browser transaction builder must be wired and verified on TN12 before enabling automatic contract payout."
@@ -122,20 +85,15 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
 }
 
 export function isParticipantFinalizeContractVersion(contractVersion: string): boolean {
-  return isMillionUserContractVersion(contractVersion) ||
-    contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ||
-    contractVersion === LEGACY_V3_4_CONTRACT_VERSION ||
-    contractVersion === LEGACY_V3_3_CONTRACT_VERSION;
+  return isMillionUserContractVersion(contractVersion);
 }
 
 export function isLowFeeContractVersion(contractVersion: string): boolean {
-  return isMillionUserContractVersion(contractVersion) ||
-    contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION ||
-    contractVersion === LEGACY_V3_4_CONTRACT_VERSION;
+  return isMillionUserContractVersion(contractVersion);
 }
 
 export function isMillionUserContractVersion(contractVersion: string): boolean {
-  return contractVersion === MILLION_USER_CONTRACT_VERSION || contractVersion === LEGACY_V4_CONTRACT_VERSION;
+  return contractVersion === MILLION_USER_CONTRACT_VERSION;
 }
 
 export function isBatchRefundContractVersion(contractVersion: string): boolean {
@@ -345,10 +303,10 @@ export function buildRaffleBuySignatureScript(
   const nextTicketRoot = bytes32FromHex(nextTicketRootHex, "next ticket root");
   const ownerPubkey = bytes32FromHex(ownerPubkeyHex, "ticket owner public key");
 
-  return buildRaffleP2shSignatureScript("buy", currentRedeemScript, (builder, _runtimeArtifact, entry) => {
-    if (entry.inputs.length === 1) {
-      if (ticketCount !== 1) throw new Error("Million-user rounds accept exactly one ticket per purchase.");
+  return buildRaffleP2shSignatureScript("buy", currentRedeemScript, (builder, runtimeArtifact, entry) => {
+    if (runtimeArtifact.contract === "RaffleRoundV5") {
       builder.addData(ownerPubkey);
+      builder.addI64(BigInt(ticketCount));
       return;
     }
 
@@ -518,7 +476,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [artifact, refundArtifact, legacyV4Artifact, legacyV35Artifact, legacyV34Artifact, legacyV33Artifact, legacyV32Artifact, legacyV31Artifact, legacyV3BetaArtifact, legacyV2Artifact, legacyV1Artifact];
+  const candidates = [artifact, refundArtifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);
@@ -574,25 +532,10 @@ function encodeStateField(field: RuntimeStateField, value: RaffleCovenantStateVa
 }
 
 function raffleArtifactForContractVersion(contractVersion?: string): RaffleRoundRuntimeArtifact {
-  return contractVersion === LEGACY_V1_CONTRACT_VERSION
-    ? legacyV1Artifact
-    : contractVersion === LEGACY_V2_CONTRACT_VERSION
-      ? legacyV2Artifact
-      : contractVersion === LEGACY_V3_BETA_CONTRACT_VERSION
-        ? legacyV3BetaArtifact
-        : contractVersion === LEGACY_V3_1_CONTRACT_VERSION
-          ? legacyV31Artifact
-          : contractVersion === LEGACY_V3_2_CONTRACT_VERSION
-            ? legacyV32Artifact
-            : contractVersion === LEGACY_V3_3_CONTRACT_VERSION
-              ? legacyV33Artifact
-              : contractVersion === LEGACY_V3_4_CONTRACT_VERSION
-                ? legacyV34Artifact
-                : contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION
-                  ? legacyV35Artifact
-                  : contractVersion === LEGACY_V4_CONTRACT_VERSION
-                    ? legacyV4Artifact
-                    : artifact;
+  if (contractVersion && contractVersion !== MILLION_USER_CONTRACT_VERSION) {
+    throw new Error(`Unsupported legacy raffle contract: ${contractVersion}.`);
+  }
+  return artifact;
 }
 
 function fixedByteStateLength(type: string, fieldName: string): number {
