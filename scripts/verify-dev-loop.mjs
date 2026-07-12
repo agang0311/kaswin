@@ -34,6 +34,7 @@ const packageJson = readJson("package.json");
 const manifest = readJson("src/contracts/compiled/raffle-round.manifest.json");
 const artifact = readJson("src/contracts/compiled/raffle-round.artifact.json");
 const appSource = readText("src/app/App.tsx");
+const i18nSource = readText("src/app/i18n.ts");
 const covenantSource = readText("src/kaspa/covenant.ts");
 const transactionSource = readText("src/kaspa/transactions.ts");
 const walletSource = readText("src/kaspa/wallet.ts");
@@ -49,6 +50,15 @@ const distFiles = fs.existsSync(path.join(root, "dist")) ? fs.readdirSync(path.j
 const distHtml = distFiles.includes("index.html") ? readText("dist/index.html") : "";
 
 assert("Single-file SPA build exists", packageJson.scripts?.build === "tsc --noEmit && vite build && node scripts/inline-spa.mjs");
+assert(
+  "English and Chinese UI localization is wired",
+  appSource.includes('LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1"') &&
+    appSource.includes('aria-label={t("language")}') &&
+    appSource.includes("translateRuntimeText") &&
+    i18nSource.includes('"app.title": "Kaspa Raffle"') &&
+    i18nSource.includes('"app.title": "Kaspa 抽奖"') &&
+    i18nSource.includes('export type Language = "en" | "zh"')
+);
 assert("Build output is one self-contained HTML file", JSON.stringify(distFiles) === JSON.stringify(["index.html"]));
 assert("Kaspa WASM is embedded in the SPA", distHtml.includes("data:application/octet-stream;base64"));
 assert(
@@ -73,7 +83,7 @@ assert(
 );
 assert(
   "KasWare-style network switcher is wired",
-  appSource.includes('role="menu" aria-label="Switch network"') &&
+  appSource.includes('role="menu" aria-label={t("network.switch")}') &&
     appSource.includes('role="menuitemradio"') &&
     appSource.includes("handleSelectNetwork") &&
     appSource.includes("networkSettingsId")
@@ -91,8 +101,8 @@ assert("Browser covenant ticket path exists", transactionSource.includes("buyRaf
 assert("Share-link round import exists", appSource.includes("handleCopyRoundLink") && appSource.includes("loadSharedRoundFromUrl"));
 assert(
   "Round source and action workflows use peer tab bars",
-  appSource.includes('role="tablist" aria-label="Create or load a round"') &&
-    appSource.includes('role="tablist" aria-label="Participate or pay out"') &&
+  appSource.includes('role="tablist" aria-label={t("roundSourceTabs")}') &&
+    appSource.includes('role="tablist" aria-label={t("actionTabs")}') &&
     appSource.includes('id="round-history-panel"') &&
     appSource.includes('id="round-payout-panel"')
 );
@@ -106,10 +116,10 @@ assert(
 );
 assert(
   "Round creation supports a custom registry with explicit costs",
-  appSource.includes('Registry address') &&
-    appSource.includes('Sent to registry') &&
-    appSource.includes('Registry payment fee') &&
-    appSource.includes('Automatic marker refund') &&
+  i18nSource.includes('"registryAddress": "Registry address"') &&
+    i18nSource.includes('"sentToRegistry": "Sent to registry"') &&
+    i18nSource.includes('"registryPaymentFee": "Registry payment fee"') &&
+    i18nSource.includes('"automaticMarkerRefund": "Automatic marker refund"') &&
     appSource.includes('setCreateRegistryAddress') &&
     appSource.includes('registryAddress: targetRegistryAddress') &&
     appSource.includes('markerTxId && autoRefundRegistryMarker') &&
@@ -118,7 +128,7 @@ assert(
 );
 assert(
   "Visible amount labels use KAS instead of sompi",
-  appSource.includes("Carrier reserve (KAS)") &&
+  i18nSource.includes('"carrierReserveKas": "Carrier reserve (KAS)"') &&
     !appSource.includes("Carrier reserve (sompi)") &&
     !appSource.includes("KAS (${value.toString()} sompi)") &&
     transactionSource.includes("formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)")
@@ -126,8 +136,8 @@ assert(
 assert(
   "Wallet adapter registry supports KasWare and Kastle",
   appSource.includes("connectBrowserWallet") &&
-    appSource.includes('"Connect wallet"') &&
-    appSource.includes('role="menu" aria-label="Choose a wallet"') &&
+    appSource.includes('t("connectWallet")') &&
+    appSource.includes('role="menu" aria-label={t("chooseWallet")}') &&
     walletSource.includes("kasWareWalletAdapter") &&
     walletSource.includes("kastleWalletAdapter") &&
     walletTypesSource.includes("interface KaspaWalletAdapter") &&

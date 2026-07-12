@@ -14,9 +14,10 @@ The app is designed to run without a project-controlled backend. Users provide a
 
 ## Current Status
 
-The current v0.1.9 implementation includes:
+The current v0.1.11 implementation includes:
 
 - Single-file React + TypeScript SPA build
+- English and Chinese interfaces with a persistent language selector in the top-right corner
 - Focused one-page raffle workspace with technical details collapsed by default
 - Local UI state and metadata helpers
 - Browser-side Kaspa wRPC connection and an extensible wallet adapter registry

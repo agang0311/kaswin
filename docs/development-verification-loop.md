@@ -80,3 +80,10 @@ The same browser run switched to Mainnet, connected read-only to `ws://127.0.0.1
 - `round-642fbddce847b69c`: custom registry set to the creator wallet, loaded through History from that address before finalize, payout `4420b0e60948f6c465ff46022afac173babb8054b523a516ca478f117beb5a6c`; a later index refresh reported `Paid`.
 
 The same run confirmed that an invalid custom Registry address is rejected before any create transaction is submitted.
+
+## Bilingual UI Verification (2026-07-12)
+
+- Verified the complete create, history, buy, draw, refund, oracle, and advanced-settings surfaces in Chinese and English.
+- Verified that the top-right language selector persists across reloads and translates runtime validation messages.
+- Verified the Chinese mobile layout at 390 x 844 with no horizontal overflow, then restored the desktop viewport.
+- Loaded indexed Testnet 10 history in Chinese and switched the populated history view to English without reloading.

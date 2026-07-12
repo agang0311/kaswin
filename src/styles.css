@@ -170,6 +170,35 @@ h3 {
   justify-content: flex-end;
 }
 
+.header-tools {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.language-picker {
+  align-items: center;
+  display: flex;
+  order: 2;
+  position: relative;
+}
+
+.language-picker svg {
+  color: #4e5e56;
+  left: 10px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+.language-picker select {
+  background: #fff;
+  min-height: 36px;
+  padding: 6px 30px 6px 34px;
+  width: auto;
+}
+
 .status-pill,
 .balance-pill,
 .round-status {
@@ -1093,6 +1122,11 @@ dd {
 
   .header-status {
     justify-content: flex-start;
+  }
+
+  .header-tools {
+    justify-content: space-between;
+    width: 100%;
   }
 
   .setup-strip {

@@ -38,6 +38,7 @@ Browser SPA
 | 路径 | 职责 |
 | --- | --- |
 | `src/app/App.tsx` | 页面状态、操作编排、元数据和历史加载 |
+| `src/app/i18n.ts` | 中英文文案、变量插值和运行时交易消息翻译 |
 | `src/kaspa/networks.ts` | 网络注册表、默认节点、地址前缀 |
 | `src/kaspa/rpc.ts` | 浏览器 wRPC 连接和节点状态 |
 | `src/kaspa/wallet.ts` | 钱包 Adapter Registry |

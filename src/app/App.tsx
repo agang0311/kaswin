@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  Languages,
   Link2,
   Plug,
   RefreshCw,
@@ -71,6 +72,7 @@ import { createEmptyMetadata, parseMetadata, stringifyMetadata } from "../raffle
 import { hexToBytes, randomHex, sha256Hex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
+import { translate, translateRuntimeText, type Language, type TranslationValues } from "./i18n";
 
 const emptyMetadata = createEmptyMetadata();
 const KASPA_DAA_PER_SECOND = 10n;
@@ -80,6 +82,20 @@ const SECONDS_PER_DAY = 24n * SECONDS_PER_HOUR;
 const SECONDS_PER_MONTH = 30n * SECONDS_PER_DAY;
 const DEFAULT_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
+const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
+
+function initialLanguage(): Language {
+  try {
+    const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (saved === "en" || saved === "zh") {
+      return saved;
+    }
+  } catch {
+    // Use the browser language when storage is unavailable.
+  }
+
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
 
 type NetworkEndpoints = Record<SupportedNetworkId, string>;
 
@@ -122,12 +138,12 @@ const DEFAULT_REFUND_TIMEOUT_PARTS: RefundTimeoutParts = {
   seconds: "0"
 };
 
-const REFUND_TIMEOUT_FIELDS: Array<{ key: RefundTimeoutPart; label: string }> = [
-  { key: "months", label: "月" },
-  { key: "days", label: "天" },
-  { key: "hours", label: "时" },
-  { key: "minutes", label: "分" },
-  { key: "seconds", label: "秒" }
+const REFUND_TIMEOUT_FIELDS: Array<{ key: RefundTimeoutPart; labelKey: string }> = [
+  { key: "months", labelKey: "duration.months" },
+  { key: "days", labelKey: "duration.days" },
+  { key: "hours", labelKey: "duration.hours" },
+  { key: "minutes", labelKey: "duration.minutes" },
+  { key: "seconds", labelKey: "duration.seconds" }
 ];
 
 function formatKas(value: bigint) {
@@ -241,14 +257,16 @@ function refundTimeoutPartsFromSeconds(totalSeconds: bigint): RefundTimeoutParts
   };
 }
 
-function formatDurationSeconds(totalSeconds: bigint): string {
+function formatDurationSeconds(totalSeconds: bigint, language: Language): string {
   const parts = refundTimeoutPartsFromSeconds(totalSeconds);
-  return `${parts.months}月 ${parts.days}天 ${parts.hours}时 ${parts.minutes}分 ${parts.seconds}秒`;
+  return language === "zh"
+    ? `${parts.months}月 ${parts.days}天 ${parts.hours}时 ${parts.minutes}分 ${parts.seconds}秒`
+    : `${parts.months} mo ${parts.days} d ${parts.hours} h ${parts.minutes} m ${parts.seconds} s`;
 }
 
-function formatRefundTimeoutParts(parts: RefundTimeoutParts): string {
+function formatRefundTimeoutParts(parts: RefundTimeoutParts, language: Language): string {
   try {
-    return formatDurationSeconds(refundTimeoutSecondsFromParts(parts));
+    return formatDurationSeconds(refundTimeoutSecondsFromParts(parts), language);
   } catch {
     return "invalid";
   }
@@ -371,8 +389,12 @@ async function currentVirtualDaaScore(connection: KaspaRpcConnection): Promise<b
   return BigInt(serverInfo.virtualDaaScore?.toString() ?? connection.status.daaScore ?? "0");
 }
 
-function formatDate(value: number | undefined) {
-  return value ? new Date(value).toLocaleString() : "unknown";
+function formatDate(value: number | undefined, language: Language) {
+  return value
+    ? new Date(value).toLocaleString(language === "zh" ? "zh-CN" : "en-US")
+    : language === "zh"
+      ? "未知"
+      : "unknown";
 }
 
 function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "refundTimeoutSeconds" | "refundTimeoutDaa">): bigint {
@@ -389,6 +411,7 @@ function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "refund
 
 export function App() {
   const rpcConnectionRef = useRef<KaspaRpcConnection | null>(null);
+  const [language, setLanguage] = useState<Language>(() => initialLanguage());
   const [networkEndpoints, setNetworkEndpoints] = useState<NetworkEndpoints>(() => loadNetworkEndpoints());
   const [networkId, setNetworkId] = useState<SupportedNetworkId>("testnet-10");
   const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"]);
@@ -460,9 +483,20 @@ export function App() {
     }
   }, [refundTimeoutParts]);
   const refundTimeoutDaa = useMemo(() => refundTimeoutSeconds * KASPA_DAA_PER_SECOND, [refundTimeoutSeconds]);
-  const refundTimeoutDisplay = useMemo(() => formatRefundTimeoutParts(refundTimeoutParts), [refundTimeoutParts]);
+  const refundTimeoutDisplay = useMemo(
+    () => formatRefundTimeoutParts(refundTimeoutParts, language),
+    [language, refundTimeoutParts]
+  );
   const selectedNetwork = requireNetworkProfile(networkId);
   const networkSwitchDisabled = isCreatingRound || isBuying || isFinalizing || isRefundingRound;
+  const t = (key: string, values?: TranslationValues) => translate(language, key, values);
+  const rt = (value: string) => translateRuntimeText(language, value);
+  const networkLabel = (id: SupportedNetworkId) => t(id === "mainnet" ? "network.mainnet" : "network.testnet10");
+
+  useEffect(() => {
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
 
   useEffect(() => {
     setMetadataText(stringifyMetadata(metadata));
@@ -594,11 +628,21 @@ export function App() {
   const usesDefaultRegistry = Boolean(registryAddress) && activeCreateRegistryAddress === registryAddress;
   const registryMarkerRefundAmount = DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI - REGISTRY_MARKER_REFUND_FEE_SOMPI;
   const createCostTooltip = usesDefaultRegistry
-    ? `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} sent to the default registry + variable registry payment fee. The registry returns ${formatKas(registryMarkerRefundAmount)} after a ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee. Carrier returns when the round ends.`
-    : `${formatKas(createCarrierAmount)} carrier reserve + ${formatKas(COVENANT_CREATE_FEE_SOMPI)} create fee + ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} sent to the custom registry + variable registry payment fee. A custom registry marker is not automatically refunded and remains at the destination. Carrier returns when the round ends.`;
-  const buyCostTooltip = `${formatKas(purchaseTotal)} ticket price + ${formatKas(COVENANT_BUY_FEE_SOMPI)} covenant fee + funding transaction fee (varies with wallet UTXOs).`;
-  const payoutCostTooltip = `${formatKas(round.potAmount)} prize from the pot + ${formatKas(COVENANT_FINALIZE_FEE_SOMPI)} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.`;
-  const refundCostTooltip = `${formatKas(round.potAmount)} ticket refunds from the pot + ${formatKas(COVENANT_REFUND_FEE_SOMPI)} covenant fee from the carrier. Wallet payment: 0 KAS.`;
+    ? t("cost.create.default", {
+        carrier: formatKas(createCarrierAmount),
+        createFee: formatKas(COVENANT_CREATE_FEE_SOMPI),
+        marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI),
+        refund: formatKas(registryMarkerRefundAmount),
+        refundFee: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)
+      })
+    : t("cost.create.custom", {
+        carrier: formatKas(createCarrierAmount),
+        createFee: formatKas(COVENANT_CREATE_FEE_SOMPI),
+        marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)
+      });
+  const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(COVENANT_BUY_FEE_SOMPI) });
+  const payoutCostTooltip = t("cost.payout", { prize: formatKas(round.potAmount), fee: formatKas(COVENANT_FINALIZE_FEE_SOMPI) });
+  const refundCostTooltip = t("cost.refund", { refund: formatKas(round.potAmount), fee: formatKas(COVENANT_REFUND_FEE_SOMPI) });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
   const participantFinalizeEnabled = metadata.contractVersion === PARTICIPANT_FINALIZE_CONTRACT_VERSION;
@@ -710,7 +754,7 @@ export function App() {
 
     if (metadata.covenant && !canStartNewRound) {
       const confirmed = window.confirm(
-        "Switch networks and clear the current local round view? The round remains on chain and can be loaded again from history."
+        t("confirmSwitch")
       );
 
       if (!confirmed) {
@@ -769,7 +813,7 @@ export function App() {
 
       if (connectedNetwork !== networkId) {
         await disconnectBrowserRpc(connection);
-        throw new Error(`The node reports ${connection.status.network}, but ${selectedNetwork.label} is selected.`);
+        throw new Error(`The node reports ${connection.status.network}, but ${networkLabel(selectedNetwork.id)} is selected.`);
       }
 
       rpcConnectionRef.current = connection;
@@ -1019,7 +1063,7 @@ export function App() {
       await assertValidKaspaAddress(targetRegistryAddress, "Registry address");
 
       if (networkFromAddress(targetRegistryAddress) !== networkId) {
-        throw new Error(`Registry address must belong to ${selectedNetwork.label}.`);
+        throw new Error(`Registry address must belong to ${networkLabel(selectedNetwork.id)}.`);
       }
 
       const autoRefundRegistryMarker = targetRegistryAddress === registryAddress;
@@ -1376,7 +1420,7 @@ export function App() {
         if (currentDaaScore < finalizeAfterDaaScore) {
           const remainingSeconds = (finalizeAfterDaaScore - currentDaaScore + KASPA_DAA_PER_SECOND - 1n) / KASPA_DAA_PER_SECOND;
           throw new Error(
-            `Round can finalize when sold out or in about ${formatDurationSeconds(remainingSeconds)}.`
+            `Round can finalize when sold out or in about ${formatDurationSeconds(remainingSeconds, language)}.`
           );
         }
       }
@@ -1548,7 +1592,7 @@ export function App() {
         const remainingSeconds = (remainingDaa + KASPA_DAA_PER_SECOND - 1n) / KASPA_DAA_PER_SECOND;
 
         throw new Error(
-          `Refund opens in about ${formatDurationSeconds(remainingSeconds)} at DAA ${refundAfterDaaScore.toString()}. Current DAA is ${currentDaaScore.toString()}.`
+          `Refund opens in about ${formatDurationSeconds(remainingSeconds, language)} at DAA ${refundAfterDaaScore.toString()}. Current DAA is ${currentDaaScore.toString()}.`
         );
       }
 
@@ -1798,15 +1842,29 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="kicker">Kaspa Toccata · {selectedNetwork.label}</p>
-          <h1>Kaspa Raffle</h1>
+          <p className="kicker">Kaspa Toccata · {networkLabel(selectedNetwork.id)}</p>
+          <h1>{t("app.title")}</h1>
         </div>
-        <div className="header-status">
-          <span className={nodeStatus.connected ? "status-pill connected" : "status-pill"}>
-            {nodeStatus.connected ? <CheckCircle2 size={17} /> : <Plug size={17} />}
-            {nodeStatus.connected ? "Node ready" : "Node offline"}
-          </span>
-          <span className="balance-pill">{wallet ? formatKas(wallet.balanceSompi) : "Wallet not loaded"}</span>
+        <div className="header-tools">
+          <label className="language-picker">
+            <Languages size={17} aria-hidden="true" />
+            <span className="visually-hidden">{t("language")}</span>
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as Language)}
+              aria-label={t("language")}
+            >
+              <option value="zh">{t("language.chinese")}</option>
+              <option value="en">{t("language.english")}</option>
+            </select>
+          </label>
+          <div className="header-status">
+            <span className={nodeStatus.connected ? "status-pill connected" : "status-pill"}>
+              {nodeStatus.connected ? <CheckCircle2 size={17} /> : <Plug size={17} />}
+              {nodeStatus.connected ? t("node.ready") : t("node.offline")}
+            </span>
+            <span className="balance-pill">{wallet ? formatKas(wallet.balanceSompi) : t("wallet.notLoaded")}</span>
+          </div>
         </div>
       </header>
 
@@ -1814,12 +1872,12 @@ export function App() {
         <AlertTriangle size={18} />
         <p>
           {networkId === "mainnet"
-            ? "Mainnet uses real KAS. Verify the selected node, wallet, and transaction amounts before signing."
-            : "Testnet 10. Use a dedicated wallet with small amounts."}
+            ? t("notice.mainnet")
+            : t("notice.testnet")}
         </p>
       </section>
 
-      <section className="setup-strip" aria-label="Connection and wallet">
+      <section className="setup-strip" aria-label={t("connection.aria")}>
         <div className="network-picker">
           <button
             type="button"
@@ -1834,15 +1892,15 @@ export function App() {
             aria-expanded={isNetworkMenuOpen}
           >
             <span>
-              <small>Network</small>
-              <strong>{selectedNetwork.label}</strong>
+              <small>{t("network")}</small>
+              <strong>{networkLabel(selectedNetwork.id)}</strong>
             </span>
             <ChevronDown size={17} />
           </button>
 
           {isNetworkMenuOpen ? (
-            <div className="network-menu" role="menu" aria-label="Switch network">
-              <div className="network-menu-title">Switch network</div>
+            <div className="network-menu" role="menu" aria-label={t("network.switch")}>
+              <div className="network-menu-title">{t("network.switch")}</div>
               {NETWORK_PROFILES.map((profile) => {
                 const selected = profile.id === networkId;
                 const editing = profile.id === networkSettingsId;
@@ -1858,7 +1916,7 @@ export function App() {
                     >
                       <span className="network-check" aria-hidden="true">{selected ? <Check size={16} /> : null}</span>
                       <span className="network-option-copy">
-                        <strong>{profile.label}{profile.id === "testnet-10" ? <small className="network-code">TN10</small> : null}</strong>
+                        <strong>{networkLabel(profile.id)}{profile.id === "testnet-10" ? <small className="network-code">TN10</small> : null}</strong>
                         <small>{networkEndpoints[profile.id]}</small>
                       </span>
                     </button>
@@ -1866,22 +1924,22 @@ export function App() {
                       type="button"
                       className="network-settings-button"
                       onClick={() => openNetworkSettings(profile.id)}
-                      title={`Configure ${profile.label} node`}
-                      aria-label={`Configure ${profile.label} node`}
+                      title={t("network.configure", { network: networkLabel(profile.id) })}
+                      aria-label={t("network.configure", { network: networkLabel(profile.id) })}
                     >
                       <Settings size={18} />
                     </button>
                     {editing ? (
                       <div className="network-endpoint-editor">
                         <label className="field">
-                          <span>{profile.label} node</span>
+                          <span>{networkLabel(profile.id)} {t("node")}</span>
                           <input
                             value={networkEndpointDraft}
                             onChange={(event) => setNetworkEndpointDraft(event.target.value)}
                             autoFocus
                           />
                         </label>
-                        <button type="button" onClick={saveNetworkSettings}>Apply</button>
+                        <button type="button" onClick={saveNetworkSettings}>{t("apply")}</button>
                       </div>
                     ) : null}
                   </div>
@@ -1893,33 +1951,33 @@ export function App() {
 
         <div className="setup-primary">
           <label className="field inline-field">
-            <span>Kaspa node</span>
+            <span>{t("node")}</span>
             <input value={rpcUrl} onChange={(event) => handleRpcUrlInput(event.target.value)} />
           </label>
           {nodeStatus.connected ? (
-            <button type="button" className="secondary" onClick={handleDisconnect}>Disconnect</button>
+            <button type="button" className="secondary" onClick={handleDisconnect}>{t("disconnect")}</button>
           ) : (
-            <button type="button" onClick={handleConnect}>Connect</button>
+            <button type="button" onClick={handleConnect}>{t("connect")}</button>
           )}
         </div>
 
         <div className="wallet-summary">
           <div>
-            <span className="summary-label">Wallet</span>
-            <strong className="mono">{wallet ? shortValue(wallet.address, 10) : "Not loaded"}</strong>
+            <span className="summary-label">{t("wallet")}</span>
+            <strong className="mono">{wallet ? shortValue(wallet.address, 10) : t("notLoaded")}</strong>
           </div>
           <div>
-            <span className="summary-label">Balance</span>
-            <strong>{wallet ? formatKas(wallet.balanceSompi) : "Unknown"}</strong>
+            <span className="summary-label">{t("balance")}</span>
+            <strong>{wallet ? formatKas(wallet.balanceSompi) : t("unknown")}</strong>
           </div>
-          <button type="button" className="icon-button secondary" onClick={handleRefreshBalance} title="Refresh balance" aria-label="Refresh balance">
+          <button type="button" className="icon-button secondary" onClick={handleRefreshBalance} title={t("refreshBalance")} aria-label={t("refreshBalance")}>
             <RefreshCw size={17} />
           </button>
         </div>
 
         <div className="wallet-actions">
           {wallet ? (
-            <button type="button" className="secondary" onClick={handleDisconnectWallet}>Disconnect {wallet.providerName}</button>
+            <button type="button" className="secondary" onClick={handleDisconnectWallet}>{t("disconnectWallet", { wallet: wallet.providerName })}</button>
           ) : (
             <div className="wallet-picker">
               <button
@@ -1930,10 +1988,10 @@ export function App() {
                 aria-expanded={isWalletMenuOpen}
               >
                 <WalletCards size={17} />
-                {isConnectingWallet ? "Connecting..." : "Connect wallet"}
+                {isConnectingWallet ? t("connecting") : t("connectWallet")}
               </button>
               {isWalletMenuOpen ? (
-                <div className="wallet-menu" role="menu" aria-label="Choose a wallet">
+                <div className="wallet-menu" role="menu" aria-label={t("chooseWallet")}>
                   {walletOptions.map((option) => (
                     <button
                       key={option.id}
@@ -1944,7 +2002,7 @@ export function App() {
                       onClick={() => handleConnectWallet(option.id)}
                     >
                       <span>{option.name}</span>
-                      <small>{option.installed ? "Detected" : "Not installed"}</small>
+                      <small>{option.installed ? t("detected") : t("notInstalled")}</small>
                     </button>
                   ))}
                 </div>
@@ -1953,20 +2011,20 @@ export function App() {
           )}
         </div>
 
-        {rpcError ? <p className="error-text strip-message">{rpcError}</p> : null}
-        {walletError ? <p className="error-text strip-message">{walletError}</p> : null}
+        {rpcError ? <p className="error-text strip-message">{rt(rpcError)}</p> : null}
+        {walletError ? <p className="error-text strip-message">{rt(walletError)}</p> : null}
       </section>
 
       <section className="round-overview">
         <div className="section-heading-row">
           <div>
-            <p className="eyebrow">Current round</p>
-            <h2>{metadata.roundId ? shortValue(metadata.roundId, 12) : "No round created"}</h2>
+            <p className="eyebrow">{t("currentRound")}</p>
+            <h2>{metadata.roundId ? shortValue(metadata.roundId, 12) : t("noRound")}</h2>
           </div>
           <div className="heading-actions">
-            <span className={`round-status status-${round.status.toLowerCase()}`}>{round.status}</span>
+            <span className={`round-status status-${round.status.toLowerCase()}`}>{t(`status.${round.status}`)}</span>
             {metadata.roundId ? (
-              <button type="button" className="icon-button secondary" onClick={handleCopyRoundLink} title="Copy round link" aria-label="Copy round link">
+              <button type="button" className="icon-button secondary" onClick={handleCopyRoundLink} title={t("copyRoundLink")} aria-label={t("copyRoundLink")}>
                 <Link2 size={17} />
               </button>
             ) : null}
@@ -1975,35 +2033,35 @@ export function App() {
 
         <div className="key-metrics">
           <div>
-            <span>Tickets sold</span>
+            <span>{t("ticketsSold")}</span>
             <strong>{round.soldTickets.toLocaleString()} / {round.maxTickets.toLocaleString()}</strong>
           </div>
           <div>
-            <span>Prize pot</span>
+            <span>{t("prizePot")}</span>
             <strong>{formatKas(round.potAmount)}</strong>
           </div>
           <div>
-            <span>Ticket price</span>
+            <span>{t("ticketPrice")}</span>
             <strong>{formatKas(round.ticketPrice)}</strong>
           </div>
           <div>
-            <span>Draw / refund</span>
+            <span>{t("drawRefund")}</span>
             <strong>{refundTimeoutDisplay}</strong>
           </div>
         </div>
 
-        <div className="progress-track" aria-label="Ticket sales progress">
+        <div className="progress-track" aria-label={t("ticketProgress")}>
           <span style={{ width: `${soldPercent}%` }} />
         </div>
 
         {ticketBatches.length ? (
           <details className="disclosure compact-disclosure">
-            <summary>{ticketBatches.length} purchase batch{ticketBatches.length === 1 ? "" : "es"}</summary>
+            <summary>{t(ticketBatches.length === 1 ? "purchaseBatch.one" : "purchaseBatch", { count: ticketBatches.length.toLocaleString() })}</summary>
             <div className="batch-list">
               {ticketBatches.map((batch) => (
                 <div className="batch-row" key={batch.txId || `${batch.start}-${batch.end}`}>
                   <strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>
-                  <span>{batch.count.toLocaleString()} ticket{batch.count === 1 ? "" : "s"}</span>
+                  <span>{t(batch.count === 1 ? "ticketCount.one" : "ticketCount", { count: batch.count.toLocaleString() })}</span>
                   <span className="mono">{shortValue(batch.owner, 9)}</span>
                   <span>{formatKas(batch.amount)}</span>
                 </div>
@@ -2014,7 +2072,7 @@ export function App() {
       </section>
 
       <section className="tabbed-workspace source-workspace">
-        <div className="workspace-tabs" role="tablist" aria-label="Create or load a round">
+        <div className="workspace-tabs" role="tablist" aria-label={t("roundSourceTabs")}>
           <button
             type="button"
             id="round-create-tab"
@@ -2024,7 +2082,7 @@ export function App() {
             aria-controls="round-create-panel"
             onClick={() => setRoundSourceTab("create")}
           >
-            Create round
+            {t("createRound")}
           </button>
           <button
             type="button"
@@ -2035,7 +2093,7 @@ export function App() {
             aria-controls="round-history-panel"
             onClick={() => setRoundSourceTab("history")}
           >
-            Load history
+            {t("loadHistory")}
           </button>
         </div>
 
@@ -2044,12 +2102,12 @@ export function App() {
             {canStartNewRound ? (
               <>
 <div className="pane-heading">
-                <p className="eyebrow">Organizer</p>
-                <h2>{finalized ? "Create next round" : "Create a round"}</h2>
+                <p className="eyebrow">{t("organizer")}</p>
+                <h2>{finalized ? t("createNextRound") : t("createARound")}</h2>
               </div>
               <div className="form-grid">
                 <label className="field">
-                  <span>Ticket price (KAS)</span>
+                  <span>{t("ticketPriceKas")}</span>
                   <input
                     inputMode="decimal"
                     value={sompiToKasInput(metadata.ticketPrice)}
@@ -2057,7 +2115,7 @@ export function App() {
                   />
                 </label>
                 <label className="field">
-                  <span>Total tickets</span>
+                  <span>{t("totalTickets")}</span>
                   <input
                     type="number"
                     min={1}
@@ -2071,7 +2129,7 @@ export function App() {
               <section className="registry-config" aria-labelledby="registry-config-title">
                 <div className="registry-field-row">
                   <label className="field">
-                    <span id="registry-config-title">Registry address</span>
+                    <span id="registry-config-title">{t("registryAddress")}</span>
                     <input
                       value={createRegistryAddress}
                       onChange={(event) => setCreateRegistryAddress(event.target.value.trim())}
@@ -2084,43 +2142,43 @@ export function App() {
                     className="icon-button secondary"
                     onClick={() => setCreateRegistryAddress(registryAddress)}
                     disabled={!registryAddress || usesDefaultRegistry}
-                    title="Use the default refundable registry"
-                    aria-label="Use the default refundable registry"
+                    title={t("useDefaultRegistry")}
+                    aria-label={t("useDefaultRegistry")}
                   >
                     <RefreshCw size={17} />
                   </button>
                 </div>
                 <dl id="registry-cost-details" className="registry-cost-details">
                   <div>
-                    <dt>Sent to registry</dt>
+                    <dt>{t("sentToRegistry")}</dt>
                     <dd>{formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)}</dd>
                   </div>
                   <div>
-                    <dt>Registry payment fee</dt>
-                    <dd>Additional; calculated from wallet UTXOs and reported after submission</dd>
+                    <dt>{t("registryPaymentFee")}</dt>
+                    <dd>{t("registryPaymentFeeDetail")}</dd>
                   </div>
                   <div>
-                    <dt>Automatic marker refund</dt>
+                    <dt>{t("automaticMarkerRefund")}</dt>
                     <dd>
                       {usesDefaultRegistry
-                        ? `${formatKas(registryMarkerRefundAmount)} returned; ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee`
-                        : `None; ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} remains at the custom destination`}
+                        ? t("registryRefundDefault", { refund: formatKas(registryMarkerRefundAmount), fee: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI) })
+                        : t("registryRefundCustom", { amount: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI) })}
                     </dd>
                   </div>
                 </dl>
                 <p className="registry-note">
                   {usesDefaultRegistry
-                    ? "The default registry is a public indexing script. Its marker is automatically reclaimed after creation."
-                    : "A custom registry receives the marker permanently unless its owner later spends it. Use the same address when loading this round's history."}
+                    ? t("registryDefaultNote")
+                    : t("registryCustomNote")}
                 </p>
               </section>
 
               <details className="disclosure compact-disclosure">
-                <summary>Draw / refund timeout: {refundTimeoutDisplay}</summary>
+                <summary>{t("drawRefundTimeout", { duration: refundTimeoutDisplay })}</summary>
                 <div className="duration-grid disclosure-body">
                   {REFUND_TIMEOUT_FIELDS.map((field) => (
                     <label className="field compact-field" key={field.key}>
-                      <span>{field.label}</span>
+                      <span>{t(field.labelKey)}</span>
                       <input
                         inputMode="numeric"
                         min={0}
@@ -2140,14 +2198,14 @@ export function App() {
                 onClick={handleCreateCovenantRound}
                 disabled={isCreatingRound || !canStartNewRound}
               >
-                {isCreatingRound ? "Creating round..." : finalized ? "Create next round" : "Create round"}
+                {isCreatingRound ? t("creatingRound") : finalized ? t("createNextRound") : t("createRound")}
               </button>
               </>
             ) : (
               <div className="workspace-empty">
-                <p className="eyebrow">Organizer</p>
-                <h2>Round in progress</h2>
-                <p>Finalize or refund the current round before creating the next one.</p>
+                <p className="eyebrow">{t("organizer")}</p>
+                <h2>{t("roundInProgress")}</h2>
+                <p>{t("roundInProgressDetail")}</p>
               </div>
             )}
           </section>
@@ -2155,36 +2213,40 @@ export function App() {
       <section id="round-history-panel" className="history-section history-tab-panel" role="tabpanel" aria-labelledby="round-history-tab raffle-history-title">
         <div className="section-heading-row">
           <div className="history-title-block">
-            <p className="eyebrow">On-chain activity</p>
-            <h2 id="raffle-history-title">Raffle history</h2>
+            <p className="eyebrow">{t("onChainActivity")}</p>
+            <h2 id="raffle-history-title">{t("raffleHistory")}</h2>
             <p className="history-summary" aria-live="polite">
               {historyRounds.length
-                ? `${historyRounds.length.toLocaleString()} rounds indexed · ${historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Paid").length.toLocaleString()} paid · ${historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Refunded").length.toLocaleString()} refunded`
+                ? t("historySummary", {
+                    rounds: historyRounds.length.toLocaleString(),
+                    paid: historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Paid").length.toLocaleString(),
+                    refunded: historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Refunded").length.toLocaleString()
+                  })
                 : isLoadingHistory
-                  ? "Reading round results from the network..."
-                  : "Round results from the network"}
+                  ? t("readingHistory")
+                  : t("historyResults")}
             </p>
           </div>
           <button type="button" className="history-refresh" onClick={handleLoadHistory} disabled={isLoadingHistory}>
             <RefreshCw size={17} />
-            {isLoadingHistory ? "Loading history..." : "Refresh history"}
+            {isLoadingHistory ? t("loadingHistory") : t("refreshHistory")}
           </button>
         </div>
 
-        {historyError ? <p className="error-text">{historyError}</p> : null}
-        {historyMessage ? <p className="success-text">{historyMessage}</p> : null}
+        {historyError ? <p className="error-text">{rt(historyError)}</p> : null}
+        {historyMessage ? <p className="success-text">{rt(historyMessage)}</p> : null}
 
         {historyRounds.length ? (
           <>
             <label className="field history-select">
-              <span>Round</span>
+              <span>{t("round")}</span>
               <select
                 value={selectedHistoryRound?.roundId ?? ""}
                 onChange={(event) => setSelectedHistoryRoundId(event.target.value)}
               >
                 {historyRounds.map((historyRound) => (
                   <option key={historyRound.roundId} value={historyRound.roundId}>
-                    {historyRound.roundId} - {historyRoundStatus(historyRound)} - {historyRound.tickets.length.toLocaleString()} tickets
+                    {historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t(historyRound.tickets.length === 1 ? "ticketCount.one" : "ticketCount", { count: historyRound.tickets.length.toLocaleString() })}
                   </option>
                 ))}
               </select>
@@ -2193,12 +2255,12 @@ export function App() {
             {selectedHistoryRound ? (
               <div className="history-detail">
                 <div className="key-metrics history-metrics">
-                  <div><span>Status</span><strong>{historyRoundStatus(selectedHistoryRound)}</strong></div>
-                  <div><span>Tickets</span><strong>{selectedHistoryRound.tickets.length.toLocaleString()}</strong></div>
-                  <div><span>Pot</span><strong>{formatKas(selectedHistoryRound.potAmount)}</strong></div>
+                  <div><span>{t("status")}</span><strong>{t(`status.${historyRoundStatus(selectedHistoryRound)}`)}</strong></div>
+                  <div><span>{t("tickets")}</span><strong>{selectedHistoryRound.tickets.length.toLocaleString()}</strong></div>
+                  <div><span>{t("pot")}</span><strong>{formatKas(selectedHistoryRound.potAmount)}</strong></div>
                   <div>
-                    <span>Winner</span>
-                    <strong>{selectedHistoryRound.payouts[0] ? `#${selectedHistoryRound.payouts[0].winnerTicketId}` : "Pending"}</strong>
+                    <span>{t("winner")}</span>
+                    <strong>{selectedHistoryRound.payouts[0] ? `#${selectedHistoryRound.payouts[0].winnerTicketId}` : t("pending")}</strong>
                   </div>
                 </div>
 
@@ -2212,17 +2274,17 @@ export function App() {
                       selectedHistoryRound.latestCovenant.status === "Refunded"
                     }
                   >
-                    Load this round
+                    {t("loadThisRound")}
                   </button>
                 ) : null}
 
                 <details className="disclosure compact-disclosure">
-                  <summary>{selectedHistoryBatches.length} purchase batch{selectedHistoryBatches.length === 1 ? "" : "es"}</summary>
+                  <summary>{t(selectedHistoryBatches.length === 1 ? "purchaseBatch.one" : "purchaseBatch", { count: selectedHistoryBatches.length.toLocaleString() })}</summary>
                   <div className="batch-list">
                     {selectedHistoryBatches.map((batch) => (
                       <div className="batch-row" key={batch.txId}>
                         <strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>
-                        <span>{batch.count.toLocaleString()} tickets</span>
+                        <span>{t(batch.count === 1 ? "ticketCount.one" : "ticketCount", { count: batch.count.toLocaleString() })}</span>
                         <span className="mono">{shortValue(batch.owner, 9)}</span>
                         <span>{formatKas(batch.amount)}</span>
                       </div>
@@ -2231,15 +2293,15 @@ export function App() {
                 </details>
 
                 <details className="disclosure compact-disclosure">
-                  <summary>Transactions and timing</summary>
+                  <summary>{t("transactionsTiming")}</summary>
                   <dl className="stat-list dense disclosure-body">
-                    <div><dt>Registry tx</dt><dd className="mono">{selectedHistoryRound.registryTxId ?? "unknown"}</dd></div>
-                    <div><dt>Covenant</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.address ?? selectedHistoryRound.treasuryAddress ?? "unknown"}</dd></div>
-                    <div><dt>Refund tx</dt><dd className="mono">{selectedHistoryRound.refundTxId ?? "pending"}</dd></div>
-                    <div><dt>Refund after DAA</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.refundAfterDaaScore ?? selectedHistoryRound.refundAfterDaaScore ?? "unknown"}</dd></div>
-                    <div><dt>Last seen</dt><dd>{formatDate(selectedHistoryRound.lastBlockTime)}</dd></div>
+                    <div><dt>{t("registryTx")}</dt><dd className="mono">{selectedHistoryRound.registryTxId ?? t("unknown")}</dd></div>
+                    <div><dt>{t("covenant")}</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.address ?? selectedHistoryRound.treasuryAddress ?? t("unknown")}</dd></div>
+                    <div><dt>{t("refundTx")}</dt><dd className="mono">{selectedHistoryRound.refundTxId ?? t("pending")}</dd></div>
+                    <div><dt>{t("refundAfterDaa")}</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.refundAfterDaaScore ?? selectedHistoryRound.refundAfterDaaScore ?? t("unknown")}</dd></div>
+                    <div><dt>{t("lastSeen")}</dt><dd>{formatDate(selectedHistoryRound.lastBlockTime, language)}</dd></div>
                     {selectedHistoryRound.payouts[0] ? (
-                      <div><dt>Payout tx</dt><dd className="mono">{selectedHistoryRound.payouts[0].txId}</dd></div>
+                      <div><dt>{t("payoutTx")}</dt><dd className="mono">{selectedHistoryRound.payouts[0].txId}</dd></div>
                     ) : null}
                   </dl>
                 </details>
@@ -2247,18 +2309,18 @@ export function App() {
             ) : null}
           </>
         ) : (
-          <p className="history-empty">No indexed rounds loaded yet.</p>
+          <p className="history-empty">{t("noIndexedRounds")}</p>
         )}
 
         <details className="disclosure compact-disclosure">
-          <summary>History source</summary>
+          <summary>{t("historySource")}</summary>
           <div className="form-grid disclosure-body">
             <label className="field">
-              <span>REST API</span>
+              <span>{t("restApi")}</span>
               <input value={historyApiBase} onChange={(event) => setHistoryApiBase(event.target.value)} />
             </label>
             <label className="field">
-              <span>Registry address</span>
+              <span>{t("registryAddress")}</span>
               <input
                 value={historyAddress || metadata.registryAddress || registryAddress || metadata.treasuryAddress || ""}
                 onChange={(event) => setHistoryAddress(event.target.value)}
@@ -2272,7 +2334,7 @@ export function App() {
       </section>
 
       <section className="tabbed-workspace action-workspace">
-        <div className="workspace-tabs" role="tablist" aria-label="Participate or pay out">
+        <div className="workspace-tabs" role="tablist" aria-label={t("actionTabs")}>
           <button
             type="button"
             id="round-buy-tab"
@@ -2282,7 +2344,7 @@ export function App() {
             aria-controls="round-buy-panel"
             onClick={() => setRoundActionTab("buy")}
           >
-            Buy tickets
+            {t("buyTickets")}
           </button>
           <button
             type="button"
@@ -2293,7 +2355,7 @@ export function App() {
             aria-controls="round-payout-panel"
             onClick={() => setRoundActionTab("payout")}
           >
-            Draw & pay
+            {t("drawPay")}
           </button>
         </div>
 
@@ -2302,12 +2364,12 @@ export function App() {
             {metadata.covenant && !finalized ? (
               <>
 <div className="pane-heading">
-                <p className="eyebrow">Participant</p>
-                <h2>Buy tickets</h2>
+                <p className="eyebrow">{t("participant")}</p>
+                <h2>{t("buyTickets")}</h2>
               </div>
               <div className="purchase-form">
                 <label className="field quantity-field">
-                  <span>Quantity</span>
+                  <span>{t("quantity")}</span>
                   <input
                     type="number"
                     min={1}
@@ -2316,7 +2378,7 @@ export function App() {
                     onChange={(event) => setTicketQuantity(event.target.value)}
                   />
                 </label>
-                <div className="segmented-control" aria-label="Ticket quantity presets">
+                <div className="segmented-control" aria-label={t("quantityPresets")}>
                   {[1, 10].map((quantity) => (
                     <button
                       type="button"
@@ -2334,14 +2396,14 @@ export function App() {
                     disabled={remainingTickets < 1}
                     onClick={() => setTicketQuantity(String(remainingTickets))}
                   >
-                    Max
+                    {t("max")}
                   </button>
                 </div>
               </div>
               <dl className="purchase-summary">
-                <div><dt>Total</dt><dd>{formatKas(purchaseTotal)}</dd></div>
-                <div><dt>Remaining</dt><dd>{remainingTickets.toLocaleString()}</dd></div>
-                <div><dt>Purchase batches</dt><dd>{(metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 0)} / 20</dd></div>
+                <div><dt>{t("total")}</dt><dd>{formatKas(purchaseTotal)}</dd></div>
+                <div><dt>{t("remaining")}</dt><dd>{remainingTickets.toLocaleString()}</dd></div>
+                <div><dt>{t("purchaseBatches")}</dt><dd>{(metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 0)} / 20</dd></div>
               </dl>
               <button
                 type="button"
@@ -2350,43 +2412,47 @@ export function App() {
                 onClick={handleBuyTicket}
                 disabled={isBuying || Boolean(finalized) || remainingTickets <= 0}
               >
-                {isBuying ? "Buying tickets..." : `Buy ${Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0 ? parsedTicketQuantity.toLocaleString() : ""} ticket${parsedTicketQuantity === 1 ? "" : "s"}`}
+                {isBuying
+                  ? t("buyingTickets")
+                  : t(parsedTicketQuantity === 1 ? "buyTicketButton.one" : "buyTicketButton", {
+                      count: Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0 ? parsedTicketQuantity.toLocaleString() : ""
+                    })}
               </button>
               </>
             ) : (
               <div className="workspace-empty">
-                <p className="eyebrow">Participant</p>
-                <h2>Buy tickets</h2>
-                <p>Create or load an open round before buying tickets.</p>
+                <p className="eyebrow">{t("participant")}</p>
+                <h2>{t("buyTickets")}</h2>
+                <p>{t("buyRoundFirst")}</p>
               </div>
             )}
           </section>
         ) : (
 <section id="round-payout-panel" className="workspace-panel action-pane" role="tabpanel" aria-labelledby="round-payout-tab">
           <div className="pane-heading">
-            <p className="eyebrow">Covenant action</p>
-            <h2>Draw and payout</h2>
+            <p className="eyebrow">{t("covenantAction")}</p>
+            <h2>{t("drawPayout")}</h2>
           </div>
 
           {finalized ? (
             <div className="winner-block">
-              <span>Winner</span>
-              <strong>Ticket #{finalized.winnerTicketId}</strong>
+              <span>{t("winner")}</span>
+              <strong>{t("winnerTicket", { ticket: finalized.winnerTicketId })}</strong>
               <p className="mono">{finalized.winnerAddress}</p>
-              <p>Paid in transaction <span className="mono">{shortValue(finalized.payoutTxId, 10)}</span></p>
+              <p>{t("paidInTransaction", { tx: shortValue(finalized.payoutTxId, 10) })}</p>
             </div>
           ) : (
             <>
               <p className="pane-copy">
                 {!participantFinalizeEnabled && metadata.covenant
-                  ? "This legacy round can be refunded by anyone after timeout, but does not support participant-authorized drawing."
+                  ? t("legacyDrawUnsupported")
                   : round.soldTickets >= round.maxTickets
-                  ? walletIsParticipant ? "All tickets are sold. A connected participant can draw now." : "All tickets are sold. Connect a participant wallet to draw."
+                  ? walletIsParticipant ? t("soldOutCanDraw") : t("soldOutConnectParticipant")
                   : round.soldTickets > 0
                     ? refundAvailable
-                      ? walletIsParticipant ? "The timeout has passed. A connected participant can draw, or anyone can refund." : "The timeout has passed. Connect a participant wallet to draw, or refund without a wallet."
-                      : `${remainingTickets.toLocaleString()} tickets remain. Draw and refund unlock at the timeout.`
-                    : "Buy at least one ticket before drawing."}
+                      ? walletIsParticipant ? t("timeoutCanDrawOrRefund") : t("timeoutConnectOrRefund")
+                      : t("ticketsRemain", { count: remainingTickets.toLocaleString() })
+                    : t("buyBeforeDraw")}
               </p>
               <div className="button-row">
                 <button
@@ -2405,7 +2471,7 @@ export function App() {
                     metadata.covenant.soldTickets <= 0
                   }
                 >
-                  {isFinalizing ? "Drawing and paying..." : "Draw & pay"}
+                  {isFinalizing ? t("drawingPaying") : t("drawPay")}
                 </button>
                 <button
                   type="button"
@@ -2423,30 +2489,30 @@ export function App() {
                     !refundAvailable
                   }
                 >
-                  {isRefundingRound ? "Refunding..." : "Refund after timeout"}
+                  {isRefundingRound ? t("refunding") : t("refundAfterTimeout")}
                 </button>
               </div>
             </>
           )}
 
           <details className="disclosure compact-disclosure">
-            <summary>Oracle attestation</summary>
+            <summary>{t("oracleAttestation")}</summary>
             <div className="disclosure-body">
               <label className="field">
-                <span>Development oracle private key</span>
+                <span>{t("devOraclePrivateKey")}</span>
                 <input
                   type="password"
                   value={oraclePrivateKey}
                   onChange={(event) => handleOraclePrivateKeyInput(event.target.value)}
-                  placeholder="Restored automatically for locally created rounds"
+                  placeholder={t("oracleKeyPlaceholder")}
                 />
               </label>
               <label className="field">
-                <span>External oracle seed</span>
+                <span>{t("externalOracleSeed")}</span>
                 <input value={oracleSeed} onChange={(event) => setOracleSeed(event.target.value.trim().toLowerCase())} />
               </label>
               <label className="field">
-                <span>External oracle signature</span>
+                <span>{t("externalOracleSignature")}</span>
                 <input value={oracleSignature} onChange={(event) => setOracleSignature(event.target.value.trim().toLowerCase())} />
               </label>
             </div>
@@ -2455,17 +2521,17 @@ export function App() {
         )}
       </section>
 
-      {chainError ? <p className="error-text action-message">{chainError}</p> : null}
-      {chainMessage ? <p className="success-text action-message">{chainMessage}</p> : null}
+      {chainError ? <p className="error-text action-message">{rt(chainError)}</p> : null}
+      {chainMessage ? <p className="success-text action-message">{rt(chainMessage)}</p> : null}
 
       <details className="technical-section disclosure">
-        <summary>Advanced settings and technical details</summary>
+        <summary>{t("advanced")}</summary>
         <div className="technical-grid disclosure-body">
           <section>
-            <h3>Round settings</h3>
+            <h3>{t("roundSettings")}</h3>
             <div className="form-grid">
               <label className="field">
-                <span>Minimum tickets</span>
+                <span>{t("minimumTickets")}</span>
                 <input
                   type="number"
                   min={1}
@@ -2475,7 +2541,7 @@ export function App() {
                 />
               </label>
               <label className="field">
-                <span>Carrier reserve (KAS)</span>
+                <span>{t("carrierReserveKas")}</span>
                 <input
                   inputMode="decimal"
                   value={sompiToKasInput(covenantCarrierSompi)}
@@ -2484,27 +2550,27 @@ export function App() {
               </label>
             </div>
             <dl className="stat-list dense">
-              <div><dt>Network</dt><dd>{networkId}</dd></div>
-              <div><dt>Round ID</dt><dd className="mono">{metadata.roundId || "pending"}</dd></div>
-              <div><dt>Covenant</dt><dd className="mono">{metadata.treasuryAddress || "pending"}</dd></div>
-              <div><dt>Refund after DAA</dt><dd className="mono">{metadata.covenant?.refundAfterDaaScore ?? metadata.refundAfterDaaScore ?? "pending"}</dd></div>
-              <div><dt>Contract version</dt><dd>{metadata.contractVersion}</dd></div>
+              <div><dt>{t("network")}</dt><dd>{networkLabel(networkId)}</dd></div>
+              <div><dt>{t("roundId")}</dt><dd className="mono">{metadata.roundId || t("pending")}</dd></div>
+              <div><dt>{t("covenant")}</dt><dd className="mono">{metadata.treasuryAddress || t("pending")}</dd></div>
+              <div><dt>{t("refundAfterDaa")}</dt><dd className="mono">{metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || t("pending")}</dd></div>
+              <div><dt>{t("contractVersion")}</dt><dd>{metadata.contractVersion}</dd></div>
             </dl>
           </section>
 
           <section>
-            <h3>Node diagnostics</h3>
+            <h3>{t("nodeDiagnostics")}</h3>
             <dl className="stat-list dense">
-              <div><dt>Network</dt><dd>{nodeStatus.network}</dd></div>
-              <div><dt>Sync</dt><dd>{nodeStatus.syncStatus}</dd></div>
-              <div><dt>UTXO index</dt><dd>{nodeStatus.hasUtxoIndex === undefined ? "unknown" : nodeStatus.hasUtxoIndex ? "enabled" : "disabled"}</dd></div>
-              <div><dt>Latency</dt><dd>{nodeStatus.latencyMs ? `${nodeStatus.latencyMs} ms` : "unknown"}</dd></div>
-              <div><dt>Version</dt><dd>{nodeStatus.serverVersion}</dd></div>
+              <div><dt>{t("network")}</dt><dd>{nodeStatus.network === "mainnet" || nodeStatus.network === "testnet-10" ? networkLabel(nodeStatus.network) : t("unknown")}</dd></div>
+              <div><dt>{t("sync")}</dt><dd>{t(`sync.${nodeStatus.syncStatus}`)}</dd></div>
+              <div><dt>{t("utxoIndex")}</dt><dd>{nodeStatus.hasUtxoIndex === undefined ? t("unknown") : nodeStatus.hasUtxoIndex ? t("enabled") : t("disabled")}</dd></div>
+              <div><dt>{t("latency")}</dt><dd>{nodeStatus.latencyMs ? `${nodeStatus.latencyMs} ms` : t("unknown")}</dd></div>
+              <div><dt>{t("version")}</dt><dd>{nodeStatus.serverVersion ?? t("unknown")}</dd></div>
             </dl>
           </section>
 
           <section className="technical-wide">
-            <h3>Round metadata</h3>
+            <h3>{t("roundMetadata")}</h3>
             <textarea
               spellCheck={false}
               value={metadataText}
@@ -2513,32 +2579,32 @@ export function App() {
             <div className="button-row">
               <button type="button" className="secondary" onClick={handleImportMetadata}>
                 <Upload size={17} />
-                Import JSON
+                {t("importJson")}
               </button>
               <button type="button" className="secondary" onClick={handleCopyRoundLink}>
                 <Link2 size={17} />
-                Copy link
+                {t("copyLink")}
               </button>
             </div>
-            {metadataError ? <p className="error-text">{metadataError}</p> : null}
-            {metadataMessage ? <p className="success-text">{metadataMessage}</p> : null}
+            {metadataError ? <p className="error-text">{rt(metadataError)}</p> : null}
+            {metadataMessage ? <p className="success-text">{rt(metadataMessage)}</p> : null}
           </section>
 
           <section className="technical-wide">
-            <h3>Contract verification</h3>
+            <h3>{t("contractVerification")}</h3>
             <div className={verification.ok ? "verify-box ok" : "verify-box"}>
               <ShieldCheck size={20} />
-              <span>{verification.ok ? "Local state checks passed" : "Local state has issues"}</span>
+              <span>{verification.ok ? t("localChecksPassed") : t("localChecksIssues")}</span>
             </div>
             <dl className="stat-list dense">
-              <div><dt>Contract</dt><dd>{covenantStatus.contract}</dd></div>
-              <div><dt>Artifact</dt><dd>{covenantStatus.status}</dd></div>
-              <div><dt>Ticket root</dt><dd className="mono">{metadata.covenant?.ticketRoot || "pending"}</dd></div>
-              <div><dt>Create tx</dt><dd className="mono">{metadata.createTxId || "pending"}</dd></div>
+              <div><dt>{t("contract")}</dt><dd>{covenantStatus.contract}</dd></div>
+              <div><dt>{t("artifact")}</dt><dd>{covenantStatus.status}</dd></div>
+              <div><dt>{t("ticketRoot")}</dt><dd className="mono">{metadata.covenant?.ticketRoot || t("pending")}</dd></div>
+              <div><dt>{t("createTx")}</dt><dd className="mono">{metadata.createTxId || t("pending")}</dd></div>
             </dl>
             {[...verification.errors, ...verification.warnings].length ? (
               <ul className="message-list">
-                {[...verification.errors, ...verification.warnings].map((message) => <li key={message}>{message}</li>)}
+                {[...verification.errors, ...verification.warnings].map((message) => <li key={message}>{rt(message)}</li>)}
               </ul>
             ) : null}
           </section>
