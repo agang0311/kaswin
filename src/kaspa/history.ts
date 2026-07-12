@@ -1,7 +1,7 @@
 import {
   buildRaffleRedeemScriptForContractVersion,
   bytesToHex,
-  MILLION_USER_CONTRACT_VERSION,
+  CURRENT_RAFFLE_CONTRACT_VERSION,
   raffleCovenantStateFromRound
 } from "./covenant";
 import { appendTicketLeaf, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
@@ -42,7 +42,14 @@ export interface RaffleHistoryRound {
   creatorPubkey?: string;
   creatorCommitment?: string;
   oraclePublicKey?: string;
+  oraclePublicKey2?: string;
+  oraclePublicKey3?: string;
+  oracleSeedCommitment?: string;
+  oracleSeedCommitment2?: string;
+  oracleSeedCommitment3?: string;
   oracleEndpoint?: string;
+  oracleEndpoint2?: string;
+  oracleEndpoint3?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
@@ -97,7 +104,14 @@ interface RafflePayload {
   creatorPubkey?: string;
   creatorCommitment?: string;
   oraclePublicKey?: string;
+  oraclePublicKey2?: string;
+  oraclePublicKey3?: string;
+  oracleSeedCommitment?: string;
+  oracleSeedCommitment2?: string;
+  oracleSeedCommitment3?: string;
   oracleEndpoint?: string;
+  oracleEndpoint2?: string;
+  oracleEndpoint3?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
@@ -188,7 +202,14 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.creatorPubkey = payload.creatorPubkey ?? round.creatorPubkey;
       round.creatorCommitment = payload.creatorCommitment ?? round.creatorCommitment;
       round.oraclePublicKey = payload.oraclePublicKey ?? round.oraclePublicKey;
+      round.oraclePublicKey2 = payload.oraclePublicKey2 ?? round.oraclePublicKey2;
+      round.oraclePublicKey3 = payload.oraclePublicKey3 ?? round.oraclePublicKey3;
+      round.oracleSeedCommitment = payload.oracleSeedCommitment ?? round.oracleSeedCommitment;
+      round.oracleSeedCommitment2 = payload.oracleSeedCommitment2 ?? round.oracleSeedCommitment2;
+      round.oracleSeedCommitment3 = payload.oracleSeedCommitment3 ?? round.oracleSeedCommitment3;
       round.oracleEndpoint = payload.oracleEndpoint ?? round.oracleEndpoint;
+      round.oracleEndpoint2 = payload.oracleEndpoint2 ?? round.oracleEndpoint2;
+      round.oracleEndpoint3 = payload.oracleEndpoint3 ?? round.oracleEndpoint3;
       round.createdAtDaaScore = payload.createdAtDaaScore ?? round.createdAtDaaScore;
       round.refundTimeoutSeconds = payload.refundTimeoutSeconds ?? round.refundTimeoutSeconds;
       round.refundAfterDaaScore = payload.refundAfterDaaScore ?? round.refundAfterDaaScore;
@@ -294,6 +315,11 @@ async function buildLatestCovenantCursor(
     !amountSompi ||
     !covenantId ||
     !round.oraclePublicKey ||
+    !round.oraclePublicKey2 ||
+    !round.oraclePublicKey3 ||
+    !round.oracleSeedCommitment ||
+    !round.oracleSeedCommitment2 ||
+    !round.oracleSeedCommitment3 ||
     round.ticketPrice === undefined ||
     round.maxTickets === undefined ||
     round.minTickets === undefined ||
@@ -318,7 +344,7 @@ async function buildLatestCovenantCursor(
     : 0;
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
-    contractVersion: MILLION_USER_CONTRACT_VERSION,
+    contractVersion: CURRENT_RAFFLE_CONTRACT_VERSION,
     roundId: round.roundId,
     creator: round.creator || "no-wallet",
     ticketPrice: round.ticketPrice,
@@ -331,6 +357,11 @@ async function buildLatestCovenantCursor(
     randomnessMode: "oracle",
     creatorPubkey: round.creatorPubkey,
     oraclePublicKey: round.oraclePublicKey,
+    oraclePublicKey2: round.oraclePublicKey2,
+    oraclePublicKey3: round.oraclePublicKey3,
+    oracleSeedCommitment: round.oracleSeedCommitment,
+    oracleSeedCommitment2: round.oracleSeedCommitment2,
+    oracleSeedCommitment3: round.oracleSeedCommitment3,
     refundAfterDaaScore: round.refundAfterDaaScore,
     ticketRoot,
     ticketFrontier: ticketTree.frontier,
@@ -451,7 +482,7 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
   applyHistoryTransactions(rounds, registryTransactions);
 
   for (const round of [...rounds.values()]) {
-    if (round.contractVersion !== MILLION_USER_CONTRACT_VERSION) {
+    if (round.contractVersion !== CURRENT_RAFFLE_CONTRACT_VERSION) {
       rounds.delete(round.roundId);
       continue;
     }
@@ -470,7 +501,7 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
 
 export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<RaffleHistoryRound[]> {
   const indexedRounds = (await loadIndexedRaffleRounds(apiBaseUrl)).filter((round) => (
-    round.contractVersion === MILLION_USER_CONTRACT_VERSION
+    round.contractVersion === CURRENT_RAFFLE_CONTRACT_VERSION
   ));
   return Promise.all(indexedRounds.map(async (indexed): Promise<RaffleHistoryRound> => {
     const ticketPrice = BigInt(indexed.ticketPrice || "0");
@@ -481,6 +512,11 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
       indexed.creator &&
       indexed.creatorPubkey &&
       indexed.oraclePublicKey &&
+      indexed.oraclePublicKey2 &&
+      indexed.oraclePublicKey3 &&
+      indexed.oracleSeedCommitment &&
+      indexed.oracleSeedCommitment2 &&
+      indexed.oracleSeedCommitment3 &&
       indexed.maxTickets !== undefined &&
       indexed.minTickets !== undefined
     ) {
@@ -499,6 +535,11 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         randomnessMode: "oracle",
         creatorPubkey: indexed.creatorPubkey,
         oraclePublicKey: indexed.oraclePublicKey,
+        oraclePublicKey2: indexed.oraclePublicKey2,
+        oraclePublicKey3: indexed.oraclePublicKey3,
+        oracleSeedCommitment: indexed.oracleSeedCommitment,
+        oracleSeedCommitment2: indexed.oracleSeedCommitment2,
+        oracleSeedCommitment3: indexed.oracleSeedCommitment3,
         refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
         ticketRoot: indexed.ticketRoot,
         ticketFrontier: indexed.ticketFrontier,
@@ -528,7 +569,14 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
       creator: indexed.creator,
       creatorPubkey: indexed.creatorPubkey,
       oraclePublicKey: indexed.oraclePublicKey,
+      oraclePublicKey2: indexed.oraclePublicKey2,
+      oraclePublicKey3: indexed.oraclePublicKey3,
+      oracleSeedCommitment: indexed.oracleSeedCommitment,
+      oracleSeedCommitment2: indexed.oracleSeedCommitment2,
+      oracleSeedCommitment3: indexed.oracleSeedCommitment3,
       oracleEndpoint: indexed.oracleEndpoint,
+      oracleEndpoint2: indexed.oracleEndpoint2,
+      oracleEndpoint3: indexed.oracleEndpoint3,
       refundTimeoutSeconds: indexed.refundTimeoutSeconds,
       createdAtDaaScore: indexed.createdAtDaaScore,
       refundAfterDaaScore: indexed.refundAfterDaaScore,

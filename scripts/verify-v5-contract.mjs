@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa-wasm/kaspa.js";
+import * as secp from "@noble/secp256k1";
 
 const root = process.cwd();
 const roundSource = path.join(root, "src/contracts/raffle_round_v5.sil");
@@ -17,7 +18,10 @@ initSync({ module: wasm });
 const owner = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 const covenantId = `0x${"11".repeat(32)}`;
 const ticketPrice = 30_000_000;
-const carrierAfterTransition = 17_800_000;
+const carrierAfterTransition = 17_770_000;
+const oracleSeed = Buffer.alloc(32, 0x11);
+const oracleSeed2 = Buffer.alloc(32, 0x22);
+const oracleSeed3 = Buffer.alloc(32, 0x33);
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest(); }
 function pair(left, right) { return hash(Buffer.concat([left, right])); }
@@ -101,6 +105,11 @@ function roundState(soldTickets, ticketRoot, ticketFrontier = Buffer.alloc(640))
     ticket_price: ticketPrice,
     creator_pubkey: `0x${owner}`,
     oracle_pubkey: `0x${owner}`,
+    oracle_pubkey_2: `0x${owner}`,
+    oracle_pubkey_3: `0x${owner}`,
+    oracle_commitment: `0x${hash(oracleSeed).toString("hex")}`,
+    oracle_commitment_2: `0x${hash(oracleSeed2).toString("hex")}`,
+    oracle_commitment_3: `0x${hash(oracleSeed3).toString("hex")}`,
     refund_after_daa: 1000,
     sold_tickets: soldTickets,
     ticket_root: `0x${ticketRoot.toString("hex")}`,
@@ -142,6 +151,13 @@ function materializeRefund(state) {
 
 const tree10 = buildTree(10);
 const tree16 = buildTree(16);
+const tree1 = buildTree(1);
+const state1 = buildAppendState(1);
+const proof1 = Buffer.concat(emptyNodes);
+const oraclePrivateKey = Buffer.from("01".padStart(64, "0"), "hex");
+const oracleSignature = Buffer.from(await secp.schnorr.signAsync(hash(Buffer.concat([tree1.root, oracleSeed])), oraclePrivateKey));
+const oracleSignature2 = Buffer.from(await secp.schnorr.signAsync(hash(Buffer.concat([tree1.root, oracleSeed2])), oraclePrivateKey));
+const oracleSignature3 = Buffer.from(await secp.schnorr.signAsync(hash(Buffer.concat([tree1.root, oracleSeed3])), oraclePrivateKey));
 const owners8 = Buffer.concat(Array.from({ length: 8 }, () => Buffer.from(owner, "hex")));
 const refundPrefix = Buffer.from(refundArtifact.script, "hex").subarray(0, refundArtifact.stateLayout.start);
 const refundSuffix = Buffer.from(refundArtifact.script, "hex").subarray(refundArtifact.stateLayout.start + refundArtifact.stateLayout.len);
@@ -184,6 +200,47 @@ const buyTests = { tests: [1, 2, 4, 8].map((ticketCount) => {
     outputs: []
   }
 }]) };
+
+function finalizeTest(name, seed2, expect) {
+  return {
+    name,
+    function: "finalize",
+    args: [
+      `0x${oracleSignature.toString("hex")}`,
+      `0x${oracleSeed.toString("hex")}`,
+      `0x${oracleSignature2.toString("hex")}`,
+      `0x${seed2.toString("hex")}`,
+      `0x${oracleSignature3.toString("hex")}`,
+      `0x${oracleSeed3.toString("hex")}`,
+      0,
+      `0x${owner}`,
+      `0x${proof1.toString("hex")}`,
+      0,
+      `0x${owner}`,
+      `0x${proof1.toString("hex")}`
+    ],
+    expect,
+    tx: {
+      version: 1,
+      lock_time: 1_000,
+      active_input_index: 0,
+      inputs: [
+        { utxo_value: 50_000_000, covenant_id: covenantId, state: roundState(1, tree1.root, state1.frontier) },
+        { utxo_value: 5_000_000, utxo_script_hex: `20${owner}ac` }
+      ],
+      outputs: [
+        { value: 30_000_000, p2pk_pubkey: `0x${owner}` },
+        { value: 17_800_000, p2pk_pubkey: `0x${owner}` },
+        { value: 5_000_000, p2pk_pubkey: `0x${owner}` }
+      ]
+    }
+  };
+}
+
+const finalizeTests = { tests: [
+  finalizeTest("three_committed_oracles_finalize", oracleSeed2, "pass"),
+  finalizeTest("changed_second_seed_rejected", Buffer.alloc(32, 0x99), "fail")
+] };
 
 function ownerOutput(value = ticketPrice - 150_000) { return { value, p2pk_pubkey: `0x${owner}` }; }
 
@@ -324,5 +381,6 @@ function run(source, name, tests) {
 
 if (!fs.existsSync(debuggerPath)) throw new Error("Build the SilverScript cli-debugger before running V5 tests.");
 run(roundSource, "raffle_round_v5_buy", buyTests);
+run(roundSource, "raffle_round_v5_finalize", finalizeTests);
 run(refundSource, "raffle_refund_v1", batchTests);
 run(roundSource, "raffle_round_v5_transition", transitionTests);

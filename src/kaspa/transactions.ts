@@ -15,12 +15,9 @@ import {
 import {
   assertRaffleRedeemScriptMatchesRound,
   buildFinalizeSeedHex,
-  buildNextTicketRootHex,
   buildRaffleAddress,
   buildRaffleBuySignatureScript,
-  buildRaffleCloseSignatureScript,
   buildRaffleFinalizeSignatureScript,
-  buildRaffleRefundAllSignatureScript,
   buildRaffleRefundBatch8SignatureScript,
   buildRaffleRefundNextSignatureScript,
   buildRaffleStartRefundSignatureScript,
@@ -28,8 +25,6 @@ import {
   buildRaffleScriptPublicKey,
   bytesToHex,
   getRaffleRefundRuntimeArtifact,
-  isBatchRefundContractVersion,
-  isMillionUserContractVersion,
   pubkeyHexFromAddress,
   raffleCovenantStateFromRound,
   raffleWinnerIndexFromSeed
@@ -37,7 +32,6 @@ import {
 import type { KaspaRpcConnection } from "./rpc";
 import { hexToBytes } from "../raffle/randomness";
 import type { RaffleCovenantCursor, RoundState, TicketState } from "../raffle/types";
-import { findTicketRange, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import { appendTicketLeaves, verifyTicketProof, verifyTicketRange8 } from "../raffle/merkle";
 import type { BrowserTestWallet } from "./wallet";
 import { ensureKaspaWasmReady } from "./wasm";
@@ -81,13 +75,6 @@ export interface BuyRaffleCovenantTicketInput {
   payload: Uint8Array;
 }
 
-export interface CloseRaffleCovenantRoundInput {
-  connection: KaspaRpcConnection;
-  round: RoundState;
-  covenant: RaffleCovenantCursor;
-  payload?: Uint8Array;
-}
-
 export interface FinalizeRaffleCovenantRoundInput {
   connection: KaspaRpcConnection;
   wallet: BrowserTestWallet;
@@ -95,6 +82,10 @@ export interface FinalizeRaffleCovenantRoundInput {
   covenant: RaffleCovenantCursor;
   oracleSeedHex: string;
   oracleSignatureHex: string;
+  oracleSeedHex2: string;
+  oracleSignatureHex2: string;
+  oracleSeedHex3: string;
+  oracleSignatureHex3: string;
   winner: TicketState;
   winnerProofHex?: string;
   callerTicketId?: number;
@@ -123,67 +114,41 @@ export interface RaffleCovenantSpendResult {
 
 export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n;
 export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 100_000n;
-export const REGISTRY_PAYMENT_FEE_SOMPI = 300_000n;
-export const COVENANT_CREATE_FEE_SOMPI = 200_000n;
-export const COVENANT_BUY_FEE_SOMPI = 2_000_000n;
-export const COVENANT_FINALIZE_FEE_SOMPI = 2_000_000n;
-export const COVENANT_REFUND_FEE_SOMPI = 3_000_000n;
-export const V4_COVENANT_BUY_FEE_SOMPI = 1_700_000n;
-export const V4_COVENANT_FINALIZE_FEE_SOMPI = 2_200_000n;
-export const V4_COVENANT_REFUND_FEE_SOMPI = 1_900_000n;
-export const V5_REFUND_TRANSITION_FEE_SOMPI = 2_200_000n;
-export const V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI = 150_000n;
+export const REGISTRY_PAYMENT_FEE_SOMPI = 350_000n;
+export const COVENANT_CREATE_FEE_SOMPI = 300_000n;
+export const V7_COVENANT_BUY_FEE_SOMPI = 1_570_000n;
+export const V7_COVENANT_FINALIZE_FEE_SOMPI = 2_200_000n;
+export const V7_REFUND_TRANSITION_FEE_SOMPI = 2_230_000n;
+export const V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI = 150_000n;
+export const V7_REFUND_TAIL_FEE_PER_TICKET_SOMPI = 1_900_000n;
 const STANDARD_REFUND_MIN_SOMPI = 5_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 10_000_000n;
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 20_000_000n;
 export const MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS =
   "kaspa:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqpc4a6ugh";
 const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
-const COVENANT_CLOSE_FEE_SOMPI = 2_000_000n;
 const LOW_COST_FUNDING_MIN_SOMPI = 20_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
-const RAFFLE_BUY_COMPUTE_BUDGET = 50;
-const RAFFLE_CLOSE_COMPUTE_BUDGET = 2;
-const RAFFLE_FINALIZE_COMPUTE_BUDGET = 12;
 const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11;
-const RAFFLE_REFUND_COMPUTE_BUDGET = 20;
-const V4_RAFFLE_BUY_COMPUTE_BUDGET = 7;
-const V4_RAFFLE_FINALIZE_COMPUTE_BUDGET = 18;
-const V4_RAFFLE_REFUND_COMPUTE_BUDGET = 7;
-const V5_REFUND_TRANSITION_COMPUTE_BUDGET = 4;
-const V5_REFUND_BATCH_COMPUTE_BUDGET = 5;
-const V5_REFUND_SINGLE_COMPUTE_BUDGET = 4;
+const V7_RAFFLE_FINALIZE_COMPUTE_BUDGET = 36;
+const V7_REFUND_TRANSITION_COMPUTE_BUDGET = 4;
+const V7_REFUND_BATCH_COMPUTE_BUDGET = 5;
+const V7_REFUND_TAIL_COMPUTE_BUDGET = 4;
 
-export function covenantBuyFeeSompi(contractVersion: string, ticketCount = 1): bigint {
-  if (isBatchRefundContractVersion(contractVersion)) {
-    void ticketCount;
-    return 1_500_000n;
-  }
-  return isMillionUserContractVersion(contractVersion) ? V4_COVENANT_BUY_FEE_SOMPI : COVENANT_BUY_FEE_SOMPI;
+export function covenantBuyFeeSompi(_contractVersion: string, _ticketCount = 1): bigint {
+  return V7_COVENANT_BUY_FEE_SOMPI;
 }
 
-export function covenantFinalizeFeeSompi(contractVersion: string): bigint {
-  void contractVersion;
-  return V4_COVENANT_FINALIZE_FEE_SOMPI;
+export function covenantFinalizeFeeSompi(_contractVersion: string): bigint {
+  return V7_COVENANT_FINALIZE_FEE_SOMPI;
 }
 
-export function covenantRefundFeeSompi(contractVersion: string): bigint {
-  void contractVersion;
-  return V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI;
+export function covenantRefundFeeSompi(_contractVersion: string): bigint {
+  return V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI;
 }
 
-function raffleBuyComputeBudget(contractVersion: string, ticketCount = 1): number {
-  return isBatchRefundContractVersion(contractVersion)
-    ? 8 + (ticketCount === 8 ? 2 : ticketCount >= 2 ? 1 : 0)
-    : isMillionUserContractVersion(contractVersion) ? V4_RAFFLE_BUY_COMPUTE_BUDGET : RAFFLE_BUY_COMPUTE_BUDGET;
-}
-
-function raffleFinalizeComputeBudget(contractVersion: string): number {
-  return isMillionUserContractVersion(contractVersion) ? V4_RAFFLE_FINALIZE_COMPUTE_BUDGET : RAFFLE_FINALIZE_COMPUTE_BUDGET;
-}
-
-function raffleRefundComputeBudget(contractVersion: string): number {
-  return isMillionUserContractVersion(contractVersion) ? V4_RAFFLE_REFUND_COMPUTE_BUDGET : RAFFLE_REFUND_COMPUTE_BUDGET;
+function raffleBuyComputeBudget(ticketCount = 1): number {
+  return 8 + (ticketCount === 8 ? 2 : ticketCount >= 2 ? 1 : 0);
 }
 
 function formatKasAmount(value: bigint): string {
@@ -240,7 +205,7 @@ function normalizeTransactionError(error: unknown): Error {
 
   if (message.includes("Storage mass exceeds maximum")) {
     return new Error(
-      `A covenant or temporary funding output is below the current Toccata storage-mass minimum. Refresh the page and retry with the current build. New rounds need a carrier reserve of at least ${formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)}; old rounds created below that floor must be recreated.`
+      `A covenant or temporary funding output is below the current Toccata storage-mass minimum. Refresh the page and retry with the current build. The carrier reserve must be at least ${formatKasAmount(MIN_COVENANT_CARRIER_SOMPI)}.`
     );
   }
 
@@ -249,7 +214,7 @@ function normalizeTransactionError(error: unknown): Error {
     const detail = match ? ` Used ${match[1]}, committed ${match[2]}.` : "";
 
     return new Error(
-      `The covenant input did not commit enough compute budget.${detail} Refresh the page and retry with the current build. If this round was created with an older build, recreate it.`
+      `The covenant input did not commit enough compute budget.${detail} Refresh the page and retry with the current build.`
     );
   }
 
@@ -755,8 +720,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
       throw new Error("Ticket quantity must be a positive integer.");
     }
 
-    const isMillionUserRound = isMillionUserContractVersion(input.round.contractVersion);
-    if (isMillionUserRound && input.ticketCount > 8) {
+    if (input.ticketCount > 8) {
       throw new Error("A single purchase can contain at most 8 tickets.");
     }
 
@@ -797,28 +761,24 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
     const stagingTxId = await stagingTransaction.submit(input.connection.client);
     const stagingUtxo = await waitForAddressUtxo(input.connection, stagingAddress, stagingTxId, 0);
     const buyerPubkey = pubkeyHexFromAddress(input.wallet.address);
-    const merkleAppend = isMillionUserRound
-      ? await appendTicketLeaves(input.covenant.ticketFrontier || "", input.covenant.soldTickets, buyerPubkey, input.ticketCount)
-      : undefined;
-    const nextTicketRoot = merkleAppend?.rootHex ?? await buildNextTicketRootHex(input.round.roundId, input.covenant.ticketRoot, {
-      ...input.ticket,
-      ticketCount: input.ticketCount
-    });
-    const ticketOwnerPubkeys = isMillionUserRound
-      ? []
-      : [...input.covenant.ticketOwnerPubkeys, buyerPubkey];
-    const ticketBatchEnds = isMillionUserRound
-      ? []
-      : [...covenantBatchEnds(input.covenant), input.covenant.soldTickets + input.ticketCount];
+    const merkleAppend = await appendTicketLeaves(
+      input.covenant.ticketFrontier || "",
+      input.covenant.soldTickets,
+      buyerPubkey,
+      input.ticketCount
+    );
+    const nextTicketRoot = merkleAppend.rootHex;
+    const ticketOwnerPubkeys: string[] = [];
+    const ticketBatchEnds: number[] = [];
     const nextRound: RoundState = {
       ...input.round,
       soldTickets: input.covenant.soldTickets + input.ticketCount,
-      soldBatches: isMillionUserRound ? 0 : covenantSoldBatches(input.covenant) + 1,
+      soldBatches: 0,
       ticketBatchEnds,
       potAmount: input.round.potAmount + purchaseAmount,
       status: "Open",
       ticketRoot: nextTicketRoot,
-      ticketFrontier: merkleAppend?.frontierHex,
+      ticketFrontier: merkleAppend.frontierHex,
       refundCursor: input.covenant.refundCursor ?? 0,
       ticketOwnerPubkeys
     };
@@ -841,13 +801,12 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
           previousOutpoint: covenantOutpoint(input.covenant),
           signatureScript: buildRaffleBuySignatureScript(
             hexToBytes(input.covenant.redeemScriptHex),
-            nextTicketRoot,
             buyerPubkey,
             input.ticketCount
           ),
           sequence: 0n,
           sigOpCount: 0,
-          computeBudget: raffleBuyComputeBudget(input.round.contractVersion, input.ticketCount),
+          computeBudget: raffleBuyComputeBudget(input.ticketCount),
           utxo: asInputUtxo(covenantUtxo)
         },
         {
@@ -906,94 +865,6 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
   }
 }
 
-export async function closeRaffleCovenantRound(input: CloseRaffleCovenantRoundInput): Promise<RaffleCovenantSpendResult> {
-  await ensureKaspaWasmReady();
-
-  try {
-    const currentRound: RoundState = {
-      ...input.round,
-      soldTickets: input.covenant.soldTickets,
-      potAmount: BigInt(input.covenant.potAmount),
-      status: "Open",
-      ticketRoot: input.covenant.ticketRoot,
-      creatorPubkey: input.covenant.creatorPubkey,
-      refundAfterDaaScore: input.covenant.refundAfterDaaScore,
-      soldBatches: covenantSoldBatches(input.covenant),
-      ticketBatchEnds: covenantBatchEnds(input.covenant),
-      ticketOwnerPubkeys: input.covenant.ticketOwnerPubkeys
-    };
-
-    await assertRaffleRedeemScriptMatchesRound(currentRound, input.covenant.redeemScriptHex, "Close");
-
-    const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
-    const currentAmount = BigInt(input.covenant.amountSompi);
-    const successorAmount = currentAmount - COVENANT_CLOSE_FEE_SOMPI;
-
-    if (successorAmount < input.round.potAmount) {
-      throw new Error("The covenant carrier amount is too small to close this round.");
-    }
-
-    const nextRound: RoundState = {
-      ...input.round,
-      soldTickets: input.covenant.soldTickets,
-      potAmount: BigInt(input.covenant.potAmount),
-      status: "Closed",
-      ticketRoot: input.covenant.ticketRoot,
-      ticketFrontier: input.covenant.ticketFrontier,
-      refundCursor: input.covenant.refundCursor ?? 0,
-      creatorPubkey: input.covenant.creatorPubkey,
-      refundAfterDaaScore: input.covenant.refundAfterDaaScore,
-      soldBatches: covenantSoldBatches(input.covenant),
-      ticketBatchEnds: covenantBatchEnds(input.covenant),
-      ticketOwnerPubkeys: input.covenant.ticketOwnerPubkeys
-    };
-    const nextState = await raffleCovenantStateFromRound(nextRound);
-    const nextRedeemScript = buildRaffleRedeemScript(nextState);
-    const nextScriptPublicKey = await buildRaffleScriptPublicKey(nextState);
-    const nextAddress = await buildRaffleAddress(nextState, input.connection.status.network);
-    const tx = buildManualTransaction({
-      inputs: [
-        {
-          previousOutpoint: covenantOutpoint(input.covenant),
-          signatureScript: buildRaffleCloseSignatureScript(hexToBytes(input.covenant.redeemScriptHex)),
-          sequence: 0n,
-          sigOpCount: 0,
-          computeBudget: RAFFLE_CLOSE_COMPUTE_BUDGET,
-          utxo: asInputUtxo(covenantUtxo)
-        }
-      ],
-      outputs: [
-        new TransactionOutput(successorAmount, nextScriptPublicKey)
-      ],
-      payload: input.payload
-    });
-    bindSuccessorCovenant(tx, input.covenant.covenantId);
-    const txId = await submitTransaction(input.connection, tx);
-
-    return {
-      txId,
-      covenant: nextCovenantCursor({
-        previous: input.covenant,
-        address: nextAddress,
-        txId,
-        amountSompi: successorAmount,
-        redeemScript: nextRedeemScript,
-        soldTickets: nextRound.soldTickets,
-        potAmount: nextRound.potAmount,
-        status: "Closed",
-        ticketRoot: nextRound.ticketRoot,
-        creatorPubkey: input.covenant.creatorPubkey,
-        refundAfterDaaScore: input.covenant.refundAfterDaaScore,
-        soldBatches: nextRound.soldBatches,
-        ticketBatchEnds: nextRound.ticketBatchEnds,
-        ticketOwnerPubkeys: input.covenant.ticketOwnerPubkeys
-      })
-    };
-  } catch (error) {
-    throw normalizeTransactionError(error);
-  }
-}
-
 export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantRoundInput): Promise<RaffleCovenantSpendResult> {
   await ensureKaspaWasmReady();
 
@@ -1018,15 +889,11 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
     const callerPubkey = pubkeyHexFromAddress(input.wallet.address);
 
-    if (isMillionUserContractVersion(closedRound.contractVersion)) {
-      if (input.callerTicketId === undefined || !input.callerProofHex) {
-        throw new Error("A participant ticket proof is required to draw this million-user round.");
-      }
-      if (!await verifyTicketProof(closedRound.ticketRoot, callerPubkey, input.callerTicketId, input.callerProofHex)) {
-        throw new Error("The caller ticket proof does not belong to the connected wallet.");
-      }
-    } else if (!input.covenant.ticketOwnerPubkeys.includes(callerPubkey)) {
-      throw new Error("Only a wallet that bought tickets in this round can draw and pay the winner.");
+    if (input.callerTicketId === undefined || !input.callerProofHex) {
+      throw new Error("A participant ticket proof is required to draw this round.");
+    }
+    if (!await verifyTicketProof(closedRound.ticketRoot, callerPubkey, input.callerTicketId, input.callerProofHex)) {
+      throw new Error("The caller ticket proof does not belong to the connected wallet.");
     }
 
     const walletUtxos = await input.connection.client.getUtxosByAddresses({ addresses: [input.wallet.address] });
@@ -1038,18 +905,16 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
       throw new Error(`The participant wallet needs a spendable UTXO of at least ${formatKasAmount(STANDARD_REFUND_MIN_SOMPI)} to authorize the draw. It is returned unchanged.`);
     }
 
-    const randomSeed = await buildFinalizeSeedHex(closedRound, input.oracleSeedHex);
+    const randomSeed = await buildFinalizeSeedHex(closedRound, input.oracleSeedHex, input.oracleSeedHex2, input.oracleSeedHex3);
     const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, input.covenant.soldTickets);
 
     if (winnerIndex + 1 !== input.winner.ticketId) {
       throw new Error("Selected winner does not match the covenant random seed.");
     }
 
-    if (isMillionUserContractVersion(closedRound.contractVersion)) {
-      const winnerPubkey = input.winner.ownerPubkey || pubkeyHexFromAddress(input.winner.owner);
-      if (!input.winnerProofHex || !await verifyTicketProof(closedRound.ticketRoot, winnerPubkey, winnerIndex, input.winnerProofHex)) {
-        throw new Error("The winner ticket proof does not match the covenant ticket root.");
-      }
+    const winnerPubkey = input.winner.ownerPubkey || pubkeyHexFromAddress(input.winner.owner);
+    if (!input.winnerProofHex || !await verifyTicketProof(closedRound.ticketRoot, winnerPubkey, winnerIndex, input.winnerProofHex)) {
+      throw new Error("The winner ticket proof does not match the covenant ticket root.");
     }
 
     const currentAmount = BigInt(input.covenant.amountSompi);
@@ -1078,6 +943,10 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
             hexToBytes(input.covenant.redeemScriptHex),
             input.oracleSignatureHex,
             input.oracleSeedHex,
+            input.oracleSignatureHex2,
+            input.oracleSeedHex2,
+            input.oracleSignatureHex3,
+            input.oracleSeedHex3,
             winnerIndex,
             winnerScriptPublicKey,
             callerScriptPublicKey,
@@ -1087,7 +956,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
           ),
           sequence: 0n,
           sigOpCount: 0,
-          computeBudget: raffleFinalizeComputeBudget(closedRound.contractVersion),
+          computeBudget: V7_RAFFLE_FINALIZE_COMPUTE_BUDGET,
           utxo: asInputUtxo(covenantUtxo)
         },
         {
@@ -1140,10 +1009,9 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
 
     await assertRaffleRedeemScriptMatchesRound(currentRound, input.covenant.redeemScriptHex, "Refund");
 
-    if (isBatchRefundContractVersion(currentRound.contractVersion)) {
-      const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
-      const currentAmount = BigInt(input.covenant.amountSompi);
-      const refundArtifact = getRaffleRefundRuntimeArtifact();
+    const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
+    const currentAmount = BigInt(input.covenant.amountSompi);
+    const refundArtifact = getRaffleRefundRuntimeArtifact();
 
       if (input.covenant.status !== "Refunding") {
         const nextRound: RoundState = { ...currentRound, status: "Refunding", refundCursor: 0 };
@@ -1151,7 +1019,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         const nextRedeemScript = buildRaffleRedeemScript(nextState, refundArtifact);
         const nextScriptPublicKey = await buildRaffleScriptPublicKey(nextState, refundArtifact);
         const nextAddress = await buildRaffleAddress(nextState, input.connection.status.network, refundArtifact);
-        const nextAmount = currentAmount - V5_REFUND_TRANSITION_FEE_SOMPI;
+        const nextAmount = currentAmount - V7_REFUND_TRANSITION_FEE_SOMPI;
         if (nextAmount <= 0n) throw new Error("The covenant carrier is too small to start batch refunds.");
         const tx = buildManualTransaction({
           inputs: [{
@@ -1159,7 +1027,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             signatureScript: buildRaffleStartRefundSignatureScript(hexToBytes(input.covenant.redeemScriptHex)),
             sequence: 0n,
             sigOpCount: 0,
-            computeBudget: V5_REFUND_TRANSITION_COMPUTE_BUDGET,
+            computeBudget: V7_REFUND_TRANSITION_COMPUTE_BUDGET,
             utxo: asInputUtxo(covenantUtxo)
           }],
           outputs: [new TransactionOutput(nextAmount, nextScriptPublicKey)],
@@ -1208,7 +1076,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         if (!await verifyTicketRange8(currentRound.ticketRoot, ownerPubkeys, refundCursor, input.rangeProofHex)) {
           throw new Error("The 8-ticket refund batch does not match the covenant ticket root.");
         }
-        const refundAmount = currentRound.ticketPrice - V5_BATCH_REFUND_FEE_PER_TICKET_SOMPI;
+        const refundAmount = currentRound.ticketPrice - V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI;
         if (refundAmount < STANDARD_REFUND_MIN_SOMPI) throw new Error("Ticket price is too small for batch refund outputs.");
         const nextCursorValue = refundCursor + 8;
         const hasSuccessor = nextCursorValue < input.covenant.soldTickets;
@@ -1230,7 +1098,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             signatureScript: buildRaffleRefundBatch8SignatureScript(hexToBytes(input.covenant.redeemScriptHex), ownerPubkeys, input.rangeProofHex),
             sequence: 0n,
             sigOpCount: 0,
-            computeBudget: V5_REFUND_BATCH_COMPUTE_BUDGET,
+            computeBudget: V7_REFUND_BATCH_COMPUTE_BUDGET,
             utxo: asInputUtxo(covenantUtxo)
           }],
           outputs,
@@ -1270,7 +1138,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       if (!await verifyTicketProof(currentRound.ticketRoot, ownerPubkey, refundCursor, input.ownerProofHex)) {
         throw new Error(`Ticket #${ticket.ticketId} does not match the covenant ticket root.`);
       }
-      const refundAmount = currentRound.ticketPrice - V4_COVENANT_REFUND_FEE_SOMPI;
+      const refundAmount = currentRound.ticketPrice - V7_REFUND_TAIL_FEE_PER_TICKET_SOMPI;
       const hasSuccessor = refundCursor + 1 < input.covenant.soldTickets;
       const outputs: TransactionOutput[] = [];
       let nextRedeemScript: Uint8Array | undefined;
@@ -1292,7 +1160,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
           signatureScript: buildRaffleRefundNextSignatureScript(hexToBytes(input.covenant.redeemScriptHex), refundCursor, ownerPubkey, input.ownerProofHex),
           sequence: 0n,
           sigOpCount: 0,
-          computeBudget: V5_REFUND_SINGLE_COMPUTE_BUDGET,
+          computeBudget: V7_REFUND_TAIL_COMPUTE_BUDGET,
           utxo: asInputUtxo(covenantUtxo)
         }],
         outputs,
@@ -1322,169 +1190,6 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
           ticketOwnerPubkeys: []
         }) : undefined
       };
-    }
-
-    if (isMillionUserContractVersion(currentRound.contractVersion)) {
-      const refundCursor = input.covenant.refundCursor ?? 0;
-      const ticket = input.ticket;
-      if (!ticket || !input.ownerProofHex) {
-        throw new Error(`Ticket #${refundCursor + 1} and its Merkle proof are required for the next refund.`);
-      }
-      if (ticket.ticketId !== refundCursor + 1) {
-        throw new Error(`Refund must continue with ticket #${refundCursor + 1}.`);
-      }
-      const ownerPubkey = ticket.ownerPubkey || pubkeyHexFromAddress(ticket.owner);
-      if (!await verifyTicketProof(currentRound.ticketRoot, ownerPubkey, refundCursor, input.ownerProofHex)) {
-        throw new Error(`Ticket #${ticket.ticketId} does not match the covenant ticket root.`);
-      }
-
-      const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
-      const currentAmount = BigInt(input.covenant.amountSompi);
-      const refundAmount = currentRound.ticketPrice - covenantRefundFeeSompi(currentRound.contractVersion);
-      if (refundAmount < STANDARD_REFUND_MIN_SOMPI) {
-        throw new Error("Ticket price is too small for its refund output and transaction fee.");
-      }
-
-      const hasSuccessor = refundCursor + 1 < input.covenant.soldTickets;
-      const outputs: TransactionOutput[] = [];
-      let nextRedeemScript: Uint8Array | undefined;
-      let nextAddress = "";
-
-      if (hasSuccessor) {
-        const nextRound: RoundState = { ...currentRound, status: "Refunding", refundCursor: refundCursor + 1 };
-        const nextState = await raffleCovenantStateFromRound(nextRound);
-        nextRedeemScript = buildRaffleRedeemScript(nextState);
-        const nextScriptPublicKey = await buildRaffleScriptPublicKey(nextState);
-        nextAddress = await buildRaffleAddress(nextState, input.connection.status.network);
-        outputs.push(new TransactionOutput(currentAmount - currentRound.ticketPrice, nextScriptPublicKey));
-        outputs.push(new TransactionOutput(refundAmount, payToAddressScript(ticket.owner)));
-      } else {
-        outputs.push(new TransactionOutput(refundAmount, payToAddressScript(ticket.owner)));
-        outputs.push(new TransactionOutput(currentAmount - currentRound.ticketPrice, payToAddressScript(currentRound.creator)));
-      }
-
-      const tx = buildManualTransaction({
-        inputs: [{
-          previousOutpoint: covenantOutpoint(input.covenant),
-          signatureScript: buildRaffleRefundNextSignatureScript(
-            hexToBytes(input.covenant.redeemScriptHex),
-            refundCursor,
-            ownerPubkey,
-            input.ownerProofHex
-          ),
-          sequence: 0n,
-          sigOpCount: 0,
-          computeBudget: raffleRefundComputeBudget(currentRound.contractVersion),
-          utxo: asInputUtxo(covenantUtxo)
-        }],
-        outputs,
-        payload: input.payload,
-        lockTime: BigInt(input.covenant.refundAfterDaaScore)
-      });
-
-      if (hasSuccessor) bindSuccessorCovenant(tx, input.covenant.covenantId);
-      const txId = await submitTransaction(input.connection, tx);
-      const nextCursor = hasSuccessor && nextRedeemScript
-        ? nextCovenantCursor({
-            previous: input.covenant,
-            address: nextAddress,
-            txId,
-            amountSompi: currentAmount - currentRound.ticketPrice,
-            redeemScript: nextRedeemScript,
-            soldTickets: input.covenant.soldTickets,
-            potAmount: BigInt(input.covenant.potAmount) - currentRound.ticketPrice,
-            status: "Refunding",
-            ticketRoot: currentRound.ticketRoot,
-            ticketFrontier: currentRound.ticketFrontier,
-            refundCursor: refundCursor + 1,
-            creatorPubkey: currentRound.creatorPubkey,
-            refundAfterDaaScore: currentRound.refundAfterDaaScore,
-            soldBatches: 0,
-            ticketBatchEnds: [],
-            ticketOwnerPubkeys: []
-          })
-        : undefined;
-
-      return { txId, covenant: nextCursor };
-    }
-
-    if (input.covenant.soldTickets <= 0) {
-      throw new Error("There are no tickets to refund.");
-    }
-
-    if (totalTicketCount(input.tickets) < input.covenant.soldTickets) {
-      throw new Error("All ticket details must be loaded before refund so each buyer can be repaid.");
-    }
-
-    const orderedTickets = [...input.tickets]
-      .filter((ticket) => ticket.ticketId <= input.covenant.soldTickets)
-      .sort((left, right) => left.ticketId - right.ticketId);
-
-    const batchEnds = covenantBatchEnds(input.covenant);
-    const batchRefunds: Array<{ owner: string; amount: bigint }> = [];
-    let previousEnd = 0;
-
-    for (let batchIndex = 0; batchIndex < batchEnds.length; batchIndex += 1) {
-      const batchEnd = batchEnds[batchIndex];
-      const firstTicket = findTicketRange(orderedTickets, previousEnd + 1);
-      const expectedPubkey = input.covenant.ticketOwnerPubkeys[batchIndex];
-
-      if (
-        !firstTicket ||
-        firstTicket.ticketId !== previousEnd + 1 ||
-        ticketRangeEnd(firstTicket) !== batchEnd ||
-        batchEnd <= previousEnd ||
-        batchEnd > input.covenant.soldTickets
-      ) {
-        throw new Error(`Ticket batch #${batchIndex + 1} is invalid.`);
-      }
-
-      if (!expectedPubkey || pubkeyHexFromAddress(firstTicket.owner) !== expectedPubkey) {
-        throw new Error(`Ticket batch #${batchIndex + 1} owner does not match the covenant refund state.`);
-      }
-
-      batchRefunds.push({
-        owner: firstTicket.owner,
-        amount: input.round.ticketPrice * BigInt(batchEnd - previousEnd)
-      });
-      previousEnd = batchEnd;
-    }
-
-    if (previousEnd !== input.covenant.soldTickets) {
-      throw new Error("Ticket batches do not cover all sold tickets.");
-    }
-
-    const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
-    const currentAmount = BigInt(input.covenant.amountSompi);
-    const ticketRefundAmount = input.round.ticketPrice * BigInt(input.covenant.soldTickets);
-    const creatorRefundAmount = currentAmount - ticketRefundAmount - covenantRefundFeeSompi(currentRound.contractVersion);
-
-    if (creatorRefundAmount < 0n) {
-      throw new Error("The covenant carrier amount is too small to refund this round.");
-    }
-
-    const outputs = batchRefunds.map((batch) => new TransactionOutput(batch.amount, payToAddressScript(batch.owner)));
-
-    outputs.push(new TransactionOutput(creatorRefundAmount, payToAddressScript(input.round.creator)));
-
-    const tx = buildManualTransaction({
-      inputs: [
-        {
-          previousOutpoint: covenantOutpoint(input.covenant),
-          signatureScript: buildRaffleRefundAllSignatureScript(hexToBytes(input.covenant.redeemScriptHex)),
-          sequence: 0n,
-          sigOpCount: 0,
-          computeBudget: RAFFLE_REFUND_COMPUTE_BUDGET,
-          utxo: asInputUtxo(covenantUtxo)
-        }
-      ],
-      outputs,
-      payload: input.payload,
-      lockTime: BigInt(input.covenant.refundAfterDaaScore)
-    });
-    const txId = await submitTransaction(input.connection, tx);
-
-    return { txId };
   } catch (error) {
     throw normalizeTransactionError(error);
   }

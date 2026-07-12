@@ -69,7 +69,10 @@ export function loadCachedRound(network: string, roundId: string): {
 
 export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
   return readStore()
-    .filter((round) => round.metadata.network === network)
+    .filter((round) => (
+      round.metadata.network === network &&
+      round.metadata.contractVersion === "raffle-v7-three-commitment-oracles"
+    ))
     .map((round) => {
       const ticketPrice = BigInt(round.metadata.ticketPrice || "0");
       return {
@@ -83,7 +86,14 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
         creatorPubkey: round.metadata.creatorPubkey,
         creatorCommitment: round.metadata.creatorCommitment,
         oraclePublicKey: round.metadata.oraclePublicKey,
+        oraclePublicKey2: round.metadata.oraclePublicKey2,
+        oraclePublicKey3: round.metadata.oraclePublicKey3,
+        oracleSeedCommitment: round.metadata.oracleSeedCommitment,
+        oracleSeedCommitment2: round.metadata.oracleSeedCommitment2,
+        oracleSeedCommitment3: round.metadata.oracleSeedCommitment3,
         oracleEndpoint: round.metadata.oracleEndpoint,
+        oracleEndpoint2: round.metadata.oracleEndpoint2,
+        oracleEndpoint3: round.metadata.oracleEndpoint3,
         createdAtDaaScore: round.metadata.createdAtDaaScore,
         refundTimeoutSeconds: round.metadata.refundTimeoutSeconds,
         refundAfterDaaScore: round.metadata.refundAfterDaaScore,

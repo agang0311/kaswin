@@ -60,12 +60,17 @@ function writeTicketFixture() {
 
   const summary = {
     roundId,
-    contractVersion: "raffle-v6-aligned-batch-buy",
+    contractVersion: "raffle-v7-three-commitment-oracles",
     version: "0.2.0",
     status: "Open",
     refundCursor: 0,
     creatorPubkey: ownerPubkey(0).toString("hex"),
     oraclePublicKey: ownerPubkey(1).toString("hex"),
+    oraclePublicKey2: ownerPubkey(2).toString("hex"),
+    oraclePublicKey3: ownerPubkey(3).toString("hex"),
+    oracleSeedCommitment: "11".repeat(32),
+    oracleSeedCommitment2: "22".repeat(32),
+    oracleSeedCommitment3: "33".repeat(32),
     ticketPrice: "30000000",
     maxTickets: USERS,
     minTickets: 1,

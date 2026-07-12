@@ -3,7 +3,7 @@ import type { RaffleMetadata } from "./types";
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.4.0",
+    version: "0.5.0",
     network,
     roundId: "",
     createTxId: "",
@@ -14,13 +14,20 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     creatorPubkey: "",
     creatorCommitment: "",
     oraclePublicKey: "",
+    oraclePublicKey2: "",
+    oraclePublicKey3: "",
+    oracleSeedCommitment: "",
+    oracleSeedCommitment2: "",
+    oracleSeedCommitment3: "",
     oracleEndpoint: "",
+    oracleEndpoint2: "",
+    oracleEndpoint3: "",
     refundTimeoutSeconds: "600",
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",
     treasuryAddress: "",
     registryAddress: "",
-    contractVersion: "raffle-v6-aligned-batch-buy"
+    contractVersion: "raffle-v7-three-commitment-oracles"
   };
 }
 
@@ -39,6 +46,11 @@ export function parseMetadata(raw: string): RaffleMetadata {
     "maxTickets",
     "minTickets",
     "oraclePublicKey",
+    "oraclePublicKey2",
+    "oraclePublicKey3",
+    "oracleSeedCommitment",
+    "oracleSeedCommitment2",
+    "oracleSeedCommitment3",
     "contractVersion"
   ];
 
@@ -48,8 +60,22 @@ export function parseMetadata(raw: string): RaffleMetadata {
     }
   }
 
-  if (parsed.contractVersion !== "raffle-v6-aligned-batch-buy") {
-    throw new Error("This build only supports new V6 raffle rounds. Recreate legacy rounds with the current page.");
+  if (parsed.contractVersion !== "raffle-v7-three-commitment-oracles") {
+    throw new Error("Unsupported raffle contract version. This page only accepts raffle-v7-three-commitment-oracles.");
+  }
+
+  const oracleHexFields: Array<keyof RaffleMetadata> = [
+    "oraclePublicKey",
+    "oraclePublicKey2",
+    "oraclePublicKey3",
+    "oracleSeedCommitment",
+    "oracleSeedCommitment2",
+    "oracleSeedCommitment3"
+  ];
+  for (const field of oracleHexFields) {
+    if (!/^[0-9a-f]{64}$/.test(String(parsed[field]))) {
+      throw new Error(`Metadata ${field} must be 32 bytes of lowercase hex.`);
+    }
   }
 
   if (Number(parsed.ticketPrice) <= 0) {

@@ -7,6 +7,7 @@ export interface NetworkProfile {
   defaultRpcUrl: string;
   historyApiBase: string;
   addressPrefix: "kaspa:" | "kaspatest:";
+  toccataActivationDaaScore: string;
 }
 
 export const NETWORK_PROFILES: readonly NetworkProfile[] = [
@@ -16,7 +17,8 @@ export const NETWORK_PROFILES: readonly NetworkProfile[] = [
     shortLabel: "Mainnet",
     defaultRpcUrl: "ws://127.0.0.1:18110",
     historyApiBase: "https://api.kaspa.org",
-    addressPrefix: "kaspa:"
+    addressPrefix: "kaspa:",
+    toccataActivationDaaScore: "474165565"
   },
   {
     id: "testnet-10",
@@ -24,7 +26,8 @@ export const NETWORK_PROFILES: readonly NetworkProfile[] = [
     shortLabel: "TN10",
     defaultRpcUrl: "ws://tn12-node.kaspa.com:18210",
     historyApiBase: "https://api-tn10.kaspa.org",
-    addressPrefix: "kaspatest:"
+    addressPrefix: "kaspatest:",
+    toccataActivationDaaScore: "467579632"
   }
 ] as const;
 
@@ -45,6 +48,18 @@ export function requireNetworkProfile(network: string): NetworkProfile {
   }
 
   return profile;
+}
+
+export function assertToccataActive(network: string, virtualDaaScore: bigint): void {
+  const profile = requireNetworkProfile(network);
+  const activation = BigInt(profile.toccataActivationDaaScore);
+
+  if (virtualDaaScore < activation) {
+    throw new Error(
+      `Toccata is not active on ${profile.label} at DAA ${virtualDaaScore.toString()}. ` +
+      `Covenant transactions require DAA ${activation.toString()} or later.`
+    );
+  }
 }
 
 export function networkFromAddress(address: string): SupportedNetworkId | undefined {

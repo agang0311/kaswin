@@ -123,7 +123,6 @@ const en: Record<string, string> = {
   "drawPayout": "Draw and payout",
   "winnerTicket": "Ticket #{ticket}",
   "paidInTransaction": "Paid in transaction {tx}",
-  "legacyDrawUnsupported": "This legacy round can be refunded by anyone after timeout, but does not support participant-authorized drawing.",
   "soldOutCanDraw": "All tickets are sold. A connected participant can draw now.",
   "soldOutConnectParticipant": "All tickets are sold. Connect a participant wallet to draw.",
   "timeoutCanDrawOrRefund": "The timeout has passed. A connected participant can draw, or anyone can refund.",
@@ -176,9 +175,7 @@ const en: Record<string, string> = {
   "cost.create.retained": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the default registry + variable registry payment fee. The registry marker remains at the destination. Carrier returns when the round ends.",
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
   "cost.payout": "{prize} prize from the pot + {fee} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.",
-  "cost.refund": "{refund} ticket refunds from the pot + {fee} covenant fee from the carrier. Wallet payment: 0 KAS.",
-  "cost.refund.v4": "The next ticket receives its price minus the {fee} covenant fee. Anyone may broadcast after timeout; wallet payment: 0 KAS.",
-  "cost.refund.v5": "First call: {transitionFee} KAS to start refunds. Then each 8-ticket batch costs {batchFee} KAS ({perTicketFee} KAS per ticket); a final 1-7 ticket tail uses the single-ticket fee. Anyone may broadcast after timeout; wallet payment: 0 KAS."
+  "cost.refund.current": "First call: {transitionFee} KAS to start refunds. Then each 8-ticket batch costs {batchFee} KAS ({perTicketFee} KAS per ticket); a final 1-7 ticket tail uses the single-ticket fee. Anyone may broadcast after timeout; wallet payment: 0 KAS."
 };
 
 const zh: Record<string, string> = {
@@ -286,8 +283,7 @@ const zh: Record<string, string> = {
   "historySource": "历史数据源",
   "restApi": "REST API",
   "raffleIndexApi": "抽奖索引 API",
-  "cost.refund.v4": "下一张票退还票价并扣除 {fee} covenant 费用。超时后任何人都可广播；钱包支付：0 KAS。",
-  "cost.refund.v5": "首次调用扣除 {transitionFee} KAS 启动退款；之后每 8 张票共扣除 {batchFee} KAS（每票 {perTicketFee} KAS），最后不足 8 张按单票尾批处理。超时后任何人都可广播，钱包支付 0 KAS。",
+  "cost.refund.current": "首次调用扣除 {transitionFee} KAS 启动退款；之后每 8 张票共扣除 {batchFee} KAS（每票 {perTicketFee} KAS），最后不足 8 张按单票尾批处理。超时后任何人都可广播，钱包支付 0 KAS。",
   "actionTabs": "购票或派奖",
   "buyTickets": "购买抽奖票",
   "participant": "参与者",
@@ -305,7 +301,6 @@ const zh: Record<string, string> = {
   "drawPayout": "开奖并派奖",
   "winnerTicket": "中奖票 #{ticket}",
   "paidInTransaction": "已在交易 {tx} 中派奖",
-  "legacyDrawUnsupported": "该旧版抽奖超时后任何人都可退款，但不支持参与者授权开奖。",
   "soldOutCanDraw": "所有票已售罄，已连接的参与者现在可以开奖。",
   "soldOutConnectParticipant": "所有票已售罄，请连接参与过购票的钱包开奖。",
   "timeoutCanDrawOrRefund": "超时已到，已连接的参与者可以开奖，任何人也可以退款。",
@@ -392,22 +387,16 @@ const exactRuntimeZh: Record<string, string> = {
   "This covenant round is not open for tickets.": "该 covenant 抽奖当前不开放购票。",
   "This round has reached its max ticket count.": "本轮票数已售罄。",
   "This round is already finalized.": "本轮已经完成开奖。",
-  "This round has reached its maximum of 20 purchase batches.": "本轮已达到 20 个购买批次上限。",
   "Ticket price must be greater than zero.": "票价必须大于 0。",
   "Ticket transaction did not return the next covenant cursor.": "购票交易未返回下一个 covenant 状态游标。",
   "Ticket quantity must be a positive whole number.": "购票数量必须是正整数。",
   "Ticket quantity exceeds the remaining tickets.": "购票数量超过剩余票数。",
-  "This covenant supports at most 20 purchase batches. Buy more tickets per transaction or start a new round.": "该 covenant 最多支持 20 个购买批次。请每笔购买更多票，或创建新一轮。",
   "Only a wallet that bought tickets in this round can draw and pay the winner.": "只有参与本轮购票的钱包才能开奖并派奖。",
   "Create or import a covenant round first.": "请先创建或导入 covenant 抽奖。",
-  "This legacy round does not enforce participant-only drawing. Refund it after timeout or create a new round.": "该旧版抽奖不强制参与者开奖。请在超时后退款，或创建新一轮。",
   "Connect a participant wallet before drawing this round.": "开奖前请连接参与过本轮购票的钱包。",
   "This round is no longer available to finalize.": "本轮当前不能再执行开奖。",
   "Not enough tickets to finalize this round.": "当前票数不足，不能开奖。",
-  "All ticket details must be loaded before finalize so the winner address can be verified.": "开奖前必须加载全部票据，以验证中奖地址。",
-  "Loaded ticket details do not match the covenant ticket root. Reload the correct round metadata before finalizing.": "已加载票据与 covenant ticket root 不一致。请重新加载正确的抽奖元数据后再开奖。",
   "Prize amount must be greater than zero.": "奖金必须大于 0。",
-  "This legacy round uses a creator-only oracle key. Finalize it in the creator browser, provide an external attestation, or refund it after timeout.": "该旧版抽奖使用仅创建者持有的 Oracle 密钥。请在创建者浏览器中开奖、提供外部证明，或在超时后退款。",
   "Winner ticket details are not loaded in this browser yet.": "该浏览器尚未加载中奖票详情。",
   "There are no tickets to refund.": "没有可退款的票。",
   "All ticket details must be loaded before refund.": "退款前必须加载全部票据。",
@@ -498,9 +487,6 @@ export function translateRuntimeText(language: Language, text: string): string {
     .replace(/^The covenant input did not commit enough compute budget\./, "Covenant input 提交的 compute budget 不足。")
     .replace(/ Refresh the page and retry with the current build\./, " 请刷新页面并使用当前版本重试。")
     .replace(/ New rounds need a carrier reserve of at least /, " 新抽奖的 carrier 预留至少需要 ")
-    .replace(/; old rounds created below that floor must be recreated\./, "；低于该下限创建的旧抽奖必须重新创建。")
-    .replace(/ If this round was created with an older build, recreate it\./, " 如果本轮由旧版本创建，请重新创建。")
     .replace(/^The participant wallet needs a spendable UTXO of at least (.+) to authorize the draw\. It is returned unchanged\.$/, "参与者钱包需要至少 $1 的可用 UTXO 来授权开奖，该 UTXO 会原额返还。")
-    .replace(/^Selected round was created with an old carrier reserve\. Recreate it with at least (.+)\.$/, "所选抽奖使用了旧版 carrier 预留，请至少使用 $1 重新创建。")
     .replace(/^The connected wallet returned an invalid public key\.$/, "连接的钱包返回了无效公钥。");
 }

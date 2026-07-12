@@ -16,6 +16,11 @@ export interface RoundState {
   randomnessMode: RandomnessMode;
   creatorPubkey: string;
   oraclePublicKey: string;
+  oraclePublicKey2: string;
+  oraclePublicKey3: string;
+  oracleSeedCommitment: string;
+  oracleSeedCommitment2: string;
+  oracleSeedCommitment3: string;
   refundAfterDaaScore: string;
   ticketRoot: string;
   ticketFrontier?: string;
@@ -43,6 +48,10 @@ export interface FinalizeState {
   randomSeed: string;
   oracleSeed?: string;
   oracleSignature?: string;
+  oracleSeed2?: string;
+  oracleSignature2?: string;
+  oracleSeed3?: string;
+  oracleSignature3?: string;
   winnerTicketId: number;
   winnerAddress: string;
   payoutTxId: string;
@@ -85,7 +94,14 @@ export interface RaffleMetadata {
   creatorPubkey?: string;
   creatorCommitment?: string;
   oraclePublicKey: string;
+  oraclePublicKey2: string;
+  oraclePublicKey3: string;
+  oracleSeedCommitment: string;
+  oracleSeedCommitment2: string;
+  oracleSeedCommitment3: string;
   oracleEndpoint?: string;
+  oracleEndpoint2?: string;
+  oracleEndpoint3?: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
   registryAddress?: string;

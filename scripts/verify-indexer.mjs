@@ -12,22 +12,32 @@ const port = 8790;
 fs.rmSync(fixtureDir, { recursive: true, force: true });
 fs.mkdirSync(fixtureDir, { recursive: true });
 
-const owners = Array.from({ length: 9 }, (_, index) => index + 1).map((value) => Buffer.from(secp.schnorr.getPublicKey(
+const owners = Array.from({ length: 10 }, (_, index) => index + 1).map((value) => Buffer.from(secp.schnorr.getPublicKey(
   Buffer.from(value.toString(16).padStart(64, "0"), "hex")
 )));
+const oracleFields = {
+  oraclePublicKey: owners[2].toString("hex"),
+  oraclePublicKey2: owners[3].toString("hex"),
+  oraclePublicKey3: owners[4].toString("hex"),
+  oracleSeedCommitment: "11".repeat(32),
+  oracleSeedCommitment2: "22".repeat(32),
+  oracleSeedCommitment3: "33".repeat(32),
+  oracleEndpoint: "https://oracle-1.example",
+  oracleEndpoint2: "https://oracle-2.example",
+  oracleEndpoint3: "https://oracle-3.example"
+};
 const records = owners.map((owner, index) => Buffer.concat([owner, Buffer.alloc(32, index + 1)]));
 fs.writeFileSync(path.join(fixtureDir, `${roundId}.tickets.bin`), Buffer.concat(records));
-const blockHashes = Array.from({ length: 12 }, (_, index) => index + 1).map((value) => value.toString(16).padStart(2, "0").repeat(32));
+const blockHashes = Array.from({ length: 13 }, (_, index) => index + 1).map((value) => value.toString(16).padStart(2, "0").repeat(32));
 const createPayload = {
   app: "kaspa-raffle-static",
   type: "round-create",
   version: "0.2.0",
   roundId,
-  contractVersion: "raffle-v6-aligned-batch-buy",
+  contractVersion: "raffle-v7-three-commitment-oracles",
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
   creatorPubkey: owners[0].toString("hex"),
-  oraclePublicKey: owners[2].toString("hex"),
-  oracleEndpoint: "https://oracle.example",
+  ...oracleFields,
   ticketPrice: "30000000",
   maxTickets: 1_000_000,
   minTickets: 1,
@@ -51,17 +61,18 @@ const eventBlocks = [{
     output: { index: 0, amountSompi: String(50_000_000 + index * 30_000_000), address: "kaspatest:pqexample" }
   }]
 })), {
-  hash: blockHashes[10],
+  hash: blockHashes[11],
   events: [{
     payload: { app: "kaspa-raffle-static", type: "round-refund-start", roundId, refundCursor: 0 },
     transactionId: "fa".repeat(32),
     output: { index: 0, amountSompi: "257800000", address: "kaspatest:pqrefund", covenantId: "cd".repeat(32) }
   }]
 }, {
-  hash: blockHashes[11],
+  hash: blockHashes[12],
   events: [{
     payload: { app: "kaspa-raffle-static", type: "round-refund-batch", roundId, refundCursor: 0, ticketCount: 8 },
-    transactionId: "fb".repeat(32)
+    transactionId: "fb".repeat(32),
+    output: { index: 0, amountSompi: "177800000", address: "kaspatest:pqrefundnext", covenantId: "cd".repeat(32) }
   }]
 }];
 fs.writeFileSync(path.join(fixtureDir, "events.ndjson"), `${eventBlocks.slice(2).map((block) => JSON.stringify(block)).join("\n")}\n`);
@@ -72,12 +83,11 @@ fs.writeFileSync(path.join(fixtureDir, "state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v6-aligned-batch-buy",
+      contractVersion: "raffle-v7-three-commitment-oracles",
       version: "0.2.0",
       creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
       creatorPubkey: owners[0].toString("hex"),
-      oraclePublicKey: owners[2].toString("hex"),
-      oracleEndpoint: createPayload.oracleEndpoint,
+      ...oracleFields,
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -102,12 +112,11 @@ fs.writeFileSync(path.join(fixtureDir, "base-state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v6-aligned-batch-buy",
+      contractVersion: "raffle-v7-three-commitment-oracles",
       version: "0.2.0",
       creator: createPayload.creator,
       creatorPubkey: owners[0].toString("hex"),
-      oraclePublicKey: owners[2].toString("hex"),
-      oracleEndpoint: createPayload.oracleEndpoint,
+      ...oracleFields,
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -145,7 +154,7 @@ const child = spawn(process.execPath, [path.join(root, "indexer", "raffle-indexe
     RAFFLE_INDEX_PORT: String(port),
     RAFFLE_INDEX_CONFIRMATIONS: "2",
     RAFFLE_INDEX_OFFLINE: "1",
-    RAFFLE_INDEX_REMOVE_BLOCKS: blockHashes[9]
+    RAFFLE_INDEX_REMOVE_BLOCKS: blockHashes[10]
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -174,12 +183,13 @@ try {
   const rounds = await (await fetch(`http://127.0.0.1:${port}/rounds`)).json();
   if (
     rounds.length !== 1 ||
-    rounds[0].soldTickets !== 8 ||
-    rounds[0].status !== "Refunded" ||
+    rounds[0].soldTickets !== 9 ||
+    rounds[0].status !== "Refunding" ||
     rounds[0].refundCursor !== 8 ||
-    rounds[0].refundTxId !== "fb".repeat(32) ||
+    rounds[0].refundTxId ||
     rounds[0].oracleEndpoint !== createPayload.oracleEndpoint ||
-    rounds[0].latestCovenant
+    rounds[0].latestCovenant?.txId !== "fb".repeat(32) ||
+    rounds[0].latestCovenant?.refundCursor !== 8
   ) {
     throw new Error("Indexer did not restore the round cursor and ticket count.");
   }
@@ -192,6 +202,14 @@ try {
   )).json();
   if (owner.ticketId !== 2 || rootFromProof(owners[1], 1, owner.proofHex) !== owner.rootHex) {
     throw new Error("Owner lookup proof is invalid.");
+  }
+  const resumedTail = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/tickets/9`)).json();
+  if (
+    resumedTail.ticketId !== 9 ||
+    resumedTail.ownerPubkey !== owners[8].toString("hex") ||
+    rootFromProof(owners[8], 8, resumedTail.proofHex) !== resumedTail.rootHex
+  ) {
+    throw new Error("A second client could not load the on-chain refund cursor and obtain the next tail proof.");
   }
   const range = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/ranges/1/8`)).json();
   let rangeNode = range.ownerPubkeys.map((ownerPubkey) => sha(Buffer.from(ownerPubkey, "hex")));
@@ -206,8 +224,10 @@ try {
   if (range.firstTicketId !== 1 || range.ticketCount !== 8 || range.ownerPubkeys.length !== 8 || root.toString("hex") !== range.rootHex) {
     throw new Error("Eight-ticket range proof is invalid.");
   }
-  console.log(`Indexer rolled back ticket #9, restored 8 users, applied start/batch refund, and returned valid depth-20 single/range proofs. Root: ${ticket.rootHex}`);
+  console.log(`Indexer rolled back ticket #10, restored 9 users, loaded refund cursor 8 in a second client, and returned ticket #9 plus range proofs for continuation. Root: ${ticket.rootHex}`);
 } finally {
-  child.kill("SIGTERM");
-  await new Promise((resolve) => child.once("exit", resolve));
+  if (child.exitCode === null) {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => child.once("exit", resolve));
+  }
 }

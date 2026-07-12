@@ -14,12 +14,12 @@ initSync({ module: fs.readFileSync(path.join(root, "node_modules/@onekeyfe/kaspa
 const NETWORK = "testnet-10";
 const TICKET_PRICE = 30_000_000n;
 const CARRIER = 20_000_000n;
-const TRANSITION_FEE = 2_200_000n;
+const TRANSITION_FEE = 2_230_000n;
 const BATCH_FEE_PER_TICKET = 150_000n;
 const SINGLE_FEE = 1_900_000n;
 const STORAGE_MASS_PARAMETER = 1_000_000_000_000n;
 const MASS_LIMITS = { storage: 500_000, compute: 500_000, transient: 1_000_000 };
-const BUDGETS = { finalize: 18, auth: 11, transition: 4, batch: 5, single: 4 };
+const BUDGETS = { finalize: 36, auth: 11, transition: 4, batch: 5, single: 4 };
 const ZERO_SUBNETWORK_ID = "00".repeat(20);
 const key = new PrivateKey("01".padStart(64, "0"));
 const address = key.toAddress(NETWORK);
@@ -32,6 +32,9 @@ const emptyNodes = [Buffer.alloc(32)];
 for (let level = 1; level < 20; level += 1) emptyNodes.push(pair(emptyNodes[level - 1], emptyNodes[level - 1]));
 const emptyRoot = pair(emptyNodes[19], emptyNodes[19]);
 const leaf = hash(pubkey);
+const oracleSeed = Buffer.alloc(32, 0x11);
+const oracleSeed2 = Buffer.alloc(32, 0x22);
+const oracleSeed3 = Buffer.alloc(32, 0x33);
 
 function tree(count) {
   let nodes = Array.from({ length: count }, () => leaf);
@@ -95,6 +98,8 @@ const tree11 = tree(11);
 function roundRedeemFor(count, root) {
   return materialize(roundArtifact, {
     max_tickets: 1_000_000n, ticket_price: TICKET_PRICE, creator_pubkey: pubkey, oracle_pubkey: pubkey,
+    oracle_pubkey_2: pubkey, oracle_pubkey_3: pubkey,
+    oracle_commitment: hash(oracleSeed), oracle_commitment_2: hash(oracleSeed2), oracle_commitment_3: hash(oracleSeed3),
     refund_after_daa: 1n, sold_tickets: BigInt(count), ticket_root: root, frontier: Buffer.alloc(640), refund_cursor: 0n
   });
 }
@@ -152,7 +157,7 @@ function tx(inputs, outputs, payloadType) {
 const covenantId = "aa".repeat(32);
 function buyFee(ticketCount) {
   void ticketCount;
-  return 1_500_000n;
+  return 1_570_000n;
 }
 function buyBudget(ticketCount) {
   return 8 + (ticketCount === 8 ? 2 : ticketCount >= 2 ? 1 : 0);
@@ -182,7 +187,9 @@ function finalizeTx() {
   const auth = plainUtxo(13, authAmount, p2pk, address);
   const proof = ticketProof(tree10, 0);
   const sig = action(roundArtifact, "finalize", roundRedeem, (builder) => {
-    builder.addData(Buffer.alloc(64, 0x33)); builder.addData(Buffer.alloc(32, 0x44));
+    builder.addData(Buffer.alloc(64, 0x33)); builder.addData(oracleSeed);
+    builder.addData(Buffer.alloc(64, 0x44)); builder.addData(oracleSeed2);
+    builder.addData(Buffer.alloc(64, 0x55)); builder.addData(oracleSeed3);
     builder.addI64(0n); builder.addData(pubkey); builder.addData(proof);
     builder.addI64(0n); builder.addData(pubkey); builder.addData(proof);
   });
