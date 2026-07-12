@@ -88,6 +88,7 @@ The root-bound oracle template was then exercised in three additional rounds:
 - `round-c8cfa47a234471f6`: one ticket, direct payout `4070495aad3abfb1babc535ea16de7ec38a856a845cc567caa31248128aa78e2`.
 - `round-66e12a5f76fe7953`: one ticket, loaded through index-backed History before payout `bbdb729a1d44c6d1e612a327a787de74d1567c2a73078aca21f7c79a1059c26f`.
 - `round-43db1065f74ba07e`: eight tickets, 10-second timeout, refund transition `4e455efba5768e50792fa0dfcf80d1cdc3256700528a952766b9445b4eddebe6`, and final batch refund `da2afb2361dad48d1b607acde5634bda819b2b488a4731b8694f5a7a1a3280aa`. History reports `Refunded` with cursor 8.
+- `round-b293b25bd7d7ceff`: eight tickets, 10-second timeout, and exactly one Refund button click. The browser automatically waited for and chained transition `00de3f9fc8bcebfc1fbe8247eb003819b4482383393390603275cc8d88578b97` into batch `41fc92bd826f4d0a4393412ee14d2e7490f636f9594331ad6114ac00b74f8a1a`; History reports `Refunded` with cursor 8 and Chrome logged no warnings or errors.
 
 Measured V5 minimum relay fees are `0.013106 KAS` buy, `0.016226 KAS` finalize, `0.020318 KAS` refund transition, and `0.010776 KAS` for an 8-ticket refund. The batch storage mass is `316,267`, below the `500,000` standard limit.
 
