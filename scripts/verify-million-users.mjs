@@ -152,10 +152,23 @@ while (refundCursor < USERS) {
 if (refundCursor !== USERS) throw new Error("Refund cursor did not cover every ticket exactly once.");
 if (refundTransactions !== 125_000) throw new Error(`Expected 125,000 refund transactions, got ${refundTransactions}.`);
 
+const ticketPriceSompi = 30_000_000n;
+const carrierSompi = 57_000_000n;
+const transitionFeeSompi = 2_230_000n;
+const batchFeePerTicketSompi = 150_000n;
+const userRefundsSompi = BigInt(USERS) * (ticketPriceSompi - batchFeePerTicketSompi);
+const creatorRefundSompi = carrierSompi - transitionFeeSompi;
+const networkFeesSompi = transitionFeeSompi + BigInt(USERS) * batchFeePerTicketSompi;
+const covenantInputSompi = carrierSompi + BigInt(USERS) * ticketPriceSompi;
+if (userRefundsSompi + creatorRefundSompi + networkFeesSompi !== covenantInputSompi) {
+  throw new Error("Million-ticket refunds do not conserve the covenant input amount.");
+}
+
 console.log(`Built a depth-${DEPTH} tree with ${USERS.toLocaleString()} distinct ticket owners.`);
 console.log(`Capacity: ${CAPACITY.toLocaleString()}, root: ${root}`);
 console.log("Replayed 1,000,000 sequential on-chain frontier transitions and matched the full tree root.");
 console.log("Verified first, second, middle, and last ticket proofs plus first/middle/last 8-ticket range proofs; rejected a wrong owner proof.");
 console.log(`Batch refund cursor covered tickets 0-${(USERS - 1).toLocaleString()} exactly once in ${refundTransactions.toLocaleString()} transactions.`);
+console.log("Verified that per-ticket fee deductions fund all 125,000 refund transactions while the fixed carrier returns after the one-time transition fee.");
 console.log(`Resident tree bytes: ${levels.reduce((total, level) => total + level.length, 0).toLocaleString()}.`);
 process.exitCode = 0;
