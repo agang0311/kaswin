@@ -66,6 +66,25 @@ const eventBlocks = [{
     payload: { app: "kaspa-raffle-static", type: "round-refund-batch", roundId, refundCursor: 0, ticketCount: 8 },
     transactionId: "fb".repeat(32),
     output: { index: 0, amountSompi: "177800000", address: "kaspatest:pqrefundnext", covenantId: "cd".repeat(32) }
+  }, {
+    payload: {
+      app: "kaspa-raffle-static",
+      type: "round-create",
+      roundId: "legacy-round",
+      contractVersion: "raffle-v7-three-commitment-oracles"
+    },
+    transactionId: "f7".repeat(32),
+    output: { index: 0, amountSompi: "57000000", address: "kaspatest:pqlegacy" }
+  }, {
+    payload: {
+      app: "kaspa-raffle-static",
+      type: "ticket",
+      roundId: "legacy-round",
+      ticketId: 1,
+      buyerPubkey: owners[0].toString("hex")
+    },
+    transactionId: "f6".repeat(32),
+    output: { index: 0, amountSompi: "87000000", address: "kaspatest:pqlegacy" }
   }]
 }];
 fs.writeFileSync(path.join(fixtureDir, "events.ndjson"), `${eventBlocks.slice(2).map((block) => JSON.stringify(block)).join("\n")}\n`);
