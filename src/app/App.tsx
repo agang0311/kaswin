@@ -1910,7 +1910,15 @@ export function App() {
           : { cursor: covenant.soldTickets, total: covenant.soldTickets });
         setMetadata((current) => ({
           ...current,
-          covenant: activeCovenant ?? (current.covenant ? { ...current.covenant, txId: step.txId, status: "Refunded" } : current.covenant)
+          covenant: activeCovenant ?? (current.covenant
+            ? {
+                ...current.covenant,
+                txId: step.txId,
+                status: "Refunded",
+                refundCursor: current.covenant.soldTickets,
+                potAmount: "0"
+              }
+            : current.covenant)
         }));
         setChainMessage(activeCovenant
           ? `Refund cursor ${activeCovenant.refundCursor}/${activeCovenant.soldTickets}: ${step.txId}`
@@ -1923,7 +1931,9 @@ export function App() {
           ? {
               ...current.covenant,
               txId: result.txId,
-              status: "Refunded"
+              status: "Refunded",
+              refundCursor: current.covenant.soldTickets,
+              potAmount: "0"
             }
           : current.covenant)
       }));
