@@ -11,7 +11,7 @@ contract RaffleRoundV8Mainnet() {
     byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;
     int constant DRAND_ROUND_OFFSET = 14205535;
     int constant DRAND_DELAY_ROUNDS = 40;
-    int constant CLOSE_FEE = 3000000;
+    int constant CLOSE_FEE = 1550000;
     int constant FINALIZE_FEE = 50000000;
 
     int max_tickets = 0;

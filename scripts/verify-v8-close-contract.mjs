@@ -52,7 +52,7 @@ const tests = {
         active_input_index: 0,
         inputs: [{ utxo_value: 360_000_000, covenant_id: covenantId, state: state(10, 0) }],
         outputs: [{
-          value: 357_000_000,
+          value: 358_450_000,
           covenant_id: covenantId,
           authorizing_input: 0,
           state: state(10, -1)
