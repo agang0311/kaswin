@@ -1802,14 +1802,9 @@ export function App() {
             : needsBatch
               ? "round-refund-batch"
               : "round-refund-ticket",
-          version: metadata.version,
           roundId: metadata.roundId,
-          soldTickets: covenant.soldTickets,
-          amount: covenant.potAmount,
           refundCursor,
-          ticketCount: needsBatch ? 8 : undefined,
-          refundAfterDaaScore: covenant.refundAfterDaaScore,
-          refundedAt: new Date().toISOString()
+          ticketCount: needsBatch ? 8 : undefined
         })
       });
 
@@ -1899,14 +1894,9 @@ export function App() {
           payload: encodePayload({
             app: "kaspa-raffle-static",
             type: remainingTickets >= 8 ? "round-refund-batch" : "round-refund-ticket",
-            version: metadata.version,
             roundId: metadata.roundId,
-            soldTickets: activeCovenant.soldTickets,
-            amount: activeCovenant.potAmount,
             refundCursor: activeRefundCursor,
-            ticketCount: remainingTickets >= 8 ? 8 : 1,
-            refundAfterDaaScore: activeCovenant.refundAfterDaaScore,
-            refundedAt: new Date().toISOString()
+            ticketCount: remainingTickets >= 8 ? 8 : 1
           })
         });
 

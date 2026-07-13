@@ -122,7 +122,7 @@ export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n;
 export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 100_000n;
 export const REGISTRY_PAYMENT_FEE_SOMPI = 350_000n;
 export const COVENANT_CREATE_FEE_SOMPI = 300_000n;
-export const V7_COVENANT_BUY_FEE_SOMPI = 1_570_000n;
+export const V8_COVENANT_BUY_FEE_SOMPI = 1_630_000n;
 export const V8_COVENANT_FINALIZE_FEE_SOMPI = 50_000_000n;
 export const V8_COVENANT_CLOSE_FEE_SOMPI = 1_550_000n;
 export const V7_REFUND_TRANSITION_FEE_SOMPI = 2_230_000n;
@@ -144,7 +144,7 @@ const V7_REFUND_BATCH_COMPUTE_BUDGET = 5;
 const V7_REFUND_TAIL_COMPUTE_BUDGET = 4;
 
 export function covenantBuyFeeSompi(_contractVersion: string, _ticketCount = 1): bigint {
-  return V7_COVENANT_BUY_FEE_SOMPI;
+  return V8_COVENANT_BUY_FEE_SOMPI;
 }
 
 export function covenantFinalizeFeeSompi(_contractVersion: string): bigint {

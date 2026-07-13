@@ -12,7 +12,7 @@ initSync({ module: fs.readFileSync(path.join(root, "node_modules/@onekeyfe/kaspa
 const TICKET_PRICE = 30_000_000n;
 const CARRIER = 57_000_000n;
 const CLOSE_FEE = 1_550_000n;
-const BUY_FEE = 1_570_000n;
+const BUY_FEE = 1_630_000n;
 const STORAGE_MASS_PARAMETER = 1_000_000_000_000n;
 const key = new PrivateKey("01".padStart(64, "0"));
 const address = key.toAddress("testnet-10");
@@ -82,7 +82,7 @@ function covenantOutput(amount, script) {
   return output;
 }
 
-function transaction(inputs, outputs, type) {
+function transaction(inputs, outputs, type, payload = { app: "kaspa-raffle-static", type, version: "0.6.0", roundId: "11".repeat(32) }) {
   return new Transaction({
     version: 1,
     inputs,
@@ -90,7 +90,7 @@ function transaction(inputs, outputs, type) {
     lockTime: 0n,
     subnetworkId: "00".repeat(20),
     gas: 0n,
-    payload: Buffer.from(JSON.stringify({ app: "kaspa-raffle-static", type, version: "0.6.0", roundId: "11".repeat(32) })).toString("hex")
+    payload: Buffer.from(JSON.stringify(payload)).toString("hex")
   });
 }
 
@@ -127,7 +127,19 @@ function buyTx() {
       signatureScript: fundingBuilder.drain(),
       sequence: 0n, sigOpCount: 0, computeBudget: 0, utxo: funding
     }
-  ], [covenantOutput(source.amount + TICKET_PRICE * 8n, next)], "ticket");
+  ], [covenantOutput(source.amount + TICKET_PRICE * 8n, next)], "ticket", {
+    app: "kaspa-raffle-static",
+    type: "ticket",
+    version: "0.6.0",
+    roundId: "round-8489ce62cd298080",
+    ticketId: 1,
+    buyer: address.toString(),
+    buyerPubkey: pubkey.toString("hex"),
+    buyerCommitment: "22".repeat(32),
+    ticketCount: 8,
+    paidAmount: (TICKET_PRICE * 8n).toString(),
+    createdAt: "2026-07-13T00:00:00.000Z"
+  });
 }
 
 function plurality(scriptBytes, hasCovenant) {
