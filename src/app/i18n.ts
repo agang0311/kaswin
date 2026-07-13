@@ -343,9 +343,6 @@ const exactRuntimeZh: Record<string, string> = {
   "Round metadata loaded.": "抽奖元数据已加载。",
   "Shared round loaded from URL.": "已从分享链接加载抽奖。",
   "Round link copied.": "抽奖链接已复制。",
-  "Oracle key ready for dev attestation.": "Oracle 密钥已可用于开发证明。",
-  "Oracle private key must be 32 bytes of hex.": "Oracle 私钥必须是 32 字节十六进制。",
-  "Oracle seed must be exactly 32 bytes.": "Oracle 种子必须正好是 32 字节。",
   "Round loaded from history.": "已从历史加载抽奖。",
   "Select a round first.": "请先选择一个抽奖轮次。",
   "Selected round has no active covenant to load.": "所选抽奖没有可加载的活动 covenant。",
@@ -428,7 +425,6 @@ export function translateRuntimeText(language: Language, text: string): string {
 
   return text
     .replace(/^Loaded (\d+) raffle rounds?\.$/, "已加载 $1 轮抽奖。")
-    .replace(/^Loaded ([^.]+)\. Oracle key restored; finalize is ready when the round is eligible\.$/, "已加载 $1。Oracle 密钥已恢复，满足条件后可直接开奖。")
     .replace(/^Loaded ([^.]+)\. You can buy if open, or finalize\/refund when eligible\.$/, "已加载 $1。开放时可购票，满足条件后可开奖或退款。")
     .replace(/^Winner #(\d+) was paid: /, "中奖票 #$1 已派奖：")
     .replace(/^Timed-out round refunded: /, "超时抽奖已退款：")
@@ -462,6 +458,7 @@ export function translateRuntimeText(language: Language, text: string): string {
     .replace(/ Temporary funding was refunded in /, " 临时 funding 已通过以下交易退回：")
     .replace(/^A covenant or temporary funding output is below the current Toccata storage-mass minimum\./, "Covenant 或临时 funding 输出低于当前 Toccata storage-mass 下限。")
     .replace(/^The covenant input did not commit enough compute budget\./, "Covenant input 提交的 compute budget 不足。")
+    .replace(/^Timed out waiting for the drand round (\d+) proof\. The proof service may still be working; retry Draw & Pay later\.$/, "等待 drand 轮次 $1 的证明超时。证明服务可能仍在计算，请稍后重试开奖并派奖。")
     .replace(/ Refresh the page and retry with the current build\./, " 请刷新页面并使用当前版本重试。")
     .replace(/ New rounds need a carrier reserve of at least /, " 新抽奖的 carrier 预留至少需要 ")
     .replace(/^The participant wallet needs a spendable UTXO of at least (.+) to authorize the draw\. It is returned unchanged\.$/, "参与者钱包需要至少 $1 的可用 UTXO 来授权开奖，该 UTXO 会原额返还。")
