@@ -125,9 +125,9 @@ export const COVENANT_CREATE_FEE_SOMPI = 300_000n;
 export const V8_COVENANT_BUY_FEE_SOMPI = 1_630_000n;
 export const V8_COVENANT_FINALIZE_FEE_SOMPI = 50_000_000n;
 export const V8_COVENANT_CLOSE_FEE_SOMPI = 1_550_000n;
-export const V7_REFUND_TRANSITION_FEE_SOMPI = 2_230_000n;
-export const V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI = 150_000n;
-export const V7_REFUND_TAIL_FEE_PER_TICKET_SOMPI = 1_900_000n;
+export const REFUND_TRANSITION_FEE_SOMPI = 2_230_000n;
+export const REFUND_BATCH_FEE_PER_TICKET_SOMPI = 150_000n;
+export const REFUND_TAIL_FEE_PER_TICKET_SOMPI = 1_900_000n;
 const STANDARD_REFUND_MIN_SOMPI = 5_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 56_550_000n;
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 57_000_000n;
@@ -139,9 +139,9 @@ const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
 const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11;
 const V8_RAFFLE_FINALIZE_COMPUTE_BUDGET = 2_800;
 const V8_RAFFLE_CLOSE_COMPUTE_BUDGET = 4;
-const V7_REFUND_TRANSITION_COMPUTE_BUDGET = 4;
-const V7_REFUND_BATCH_COMPUTE_BUDGET = 5;
-const V7_REFUND_TAIL_COMPUTE_BUDGET = 4;
+const REFUND_TRANSITION_COMPUTE_BUDGET = 4;
+const REFUND_BATCH_COMPUTE_BUDGET = 5;
+const REFUND_TAIL_COMPUTE_BUDGET = 4;
 
 export function covenantBuyFeeSompi(_contractVersion: string, _ticketCount = 1): bigint {
   return V8_COVENANT_BUY_FEE_SOMPI;
@@ -152,7 +152,7 @@ export function covenantFinalizeFeeSompi(_contractVersion: string): bigint {
 }
 
 export function covenantRefundFeeSompi(_contractVersion: string): bigint {
-  return V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI;
+  return REFUND_BATCH_FEE_PER_TICKET_SOMPI;
 }
 
 function raffleBuyComputeBudget(ticketCount = 1): number {
@@ -1150,7 +1150,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         const nextRedeemScript = buildRaffleRedeemScript(nextState, refundArtifact);
         const nextScriptPublicKey = await buildRaffleScriptPublicKey(nextState, refundArtifact);
         const nextAddress = await buildRaffleAddress(nextState, input.connection.status.network, refundArtifact);
-        const nextAmount = currentAmount - V7_REFUND_TRANSITION_FEE_SOMPI;
+        const nextAmount = currentAmount - REFUND_TRANSITION_FEE_SOMPI;
         if (nextAmount <= 0n) throw new Error("The covenant carrier is too small to start batch refunds.");
         const tx = buildManualTransaction({
           inputs: [{
@@ -1158,7 +1158,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             signatureScript: buildRaffleStartRefundSignatureScript(hexToBytes(input.covenant.redeemScriptHex)),
             sequence: 0n,
             sigOpCount: 0,
-            computeBudget: V7_REFUND_TRANSITION_COMPUTE_BUDGET,
+            computeBudget: REFUND_TRANSITION_COMPUTE_BUDGET,
             utxo: asInputUtxo(covenantUtxo)
           }],
           outputs: [new TransactionOutput(nextAmount, nextScriptPublicKey)],
@@ -1207,7 +1207,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         if (!await verifyTicketRange8(currentRound.ticketRoot, ownerPubkeys, refundCursor, input.rangeProofHex)) {
           throw new Error("The 8-ticket refund batch does not match the covenant ticket root.");
         }
-        const refundAmount = currentRound.ticketPrice - V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI;
+        const refundAmount = currentRound.ticketPrice - REFUND_BATCH_FEE_PER_TICKET_SOMPI;
         if (refundAmount < STANDARD_REFUND_MIN_SOMPI) throw new Error("Ticket price is too small for batch refund outputs.");
         const nextCursorValue = refundCursor + 8;
         const hasSuccessor = nextCursorValue < input.covenant.soldTickets;
@@ -1229,7 +1229,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             signatureScript: buildRaffleRefundBatch8SignatureScript(hexToBytes(input.covenant.redeemScriptHex), ownerPubkeys, input.rangeProofHex),
             sequence: 0n,
             sigOpCount: 0,
-            computeBudget: V7_REFUND_BATCH_COMPUTE_BUDGET,
+            computeBudget: REFUND_BATCH_COMPUTE_BUDGET,
             utxo: asInputUtxo(covenantUtxo)
           }],
           outputs,
@@ -1269,7 +1269,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       if (!await verifyTicketProof(currentRound.ticketRoot, ownerPubkey, refundCursor, input.ownerProofHex)) {
         throw new Error(`Ticket #${ticket.ticketId} does not match the covenant ticket root.`);
       }
-      const refundAmount = currentRound.ticketPrice - V7_REFUND_TAIL_FEE_PER_TICKET_SOMPI;
+      const refundAmount = currentRound.ticketPrice - REFUND_TAIL_FEE_PER_TICKET_SOMPI;
       const hasSuccessor = refundCursor + 1 < input.covenant.soldTickets;
       const outputs: TransactionOutput[] = [];
       let nextRedeemScript: Uint8Array | undefined;
@@ -1291,7 +1291,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
           signatureScript: buildRaffleRefundNextSignatureScript(hexToBytes(input.covenant.redeemScriptHex), refundCursor, ownerPubkey, input.ownerProofHex),
           sequence: 0n,
           sigOpCount: 0,
-          computeBudget: V7_REFUND_TAIL_COMPUTE_BUDGET,
+          computeBudget: REFUND_TAIL_COMPUTE_BUDGET,
           utxo: asInputUtxo(covenantUtxo)
         }],
         outputs,

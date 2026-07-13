@@ -62,8 +62,8 @@ import {
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
   requiredDrandRoundForRaffleCovenant,
   V8_COVENANT_CLOSE_FEE_SOMPI,
-  V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI,
-  V7_REFUND_TRANSITION_FEE_SOMPI,
+  REFUND_BATCH_FEE_PER_TICKET_SOMPI,
+  REFUND_TRANSITION_FEE_SOMPI,
   refundRaffleCovenantRound,
   refundRaffleRegistryMarker,
   sendKaspaPayment
@@ -665,9 +665,9 @@ export function App() {
   const refundCostTooltip = t("cost.refund.current", {
     refund: formatKas(round.potAmount),
     fee: formatKas(covenantRefundFeeSompi(round.contractVersion)),
-    transitionFee: formatKas(V7_REFUND_TRANSITION_FEE_SOMPI),
-    batchFee: formatKas(V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI * 8n),
-    perTicketFee: formatKas(V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI)
+    transitionFee: formatKas(REFUND_TRANSITION_FEE_SOMPI),
+    batchFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI * 8n),
+    perTicketFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI)
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
