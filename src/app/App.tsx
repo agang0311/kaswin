@@ -93,7 +93,8 @@ const SECONDS_PER_MINUTE = 60n;
 const SECONDS_PER_HOUR = 60n * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY = 24n * SECONDS_PER_HOUR;
 const SECONDS_PER_MONTH = 30n * SECONDS_PER_DAY;
-const DEFAULT_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE;
+const TESTNET_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE;
+const MAINNET_REFUND_TIMEOUT_SECONDS = SECONDS_PER_DAY;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
 const BEACON_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-beacon-endpoints-v1";
@@ -186,13 +187,11 @@ function validateRpcUrl(value: string): string {
 type RefundTimeoutPart = "months" | "days" | "hours" | "minutes" | "seconds";
 type RefundTimeoutParts = Record<RefundTimeoutPart, string>;
 
-const DEFAULT_REFUND_TIMEOUT_PARTS: RefundTimeoutParts = {
-  months: "0",
-  days: "0",
-  hours: "0",
-  minutes: "10",
-  seconds: "0"
-};
+function defaultRefundTimeoutSeconds(network: string): bigint {
+  return network === "mainnet" ? MAINNET_REFUND_TIMEOUT_SECONDS : TESTNET_REFUND_TIMEOUT_SECONDS;
+}
+
+const DEFAULT_REFUND_TIMEOUT_PARTS = refundTimeoutPartsFromSeconds(defaultRefundTimeoutSeconds("testnet-10"));
 
 const REFUND_TIMEOUT_FIELDS: Array<{ key: RefundTimeoutPart; labelKey: string }> = [
   { key: "months", labelKey: "duration.months" },
@@ -372,7 +371,7 @@ function formatDate(value: number | undefined, language: Language) {
       : "unknown";
 }
 
-function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "refundTimeoutSeconds" | "refundTimeoutDaa">): bigint {
+function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "network" | "refundTimeoutSeconds" | "refundTimeoutDaa">): bigint {
   if (metadata.refundTimeoutSeconds && /^\d+$/.test(metadata.refundTimeoutSeconds)) {
     return BigInt(metadata.refundTimeoutSeconds);
   }
@@ -381,7 +380,7 @@ function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "refund
     return BigInt(metadata.refundTimeoutDaa) / KASPA_DAA_PER_SECOND;
   }
 
-  return DEFAULT_REFUND_TIMEOUT_SECONDS;
+  return defaultRefundTimeoutSeconds(metadata.network);
 }
 
 export function App() {
@@ -853,6 +852,7 @@ export function App() {
     setHistoryApiBase(nextProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[nextNetwork]);
     setBeaconProofUrl(beaconEndpoints[nextNetwork]);
+    setRefundTimeoutParts(refundTimeoutPartsFromSeconds(defaultRefundTimeoutSeconds(nextNetwork)));
     setHistoryAddress("");
     setRegistryAddress("");
     setRegistryAutoRefund(false);
@@ -2028,7 +2028,7 @@ export function App() {
     return networkFromAddress(address) ?? networkId;
   }
 
-  function refundTimeoutSecondsFromHistoryRound(historyRound: RaffleHistoryRound): bigint {
+  function refundTimeoutSecondsFromHistoryRound(historyRound: RaffleHistoryRound, network: SupportedNetworkId): bigint {
     if (historyRound.refundTimeoutSeconds && /^\d+$/.test(historyRound.refundTimeoutSeconds)) {
       return BigInt(historyRound.refundTimeoutSeconds);
     }
@@ -2037,7 +2037,7 @@ export function App() {
       return BigInt(historyRound.refundTimeoutDaa) / KASPA_DAA_PER_SECOND;
     }
 
-    return DEFAULT_REFUND_TIMEOUT_SECONDS;
+    return defaultRefundTimeoutSeconds(network);
   }
 
   async function handleJoinSelectedHistoryRound() {
@@ -2081,7 +2081,7 @@ export function App() {
       setHistoryError("Selected round uses a contract that is not supported on this network.");
       return;
     }
-    const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound);
+    const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound, loadedNetwork);
     const loadedRegistryAddress = selectedHistoryRound.registryAddress ?? (historyAddress || registryAddress);
 
     setNetworkId(loadedNetwork);
