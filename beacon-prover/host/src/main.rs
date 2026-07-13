@@ -149,8 +149,24 @@ fn serve(bind: &str, cache_dir: PathBuf) -> Result<()> {
         let mut active = in_progress
             .lock()
             .map_err(|_| anyhow::anyhow!("proof job lock is poisoned"))?;
-        let started = active.insert(round);
+        let already_running = active.contains(&round);
+        let busy_round = if already_running {
+            None
+        } else {
+            active.iter().next().copied()
+        };
+        let started = !already_running && busy_round.is_none() && active.insert(round);
         drop(active);
+        if let Some(busy_round) = busy_round {
+            request.respond(response(
+                serde_json::json!({
+                    "error": format!("Proof worker is busy with drand round {busy_round}. Retry round {round} later.")
+                })
+                .to_string(),
+                429,
+            ))?;
+            continue;
+        }
         if started {
             let cache_dir = cache_dir.clone();
             let in_progress = Arc::clone(&in_progress);
