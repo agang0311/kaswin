@@ -46,7 +46,6 @@ fn prove_beacon(round: u64, signature: [u8; 48]) -> Result<ToccataR0Proof> {
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<_>>();
     let mut env_builder = ExecutorEnv::builder();
-    env_builder.segment_limit_po2(21);
     env_builder.write(&round)?.write_slice(&signature);
     let receipt = default_prover()
         .prove_with_opts(
@@ -218,7 +217,6 @@ fn main() -> Result<()> {
             .try_into()
             .map_err(|_| anyhow::anyhow!("quicknet signature must be 48 bytes"))?;
         let mut env_builder = ExecutorEnv::builder();
-        env_builder.segment_limit_po2(21);
         env_builder.write(&round)?.write_slice(&signature);
         let session =
             default_executor().execute(env_builder.build()?, KASPA_RAFFLE_DRAND_GUEST_ELF)?;
