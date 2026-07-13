@@ -35,7 +35,7 @@ npm install
 npm run verify
 ```
 
-发布文件是 `dist/index.html`，不需要 Node.js 或网页服务器即可打开。Node.js 只用于开发构建和可选的独立服务。
+发布文件是 `dist/index.html`，不需要 Node.js 或应用后端即可运行。直接双击即可渲染；如果钱包扩展没有启用“访问文件网址”，请把同一个 HTML 放到任意静态 HTTP(S) 服务上打开。Node.js 只用于开发构建和可选的独立服务。
 
 ## 独立索引器
 
