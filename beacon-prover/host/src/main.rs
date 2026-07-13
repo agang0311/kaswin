@@ -3,7 +3,7 @@ use std::{env, fs};
 use anyhow::{bail, Context, Result};
 use kaspa_raffle_beacon_methods::{KASPA_RAFFLE_DRAND_GUEST_ELF, KASPA_RAFFLE_DRAND_GUEST_ID};
 use risc0_binfmt::Digestible;
-use risc0_zkvm::{default_prover, sha, ExecutorEnv, InnerReceipt, ProverOpts};
+use risc0_zkvm::{default_executor, default_prover, sha, ExecutorEnv, InnerReceipt, ProverOpts};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -35,8 +35,29 @@ fn main() -> Result<()> {
         println!("{}", hex::encode(image_id_bytes));
         return Ok(());
     }
+    if args.len() == 4 && args[1] == "execute" {
+        let round = args[2].parse::<u64>().context("round must be an unsigned integer")?;
+        let signature = hex::decode(&args[3]).context("signature must be hex")?;
+        let signature: [u8; 48] = signature.try_into().map_err(|_| anyhow::anyhow!("quicknet signature must be 48 bytes"))?;
+        let mut env_builder = ExecutorEnv::builder();
+        env_builder.write(&round)?.write_slice(&signature);
+        let session = default_executor().execute(env_builder.build()?, KASPA_RAFFLE_DRAND_GUEST_ELF)?;
+        if session.journal.bytes.len() != 40 || session.journal.bytes[..8] != round.to_le_bytes() {
+            bail!("guest journal is not round_le_u64 || randomness");
+        }
+        println!(
+            "{}",
+            serde_json::json!({
+                "round": round,
+                "randomness": hex::encode(&session.journal.bytes[8..]),
+                "cycles": session.cycles(),
+                "segments": session.segments.len(),
+            })
+        );
+        return Ok(());
+    }
     if args.len() != 4 {
-        bail!("usage: kaspa-raffle-beacon-prover image-id | <round> <signature-hex> <output.json>");
+        bail!("usage: kaspa-raffle-beacon-prover image-id | execute <round> <signature-hex> | <round> <signature-hex> <output.json>");
     }
 
     let round = args[1].parse::<u64>().context("round must be an unsigned integer")?;
