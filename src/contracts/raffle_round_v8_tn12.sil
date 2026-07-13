@@ -11,6 +11,7 @@ contract RaffleRoundV8Tn12() {
     byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;
     int constant DRAND_ROUND_OFFSET = 13185084;
     int constant DRAND_DELAY_ROUNDS = 5;
+    int constant CLOSE_FEE = 3000000;
     int constant FINALIZE_FEE = 50000000;
 
     int max_tickets = 0;
@@ -107,6 +108,27 @@ contract RaffleRoundV8Tn12() {
         });
     }
 
+    entrypoint function close() {
+        require(refund_cursor == 0);
+        require(sold_tickets > 0);
+        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
+        require(cov_out_idx == 0);
+        require(tx.outputs.length == 1);
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);
+        validateOutputState(0, {
+            max_tickets: max_tickets,
+            ticket_price: ticket_price,
+            creator_pubkey: creator_pubkey,
+            refund_after_daa: refund_after_daa,
+            sold_tickets: sold_tickets,
+            ticket_root: ticket_root,
+            frontier: frontier,
+            refund_cursor: -1,
+        });
+    }
+
     entrypoint function finalize(
         byte[32] claim,
         byte[4] control_index,
@@ -126,8 +148,7 @@ contract RaffleRoundV8Tn12() {
         require(tx.inputs.length == 2);
         require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));
         require(sold_tickets > 0);
-        require(refund_cursor == 0);
-        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);
+        require(refund_cursor == -1);
 
         int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;
         require(drand_round == expected_round);
@@ -184,7 +205,7 @@ contract RaffleRoundV8Tn12() {
     entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {
         require(tx.locktime >= refund_after_daa);
         require(sold_tickets > 0);
-        require(refund_cursor == 0);
+        require(refund_cursor == 0 || refund_cursor == -1);
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
         require(refund_out_idx == 0);

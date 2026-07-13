@@ -1,19 +1,10 @@
-# Current Contracts
+# Covenant contracts
 
-This directory intentionally contains only the current protocol:
+- `raffle_round_v8_mainnet.sil`: Mainnet fixed-image drand/RISC Zero raffle.
+- `raffle_round_v8_tn12.sil`: TN12 variant with the TN12 DAA-to-drand offset and shorter test delay.
+- `raffle_refund_v1.sil`: resumable public refund covenant, eight tickets per batch plus a single-ticket tail.
+- `zk_beacon_probe.sil`: isolated Toccata `OpZkPrecompile` integration probe.
 
-- `raffle_round_v5.sil`: V7 round template (`raffle-v7-three-commitment-oracles`)
-- `raffle_refund_v1.sil`: compact timeout-refund template
-- `compiled/raffle-round-v5.*`: compiler output and browser runtime artifact
-- `compiled/raffle-refund-v1.*`: compiler output and browser runtime artifact
+The V8 round stores a depth-20 Merkle root/frontier for up to one million tickets. A public `close` transition writes `refund_cursor = -1`, disabling further purchases before the future drand round is selected. Finalize requires that closed state, a fixed RISC Zero guest receipt, winner proof, and participant caller proof.
 
-The round source name keeps `v5` because `RaffleRoundV5` is the compiled contract identifier. The application protocol version is V7: its `buy(pubkey, int)` entrypoint atomically appends aligned batches of 1, 2, 4, or 8 identical owner leaves. Its finalize path verifies three independently precommitted Oracle seeds and root-bound Schnorr attestations.
-
-Legacy sources and runtime artifacts are deliberately absent. The browser rejects metadata whose `contractVersion` is not `raffle-v7-three-commitment-oracles`.
-
-Run:
-
-```powershell
-npm run compile:contract
-npm run verify:covenant
-```
+Compiled runtime artifacts are under `compiled/`. The browser rejects all non-V8 contract versions.

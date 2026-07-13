@@ -1,7 +1,8 @@
 import type { FinalizeState, RaffleMetadata, TicketState } from "./types";
 import type { RaffleHistoryRound } from "../kaspa/history";
+import { isCurrentRaffleContractVersion } from "../kaspa/covenant";
 
-const STORAGE_KEY = "kaspa-raffle-participated-rounds-v1";
+const STORAGE_KEY = "kaspa-raffle-participated-rounds-v8";
 const MAX_CACHED_ROUNDS = 100;
 
 interface StoredTicket extends Omit<TicketState, "paidAmount"> {
@@ -71,7 +72,7 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
   return readStore()
     .filter((round) => (
       round.metadata.network === network &&
-      round.metadata.contractVersion === "raffle-v7-three-commitment-oracles"
+      isCurrentRaffleContractVersion(round.metadata.contractVersion)
     ))
     .map((round) => {
       const ticketPrice = BigInt(round.metadata.ticketPrice || "0");
@@ -85,15 +86,7 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
         creator: round.metadata.creatorAddress,
         creatorPubkey: round.metadata.creatorPubkey,
         creatorCommitment: round.metadata.creatorCommitment,
-        oraclePublicKey: round.metadata.oraclePublicKey,
-        oraclePublicKey2: round.metadata.oraclePublicKey2,
-        oraclePublicKey3: round.metadata.oraclePublicKey3,
-        oracleSeedCommitment: round.metadata.oracleSeedCommitment,
-        oracleSeedCommitment2: round.metadata.oracleSeedCommitment2,
-        oracleSeedCommitment3: round.metadata.oracleSeedCommitment3,
-        oracleEndpoint: round.metadata.oracleEndpoint,
-        oracleEndpoint2: round.metadata.oracleEndpoint2,
-        oracleEndpoint3: round.metadata.oracleEndpoint3,
+        beaconProofUrl: round.metadata.beaconProofUrl,
         createdAtDaaScore: round.metadata.createdAtDaaScore,
         refundTimeoutSeconds: round.metadata.refundTimeoutSeconds,
         refundAfterDaaScore: round.metadata.refundAfterDaaScore,

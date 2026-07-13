@@ -1,9 +1,12 @@
-use alloc::{string::{String, ToString}, vec::Vec};
-use core::{error::Error, fmt};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use bls12_381::{
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
     Bls12, G1Affine, G1Projective, G2Affine, G2Prepared, G2Projective,
 };
+use core::{error::Error, fmt};
 use pairing::{group::Group, MultiMillerLoop};
 use sha2::{Digest, Sha256};
 

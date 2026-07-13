@@ -3936,7 +3936,7 @@
     118,
     201,
     2,
-    32,
+    203,
     27,
     148,
     118,
@@ -3950,7 +3950,7 @@
     201,
     118,
     2,
-    32,
+    203,
     27,
     148,
     2,
@@ -4024,6 +4024,181 @@
     156,
     99,
     117,
+    118,
+    0,
+    156,
+    105,
+    83,
+    121,
+    0,
+    160,
+    105,
+    83,
+    121,
+    88,
+    121,
+    156,
+    181,
+    86,
+    121,
+    162,
+    155,
+    105,
+    185,
+    203,
+    81,
+    156,
+    105,
+    185,
+    0,
+    204,
+    0,
+    156,
+    105,
+    180,
+    81,
+    156,
+    105,
+    0,
+    194,
+    185,
+    190,
+    3,
+    192,
+    198,
+    45,
+    148,
+    156,
+    105,
+    87,
+    121,
+    88,
+    205,
+    1,
+    8,
+    124,
+    126,
+    87,
+    121,
+    88,
+    205,
+    1,
+    8,
+    124,
+    126,
+    87,
+    121,
+    1,
+    32,
+    124,
+    126,
+    87,
+    121,
+    88,
+    205,
+    1,
+    8,
+    124,
+    126,
+    87,
+    121,
+    88,
+    205,
+    1,
+    8,
+    124,
+    126,
+    87,
+    121,
+    1,
+    32,
+    124,
+    126,
+    87,
+    121,
+    3,
+    77,
+    128,
+    2,
+    124,
+    126,
+    81,
+    143,
+    88,
+    205,
+    1,
+    8,
+    124,
+    126,
+    126,
+    126,
+    126,
+    126,
+    126,
+    126,
+    126,
+    185,
+    118,
+    201,
+    2,
+    203,
+    27,
+    148,
+    118,
+    81,
+    147,
+    188,
+    124,
+    126,
+    185,
+    118,
+    201,
+    118,
+    2,
+    203,
+    27,
+    148,
+    2,
+    243,
+    2,
+    147,
+    124,
+    188,
+    126,
+    170,
+    2,
+    0,
+    0,
+    1,
+    170,
+    126,
+    1,
+    32,
+    126,
+    124,
+    126,
+    1,
+    135,
+    126,
+    0,
+    195,
+    135,
+    105,
+    117,
+    117,
+    117,
+    117,
+    117,
+    117,
+    117,
+    117,
+    81,
+    103,
+    118,
+    82,
+    156,
+    99,
+    117,
     185,
     203,
     0,
@@ -4054,19 +4229,9 @@
     160,
     105,
     118,
-    0,
+    81,
+    143,
     156,
-    105,
-    83,
-    121,
-    88,
-    121,
-    156,
-    181,
-    86,
-    121,
-    162,
-    155,
     105,
     95,
     121,
@@ -6777,7 +6942,7 @@
     81,
     103,
     118,
-    82,
+    83,
     156,
     99,
     117,
@@ -6794,6 +6959,11 @@
     118,
     0,
     156,
+    120,
+    81,
+    143,
+    156,
+    155,
     105,
     185,
     203,
@@ -6943,6 +7113,7 @@
     117,
     0,
     105,
+    104,
     104,
     104,
     104
@@ -11066,6 +11237,20 @@
         "type_ref": {
           "base": "int"
         },
+        "name": "CLOSE_FEE",
+        "expr": {
+          "kind": "int",
+          "data": 3000000,
+          "span": "3000000"
+        },
+        "span": "int constant CLOSE_FEE = 3000000;",
+        "type_span": "int ",
+        "name_span": "CLOSE_FEE"
+      },
+      {
+        "type_ref": {
+          "base": "int"
+        },
         "name": "FINALIZE_FEE",
         "expr": {
           "kind": "int",
@@ -13462,6 +13647,398 @@
         "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });"
       },
       {
+        "name": "close",
+        "params": [],
+        "entrypoint": true,
+        "return_types": [],
+        "returns_tuple": false,
+        "body": [
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "identifier",
+                    "data": "refund_cursor",
+                    "span": "refund_cursor"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 0,
+                    "span": "0"
+                  }
+                },
+                "span": "refund_cursor == 0"
+              },
+              "message": null,
+              "span": "require(refund_cursor == 0);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "gt",
+                  "left": {
+                    "kind": "identifier",
+                    "data": "sold_tickets",
+                    "span": "sold_tickets"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 0,
+                    "span": "0"
+                  }
+                },
+                "span": "sold_tickets > 0"
+              },
+              "message": null,
+              "span": "require(sold_tickets > 0);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "or",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_tickets",
+                        "span": "sold_tickets"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "max_tickets",
+                        "span": "max_tickets"
+                      }
+                    },
+                    "span": "sold_tickets == max_tickets"
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "nullary",
+                        "data": "tx_lock_time",
+                        "span": "tx.locktime"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "refund_after_daa",
+                        "span": "refund_after_daa"
+                      }
+                    },
+                    "span": "tx.locktime >= refund_after_daa"
+                  }
+                },
+                "span": "sold_tickets == max_tickets || tx.locktime >= refund_after_daa"
+              },
+              "message": null,
+              "span": "require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "call",
+                    "data": {
+                      "name": "OpAuthOutputCount",
+                      "args": [
+                        {
+                          "kind": "nullary",
+                          "data": "active_input_index",
+                          "span": "this.activeInputIndex"
+                        }
+                      ],
+                      "name_span": "OpAuthOutputCount"
+                    },
+                    "span": "OpAuthOutputCount(this.activeInputIndex)"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 1,
+                    "span": "1"
+                  }
+                },
+                "span": "OpAuthOutputCount(this.activeInputIndex) == 1"
+              },
+              "message": null,
+              "span": "require(OpAuthOutputCount(this.activeInputIndex) == 1);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "variable_definition",
+            "data": {
+              "type_ref": {
+                "base": "int"
+              },
+              "modifiers": [],
+              "name": "cov_out_idx",
+              "expr": {
+                "kind": "call",
+                "data": {
+                  "name": "OpAuthOutputIdx",
+                  "args": [
+                    {
+                      "kind": "nullary",
+                      "data": "active_input_index",
+                      "span": "this.activeInputIndex"
+                    },
+                    {
+                      "kind": "int",
+                      "data": 0,
+                      "span": "0"
+                    }
+                  ],
+                  "name_span": "OpAuthOutputIdx"
+                },
+                "span": "OpAuthOutputIdx(this.activeInputIndex, 0)"
+              },
+              "span": "int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);",
+              "type_span": "int ",
+              "modifier_spans": [],
+              "name_span": "cov_out_idx"
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "identifier",
+                    "data": "cov_out_idx",
+                    "span": "cov_out_idx"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 0,
+                    "span": "0"
+                  }
+                },
+                "span": "cov_out_idx == 0"
+              },
+              "message": null,
+              "span": "require(cov_out_idx == 0);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "nullary",
+                    "data": "tx_outputs_length",
+                    "span": "tx.outputs.length"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 1,
+                    "span": "1"
+                  }
+                },
+                "span": "tx.outputs.length == 1"
+              },
+              "message": null,
+              "span": "require(tx.outputs.length == 1);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "introspection",
+                    "data": {
+                      "kind": "output_value",
+                      "index": {
+                        "kind": "int",
+                        "data": 0,
+                        "span": "0"
+                      },
+                      "field_span": ".value"
+                    },
+                    "span": "tx.outputs[0].value"
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "sub",
+                      "left": {
+                        "kind": "introspection",
+                        "data": {
+                          "kind": "input_value",
+                          "index": {
+                            "kind": "nullary",
+                            "data": "active_input_index",
+                            "span": "this.activeInputIndex"
+                          },
+                          "field_span": ".value"
+                        },
+                        "span": "tx.inputs[this.activeInputIndex].value"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "CLOSE_FEE",
+                        "span": "CLOSE_FEE"
+                      }
+                    },
+                    "span": "tx.inputs[this.activeInputIndex].value - CLOSE_FEE"
+                  }
+                },
+                "span": "tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE"
+              },
+              "message": null,
+              "span": "require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "function_call",
+            "data": {
+              "name": "validateOutputState",
+              "args": [
+                {
+                  "kind": "int",
+                  "data": 0,
+                  "span": "0"
+                },
+                {
+                  "kind": "state_object",
+                  "data": [
+                    {
+                      "name": "max_tickets",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "max_tickets",
+                        "span": "max_tickets"
+                      },
+                      "span": "max_tickets: max_tickets",
+                      "name_span": "max_tickets"
+                    },
+                    {
+                      "name": "ticket_price",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "ticket_price",
+                        "span": "ticket_price"
+                      },
+                      "span": "ticket_price: ticket_price",
+                      "name_span": "ticket_price"
+                    },
+                    {
+                      "name": "creator_pubkey",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "creator_pubkey",
+                        "span": "creator_pubkey"
+                      },
+                      "span": "creator_pubkey: creator_pubkey",
+                      "name_span": "creator_pubkey"
+                    },
+                    {
+                      "name": "refund_after_daa",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "refund_after_daa",
+                        "span": "refund_after_daa"
+                      },
+                      "span": "refund_after_daa: refund_after_daa",
+                      "name_span": "refund_after_daa"
+                    },
+                    {
+                      "name": "sold_tickets",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "sold_tickets",
+                        "span": "sold_tickets"
+                      },
+                      "span": "sold_tickets: sold_tickets",
+                      "name_span": "sold_tickets"
+                    },
+                    {
+                      "name": "ticket_root",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "ticket_root",
+                        "span": "ticket_root"
+                      },
+                      "span": "ticket_root: ticket_root",
+                      "name_span": "ticket_root"
+                    },
+                    {
+                      "name": "frontier",
+                      "expr": {
+                        "kind": "identifier",
+                        "data": "frontier",
+                        "span": "frontier"
+                      },
+                      "span": "frontier: frontier",
+                      "name_span": "frontier"
+                    },
+                    {
+                      "name": "refund_cursor",
+                      "expr": {
+                        "kind": "unary",
+                        "data": {
+                          "op": "neg",
+                          "expr": {
+                            "kind": "int",
+                            "data": 1,
+                            "span": "1"
+                          }
+                        },
+                        "span": "-1"
+                      },
+                      "span": "refund_cursor: -1",
+                      "name_span": "refund_cursor"
+                    }
+                  ],
+                  "span": "{\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        }"
+                }
+              ],
+              "span": "validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });",
+              "name_span": "validateOutputState"
+            }
+          }
+        ],
+        "return_type_spans": [],
+        "span": "entrypoint function close() {\n        require(refund_cursor == 0);\n        require(sold_tickets > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(cov_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);\n        validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });\n    }",
+        "name_span": "close",
+        "body_span": "require(refund_cursor == 0);\n        require(sold_tickets > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(cov_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);\n        validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });"
+      },
+      {
         "name": "finalize",
         "params": [
           {
@@ -13782,64 +14359,22 @@
                     "span": "refund_cursor"
                   },
                   "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "refund_cursor == 0"
-              },
-              "message": null,
-              "span": "require(refund_cursor == 0);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "or",
-                  "left": {
-                    "kind": "binary",
+                    "kind": "unary",
                     "data": {
-                      "op": "eq",
-                      "left": {
-                        "kind": "identifier",
-                        "data": "sold_tickets",
-                        "span": "sold_tickets"
-                      },
-                      "right": {
-                        "kind": "identifier",
-                        "data": "max_tickets",
-                        "span": "max_tickets"
+                      "op": "neg",
+                      "expr": {
+                        "kind": "int",
+                        "data": 1,
+                        "span": "1"
                       }
                     },
-                    "span": "sold_tickets == max_tickets"
-                  },
-                  "right": {
-                    "kind": "binary",
-                    "data": {
-                      "op": "ge",
-                      "left": {
-                        "kind": "nullary",
-                        "data": "tx_lock_time",
-                        "span": "tx.locktime"
-                      },
-                      "right": {
-                        "kind": "identifier",
-                        "data": "refund_after_daa",
-                        "span": "refund_after_daa"
-                      }
-                    },
-                    "span": "tx.locktime >= refund_after_daa"
+                    "span": "-1"
                   }
                 },
-                "span": "sold_tickets == max_tickets || tx.locktime >= refund_after_daa"
+                "span": "refund_cursor == -1"
               },
               "message": null,
-              "span": "require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);",
+              "span": "require(refund_cursor == -1);",
               "message_span": null
             }
           },
@@ -15721,9 +16256,9 @@
           }
         ],
         "return_type_spans": [],
-        "span": "entrypoint function finalize(\n        byte[32] claim,\n        byte[4] control_index,\n        byte[256] control_digests,\n        byte[] seal,\n        byte[32] control_id,\n        int drand_round,\n        byte[32] randomness,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }",
+        "span": "entrypoint function finalize(\n        byte[32] claim,\n        byte[4] control_index,\n        byte[256] control_digests,\n        byte[] seal,\n        byte[32] control_id,\n        int drand_round,\n        byte[32] randomness,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == -1);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }",
         "name_span": "finalize",
-        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);"
+        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == -1);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);"
       },
       {
         "name": "startRefund",
@@ -15817,22 +16352,53 @@
               "expr": {
                 "kind": "binary",
                 "data": {
-                  "op": "eq",
+                  "op": "or",
                   "left": {
-                    "kind": "identifier",
-                    "data": "refund_cursor",
-                    "span": "refund_cursor"
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "refund_cursor",
+                        "span": "refund_cursor"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 0,
+                        "span": "0 "
+                      }
+                    },
+                    "span": "refund_cursor == 0 "
                   },
                   "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "refund_cursor",
+                        "span": "refund_cursor"
+                      },
+                      "right": {
+                        "kind": "unary",
+                        "data": {
+                          "op": "neg",
+                          "expr": {
+                            "kind": "int",
+                            "data": 1,
+                            "span": "1"
+                          }
+                        },
+                        "span": "-1"
+                      }
+                    },
+                    "span": "refund_cursor == -1"
                   }
                 },
-                "span": "refund_cursor == 0"
+                "span": "refund_cursor == 0 || refund_cursor == -1"
               },
               "message": null,
-              "span": "require(refund_cursor == 0);",
+              "span": "require(refund_cursor == 0 || refund_cursor == -1);",
               "message_span": null
             }
           },
@@ -16115,12 +16681,12 @@
           }
         ],
         "return_type_spans": [],
-        "span": "entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }",
+        "span": "entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }",
         "name_span": "startRefund",
-        "body_span": "require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);"
+        "body_span": "require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);"
       }
     ],
-    "span": "contract RaffleRoundV8Mainnet() {\n    struct RefundState {\n        int ticket_price;\n        byte[32] creator_pubkey;\n        int sold_tickets;\n        byte[32] ticket_root;\n        int refund_cursor;\n    }\n\n    byte[32] constant REFUND_TEMPLATE = 0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41;\n    byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;\n    int constant DRAND_ROUND_OFFSET = 14205535;\n    int constant DRAND_DELAY_ROUNDS = 40;\n    int constant FINALIZE_FEE = 50000000;\n\n    int max_tickets = 0;\n    int ticket_price = 0;\n    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int refund_after_daa = 0;\n    int sold_tickets = 0;\n    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[640] frontier = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;\n    int refund_cursor = 0;\n\n    function merkleRoot(byte[32] leaf, int ticket_id, byte[] proof) : byte[32] {\n        require(proof.length == 640);\n        byte[32] node = leaf;\n        int path = ticket_id;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            byte[32] sibling = byte[32](proof.slice(start, start + 32));\n            if (path % 2 == 0) {\n                node = sha256(byte[](node) + byte[](sibling));\n            } else {\n                node = sha256(byte[](sibling) + byte[](node));\n            }\n            path = path / 2;\n        }\n        return(node);\n    }\n\n    function ticketLeaf(pubkey owner_pubkey) : byte[32] {\n        return(sha256(byte[](owner_pubkey)));\n    }\n\n    entrypoint function buy(pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });\n    }\n\n    entrypoint function finalize(\n        byte[32] claim,\n        byte[4] control_index,\n        byte[256] control_digests,\n        byte[] seal,\n        byte[32] control_id,\n        int drand_round,\n        byte[32] randomness,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }\n\n    entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }\n}",
+    "span": "contract RaffleRoundV8Mainnet() {\n    struct RefundState {\n        int ticket_price;\n        byte[32] creator_pubkey;\n        int sold_tickets;\n        byte[32] ticket_root;\n        int refund_cursor;\n    }\n\n    byte[32] constant REFUND_TEMPLATE = 0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41;\n    byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;\n    int constant DRAND_ROUND_OFFSET = 14205535;\n    int constant DRAND_DELAY_ROUNDS = 40;\n    int constant CLOSE_FEE = 3000000;\n    int constant FINALIZE_FEE = 50000000;\n\n    int max_tickets = 0;\n    int ticket_price = 0;\n    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int refund_after_daa = 0;\n    int sold_tickets = 0;\n    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[640] frontier = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;\n    int refund_cursor = 0;\n\n    function merkleRoot(byte[32] leaf, int ticket_id, byte[] proof) : byte[32] {\n        require(proof.length == 640);\n        byte[32] node = leaf;\n        int path = ticket_id;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            byte[32] sibling = byte[32](proof.slice(start, start + 32));\n            if (path % 2 == 0) {\n                node = sha256(byte[](node) + byte[](sibling));\n            } else {\n                node = sha256(byte[](sibling) + byte[](node));\n            }\n            path = path / 2;\n        }\n        return(node);\n    }\n\n    function ticketLeaf(pubkey owner_pubkey) : byte[32] {\n        return(sha256(byte[](owner_pubkey)));\n    }\n\n    entrypoint function buy(pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });\n    }\n\n    entrypoint function close() {\n        require(refund_cursor == 0);\n        require(sold_tickets > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(cov_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);\n        validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });\n    }\n\n    entrypoint function finalize(\n        byte[32] claim,\n        byte[4] control_index,\n        byte[256] control_digests,\n        byte[] seal,\n        byte[32] control_id,\n        int drand_round,\n        byte[32] randomness,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == -1);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }\n\n    entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }\n}",
     "name_span": "RaffleRoundV8Mainnet"
   },
   "abi": [
@@ -16136,6 +16702,10 @@
           "type_name": "int"
         }
       ]
+    },
+    {
+      "name": "close",
+      "inputs": []
     },
     {
       "name": "finalize",

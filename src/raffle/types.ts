@@ -1,5 +1,18 @@
 export type RoundStatus = "Open" | "Closed" | "Finalized" | "Refunding" | "Refunded";
-export type RandomnessMode = "oracle";
+export type RandomnessMode = "drand-risc0";
+
+export interface DrandRisc0Proof {
+  round: number;
+  randomness: string;
+  claim: string;
+  controlIndex: string;
+  controlDigests: string;
+  seal: string;
+  journalDigest: string;
+  imageId: string;
+  controlId: string;
+  hashfn: number;
+}
 
 export interface RoundState {
   appId: "KASPA_RAFFLE_ROUND_V1";
@@ -15,12 +28,6 @@ export interface RoundState {
   status: RoundStatus;
   randomnessMode: RandomnessMode;
   creatorPubkey: string;
-  oraclePublicKey: string;
-  oraclePublicKey2: string;
-  oraclePublicKey3: string;
-  oracleSeedCommitment: string;
-  oracleSeedCommitment2: string;
-  oracleSeedCommitment3: string;
   refundAfterDaaScore: string;
   ticketRoot: string;
   ticketFrontier?: string;
@@ -46,12 +53,8 @@ export interface FinalizeState {
   appId: "KASPA_RAFFLE_FINAL_V1";
   roundId: string;
   randomSeed: string;
-  oracleSeed?: string;
-  oracleSignature?: string;
-  oracleSeed2?: string;
-  oracleSignature2?: string;
-  oracleSeed3?: string;
-  oracleSignature3?: string;
+  drandRound: number;
+  drandRandomness: string;
   winnerTicketId: number;
   winnerAddress: string;
   payoutTxId: string;
@@ -93,15 +96,7 @@ export interface RaffleMetadata {
   creatorAddress?: string;
   creatorPubkey?: string;
   creatorCommitment?: string;
-  oraclePublicKey: string;
-  oraclePublicKey2: string;
-  oraclePublicKey3: string;
-  oracleSeedCommitment: string;
-  oracleSeedCommitment2: string;
-  oracleSeedCommitment3: string;
-  oracleEndpoint?: string;
-  oracleEndpoint2?: string;
-  oracleEndpoint3?: string;
+  beaconProofUrl?: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
   registryAddress?: string;

@@ -1,9 +1,16 @@
 import type { RaffleMetadata } from "./types";
 
+export const MAINNET_RAFFLE_CONTRACT_VERSION = "raffle-v8-drand-risc0-mainnet";
+export const TN12_RAFFLE_CONTRACT_VERSION = "raffle-v8-drand-risc0-tn12";
+
+export function raffleContractVersionForNetwork(network: string): string {
+  return network === "mainnet" ? MAINNET_RAFFLE_CONTRACT_VERSION : TN12_RAFFLE_CONTRACT_VERSION;
+}
+
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.5.0",
+    version: "0.6.0",
     network,
     roundId: "",
     createTxId: "",
@@ -13,21 +20,13 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     creatorAddress: "",
     creatorPubkey: "",
     creatorCommitment: "",
-    oraclePublicKey: "",
-    oraclePublicKey2: "",
-    oraclePublicKey3: "",
-    oracleSeedCommitment: "",
-    oracleSeedCommitment2: "",
-    oracleSeedCommitment3: "",
-    oracleEndpoint: "",
-    oracleEndpoint2: "",
-    oracleEndpoint3: "",
+    beaconProofUrl: "",
     refundTimeoutSeconds: "600",
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",
     treasuryAddress: "",
     registryAddress: "",
-    contractVersion: "raffle-v7-three-commitment-oracles"
+    contractVersion: raffleContractVersionForNetwork(network)
   };
 }
 
@@ -45,12 +44,6 @@ export function parseMetadata(raw: string): RaffleMetadata {
     "ticketPrice",
     "maxTickets",
     "minTickets",
-    "oraclePublicKey",
-    "oraclePublicKey2",
-    "oraclePublicKey3",
-    "oracleSeedCommitment",
-    "oracleSeedCommitment2",
-    "oracleSeedCommitment3",
     "contractVersion"
   ];
 
@@ -60,22 +53,9 @@ export function parseMetadata(raw: string): RaffleMetadata {
     }
   }
 
-  if (parsed.contractVersion !== "raffle-v7-three-commitment-oracles") {
-    throw new Error("Unsupported raffle contract version. This page only accepts raffle-v7-three-commitment-oracles.");
-  }
-
-  const oracleHexFields: Array<keyof RaffleMetadata> = [
-    "oraclePublicKey",
-    "oraclePublicKey2",
-    "oraclePublicKey3",
-    "oracleSeedCommitment",
-    "oracleSeedCommitment2",
-    "oracleSeedCommitment3"
-  ];
-  for (const field of oracleHexFields) {
-    if (!/^[0-9a-f]{64}$/.test(String(parsed[field]))) {
-      throw new Error(`Metadata ${field} must be 32 bytes of lowercase hex.`);
-    }
+  const expectedContractVersion = raffleContractVersionForNetwork(String(parsed.network));
+  if (parsed.contractVersion !== expectedContractVersion) {
+    throw new Error(`Unsupported raffle contract version. This page only accepts ${expectedContractVersion} on ${parsed.network}.`);
   }
 
   if (Number(parsed.ticketPrice) <= 0) {

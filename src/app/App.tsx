@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as secp from "@noble/secp256k1";
 import {
   AlertTriangle,
   Check,
@@ -18,11 +17,11 @@ import {
 import {
   assertRaffleCovenantReady,
   buildFinalizeSeedHex,
-  bytesToHex,
   getRaffleCovenantStatus,
   pubkeyHexFromAddress,
   raffleWinnerIndexFromSeed
 } from "../kaspa/covenant";
+import { DEFAULT_BEACON_PROOF_URL, loadDrandRisc0Proof } from "../kaspa/beacon";
 import { loadIndexedRaffleHistory, loadRaffleHistory, type RaffleHistoryRound } from "../kaspa/history";
 import {
   DEFAULT_RAFFLE_INDEX_API,
@@ -49,6 +48,7 @@ import {
 import {
   assertValidKaspaAddress,
   buyRaffleCovenantTicket,
+  closeRaffleCovenantRound,
   COVENANT_CREATE_FEE_SOMPI,
   covenantBuyFeeSompi,
   covenantFinalizeFeeSompi,
@@ -60,6 +60,8 @@ import {
   getRaffleRegistryConfig,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
+  requiredDrandRoundForRaffleCovenant,
+  V8_COVENANT_CLOSE_FEE_SOMPI,
   V7_REFUND_BATCH_FEE_PER_TICKET_SOMPI,
   V7_REFUND_TRANSITION_FEE_SOMPI,
   refundRaffleCovenantRound,
@@ -76,9 +78,9 @@ import {
   type BrowserTestWallet,
   type WalletAdapterOption
 } from "../kaspa/wallet";
-import { createEmptyMetadata, parseMetadata, stringifyMetadata } from "../raffle/metadata";
-import { cacheParticipatedRound, loadCachedRaffleHistory, loadCachedRound } from "../raffle/local-rounds";
-import { hexToBytes, randomHex, sha256BytesHex, sha256Hex } from "../raffle/randomness";
+import { createEmptyMetadata, parseMetadata, raffleContractVersionForNetwork, stringifyMetadata } from "../raffle/metadata";
+import { cacheParticipatedRound, loadCachedRaffleHistory } from "../raffle/local-rounds";
+import { randomHex, sha256Hex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
 import { buildTicketProof, buildTicketRange8Proof, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import { findTicketRange, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
@@ -94,6 +96,7 @@ const SECONDS_PER_MONTH = 30n * SECONDS_PER_DAY;
 const DEFAULT_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
+const BEACON_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-beacon-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
 
 function initialLanguage(): Language {
@@ -145,6 +148,22 @@ function loadIndexEndpoints(): NetworkEndpoints {
   }
 }
 
+function loadBeaconEndpoints(): NetworkEndpoints {
+  const defaults: NetworkEndpoints = {
+    mainnet: DEFAULT_BEACON_PROOF_URL,
+    "testnet-10": DEFAULT_BEACON_PROOF_URL
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(BEACON_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkEndpoints>;
+    return {
+      mainnet: saved.mainnet?.trim() || defaults.mainnet,
+      "testnet-10": saved["testnet-10"]?.trim() || defaults["testnet-10"]
+    };
+  } catch {
+    return defaults;
+  }
+}
+
 function expandedOwnerPubkeys(tickets: TicketState[]): string[] {
   return [...tickets]
     .sort((left, right) => left.ticketId - right.ticketId)
@@ -166,7 +185,6 @@ function validateRpcUrl(value: string): string {
 
 type RefundTimeoutPart = "months" | "days" | "hours" | "minutes" | "seconds";
 type RefundTimeoutParts = Record<RefundTimeoutPart, string>;
-type OracleMode = "development" | "external";
 
 const DEFAULT_REFUND_TIMEOUT_PARTS: RefundTimeoutParts = {
   months: "0",
@@ -314,181 +332,8 @@ function normalizeDurationInput(value: string): string {
   return value.replace(/[^\d]/g, "");
 }
 
-function oraclePublicKeyFromPrivateKey(privateKeyHex: string) {
-  return bytesToHex(secp.schnorr.getPublicKey(hexToBytes(privateKeyHex)));
-}
-
-async function signOracleSeed(privateKeyHex: string, ticketRootHex: string, oracleSeedHex: string) {
-  const seed = hexToBytes(oracleSeedHex);
-  const ticketRoot = hexToBytes(ticketRootHex);
-
-  if (seed.length !== 32 || ticketRoot.length !== 32) {
-    throw new Error("Oracle seed and ticket root must each be exactly 32 bytes.");
-  }
-
-  const message = new Uint8Array(64);
-  message.set(ticketRoot, 0);
-  message.set(seed, 32);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", message));
-  return bytesToHex(await secp.schnorr.signAsync(digest, hexToBytes(privateKeyHex)));
-}
-
-async function verifyOracleAttestation(
-  oraclePublicKey: string,
-  ticketRootHex: string,
-  oracleSeedHex: string,
-  oracleSignatureHex: string
-) {
-  if (
-    !/^[0-9a-f]{64}$/.test(oraclePublicKey) ||
-    !/^[0-9a-f]{64}$/.test(ticketRootHex) ||
-    !/^[0-9a-f]{64}$/.test(oracleSeedHex) ||
-    !/^[0-9a-f]{128}$/.test(oracleSignatureHex)
-  ) {
-    return false;
-  }
-  const message = new Uint8Array(64);
-  message.set(hexToBytes(ticketRootHex), 0);
-  message.set(hexToBytes(oracleSeedHex), 32);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", message));
-  return secp.schnorr.verifyAsync(
-    hexToBytes(oracleSignatureHex),
-    digest,
-    hexToBytes(oraclePublicKey)
-  );
-}
-
-function normalizedOracleEndpoint(value: string, network: SupportedNetworkId) {
-  const endpoint = value.trim().replace(/\/+$/, "");
-  const url = new URL(endpoint);
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("Oracle endpoint must start with https:// or http://.");
-  }
-  if (network === "mainnet" && url.protocol !== "https:") {
-    throw new Error("Mainnet oracle endpoint must use HTTPS.");
-  }
-  return endpoint;
-}
-
-async function fetchOracleCommitment(endpoint: string, network: SupportedNetworkId, roundId: string) {
-  const base = normalizedOracleEndpoint(endpoint, network);
-  const response = await fetch(`${base}/commitments/${encodeURIComponent(roundId)}`, { headers: { accept: "application/json" } });
-  const value = await response.json() as { publicKey?: string; commitment?: string; error?: string };
-  if (!response.ok) throw new Error(value.error || `Oracle returned HTTP ${response.status}.`);
-  const publicKey = (value.publicKey || "").toLowerCase();
-  const commitment = (value.commitment || "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(publicKey) || !/^[0-9a-f]{64}$/.test(commitment)) {
-    throw new Error("Oracle commitment response is malformed.");
-  }
-  return { publicKey, commitment };
-}
-
-async function fetchOracleAttestation(
-  endpoint: string,
-  network: SupportedNetworkId,
-  roundId: string,
-  ticketRootHex: string,
-  oraclePublicKey: string
-) {
-  const base = normalizedOracleEndpoint(endpoint, network);
-  const url = new URL(`${base}/attestations/${encodeURIComponent(roundId)}`);
-  url.searchParams.set("ticketRoot", ticketRootHex);
-  const response = await fetch(url, { headers: { accept: "application/json" } });
-  const value = await response.json() as {
-    seed?: string;
-    oracleSeed?: string;
-    signature?: string;
-    oracleSignature?: string;
-    publicKey?: string;
-  };
-  if (!response.ok) throw new Error(`Oracle returned HTTP ${response.status}.`);
-  const seed = (value.oracleSeed || value.seed || "").toLowerCase();
-  const signature = (value.oracleSignature || value.signature || "").toLowerCase();
-  if (value.publicKey && value.publicKey.toLowerCase() !== oraclePublicKey) {
-    throw new Error("Oracle response public key does not match this round.");
-  }
-  if (!await verifyOracleAttestation(oraclePublicKey, ticketRootHex, seed, signature)) {
-    throw new Error("Oracle returned an invalid root-bound Schnorr attestation.");
-  }
-  return { seed, signature };
-}
-
 function encodePayload(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value));
-}
-
-const DEV_ORACLE_KEY_PREFIX = "kaspa-raffle-static:dev-oracle:";
-const OPEN_DEV_ORACLE_DERIVATION_PREFIX = "kaspa-raffle-static:open-dev-oracle:v1:";
-
-function devOracleStorageKey(roundId: string, oraclePublicKey: string) {
-  return `${DEV_ORACLE_KEY_PREFIX}${roundId}:${oraclePublicKey}`;
-}
-
-function rememberDevOracleKey(roundId: string, oraclePublicKey: string, oraclePrivateKey: string) {
-  if (!roundId || !oraclePublicKey || !/^[0-9a-f]{64}$/.test(oraclePrivateKey)) {
-    return;
-  }
-
-  try {
-    localStorage.setItem(devOracleStorageKey(roundId, oraclePublicKey), oraclePrivateKey);
-  } catch {
-    // Local dev convenience only; external oracle attestations still work.
-  }
-}
-
-function restoreDevOracleKey(roundId: string, oraclePublicKey: string) {
-  if (!roundId || !oraclePublicKey) {
-    return "";
-  }
-
-  try {
-    const privateKey = localStorage.getItem(devOracleStorageKey(roundId, oraclePublicKey)) ?? "";
-
-    if (/^[0-9a-f]{64}$/.test(privateKey) && oraclePublicKeyFromPrivateKey(privateKey) === oraclePublicKey) {
-      return privateKey;
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
-}
-
-async function deriveOpenDevOracleKey(roundId: string, oracleIndex = 1): Promise<string> {
-  for (let nonce = 0; nonce < 256; nonce += 1) {
-    const privateKey = await sha256Hex(`${OPEN_DEV_ORACLE_DERIVATION_PREFIX}${roundId}:${oracleIndex}:${nonce}`);
-
-    if (secp.utils.isValidSecretKey(hexToBytes(privateKey))) {
-      return privateKey;
-    }
-  }
-
-  throw new Error("Unable to derive the open development oracle key.");
-}
-
-async function recoverDevOracleKey(roundId: string, oraclePublicKey: string, oracleIndex = 1): Promise<string> {
-  const storedKey = restoreDevOracleKey(roundId, oraclePublicKey);
-
-  if (storedKey) {
-    return storedKey;
-  }
-
-  const derivedKey = await deriveOpenDevOracleKey(roundId, oracleIndex);
-
-  if (oraclePublicKeyFromPrivateKey(derivedKey) !== oraclePublicKey) {
-    return "";
-  }
-
-  rememberDevOracleKey(roundId, oraclePublicKey, derivedKey);
-  return derivedKey;
-}
-
-async function deriveOpenDevOracleSeed(roundId: string, oracleIndex: number): Promise<string> {
-  return sha256Hex(`kaspa-raffle-static:open-dev-seed:v1:${roundId}:${oracleIndex}`);
-}
-
-async function oracleSeedCommitment(seedHex: string): Promise<string> {
-  return sha256BytesHex(hexToBytes(seedHex));
 }
 
 function encodeShareMetadata(metadata: RaffleMetadata) {
@@ -544,6 +389,7 @@ export function App() {
   const [language, setLanguage] = useState<Language>(() => initialLanguage());
   const [networkEndpoints, setNetworkEndpoints] = useState<NetworkEndpoints>(() => loadNetworkEndpoints());
   const [indexEndpoints, setIndexEndpoints] = useState<NetworkEndpoints>(() => loadIndexEndpoints());
+  const [beaconEndpoints, setBeaconEndpoints] = useState<NetworkEndpoints>(() => loadBeaconEndpoints());
   const [networkId, setNetworkId] = useState<SupportedNetworkId>("testnet-10");
   const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"]);
   const [isNetworkMenuOpen, setIsNetworkMenuOpen] = useState(false);
@@ -565,16 +411,6 @@ export function App() {
   const [metadataText, setMetadataText] = useState(stringifyMetadata(emptyMetadata));
   const [metadataError, setMetadataError] = useState("");
   const [metadataMessage, setMetadataMessage] = useState("");
-  const [oraclePrivateKey, setOraclePrivateKey] = useState("");
-  const [oraclePrivateKey2, setOraclePrivateKey2] = useState("");
-  const [oraclePrivateKey3, setOraclePrivateKey3] = useState("");
-  const [oracleMode, setOracleMode] = useState<OracleMode>("development");
-  const [oracleSeed, setOracleSeed] = useState("");
-  const [oracleSignature, setOracleSignature] = useState("");
-  const [oracleSeed2, setOracleSeed2] = useState("");
-  const [oracleSignature2, setOracleSignature2] = useState("");
-  const [oracleSeed3, setOracleSeed3] = useState("");
-  const [oracleSignature3, setOracleSignature3] = useState("");
   const [buyerSecret, setBuyerSecret] = useState("");
   const [ticketQuantity, setTicketQuantity] = useState("1");
   const [tickets, setTickets] = useState<TicketState[]>([]);
@@ -590,6 +426,7 @@ export function App() {
   const [refundTimeoutParts, setRefundTimeoutParts] = useState<RefundTimeoutParts>(DEFAULT_REFUND_TIMEOUT_PARTS);
   const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
   const [indexApiBase, setIndexApiBase] = useState(() => loadIndexEndpoints()["testnet-10"]);
+  const [beaconProofUrl, setBeaconProofUrl] = useState(() => loadBeaconEndpoints()["testnet-10"]);
   const [historyAddress, setHistoryAddress] = useState("");
   const [registryAddress, setRegistryAddress] = useState("");
   const [registryAutoRefund, setRegistryAutoRefund] = useState(false);
@@ -607,7 +444,6 @@ export function App() {
   const isFinalizingRef = useRef(false);
   const isRefundingRoundRef = useRef(false);
   const covenantStatus = useMemo(() => getRaffleCovenantStatus(), []);
-  const activeOracleMode: OracleMode = networkId === "mainnet" ? "external" : oracleMode;
   const canStartNewRound =
     !metadata.covenant ||
     Boolean(finalized) ||
@@ -751,14 +587,8 @@ export function App() {
       potAmount,
       feeBps: 0,
       status,
-      randomnessMode: "oracle",
+      randomnessMode: "drand-risc0",
       creatorPubkey: covenant?.creatorPubkey ?? metadata.creatorPubkey ?? (wallet ? pubkeyHexFromAddress(wallet.address) : ""),
-      oraclePublicKey: metadata.oraclePublicKey,
-      oraclePublicKey2: metadata.oraclePublicKey2,
-      oraclePublicKey3: metadata.oraclePublicKey3,
-      oracleSeedCommitment: metadata.oracleSeedCommitment,
-      oracleSeedCommitment2: metadata.oracleSeedCommitment2,
-      oracleSeedCommitment3: metadata.oracleSeedCommitment3,
       refundAfterDaaScore: covenant?.refundAfterDaaScore ?? metadata.refundAfterDaaScore ?? "0",
       ticketRoot: covenant?.ticketRoot ?? "",
       ticketFrontier: covenant?.ticketFrontier,
@@ -828,7 +658,10 @@ export function App() {
         marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)
       });
   const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(covenantBuyFeeSompi(round.contractVersion, parsedTicketQuantity)) });
-  const payoutCostTooltip = t("cost.payout", { prize: formatKas(round.potAmount), fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion)) });
+  const payoutCostTooltip = t("cost.payout", {
+    prize: formatKas(round.potAmount),
+    fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion) + (metadata.covenant?.status === "Closed" ? 0n : V8_COVENANT_CLOSE_FEE_SOMPI))
+  });
   const refundCostTooltip = t("cost.refund.current", {
     refund: formatKas(round.potAmount),
     fee: formatKas(covenantRefundFeeSompi(round.contractVersion)),
@@ -954,6 +787,13 @@ export function App() {
     localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
   }
 
+  function handleBeaconProofUrlInput(value: string) {
+    setBeaconProofUrl(value);
+    const next = { ...beaconEndpoints, [networkId]: value };
+    setBeaconEndpoints(next);
+    localStorage.setItem(BEACON_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
+  }
+
   function openNetworkSettings(profileId: SupportedNetworkId) {
     setNetworkSettingsId(profileId);
     setNetworkEndpointDraft(networkEndpoints[profileId]);
@@ -1009,10 +849,10 @@ export function App() {
     setVirtualDaaScore(0n);
     setWallet(null);
     setNetworkId(nextNetwork);
-    setOracleMode(nextNetwork === "mainnet" ? "external" : "development");
     setRpcUrl(networkEndpoints[nextNetwork]);
     setHistoryApiBase(nextProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[nextNetwork]);
+    setBeaconProofUrl(beaconEndpoints[nextNetwork]);
     setHistoryAddress("");
     setRegistryAddress("");
     setRegistryAutoRefund(false);
@@ -1022,15 +862,6 @@ export function App() {
     setMetadata(createEmptyMetadata(nextNetwork));
     setTickets([]);
     setFinalized(undefined);
-    setOraclePrivateKey("");
-    setOraclePrivateKey2("");
-    setOraclePrivateKey3("");
-    setOracleSeed("");
-    setOracleSignature("");
-    setOracleSeed2("");
-    setOracleSignature2("");
-    setOracleSeed3("");
-    setOracleSignature3("");
     setBuyerSecret("");
     setChainError("");
     setChainMessage("");
@@ -1148,168 +979,41 @@ export function App() {
     }
   }
 
-  async function prepareOracleForCreate(forceNew = false) {
+  function prepareRoundForCreate(forceNew = false) {
     const roundId = forceNew || !metadata.roundId ? `round-${randomHex(8)}` : metadata.roundId;
-    const effectiveMode: OracleMode = networkId === "mainnet" ? "external" : oracleMode;
-
-    if (effectiveMode === "external") {
-      const configuredPublicKeys = [metadata.oraclePublicKey, metadata.oraclePublicKey2, metadata.oraclePublicKey3]
-        .map((value) => value.trim().toLowerCase());
-      const configuredCommitments = [metadata.oracleSeedCommitment, metadata.oracleSeedCommitment2, metadata.oracleSeedCommitment3]
-        .map((value) => value.trim().toLowerCase());
-      const endpoints = [metadata.oracleEndpoint, metadata.oracleEndpoint2, metadata.oracleEndpoint3]
-        .map((value) => normalizedOracleEndpoint(value || "", networkId));
-      if (new Set(endpoints).size !== 3) {
-        throw new Error("Mainnet requires three distinct oracle endpoints.");
-      }
-      const commitmentResponses = await Promise.all(endpoints.map((endpoint) => (
-        fetchOracleCommitment(endpoint, networkId, roundId)
-      )));
-      const publicKeys = commitmentResponses.map((response) => response.publicKey);
-      const commitments = commitmentResponses.map((response) => response.commitment);
-      for (let index = 0; index < 3; index += 1) {
-        if (configuredPublicKeys[index] && configuredPublicKeys[index] !== publicKeys[index]) {
-          throw new Error(`Oracle #${index + 1} public key changed from the configured value.`);
-        }
-        if (configuredCommitments[index] && configuredCommitments[index] !== commitments[index]) {
-          throw new Error(`Oracle #${index + 1} commitment changed for this round.`);
-        }
-      }
-      if (new Set(publicKeys).size !== 3) {
-        throw new Error("Mainnet requires three distinct oracle public keys.");
-      }
-      setOraclePrivateKey("");
-      setOraclePrivateKey2("");
-      setOraclePrivateKey3("");
-      if (forceNew || !metadata.roundId) {
-        setTickets([]);
-        setFinalized(undefined);
-        setOracleSeed("");
-        setOracleSignature("");
-        setOracleSeed2("");
-        setOracleSignature2("");
-        setOracleSeed3("");
-        setOracleSignature3("");
-        setMetadata((current) => ({
-          ...current,
-          roundId,
-          createTxId: "",
-          creatorCommitment: "",
-          oraclePublicKey: publicKeys[0],
-          oraclePublicKey2: publicKeys[1],
-          oraclePublicKey3: publicKeys[2],
-          oracleSeedCommitment: commitments[0],
-          oracleSeedCommitment2: commitments[1],
-          oracleSeedCommitment3: commitments[2],
-          oracleEndpoint: endpoints[0],
-          oracleEndpoint2: endpoints[1],
-          oracleEndpoint3: endpoints[2],
-          treasuryAddress: "",
-          covenant: undefined
-        }));
-      }
-      return { privateKeys: ["", "", ""], publicKeys, commitments, endpoints, roundId };
-    }
-
-    const currentPrivateKeys = [oraclePrivateKey, oraclePrivateKey2, oraclePrivateKey3];
-    const currentPublicKeys = [metadata.oraclePublicKey, metadata.oraclePublicKey2, metadata.oraclePublicKey3];
-    const privateKeys = await Promise.all([1, 2, 3].map(async (oracleIndex) => {
-      const current = currentPrivateKeys[oracleIndex - 1];
-      const canReuse = !forceNew && /^[0-9a-f]{64}$/.test(current) && (
-        !currentPublicKeys[oracleIndex - 1] || oraclePublicKeyFromPrivateKey(current) === currentPublicKeys[oracleIndex - 1]
-      );
-      return canReuse ? current : deriveOpenDevOracleKey(roundId, oracleIndex);
-    }));
-    const publicKeys = privateKeys.map(oraclePublicKeyFromPrivateKey);
-    const seeds = await Promise.all([1, 2, 3].map((oracleIndex) => deriveOpenDevOracleSeed(roundId, oracleIndex)));
-    const commitments = await Promise.all(seeds.map(oracleSeedCommitment));
-
-    setOraclePrivateKey(privateKeys[0]);
-    setOraclePrivateKey2(privateKeys[1]);
-    setOraclePrivateKey3(privateKeys[2]);
-    privateKeys.forEach((privateKey, index) => rememberDevOracleKey(roundId, publicKeys[index], privateKey));
-
-    if (forceNew || !metadata.roundId || !metadata.oraclePublicKey) {
+    if (forceNew || !metadata.roundId) {
       setTickets([]);
       setFinalized(undefined);
-      setOracleSeed("");
-      setOracleSignature("");
-      setOracleSeed2("");
-      setOracleSignature2("");
-      setOracleSeed3("");
-      setOracleSignature3("");
       setMetadata((current) => ({
         ...current,
         roundId,
         createTxId: "",
         creatorCommitment: "",
-        oraclePublicKey: publicKeys[0],
-        oraclePublicKey2: publicKeys[1],
-        oraclePublicKey3: publicKeys[2],
-        oracleSeedCommitment: commitments[0],
-        oracleSeedCommitment2: commitments[1],
-        oracleSeedCommitment3: commitments[2],
+        beaconProofUrl,
+        contractVersion: raffleContractVersionForNetwork(networkId),
         treasuryAddress: "",
         covenant: undefined
       }));
     }
-
-    return { privateKeys, publicKeys, commitments, endpoints: ["", "", ""], roundId };
-  }
-
-  function handleOraclePrivateKeyInput(value: string) {
-    const normalizedPrivateKey = value.trim().toLowerCase();
-    setOraclePrivateKey(normalizedPrivateKey);
-    setChainMessage("");
-
-    if (!normalizedPrivateKey) {
-      setChainError("");
-      return;
-    }
-
-    if (!/^[0-9a-f]{64}$/.test(normalizedPrivateKey)) {
-      setChainError("Oracle private key must be 32 bytes of hex.");
-      return;
-    }
-
-    const publicKey = oraclePublicKeyFromPrivateKey(normalizedPrivateKey);
-    setMetadata((current) => ({ ...current, oraclePublicKey: current.covenant ? current.oraclePublicKey : publicKey }));
-    setChainError("");
-    setChainMessage("Oracle key ready for dev attestation.");
+    return roundId;
   }
 
   function applyMetadata(nextMetadata: RaffleMetadata, message: string) {
     const profile = requireNetworkProfile(nextMetadata.network);
     const normalizedMetadata = { ...nextMetadata, network: profile.id };
-    const restoredOraclePrivateKeys = normalizedMetadata.oracleEndpoint
-      ? ["", "", ""]
-      : [
-          restoreDevOracleKey(normalizedMetadata.roundId, normalizedMetadata.oraclePublicKey),
-          restoreDevOracleKey(normalizedMetadata.roundId, normalizedMetadata.oraclePublicKey2),
-          restoreDevOracleKey(normalizedMetadata.roundId, normalizedMetadata.oraclePublicKey3)
-        ];
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromMetadata(normalizedMetadata);
 
     setMetadata(normalizedMetadata);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setNetworkId(profile.id);
-    setOracleMode(profile.id === "mainnet" || Boolean(normalizedMetadata.oracleEndpoint) ? "external" : "development");
     setRpcUrl(networkEndpoints[profile.id]);
     setHistoryApiBase(profile.historyApiBase);
     setIndexApiBase(indexEndpoints[profile.id]);
+    setBeaconProofUrl(normalizedMetadata.beaconProofUrl || beaconEndpoints[profile.id]);
     setCreateRegistryAddress(normalizedMetadata.registryAddress ?? "");
     setHistoryAddress(normalizedMetadata.registryAddress ?? "");
     setTickets([]);
     setFinalized(undefined);
-    setOraclePrivateKey(restoredOraclePrivateKeys[0]);
-    setOraclePrivateKey2(restoredOraclePrivateKeys[1]);
-    setOraclePrivateKey3(restoredOraclePrivateKeys[2]);
-    setOracleSeed("");
-    setOracleSignature("");
-    setOracleSeed2("");
-    setOracleSignature2("");
-    setOracleSeed3("");
-    setOracleSignature3("");
     setBuyerSecret("");
     setChainError("");
     setChainMessage("");
@@ -1414,10 +1118,12 @@ export function App() {
       assertToccataActive(networkId, createdAtDaaScore);
       const refundAfterDaaScore = createdAtDaaScore + refundDelayDaa;
       const creatorPubkey = pubkeyHexFromAddress(wallet.address);
-      const prepared = await prepareOracleForCreate(Boolean(metadata.covenant));
+      const roundId = prepareRoundForCreate(Boolean(metadata.covenant));
+      const contractVersion = raffleContractVersionForNetwork(networkId);
       const creationRound: RoundState = {
         ...round,
-        roundId: prepared.roundId,
+        contractVersion,
+        roundId,
         creator: wallet.address,
         creatorPubkey,
         soldTickets: 0,
@@ -1428,12 +1134,6 @@ export function App() {
         refundCursor: 0,
         soldBatches: 0,
         ticketBatchEnds: [],
-        oraclePublicKey: prepared.publicKeys[0],
-        oraclePublicKey2: prepared.publicKeys[1],
-        oraclePublicKey3: prepared.publicKeys[2],
-        oracleSeedCommitment: prepared.commitments[0],
-        oracleSeedCommitment2: prepared.commitments[1],
-        oracleSeedCommitment3: prepared.commitments[2],
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         ticketOwnerPubkeys: []
       };
@@ -1441,27 +1141,19 @@ export function App() {
         app: "kaspa-raffle-static",
         type: "round-create",
         version: metadata.version,
-        roundId: prepared.roundId,
+        roundId,
         creator: wallet.address,
         ticketPrice: metadata.ticketPrice,
         maxTickets: metadata.maxTickets,
         minTickets: metadata.minTickets,
         creatorPubkey,
-        oraclePublicKey: prepared.publicKeys[0],
-        oraclePublicKey2: prepared.publicKeys[1],
-        oraclePublicKey3: prepared.publicKeys[2],
-        oracleSeedCommitment: prepared.commitments[0],
-        oracleSeedCommitment2: prepared.commitments[1],
-        oracleSeedCommitment3: prepared.commitments[2],
-        oracleEndpoint: prepared.endpoints[0],
-        oracleEndpoint2: prepared.endpoints[1],
-        oracleEndpoint3: prepared.endpoints[2],
+        beaconProofUrl,
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         refundTimeoutSeconds: refundDelaySeconds.toString(),
         refundTimeoutDaa: refundDelayDaa.toString(),
         registryAddress: targetRegistryAddress,
-        contractVersion: metadata.contractVersion,
+        contractVersion,
         createdAt: new Date().toISOString()
       });
       const result = await createRaffleCovenantRound({
@@ -1491,7 +1183,7 @@ export function App() {
             app: "kaspa-raffle-static",
             type: "round-register",
             version: metadata.version,
-            roundId: prepared.roundId,
+            roundId,
             createTxId: result.txId,
             treasuryAddress: result.covenant.address,
             covenantId: result.covenant.covenantId,
@@ -1500,21 +1192,13 @@ export function App() {
             maxTickets: metadata.maxTickets,
             minTickets: metadata.minTickets,
             creatorPubkey,
-            oraclePublicKey: prepared.publicKeys[0],
-            oraclePublicKey2: prepared.publicKeys[1],
-            oraclePublicKey3: prepared.publicKeys[2],
-            oracleSeedCommitment: prepared.commitments[0],
-            oracleSeedCommitment2: prepared.commitments[1],
-            oracleSeedCommitment3: prepared.commitments[2],
-            oracleEndpoint: prepared.endpoints[0],
-            oracleEndpoint2: prepared.endpoints[1],
-            oracleEndpoint3: prepared.endpoints[2],
+            beaconProofUrl,
             createdAtDaaScore: createdAtDaaScore.toString(),
             refundAfterDaaScore: refundAfterDaaScore.toString(),
             refundTimeoutSeconds: refundDelaySeconds.toString(),
             refundTimeoutDaa: refundDelayDaa.toString(),
             registryAddress: targetRegistryAddress,
-            contractVersion: metadata.contractVersion,
+            contractVersion,
             registeredAt: new Date().toISOString()
           })
         });
@@ -1545,17 +1229,10 @@ export function App() {
       setWallet(withWalletBalance(wallet, balanceSompi));
       setMetadata((current) => ({
         ...current,
-        roundId: prepared.roundId,
+        roundId,
         creatorCommitment: "",
-        oraclePublicKey: prepared.publicKeys[0],
-        oraclePublicKey2: prepared.publicKeys[1],
-        oraclePublicKey3: prepared.publicKeys[2],
-        oracleSeedCommitment: prepared.commitments[0],
-        oracleSeedCommitment2: prepared.commitments[1],
-        oracleSeedCommitment3: prepared.commitments[2],
-        oracleEndpoint: prepared.endpoints[0],
-        oracleEndpoint2: prepared.endpoints[1],
-        oracleEndpoint3: prepared.endpoints[2],
+        beaconProofUrl,
+        contractVersion,
         createTxId: result.txId,
         creatorAddress: wallet.address,
         creatorPubkey,
@@ -1607,8 +1284,8 @@ export function App() {
 
       assertToccataActive(networkId, await currentVirtualDaaScore(rpcConnectionRef.current));
 
-      if (!metadata.roundId || !metadata.oraclePublicKey) {
-        throw new Error("Create or join an oracle-backed round before buying tickets.");
+      if (!metadata.roundId || !metadata.covenant) {
+        throw new Error("Create or load a raffle round before buying tickets.");
       }
 
       if (finalized) {
@@ -1821,104 +1498,64 @@ export function App() {
         }
       }
 
+      let activeCovenant = covenant;
+      if (activeCovenant.status === "Open") {
+        const closeResult = await closeRaffleCovenantRound({
+          connection: rpcConnectionRef.current,
+          round: {
+            ...round,
+            soldTickets: activeCovenant.soldTickets,
+            potAmount: BigInt(activeCovenant.potAmount),
+            status: "Open",
+            ticketRoot: activeCovenant.ticketRoot,
+            ticketFrontier: activeCovenant.ticketFrontier,
+            refundCursor: 0,
+            creatorPubkey: activeCovenant.creatorPubkey,
+            refundAfterDaaScore: activeCovenant.refundAfterDaaScore
+          },
+          covenant: activeCovenant,
+          payload: encodePayload({
+            app: "kaspa-raffle-static",
+            type: "round-close",
+            version: metadata.version,
+            roundId: metadata.roundId,
+            soldTickets: activeCovenant.soldTickets,
+            closedAt: new Date().toISOString()
+          })
+        });
+        if (!closeResult.covenant) throw new Error("Close transaction did not create a successor covenant.");
+        activeCovenant = closeResult.covenant;
+        setMetadata((current) => ({ ...current, covenant: activeCovenant }));
+        setChainMessage(`Ticket sales closed: ${closeResult.txId}. Waiting for the future beacon proof.`);
+      }
+
       const closedRound: RoundState = {
         ...round,
-        soldTickets: covenant.soldTickets,
-        potAmount: BigInt(covenant.potAmount),
+        soldTickets: activeCovenant.soldTickets,
+        potAmount: BigInt(activeCovenant.potAmount),
         status: "Closed",
-        ticketRoot: covenant.ticketRoot,
-        ticketFrontier: covenant.ticketFrontier,
-        refundCursor: covenant.refundCursor ?? 0,
-        creatorPubkey: covenant.creatorPubkey,
-        refundAfterDaaScore: covenant.refundAfterDaaScore,
-        soldBatches: covenant.soldBatches ?? covenant.ticketOwnerPubkeys.length,
-        ticketBatchEnds: covenant.ticketBatchEnds ?? covenant.ticketOwnerPubkeys.map((_, index) => index + 1),
-        ticketOwnerPubkeys: covenant.ticketOwnerPubkeys
+        ticketRoot: activeCovenant.ticketRoot,
+        ticketFrontier: activeCovenant.ticketFrontier,
+        refundCursor: activeCovenant.refundCursor ?? 0,
+        creatorPubkey: activeCovenant.creatorPubkey,
+        refundAfterDaaScore: activeCovenant.refundAfterDaaScore,
+        soldBatches: activeCovenant.soldBatches ?? activeCovenant.ticketOwnerPubkeys.length,
+        ticketBatchEnds: activeCovenant.ticketBatchEnds ?? activeCovenant.ticketOwnerPubkeys.map((_, index) => index + 1),
+        ticketOwnerPubkeys: activeCovenant.ticketOwnerPubkeys
       };
 
       if (closedRound.potAmount <= 0n) {
         throw new Error("Prize amount must be greater than zero.");
       }
 
-      const oraclePublicKeys = [metadata.oraclePublicKey, metadata.oraclePublicKey2, metadata.oraclePublicKey3];
-      const oracleCommitments = [metadata.oracleSeedCommitment, metadata.oracleSeedCommitment2, metadata.oracleSeedCommitment3];
-      const oracleEndpoints = [metadata.oracleEndpoint, metadata.oracleEndpoint2, metadata.oracleEndpoint3];
-      let finalizeOracleSeeds = [oracleSeed, oracleSeed2, oracleSeed3];
-      let finalizeOracleSignatures = [oracleSignature, oracleSignature2, oracleSignature3];
-      const signingOracleKeys = [oraclePrivateKey, oraclePrivateKey2, oraclePrivateKey3];
-
-      if (!oracleEndpoints.some(Boolean)) {
-        for (let index = 0; index < 3; index += 1) {
-          if (
-            !/^[0-9a-f]{64}$/.test(signingOracleKeys[index]) ||
-            oraclePublicKeyFromPrivateKey(signingOracleKeys[index]) !== oraclePublicKeys[index]
-          ) {
-            signingOracleKeys[index] = await recoverDevOracleKey(metadata.roundId, oraclePublicKeys[index], index + 1);
-          }
-        }
-      }
-
-      const hasAllLocalOracleKeys = signingOracleKeys.every((key, index) => (
-        /^[0-9a-f]{64}$/.test(key) && oraclePublicKeyFromPrivateKey(key) === oraclePublicKeys[index]
-      ));
-
-      if (hasAllLocalOracleKeys) {
-        finalizeOracleSeeds = await Promise.all([1, 2, 3].map((index) => deriveOpenDevOracleSeed(metadata.roundId, index)));
-        for (let index = 0; index < 3; index += 1) {
-          if (await oracleSeedCommitment(finalizeOracleSeeds[index]) !== oracleCommitments[index]) {
-            throw new Error(`Oracle #${index + 1} seed does not match its pre-sale commitment.`);
-          }
-        }
-        finalizeOracleSignatures = await Promise.all(signingOracleKeys.map((key, index) => (
-          signOracleSeed(key, closedRound.ticketRoot, finalizeOracleSeeds[index])
-        )));
-        setOraclePrivateKey(signingOracleKeys[0]);
-        setOraclePrivateKey2(signingOracleKeys[1]);
-        setOraclePrivateKey3(signingOracleKeys[2]);
-      } else {
-        if (!finalizeOracleSeeds.every(Boolean) || !finalizeOracleSignatures.every(Boolean)) {
-          if (!oracleEndpoints.every(Boolean)) {
-            throw new Error("All three independent oracle endpoints are required for this round.");
-          }
-          const attestations = await Promise.all(oracleEndpoints.map((endpoint, index) => fetchOracleAttestation(
-            endpoint || "",
-            networkId,
-            metadata.roundId,
-            closedRound.ticketRoot,
-            oraclePublicKeys[index]
-          )));
-          finalizeOracleSeeds = attestations.map((attestation) => attestation.seed);
-          finalizeOracleSignatures = attestations.map((attestation) => attestation.signature);
-        }
-        for (let index = 0; index < 3; index += 1) {
-          if (await oracleSeedCommitment(finalizeOracleSeeds[index]) !== oracleCommitments[index]) {
-            throw new Error(`Oracle #${index + 1} seed does not match its pre-sale commitment.`);
-          }
-          if (!await verifyOracleAttestation(
-            oraclePublicKeys[index],
-            closedRound.ticketRoot,
-            finalizeOracleSeeds[index],
-            finalizeOracleSignatures[index]
-          )) {
-            throw new Error(`Oracle #${index + 1} returned an invalid root-bound attestation.`);
-          }
-        }
-      }
-
-      setOracleSeed(finalizeOracleSeeds[0]);
-      setOracleSignature(finalizeOracleSignatures[0]);
-      setOracleSeed2(finalizeOracleSeeds[1]);
-      setOracleSignature2(finalizeOracleSignatures[1]);
-      setOracleSeed3(finalizeOracleSeeds[2]);
-      setOracleSignature3(finalizeOracleSignatures[2]);
-
-      const randomSeed = await buildFinalizeSeedHex(
-        closedRound,
-        finalizeOracleSeeds[0],
-        finalizeOracleSeeds[1],
-        finalizeOracleSeeds[2]
+      const drandRound = await requiredDrandRoundForRaffleCovenant(
+        rpcConnectionRef.current,
+        closedRound.contractVersion,
+        activeCovenant
       );
-      const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, covenant.soldTickets);
+      const proof = await loadDrandRisc0Proof(beaconProofUrl, drandRound);
+      const randomSeed = await buildFinalizeSeedHex(closedRound, proof.randomness);
+      const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, activeCovenant.soldTickets);
       const winnerRange = findTicketRange(tickets, winnerIndex + 1);
       let winner = winnerRange ? { ...winnerRange, ticketId: winnerIndex + 1, ticketCount: 1 } : undefined;
 
@@ -1930,7 +1567,7 @@ export function App() {
             loadIndexedTicketProof(indexApiBase, metadata.roundId, winnerIndex + 1),
             loadIndexedOwnerProof(indexApiBase, metadata.roundId, callerPubkey)
           ]);
-          if (indexedWinner.rootHex !== covenant.ticketRoot || indexedCaller.rootHex !== covenant.ticketRoot) {
+          if (indexedWinner.rootHex !== activeCovenant.ticketRoot || indexedCaller.rootHex !== activeCovenant.ticketRoot) {
             throw new Error("Raffle index is behind the current covenant root.");
           }
           winner = {
@@ -1966,12 +1603,8 @@ export function App() {
         appId: "KASPA_RAFFLE_FINAL_V1",
         roundId: metadata.roundId || "pending-round",
         randomSeed,
-        oracleSeed: finalizeOracleSeeds[0],
-        oracleSignature: finalizeOracleSignatures[0],
-        oracleSeed2: finalizeOracleSeeds[1],
-        oracleSignature2: finalizeOracleSignatures[1],
-        oracleSeed3: finalizeOracleSeeds[2],
-        oracleSignature3: finalizeOracleSignatures[2],
+        drandRound,
+        drandRandomness: proof.randomness,
         winnerTicketId: winner.ticketId,
         winnerAddress: winner.owner,
         payoutTxId: ""
@@ -1986,13 +1619,8 @@ export function App() {
         connection: rpcConnectionRef.current,
         wallet,
         round: closedRound,
-        covenant,
-        oracleSeedHex: finalizeOracleSeeds[0],
-        oracleSignatureHex: finalizeOracleSignatures[0],
-        oracleSeedHex2: finalizeOracleSeeds[1],
-        oracleSignatureHex2: finalizeOracleSignatures[1],
-        oracleSeedHex3: finalizeOracleSeeds[2],
-        oracleSignatureHex3: finalizeOracleSignatures[2],
+        covenant: activeCovenant,
+        proof,
         winner,
         winnerProofHex,
         callerTicketId,
@@ -2006,12 +1634,8 @@ export function App() {
           winnerAddress: winner.owner,
           amount: closedRound.potAmount.toString(),
           randomSeed,
-          oracleSeed: finalizeOracleSeeds[0],
-          oracleSignature: finalizeOracleSignatures[0],
-          oracleSeed2: finalizeOracleSeeds[1],
-          oracleSignature2: finalizeOracleSignatures[1],
-          oracleSeed3: finalizeOracleSeeds[2],
-          oracleSignature3: finalizeOracleSignatures[2],
+          drandRound,
+          drandRandomness: proof.randomness,
           finalizedAt: new Date().toISOString()
         })
       });
@@ -2455,12 +2079,7 @@ export function App() {
       selectedHistoryRound.ticketPrice === undefined ||
       selectedHistoryRound.maxTickets === undefined ||
       selectedHistoryRound.minTickets === undefined ||
-      !selectedHistoryRound.oraclePublicKey ||
-      !selectedHistoryRound.oraclePublicKey2 ||
-      !selectedHistoryRound.oraclePublicKey3 ||
-      !selectedHistoryRound.oracleSeedCommitment ||
-      !selectedHistoryRound.oracleSeedCommitment2 ||
-      !selectedHistoryRound.oracleSeedCommitment3
+      !selectedHistoryRound.contractVersion
     ) {
       setHistoryError("Selected round is missing metadata needed to join.");
       return;
@@ -2468,21 +2087,18 @@ export function App() {
 
     const loadedNetwork = networkFromKaspaAddress(covenant.address);
     const loadedProfile = requireNetworkProfile(loadedNetwork);
-    const restoredOraclePrivateKeys = selectedHistoryRound.oracleEndpoint
-      ? ["", "", ""]
-      : await Promise.all([
-          recoverDevOracleKey(selectedHistoryRound.roundId, selectedHistoryRound.oraclePublicKey, 1),
-          recoverDevOracleKey(selectedHistoryRound.roundId, selectedHistoryRound.oraclePublicKey2, 2),
-          recoverDevOracleKey(selectedHistoryRound.roundId, selectedHistoryRound.oraclePublicKey3, 3)
-        ]);
+    if (selectedHistoryRound.contractVersion !== raffleContractVersionForNetwork(loadedNetwork)) {
+      setHistoryError("Selected round uses a contract that is not supported on this network.");
+      return;
+    }
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound);
     const loadedRegistryAddress = selectedHistoryRound.registryAddress ?? (historyAddress || registryAddress);
 
     setNetworkId(loadedNetwork);
-    setOracleMode(loadedNetwork === "mainnet" || Boolean(selectedHistoryRound.oracleEndpoint) ? "external" : "development");
     setRpcUrl(networkEndpoints[loadedNetwork]);
     setHistoryApiBase(loadedProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[loadedNetwork]);
+    setBeaconProofUrl(selectedHistoryRound.beaconProofUrl || beaconEndpoints[loadedNetwork]);
     setCreateRegistryAddress(loadedRegistryAddress);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setMetadata({
@@ -2500,15 +2116,7 @@ export function App() {
       creatorAddress: selectedHistoryRound.creator ?? "",
       creatorPubkey: selectedHistoryRound.creatorPubkey ?? covenant.creatorPubkey,
       creatorCommitment: "",
-      oraclePublicKey: selectedHistoryRound.oraclePublicKey,
-      oraclePublicKey2: selectedHistoryRound.oraclePublicKey2,
-      oraclePublicKey3: selectedHistoryRound.oraclePublicKey3,
-      oracleSeedCommitment: selectedHistoryRound.oracleSeedCommitment,
-      oracleSeedCommitment2: selectedHistoryRound.oracleSeedCommitment2,
-      oracleSeedCommitment3: selectedHistoryRound.oracleSeedCommitment3,
-      oracleEndpoint: selectedHistoryRound.oracleEndpoint,
-      oracleEndpoint2: selectedHistoryRound.oracleEndpoint2,
-      oracleEndpoint3: selectedHistoryRound.oracleEndpoint3,
+      beaconProofUrl: selectedHistoryRound.beaconProofUrl || beaconEndpoints[loadedNetwork],
       refundAfterDaaScore: selectedHistoryRound.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
       treasuryAddress: covenant.address,
       registryAddress: loadedRegistryAddress,
@@ -2530,22 +2138,9 @@ export function App() {
     );
     setFinalized(undefined);
     setRoundActionTab("buy");
-    setOraclePrivateKey(restoredOraclePrivateKeys[0]);
-    setOraclePrivateKey2(restoredOraclePrivateKeys[1]);
-    setOraclePrivateKey3(restoredOraclePrivateKeys[2]);
-    setOracleSeed("");
-    setOracleSignature("");
-    setOracleSeed2("");
-    setOracleSignature2("");
-    setOracleSeed3("");
-    setOracleSignature3("");
     setBuyerSecret("");
     setMetadataMessage("Round loaded from history.");
-    setHistoryMessage(
-      restoredOraclePrivateKeys.every(Boolean)
-        ? `Loaded ${selectedHistoryRound.roundId}. Oracle key restored; finalize is ready when the round is eligible.`
-        : `Loaded ${selectedHistoryRound.roundId}. You can buy if open, or finalize/refund when eligible.`
-    );
+    setHistoryMessage(`Loaded ${selectedHistoryRound.roundId}. You can buy if open, or finalize/refund when eligible.`);
   }
 
   function updateMetadata<K extends keyof RaffleMetadata>(key: K, value: RaffleMetadata[K]) {
@@ -3205,37 +2800,6 @@ export function App() {
             </>
           )}
 
-          <details className="disclosure compact-disclosure">
-            <summary>{t("oracleAttestation")}</summary>
-            <div className="disclosure-body">
-              <label className="field">
-                <span>{t("devOraclePrivateKey")}</span>
-                <input
-                  type="password"
-                  value={oraclePrivateKey}
-                  onChange={(event) => handleOraclePrivateKeyInput(event.target.value)}
-                  placeholder={t("oracleKeyPlaceholder")}
-                />
-              </label>
-              {([
-                [oracleSeed, setOracleSeed, oracleSignature, setOracleSignature],
-                [oracleSeed2, setOracleSeed2, oracleSignature2, setOracleSignature2],
-                [oracleSeed3, setOracleSeed3, oracleSignature3, setOracleSignature3]
-              ] as const).map(([seed, setSeed, signature, setSignature], index) => (
-                <fieldset className="oracle-config" key={index}>
-                  <legend>Oracle #{index + 1}</legend>
-                  <label className="field">
-                    <span>{t("externalOracleSeed")}</span>
-                    <input value={seed} onChange={(event) => setSeed(event.target.value.trim().toLowerCase())} />
-                  </label>
-                  <label className="field">
-                    <span>{t("externalOracleSignature")}</span>
-                    <input value={signature} onChange={(event) => setSignature(event.target.value.trim().toLowerCase())} />
-                  </label>
-                </fieldset>
-              ))}
-            </div>
-          </details>
         </section>
         )}
       </section>
@@ -3268,68 +2832,15 @@ export function App() {
                 />
               </label>
             </div>
-            <div className="segmented-control" aria-label={t("oracleMode")}>
-              <button
-                type="button"
-                className={activeOracleMode === "development" ? "active" : ""}
-                disabled={networkId === "mainnet" || Boolean(metadata.covenant)}
-                onClick={() => setOracleMode("development")}
-              >
-                {t("oracleModeDevelopment")}
-              </button>
-              <button
-                type="button"
-                className={activeOracleMode === "external" ? "active" : ""}
-                disabled={Boolean(metadata.covenant)}
-                onClick={() => {
-                  setOracleMode("external");
-                  setOraclePrivateKey("");
-                  setOraclePrivateKey2("");
-                  setOraclePrivateKey3("");
-                }}
-              >
-                {t("oracleModeExternal")}
-              </button>
-            </div>
-            {activeOracleMode === "external" ? <div className="oracle-grid">
-              {([
-                ["oraclePublicKey", "oracleSeedCommitment", "oracleEndpoint"],
-                ["oraclePublicKey2", "oracleSeedCommitment2", "oracleEndpoint2"],
-                ["oraclePublicKey3", "oracleSeedCommitment3", "oracleEndpoint3"]
-              ] as const).map(([publicKeyField, commitmentField, endpointField], index) => (
-                <fieldset className="oracle-config" key={publicKeyField}>
-                  <legend>Oracle #{index + 1}</legend>
-                  <label className="field">
-                    <span>{t("oraclePublicKey")}</span>
-                    <input
-                      value={metadata[publicKeyField]}
-                      disabled={Boolean(metadata.covenant)}
-                      onChange={(event) => updateMetadata(publicKeyField, event.target.value.trim().toLowerCase())}
-                      placeholder={t("oraclePublicKeyPlaceholder")}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Seed commitment</span>
-                    <input
-                      value={metadata[commitmentField]}
-                      disabled={Boolean(metadata.covenant)}
-                      onChange={(event) => updateMetadata(commitmentField, event.target.value.trim().toLowerCase())}
-                      placeholder="64-character SHA-256 commitment"
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("oracleEndpoint")}</span>
-                    <input
-                      type="url"
-                      value={metadata[endpointField] ?? ""}
-                      disabled={Boolean(metadata.covenant)}
-                      onChange={(event) => updateMetadata(endpointField, event.target.value.trim())}
-                      placeholder={`https://oracle-${index + 1}.example`}
-                    />
-                  </label>
-                </fieldset>
-              ))}
-            </div> : null}
+            <label className="field">
+              <span>Beacon proof service</span>
+              <input
+                type="url"
+                value={beaconProofUrl}
+                onChange={(event) => handleBeaconProofUrlInput(event.target.value)}
+                placeholder={DEFAULT_BEACON_PROOF_URL}
+              />
+            </label>
             <dl className="stat-list dense">
               <div><dt>{t("network")}</dt><dd>{networkLabel(networkId)}</dd></div>
               <div><dt>{t("roundId")}</dt><dd className="mono">{metadata.roundId || t("pending")}</dd></div>

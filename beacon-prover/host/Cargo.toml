@@ -12,4 +12,5 @@ risc0-binfmt = "=3.0.4"
 risc0-zkvm = { workspace = true, features = ["prove"] }
 serde.workspace = true
 serde_json.workspace = true
-
+tiny_http = "0.12"
+ureq = { version = "2.12", features = ["json"] }

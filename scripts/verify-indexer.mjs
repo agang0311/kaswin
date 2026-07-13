@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import * as secp from "@noble/secp256k1";
 
 const root = process.cwd();
 const fixtureDir = path.join(root, ".tmp", "indexer-fixture");
@@ -12,32 +11,19 @@ const port = 8790;
 fs.rmSync(fixtureDir, { recursive: true, force: true });
 fs.mkdirSync(fixtureDir, { recursive: true });
 
-const owners = Array.from({ length: 10 }, (_, index) => index + 1).map((value) => Buffer.from(secp.schnorr.getPublicKey(
-  Buffer.from(value.toString(16).padStart(64, "0"), "hex")
-)));
-const oracleFields = {
-  oraclePublicKey: owners[2].toString("hex"),
-  oraclePublicKey2: owners[3].toString("hex"),
-  oraclePublicKey3: owners[4].toString("hex"),
-  oracleSeedCommitment: "11".repeat(32),
-  oracleSeedCommitment2: "22".repeat(32),
-  oracleSeedCommitment3: "33".repeat(32),
-  oracleEndpoint: "https://oracle-1.example",
-  oracleEndpoint2: "https://oracle-2.example",
-  oracleEndpoint3: "https://oracle-3.example"
-};
+const owners = Array.from({ length: 10 }, (_, index) => createHash("sha256").update(`owner-${index + 1}`).digest());
 const records = owners.map((owner, index) => Buffer.concat([owner, Buffer.alloc(32, index + 1)]));
 fs.writeFileSync(path.join(fixtureDir, `${roundId}.tickets.bin`), Buffer.concat(records));
-const blockHashes = Array.from({ length: 13 }, (_, index) => index + 1).map((value) => value.toString(16).padStart(2, "0").repeat(32));
+const blockHashes = Array.from({ length: 14 }, (_, index) => index + 1).map((value) => value.toString(16).padStart(2, "0").repeat(32));
 const createPayload = {
   app: "kaspa-raffle-static",
   type: "round-create",
-  version: "0.2.0",
+  version: "0.6.0",
   roundId,
-  contractVersion: "raffle-v7-three-commitment-oracles",
+  contractVersion: "raffle-v8-drand-risc0-tn12",
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
   creatorPubkey: owners[0].toString("hex"),
-  ...oracleFields,
+  beaconProofUrl: "https://beacon.example",
   ticketPrice: "30000000",
   maxTickets: 1_000_000,
   minTickets: 1,
@@ -63,12 +49,19 @@ const eventBlocks = [{
 })), {
   hash: blockHashes[11],
   events: [{
+    payload: { app: "kaspa-raffle-static", type: "round-close", roundId, soldTickets: 10 },
+    transactionId: "fc".repeat(32),
+    output: { index: 0, amountSompi: "297000000", address: "kaspatest:pqclosed", covenantId: "cd".repeat(32) }
+  }]
+}, {
+  hash: blockHashes[12],
+  events: [{
     payload: { app: "kaspa-raffle-static", type: "round-refund-start", roundId, refundCursor: 0 },
     transactionId: "fa".repeat(32),
     output: { index: 0, amountSompi: "257800000", address: "kaspatest:pqrefund", covenantId: "cd".repeat(32) }
   }]
 }, {
-  hash: blockHashes[12],
+  hash: blockHashes[13],
   events: [{
     payload: { app: "kaspa-raffle-static", type: "round-refund-batch", roundId, refundCursor: 0, ticketCount: 8 },
     transactionId: "fb".repeat(32),
@@ -83,11 +76,11 @@ fs.writeFileSync(path.join(fixtureDir, "state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v7-three-commitment-oracles",
-      version: "0.2.0",
+      contractVersion: "raffle-v8-drand-risc0-tn12",
+      version: "0.6.0",
       creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
       creatorPubkey: owners[0].toString("hex"),
-      ...oracleFields,
+      beaconProofUrl: "https://beacon.example",
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -112,11 +105,11 @@ fs.writeFileSync(path.join(fixtureDir, "base-state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v7-three-commitment-oracles",
-      version: "0.2.0",
+      contractVersion: "raffle-v8-drand-risc0-tn12",
+      version: "0.6.0",
       creator: createPayload.creator,
       creatorPubkey: owners[0].toString("hex"),
-      ...oracleFields,
+      beaconProofUrl: "https://beacon.example",
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -187,7 +180,7 @@ try {
     rounds[0].status !== "Refunding" ||
     rounds[0].refundCursor !== 8 ||
     rounds[0].refundTxId ||
-    rounds[0].oracleEndpoint !== createPayload.oracleEndpoint ||
+    rounds[0].beaconProofUrl !== createPayload.beaconProofUrl ||
     rounds[0].latestCovenant?.txId !== "fb".repeat(32) ||
     rounds[0].latestCovenant?.refundCursor !== 8
   ) {

@@ -37,12 +37,15 @@ for (const variant of variants) {
   const artifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled", variant.artifact), "utf8"));
 
   assert.equal(artifact.contract, variant.contract);
-  assert.deepEqual(artifact.abi.map((entry) => entry.name), ["buy", "finalize", "startRefund"]);
+  assert.deepEqual(artifact.abi.map((entry) => entry.name), ["buy", "close", "finalize", "startRefund"]);
   assert.ok(artifact.scriptLength < 7_500, `${variant.name} round script is unexpectedly large`);
   assert.ok(source.includes(`DRAND_GUEST_IMAGE_ID = 0x${imageId}`));
   assert.ok(source.includes(`DRAND_ROUND_OFFSET = ${variant.offset}`));
   assert.ok(source.includes(`DRAND_DELAY_ROUNDS = ${variant.delay}`));
   assert.ok(source.includes("OpTxInputDaaScore(this.activeInputIndex) / 30"));
+  assert.ok(source.includes("entrypoint function close()"));
+  assert.ok(source.includes("refund_cursor: -1"), `${variant.name} close does not lock ticket sales`);
+  assert.ok(source.includes("require(refund_cursor == -1);"), `${variant.name} finalize does not require the closed state`);
   assert.ok(source.includes("OpZkPrecompile("));
   assert.ok(!source.includes("oracle_"), `${variant.name} still contains legacy Oracle state`);
 
