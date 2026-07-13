@@ -13,6 +13,7 @@
     "verify:artifact": "node scripts/verify-covenant-artifact.mjs",
     "verify:users:1m": "node scripts/verify-million-users.mjs",
     "verify:contract:v5": "node scripts/verify-v5-contract.mjs",
+    "verify:contract:v8": "node scripts/verify-v8-beacon-contract.mjs",
     "verify:fees:v5": "node scripts/verify-v5-fees.mjs",
     "start:indexer": "node indexer/raffle-indexer.mjs",
     "verify:indexer": "node scripts/verify-indexer.mjs",
