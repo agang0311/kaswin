@@ -4,7 +4,7 @@ import {
   isCurrentRaffleContractVersion,
   raffleCovenantStateFromRound
 } from "./covenant";
-import { appendTicketLeaf, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
+import { appendTicketLeaves, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
 import { ticketRangeCount, totalTicketCount } from "../raffle/tickets";
 import { loadIndexedRaffleRounds, requiresRaffleIndexer } from "./indexer";
@@ -33,7 +33,6 @@ export interface RaffleHistoryRound {
   registryTxId?: string;
   registryAddress?: string;
   createTxId?: string;
-  closeTxId?: string;
   refundTxId?: string;
   treasuryAddress?: string;
   covenantId?: string;
@@ -41,10 +40,10 @@ export interface RaffleHistoryRound {
   creator?: string;
   creatorPubkey?: string;
   creatorCommitment?: string;
-  beaconProofUrl?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
+  chainSearchHintHash?: string;
   refundTimeoutDaa?: string;
   ticketPrice?: bigint;
   maxTickets?: number;
@@ -95,10 +94,10 @@ interface RafflePayload {
   creator?: string;
   creatorPubkey?: string;
   creatorCommitment?: string;
-  beaconProofUrl?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
+  chainSearchHintHash?: string;
   refundTimeoutDaa?: string;
   ticketPrice?: string;
   maxTickets?: number;
@@ -185,7 +184,6 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.creator = payload.creator ?? round.creator;
       round.creatorPubkey = payload.creatorPubkey ?? round.creatorPubkey;
       round.creatorCommitment = payload.creatorCommitment ?? round.creatorCommitment;
-      round.beaconProofUrl = payload.beaconProofUrl ?? round.beaconProofUrl;
       round.createdAtDaaScore = payload.createdAtDaaScore ?? round.createdAtDaaScore;
       round.refundTimeoutSeconds = payload.refundTimeoutSeconds ?? round.refundTimeoutSeconds;
       round.refundAfterDaaScore = payload.refundAfterDaaScore ?? round.refundAfterDaaScore;
@@ -197,11 +195,8 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.contractVersion = payload.contractVersion ?? round.contractVersion;
     }
 
-    if (payload.type === "round-close") {
-      round.closeTxId = tx.transaction_id;
-    }
-
     if (payload.type === "ticket" && payload.buyer && payload.ticketId !== undefined) {
+      round.chainSearchHintHash = payload.chainSearchHintHash ?? round.chainSearchHintHash;
       const ticketCount = Math.max(1, payload.ticketCount ?? 1);
       const paidAmount = toBigInt(payload.paidAmount);
       const paidPerTicket = paidAmount / BigInt(ticketCount);
@@ -265,12 +260,11 @@ async function replayTicketTree(round: RaffleHistoryRound): Promise<{ root: stri
     if (ticket.ticketId !== nextTicketId || !ticket.buyerPubkey) {
       throw new Error(`Round ${round.roundId} is missing canonical ticket #${nextTicketId}.`);
     }
-    for (let offset = 0; offset < ticketRangeCount(ticket); offset += 1) {
-      const appended = await appendTicketLeaf(frontier, nextTicketId - 1, ticket.buyerPubkey);
-      frontier = appended.frontierHex;
-      root = appended.rootHex;
-      nextTicketId += 1;
-    }
+    const count = ticketRangeCount(ticket);
+    const appended = await appendTicketLeaves(frontier, nextTicketId - 1, ticket.buyerPubkey, count);
+    frontier = appended.frontierHex;
+    root = appended.rootHex;
+    nextTicketId += count;
   }
   return { root, frontier };
 }
@@ -278,7 +272,7 @@ async function replayTicketTree(round: RaffleHistoryRound): Promise<{ root: stri
 async function buildLatestCovenantCursor(
   round: RaffleHistoryRound,
   tx: RestTransaction,
-  status: Extract<RoundStatus, "Open" | "Closed" | "Refunding">
+  status: Extract<RoundStatus, "Open" | "Refunding">
 ): Promise<RaffleCovenantCursor | undefined> {
   const output = outputZero(tx);
   const address = output?.script_public_key_address;
@@ -324,7 +318,7 @@ async function buildLatestCovenantCursor(
     potAmount: round.ticketPrice * BigInt(Math.max(0, soldTickets - refundCursor)),
     feeBps: 0,
     status,
-    randomnessMode: "drand-risc0",
+    randomnessMode: "kaspa-chain-pow",
     creatorPubkey: round.creatorPubkey,
     refundAfterDaaScore: round.refundAfterDaaScore,
     ticketRoot,
@@ -348,6 +342,7 @@ async function buildLatestCovenantCursor(
     status,
     ticketRoot,
     ticketFrontier: ticketTree.frontier,
+    chainSearchHintHash: round.chainSearchHintHash,
     refundCursor,
     creatorPubkey: stateRound.creatorPubkey,
     refundAfterDaaScore: stateRound.refundAfterDaaScore,
@@ -366,7 +361,7 @@ async function traceRoundCovenantHistory(
   let currentAddress = round.treasuryAddress;
   let previousTxId = round.createTxId;
   let latestCovenantTransaction: RestTransaction | undefined;
-  let latestStatus: Extract<RoundStatus, "Open" | "Closed" | "Refunding"> | undefined = "Open";
+  let latestStatus: Extract<RoundStatus, "Open" | "Refunding"> | undefined = "Open";
   let finalized = false;
   const visitedAddresses = new Set<string>();
   const visitedTransactions = new Set<string>();
@@ -392,7 +387,7 @@ async function traceRoundCovenantHistory(
           tx.transaction_id &&
           tx.transaction_id !== previousTxId &&
           !visitedTransactions.has(tx.transaction_id) &&
-          (payload.type === "ticket" || payload.type === "round-close" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch" || payload.type === "round-refund-ticket")
+          (payload.type === "ticket" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch" || payload.type === "round-refund-ticket")
         );
       })
       .sort((left, right) => compareByTimeAsc(eventTime(left), eventTime(right)))[0];
@@ -417,11 +412,9 @@ async function traceRoundCovenantHistory(
     }
 
     latestCovenantTransaction = nextSpend;
-    latestStatus = payload?.type === "round-close"
-      ? "Closed"
-      : payload?.type === "round-refund-start" || payload?.type === "round-refund-batch" || payload?.type === "round-refund-ticket"
-        ? "Refunding"
-        : "Open";
+    latestStatus = payload?.type === "round-refund-start" || payload?.type === "round-refund-batch" || payload?.type === "round-refund-ticket"
+      ? "Refunding"
+      : "Open";
     currentAddress = nextCovenantAddressFromTransaction(nextSpend);
   }
 
@@ -490,7 +483,7 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         potAmount: BigInt(indexed.latestCovenant.potAmount),
         feeBps: 0,
         status: indexed.latestCovenant.status,
-        randomnessMode: "drand-risc0",
+        randomnessMode: "kaspa-chain-pow",
         creatorPubkey: indexed.creatorPubkey,
         refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
         ticketRoot: indexed.ticketRoot,
@@ -520,7 +513,6 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
       latestCovenant,
       creator: indexed.creator,
       creatorPubkey: indexed.creatorPubkey,
-      beaconProofUrl: indexed.beaconProofUrl,
       refundTimeoutSeconds: indexed.refundTimeoutSeconds,
       createdAtDaaScore: indexed.createdAtDaaScore,
       refundAfterDaaScore: indexed.refundAfterDaaScore,

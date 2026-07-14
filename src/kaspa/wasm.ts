@@ -9,9 +9,20 @@ let kaspaWasmReady: Promise<unknown> | null = null;
 
 async function loadKaspaWasmBytes(): Promise<Uint8Array> {
   if (kaspaWasmUrl.startsWith("data:")) {
+    const isGzip = kaspaWasmUrl.startsWith("data:application/gzip;");
     const base64 = kaspaWasmUrl.slice(kaspaWasmUrl.indexOf(",") + 1);
     const binary = atob(base64);
-    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+
+    if (!isGzip) return bytes;
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("This browser cannot decompress the embedded Kaspa WASM. Use a current browser version.");
+    }
+
+    const decompressed = new Blob([bytes])
+      .stream()
+      .pipeThrough(new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(decompressed).arrayBuffer());
   }
 
   const response = await fetch(kaspaWasmUrl);

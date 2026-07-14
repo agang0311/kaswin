@@ -154,7 +154,7 @@ if (refundTransactions !== 125_000) throw new Error(`Expected 125,000 refund tra
 
 const ticketPriceSompi = 30_000_000n;
 const carrierSompi = 57_000_000n;
-const transitionFeeSompi = 2_230_000n;
+const transitionFeeSompi = 2_400_000n;
 const batchFeePerTicketSompi = 150_000n;
 const userRefundsSompi = BigInt(USERS) * (ticketPriceSompi - batchFeePerTicketSompi);
 const creatorRefundSompi = carrierSompi - transitionFeeSompi;

@@ -1,4 +1,4 @@
-contract RaffleRoundV8Tn12() {
+contract RaffleRoundV9Mainnet() {
     struct RefundState {
         int ticket_price;
         byte[32] creator_pubkey;
@@ -7,12 +7,10 @@ contract RaffleRoundV8Tn12() {
         int refund_cursor;
     }
 
-    byte[32] constant REFUND_TEMPLATE = 0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41;
-    byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;
-    int constant DRAND_ROUND_OFFSET = 13185084;
-    int constant DRAND_DELAY_ROUNDS = 5;
-    int constant CLOSE_FEE = 1550000;
-    int constant FINALIZE_FEE = 50000000;
+    byte[32] constant REFUND_TEMPLATE = 0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1;
+    byte[9] constant BLOCK_HASH_KEY = 0x426c6f636b48617368;
+    int constant RANDOM_DELAY_DAA = 30;
+    int constant FINALIZE_FEE = 5000000;
 
     int max_tickets = 0;
     int ticket_price = 0;
@@ -22,6 +20,15 @@ contract RaffleRoundV8Tn12() {
     byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
     byte[640] frontier = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
     int refund_cursor = 0;
+
+    function blockHash(byte[] before_daa, int daa_score, int blue_score, byte[] encoded_blue_work, byte[32] pruning_point) : byte[32] {
+        require(before_daa.length >= 166);
+        require(encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40);
+        int work_length = OpBin2Num(encoded_blue_work.slice(0, 8));
+        require(work_length >= 0 && work_length + 8 == encoded_blue_work.length);
+        byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);
+        return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));
+    }
 
     function merkleRoot(byte[32] leaf, int ticket_id, byte[] proof) : byte[32] {
         require(proof.length == 640);
@@ -53,6 +60,7 @@ contract RaffleRoundV8Tn12() {
         require(sold_tickets % ticket_count == 0);
         require(sold_tickets + ticket_count <= max_tickets);
         require(refund_cursor == 0);
+        require(OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa);
 
         byte[32] node = ticketLeaf(owner_pubkey);
         byte[] next_frontier = byte[](frontier);
@@ -108,35 +116,18 @@ contract RaffleRoundV8Tn12() {
         });
     }
 
-    entrypoint function close() {
-        require(refund_cursor == 0);
-        require(sold_tickets > 0);
-        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);
-        require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
-        require(cov_out_idx == 0);
-        require(tx.outputs.length == 1);
-        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);
-        validateOutputState(0, {
-            max_tickets: max_tickets,
-            ticket_price: ticket_price,
-            creator_pubkey: creator_pubkey,
-            refund_after_daa: refund_after_daa,
-            sold_tickets: sold_tickets,
-            ticket_root: ticket_root,
-            frontier: frontier,
-            refund_cursor: -1,
-        });
-    }
-
     entrypoint function finalize(
-        byte[32] claim,
-        byte[4] control_index,
-        byte[256] control_digests,
-        byte[] seal,
-        byte[32] control_id,
-        int drand_round,
-        byte[32] randomness,
+        byte[] target_before_daa,
+        int target_daa,
+        int target_blue_score,
+        byte[] target_blue_work,
+        byte[32] target_pruning_point,
+        byte[32] parent_hash,
+        byte[] parent_before_daa,
+        int parent_daa,
+        int parent_blue_score,
+        byte[] parent_blue_work,
+        byte[32] parent_pruning_point,
         int winner_ticket_id,
         pubkey winner_pubkey,
         byte[] winner_proof,
@@ -148,38 +139,26 @@ contract RaffleRoundV8Tn12() {
         require(tx.inputs.length == 2);
         require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));
         require(sold_tickets > 0);
-        require(refund_cursor == -1);
-
-        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;
-        require(drand_round == expected_round);
-        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));
-        require(OpZkPrecompile(
-            byte[](claim),
-            byte[](control_index),
-            byte[](control_digests),
-            seal,
-            byte[](journal_digest),
-            byte[](DRAND_GUEST_IMAGE_ID),
-            byte[](control_id),
-            byte[1](byte(0x01)),
-            byte[1](byte(0x21))
-        ));
-
-        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));
-        int seed_0 = int(seed[0]);
-        int seed_1 = int(seed[1]);
-        int seed_2 = int(seed[2]);
-        int seed_3 = int(seed[3]);
-        int seed_4 = int(seed[4]);
-        int seed_5 = int(seed[5]);
-        int seed_6 = int(seed[6]);
-        if (seed_0 < 0) { seed_0 = seed_0 + 256; }
-        if (seed_1 < 0) { seed_1 = seed_1 + 256; }
-        if (seed_2 < 0) { seed_2 = seed_2 + 256; }
-        if (seed_3 < 0) { seed_3 = seed_3 + 256; }
-        if (seed_4 < 0) { seed_4 = seed_4 + 256; }
-        if (seed_5 < 0) { seed_5 = seed_5 + 256; }
-        if (seed_6 < 0) { seed_6 = seed_6 + 256; }
+        require(refund_cursor == 0);
+        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);
+        int target_boundary = refund_after_daa + RANDOM_DELAY_DAA;
+        if (sold_tickets == max_tickets) {
+            target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;
+        }
+        require(parent_daa < target_boundary && target_daa >= target_boundary);
+        require(parent_daa < target_daa);
+        require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);
+        require(blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash);
+        byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);
+        byte[32] seqcommit = byte[32](OpChainblockSeqCommit(target_hash));
+        byte[32] seed = sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit));
+        int seed_0 = OpBin2Num(seed.slice(0, 1) + 0x00);
+        int seed_1 = OpBin2Num(seed.slice(1, 2) + 0x00);
+        int seed_2 = OpBin2Num(seed.slice(2, 3) + 0x00);
+        int seed_3 = OpBin2Num(seed.slice(3, 4) + 0x00);
+        int seed_4 = OpBin2Num(seed.slice(4, 5) + 0x00);
+        int seed_5 = OpBin2Num(seed.slice(5, 6) + 0x00);
+        int seed_6 = OpBin2Num(seed.slice(6, 7) + 0x00);
         int winner_from_seed = (
             seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +
             seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656
@@ -210,7 +189,7 @@ contract RaffleRoundV8Tn12() {
         int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
         require(refund_out_idx == 0);
         require(tx.outputs.length == 1);
-        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2400000);
         RefundState next_refund = {
             ticket_price: ticket_price,
             creator_pubkey: creator_pubkey,

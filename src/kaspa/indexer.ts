@@ -31,7 +31,6 @@ export interface IndexedRaffleRound {
   version?: string;
   creator?: string;
   creatorPubkey?: string;
-  beaconProofUrl?: string;
   ticketPrice?: string;
   maxTickets?: number;
   minTickets?: number;
@@ -41,7 +40,7 @@ export interface IndexedRaffleRound {
   registryAddress?: string;
   createTxId?: string;
   covenantId?: string;
-  status: "Open" | "Closed" | "Finalized" | "Refunding" | "Refunded";
+  status: "Open" | "Finalized" | "Refunding" | "Refunded";
   soldTickets: number;
   ticketRoot: string;
   ticketFrontier: string;
@@ -54,7 +53,7 @@ export interface IndexedRaffleRound {
     amountSompi: string;
     soldTickets: number;
     potAmount: string;
-    status: "Open" | "Closed" | "Refunding";
+    status: "Open" | "Refunding";
     ticketRoot: string;
     ticketFrontier: string;
     refundCursor: number;

@@ -7,12 +7,12 @@ const en: Record<string, string> = {
   "language.english": "English",
   "language.chinese": "中文",
   "network.mainnet": "Mainnet",
-  "network.testnet10": "Testnet 10",
+  "network.testnet10": "Testnet 12",
   "node.ready": "Node ready",
   "node.offline": "Node offline",
   "wallet.notLoaded": "Wallet not loaded",
   "notice.mainnet": "Mainnet uses real KAS. Verify the selected node, wallet, and transaction amounts before signing.",
-  "notice.testnet": "Testnet 10. Use a dedicated wallet with small amounts.",
+  "notice.testnet": "Testnet 12. Use a dedicated wallet with small amounts.",
   "connection.aria": "Connection and wallet",
   "network": "Network",
   "network.switch": "Switch network",
@@ -164,7 +164,7 @@ const en: Record<string, string> = {
   "cost.create.retained": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the default registry + variable registry payment fee. The registry marker remains at the destination. Carrier returns when the round ends.",
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
   "cost.payout": "{prize} prize from the pot + {fee} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.",
-  "cost.refund.current": "First call: {transitionFee} KAS to start refunds. Then each 8-ticket batch costs {batchFee} KAS ({perTicketFee} KAS per ticket); a final 1-7 ticket tail uses the single-ticket fee. Anyone may broadcast after timeout; wallet payment: 0 KAS."
+  "cost.refund.current": "First call: {transitionFee} to start refunds. Then each 8-ticket batch costs {batchFee} ({perTicketFee} per ticket); each final tail ticket costs {tailFee}. Anyone may broadcast after timeout; wallet payment: 0 KAS."
 };
 
 const zh: Record<string, string> = {
@@ -173,12 +173,12 @@ const zh: Record<string, string> = {
   "language.english": "English",
   "language.chinese": "中文",
   "network.mainnet": "主网",
-  "network.testnet10": "测试网 10",
+  "network.testnet10": "测试网 12",
   "node.ready": "节点已连接",
   "node.offline": "节点未连接",
   "wallet.notLoaded": "钱包未连接",
   "notice.mainnet": "主网使用真实 KAS。签名前请核对节点、钱包和交易金额。",
-  "notice.testnet": "测试网 10。请使用专用钱包和小额资金。",
+  "notice.testnet": "测试网 12。请使用专用钱包和小额资金。",
   "connection.aria": "节点与钱包连接",
   "network": "网络",
   "network.switch": "切换网络",
@@ -272,7 +272,7 @@ const zh: Record<string, string> = {
   "historySource": "历史数据源",
   "restApi": "REST API",
   "raffleIndexApi": "抽奖索引 API",
-  "cost.refund.current": "首次调用扣除 {transitionFee} KAS 启动退款；之后每 8 张票共扣除 {batchFee} KAS（每票 {perTicketFee} KAS），最后不足 8 张按单票尾批处理。超时后任何人都可广播，钱包支付 0 KAS。",
+  "cost.refund.current": "首次调用扣除 {transitionFee} 启动退款；之后每 8 张票共扣除 {batchFee}（每票 {perTicketFee}），最后不足 8 张时每张扣除 {tailFee}。超时后任何人都可广播，钱包支付 0 KAS。",
   "actionTabs": "购票或派奖",
   "buyTickets": "购买抽奖票",
   "participant": "参与者",
@@ -458,7 +458,6 @@ export function translateRuntimeText(language: Language, text: string): string {
     .replace(/ Temporary funding was refunded in /, " 临时 funding 已通过以下交易退回：")
     .replace(/^A covenant or temporary funding output is below the current Toccata storage-mass minimum\./, "Covenant 或临时 funding 输出低于当前 Toccata storage-mass 下限。")
     .replace(/^The covenant input did not commit enough compute budget\./, "Covenant input 提交的 compute budget 不足。")
-    .replace(/^Timed out waiting for the drand round (\d+) proof\. The proof service may still be working; retry Draw & Pay later\.$/, "等待 drand 轮次 $1 的证明超时。证明服务可能仍在计算，请稍后重试开奖并派奖。")
     .replace(/ Refresh the page and retry with the current build\./, " 请刷新页面并使用当前版本重试。")
     .replace(/ New rounds need a carrier reserve of at least /, " 新抽奖的 carrier 预留至少需要 ")
     .replace(/^The participant wallet needs a spendable UTXO of at least (.+) to authorize the draw\. It is returned unchanged\.$/, "参与者钱包需要至少 $1 的可用 UTXO 来授权开奖，该 UTXO 会原额返还。")

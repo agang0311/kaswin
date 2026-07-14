@@ -7,7 +7,7 @@ import process from "node:process";
 const root = process.cwd();
 const fixtureDir = path.join(root, ".tmp", "indexer-fixture");
 const roundId = "ab".repeat(32);
-const port = 8790;
+const port = Number(process.env.RAFFLE_INDEX_TEST_PORT ?? 28790);
 fs.rmSync(fixtureDir, { recursive: true, force: true });
 fs.mkdirSync(fixtureDir, { recursive: true });
 
@@ -20,10 +20,9 @@ const createPayload = {
   type: "round-create",
   version: "0.6.0",
   roundId,
-  contractVersion: "raffle-v8-drand-risc0-tn12",
+  contractVersion: "raffle-v12-chain-pow-tn12",
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
   creatorPubkey: owners[0].toString("hex"),
-  beaconProofUrl: "https://beacon.example",
   ticketPrice: "30000000",
   maxTickets: 1_000_000,
   minTickets: 1,
@@ -48,11 +47,7 @@ const eventBlocks = [{
   }]
 })), {
   hash: blockHashes[11],
-  events: [{
-    payload: { app: "kaspa-raffle-static", type: "round-close", roundId, soldTickets: 10 },
-    transactionId: "fc".repeat(32),
-    output: { index: 0, amountSompi: "297000000", address: "kaspatest:pqclosed", covenantId: "cd".repeat(32) }
-  }]
+  events: []
 }, {
   hash: blockHashes[12],
   events: [{
@@ -71,7 +66,7 @@ const eventBlocks = [{
       app: "kaspa-raffle-static",
       type: "round-create",
       roundId: "legacy-round",
-      contractVersion: "raffle-v7-three-commitment-oracles"
+      contractVersion: "raffle-v10-chain-pow-tn12"
     },
     transactionId: "f7".repeat(32),
     output: { index: 0, amountSompi: "57000000", address: "kaspatest:pqlegacy" }
@@ -95,11 +90,10 @@ fs.writeFileSync(path.join(fixtureDir, "state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v8-drand-risc0-tn12",
+      contractVersion: "raffle-v12-chain-pow-tn12",
       version: "0.6.0",
       creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
       creatorPubkey: owners[0].toString("hex"),
-      beaconProofUrl: "https://beacon.example",
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -124,11 +118,10 @@ fs.writeFileSync(path.join(fixtureDir, "base-state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v8-drand-risc0-tn12",
+      contractVersion: "raffle-v12-chain-pow-tn12",
       version: "0.6.0",
       creator: createPayload.creator,
       creatorPubkey: owners[0].toString("hex"),
-      beaconProofUrl: "https://beacon.example",
       ticketPrice: "30000000",
       maxTickets: 1_000_000,
       minTickets: 1,
@@ -163,6 +156,7 @@ const child = spawn(process.execPath, [path.join(root, "indexer", "raffle-indexe
   env: {
     ...process.env,
     RAFFLE_INDEX_DATA: fixtureDir,
+    RAFFLE_INDEX_HOST: "127.0.0.1",
     RAFFLE_INDEX_PORT: String(port),
     RAFFLE_INDEX_CONFIRMATIONS: "2",
     RAFFLE_INDEX_OFFLINE: "1",
@@ -188,6 +182,10 @@ async function waitForServer() {
 
 try {
   await waitForServer();
+  const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+  if (!health.ok || health.network !== "testnet-10" || "rpcUrl" in health) {
+    throw new Error("Indexer health response is invalid or exposes its private RPC endpoint.");
+  }
   const baseState = JSON.parse(fs.readFileSync(path.join(fixtureDir, "base-state.json"), "utf8"));
   if (baseState.rounds?.[roundId]?.soldTickets !== 1) {
     throw new Error("Indexer migration baseline was not preserved.");
@@ -199,7 +197,6 @@ try {
     rounds[0].status !== "Refunding" ||
     rounds[0].refundCursor !== 8 ||
     rounds[0].refundTxId ||
-    rounds[0].beaconProofUrl !== createPayload.beaconProofUrl ||
     rounds[0].latestCovenant?.txId !== "fb".repeat(32) ||
     rounds[0].latestCovenant?.refundCursor !== 8
   ) {

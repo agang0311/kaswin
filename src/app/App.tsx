@@ -16,12 +16,11 @@ import {
 } from "lucide-react";
 import {
   assertRaffleCovenantReady,
-  buildFinalizeSeedHex,
   getRaffleCovenantStatus,
   pubkeyHexFromAddress,
   raffleWinnerIndexFromSeed
 } from "../kaspa/covenant";
-import { DEFAULT_BEACON_PROOF_URL, loadDrandRisc0Proof } from "../kaspa/beacon";
+import { loadChainRandomnessWitness } from "../kaspa/chain-randomness";
 import { loadIndexedRaffleHistory, loadRaffleHistory, type RaffleHistoryRound } from "../kaspa/history";
 import {
   DEFAULT_RAFFLE_INDEX_API,
@@ -48,7 +47,6 @@ import {
 import {
   assertValidKaspaAddress,
   buyRaffleCovenantTicket,
-  closeRaffleCovenantRound,
   COVENANT_CREATE_FEE_SOMPI,
   covenantBuyFeeSompi,
   covenantFinalizeFeeSompi,
@@ -60,9 +58,9 @@ import {
   getRaffleRegistryConfig,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
-  requiredDrandRoundForRaffleCovenant,
-  V8_COVENANT_CLOSE_FEE_SOMPI,
+  currentRaffleCovenantDaaScore,
   REFUND_BATCH_FEE_PER_TICKET_SOMPI,
+  REFUND_TAIL_FEE_PER_TICKET_SOMPI,
   REFUND_TRANSITION_FEE_SOMPI,
   refundRaffleCovenantRound,
   refundRaffleRegistryMarker,
@@ -97,7 +95,6 @@ const TESTNET_REFUND_TIMEOUT_SECONDS = 10n * SECONDS_PER_MINUTE;
 const MAINNET_REFUND_TIMEOUT_SECONDS = SECONDS_PER_DAY;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
-const BEACON_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-beacon-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
 
 function initialLanguage(): Language {
@@ -140,22 +137,6 @@ function loadIndexEndpoints(): NetworkEndpoints {
   };
   try {
     const saved = JSON.parse(localStorage.getItem(INDEX_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkEndpoints>;
-    return {
-      mainnet: saved.mainnet?.trim() || defaults.mainnet,
-      "testnet-10": saved["testnet-10"]?.trim() || defaults["testnet-10"]
-    };
-  } catch {
-    return defaults;
-  }
-}
-
-function loadBeaconEndpoints(): NetworkEndpoints {
-  const defaults: NetworkEndpoints = {
-    mainnet: DEFAULT_BEACON_PROOF_URL,
-    "testnet-10": DEFAULT_BEACON_PROOF_URL
-  };
-  try {
-    const saved = JSON.parse(localStorage.getItem(BEACON_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkEndpoints>;
     return {
       mainnet: saved.mainnet?.trim() || defaults.mainnet,
       "testnet-10": saved["testnet-10"]?.trim() || defaults["testnet-10"]
@@ -388,7 +369,6 @@ export function App() {
   const [language, setLanguage] = useState<Language>(() => initialLanguage());
   const [networkEndpoints, setNetworkEndpoints] = useState<NetworkEndpoints>(() => loadNetworkEndpoints());
   const [indexEndpoints, setIndexEndpoints] = useState<NetworkEndpoints>(() => loadIndexEndpoints());
-  const [beaconEndpoints, setBeaconEndpoints] = useState<NetworkEndpoints>(() => loadBeaconEndpoints());
   const [networkId, setNetworkId] = useState<SupportedNetworkId>("testnet-10");
   const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"]);
   const [isNetworkMenuOpen, setIsNetworkMenuOpen] = useState(false);
@@ -425,7 +405,6 @@ export function App() {
   const [refundTimeoutParts, setRefundTimeoutParts] = useState<RefundTimeoutParts>(DEFAULT_REFUND_TIMEOUT_PARTS);
   const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
   const [indexApiBase, setIndexApiBase] = useState(() => loadIndexEndpoints()["testnet-10"]);
-  const [beaconProofUrl, setBeaconProofUrl] = useState(() => loadBeaconEndpoints()["testnet-10"]);
   const [historyAddress, setHistoryAddress] = useState("");
   const [registryAddress, setRegistryAddress] = useState("");
   const [registryAutoRefund, setRegistryAutoRefund] = useState(false);
@@ -586,7 +565,7 @@ export function App() {
       potAmount,
       feeBps: 0,
       status,
-      randomnessMode: "drand-risc0",
+      randomnessMode: "kaspa-chain-pow",
       creatorPubkey: covenant?.creatorPubkey ?? metadata.creatorPubkey ?? (wallet ? pubkeyHexFromAddress(wallet.address) : ""),
       refundAfterDaaScore: covenant?.refundAfterDaaScore ?? metadata.refundAfterDaaScore ?? "0",
       ticketRoot: covenant?.ticketRoot ?? "",
@@ -659,14 +638,15 @@ export function App() {
   const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(covenantBuyFeeSompi(round.contractVersion, parsedTicketQuantity)) });
   const payoutCostTooltip = t("cost.payout", {
     prize: formatKas(round.potAmount),
-    fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion) + (metadata.covenant?.status === "Closed" ? 0n : V8_COVENANT_CLOSE_FEE_SOMPI))
+    fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion))
   });
   const refundCostTooltip = t("cost.refund.current", {
     refund: formatKas(round.potAmount),
     fee: formatKas(covenantRefundFeeSompi(round.contractVersion)),
     transitionFee: formatKas(REFUND_TRANSITION_FEE_SOMPI),
     batchFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI * 8n),
-    perTicketFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI)
+    perTicketFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI),
+    tailFee: formatKas(REFUND_TAIL_FEE_PER_TICKET_SOMPI)
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
@@ -786,13 +766,6 @@ export function App() {
     localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
   }
 
-  function handleBeaconProofUrlInput(value: string) {
-    setBeaconProofUrl(value);
-    const next = { ...beaconEndpoints, [networkId]: value };
-    setBeaconEndpoints(next);
-    localStorage.setItem(BEACON_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
-  }
-
   function openNetworkSettings(profileId: SupportedNetworkId) {
     setNetworkSettingsId(profileId);
     setNetworkEndpointDraft(networkEndpoints[profileId]);
@@ -851,7 +824,6 @@ export function App() {
     setRpcUrl(networkEndpoints[nextNetwork]);
     setHistoryApiBase(nextProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[nextNetwork]);
-    setBeaconProofUrl(beaconEndpoints[nextNetwork]);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(defaultRefundTimeoutSeconds(nextNetwork)));
     setHistoryAddress("");
     setRegistryAddress("");
@@ -933,7 +905,11 @@ export function App() {
       let connectedWallet = await connectBrowserWallet(adapterId, walletNetwork);
 
       if (rpcConnectionRef.current) {
-        const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
+        let balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
+        if (balanceSompi === 0n) {
+          await new Promise((resolve) => window.setTimeout(resolve, 750));
+          balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
+        }
         connectedWallet = withWalletBalance(connectedWallet, balanceSompi);
       }
 
@@ -989,7 +965,6 @@ export function App() {
         roundId,
         createTxId: "",
         creatorCommitment: "",
-        beaconProofUrl,
         contractVersion: raffleContractVersionForNetwork(networkId),
         treasuryAddress: "",
         covenant: undefined
@@ -1009,7 +984,6 @@ export function App() {
     setRpcUrl(networkEndpoints[profile.id]);
     setHistoryApiBase(profile.historyApiBase);
     setIndexApiBase(indexEndpoints[profile.id]);
-    setBeaconProofUrl(normalizedMetadata.beaconProofUrl || beaconEndpoints[profile.id]);
     setCreateRegistryAddress(normalizedMetadata.registryAddress ?? "");
     setHistoryAddress(normalizedMetadata.registryAddress ?? "");
     setTickets([]);
@@ -1147,7 +1121,6 @@ export function App() {
         maxTickets: metadata.maxTickets,
         minTickets: metadata.minTickets,
         creatorPubkey,
-        beaconProofUrl,
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         refundTimeoutSeconds: refundDelaySeconds.toString(),
@@ -1192,7 +1165,6 @@ export function App() {
             maxTickets: metadata.maxTickets,
             minTickets: metadata.minTickets,
             creatorPubkey,
-            beaconProofUrl,
             createdAtDaaScore: createdAtDaaScore.toString(),
             refundAfterDaaScore: refundAfterDaaScore.toString(),
             refundTimeoutSeconds: refundDelaySeconds.toString(),
@@ -1231,7 +1203,6 @@ export function App() {
         ...current,
         roundId,
         creatorCommitment: "",
-        beaconProofUrl,
         contractVersion,
         createTxId: result.txId,
         creatorAddress: wallet.address,
@@ -1247,6 +1218,32 @@ export function App() {
       setFinalized(undefined);
       setRoundActionTab("buy");
       setHistoryAddress(targetRegistryAddress);
+      setHistoryRounds((current) => [{
+        roundId,
+        registryTxId: registryTxIds.at(-1),
+        registryAddress: targetRegistryAddress,
+        createTxId: result.txId,
+        treasuryAddress: result.covenant!.address,
+        covenantId: result.covenant!.covenantId,
+        latestCovenant: result.covenant,
+        creator: wallet.address,
+        creatorPubkey,
+        createdAtDaaScore: createdAtDaaScore.toString(),
+        refundTimeoutSeconds: refundDelaySeconds.toString(),
+        refundAfterDaaScore: refundAfterDaaScore.toString(),
+        refundTimeoutDaa: refundDelayDaa.toString(),
+        ticketPrice: BigInt(metadata.ticketPrice),
+        maxTickets: metadata.maxTickets,
+        minTickets: metadata.minTickets,
+        version: metadata.version,
+        contractVersion,
+        tickets: [],
+        payouts: [],
+        potAmount: 0n,
+        soldTickets: 0,
+        lastBlockTime: Date.now()
+      }, ...current.filter((historyRound) => historyRound.roundId !== roundId)]);
+      setSelectedHistoryRoundId(roundId);
       const registryResultMessage = registryTxIds.length
         ? autoRefundRegistryMarker
           ? `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. ${registryRefundTxId ? `${formatKas(registryMarkerRefundAmount)} returned after the ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee: ${registryRefundTxId}.` : "Automatic marker refund is pending or failed."}`
@@ -1348,6 +1345,7 @@ export function App() {
         buyerCommitment,
         ticketTxId: ""
       };
+      const chainSearchHintHash = (await rpcConnectionRef.current.client.getBlockDagInfo()).sink;
       const payload = {
         app: "kaspa-raffle-static",
         type: "ticket",
@@ -1359,6 +1357,7 @@ export function App() {
         buyerCommitment,
         ticketCount: quantity,
         paidAmount: purchaseAmount.toString(),
+        chainSearchHintHash,
         createdAt: new Date().toISOString()
       };
       const payment = await buyRaffleCovenantTicket({
@@ -1400,6 +1399,26 @@ export function App() {
         treasuryAddress: payment.covenant?.address ?? current.treasuryAddress
       }));
       setTickets((current) => [...current, { ...nextTicket, ticketTxId: txId }]);
+      setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+        ? {
+            ...historyRound,
+            latestCovenant: payment.covenant,
+            soldTickets: payment.covenant!.soldTickets,
+            potAmount: BigInt(payment.covenant!.potAmount),
+            tickets: [
+              ...historyRound.tickets.filter((ticket) => ticket.txId !== txId),
+              {
+                txId,
+                ticketId,
+                ticketCount: quantity,
+                buyer: wallet.address,
+                buyerPubkey: ownerPubkey,
+                paidAmount,
+                buyerCommitment
+              }
+            ]
+          }
+        : historyRound));
       setTicketQuantity("1");
       setChainMessage(
         quantity === 1
@@ -1472,7 +1491,7 @@ export function App() {
         throw new Error("Only a wallet that bought tickets in this round can draw and pay the winner.");
       }
 
-      if (covenant.status !== "Open" && covenant.status !== "Closed") {
+      if (covenant.status !== "Open") {
         throw new Error("This round is no longer available to finalize.");
       }
 
@@ -1498,42 +1517,12 @@ export function App() {
         }
       }
 
-      let activeCovenant = covenant;
-      if (activeCovenant.status === "Open") {
-        const closeResult = await closeRaffleCovenantRound({
-          connection: rpcConnectionRef.current,
-          round: {
-            ...round,
-            soldTickets: activeCovenant.soldTickets,
-            potAmount: BigInt(activeCovenant.potAmount),
-            status: "Open",
-            ticketRoot: activeCovenant.ticketRoot,
-            ticketFrontier: activeCovenant.ticketFrontier,
-            refundCursor: 0,
-            creatorPubkey: activeCovenant.creatorPubkey,
-            refundAfterDaaScore: activeCovenant.refundAfterDaaScore
-          },
-          covenant: activeCovenant,
-          payload: encodePayload({
-            app: "kaspa-raffle-static",
-            type: "round-close",
-            version: metadata.version,
-            roundId: metadata.roundId,
-            soldTickets: activeCovenant.soldTickets,
-            closedAt: new Date().toISOString()
-          })
-        });
-        if (!closeResult.covenant) throw new Error("Close transaction did not create a successor covenant.");
-        activeCovenant = closeResult.covenant;
-        setMetadata((current) => ({ ...current, covenant: activeCovenant }));
-        setChainMessage(`Ticket sales closed: ${closeResult.txId}. Waiting for the future beacon proof.`);
-      }
-
-      const closedRound: RoundState = {
+      const activeCovenant = covenant;
+      const activeRound: RoundState = {
         ...round,
         soldTickets: activeCovenant.soldTickets,
         potAmount: BigInt(activeCovenant.potAmount),
-        status: "Closed",
+        status: "Open",
         ticketRoot: activeCovenant.ticketRoot,
         ticketFrontier: activeCovenant.ticketFrontier,
         refundCursor: activeCovenant.refundCursor ?? 0,
@@ -1544,17 +1533,20 @@ export function App() {
         ticketOwnerPubkeys: activeCovenant.ticketOwnerPubkeys
       };
 
-      if (closedRound.potAmount <= 0n) {
+      if (activeRound.potAmount <= 0n) {
         throw new Error("Prize amount must be greater than zero.");
       }
 
-      const drandRound = await requiredDrandRoundForRaffleCovenant(
+      const randomnessBaseDaaScore = activeCovenant.soldTickets === metadata.maxTickets
+        ? await currentRaffleCovenantDaaScore(rpcConnectionRef.current, activeCovenant)
+        : BigInt(activeCovenant.refundAfterDaaScore || "0");
+      const randomnessWitness = await loadChainRandomnessWitness(
         rpcConnectionRef.current,
-        closedRound.contractVersion,
-        activeCovenant
+        randomnessBaseDaaScore,
+        activeRound.ticketRoot,
+        activeCovenant.chainSearchHintHash
       );
-      const proof = await loadDrandRisc0Proof(beaconProofUrl, drandRound);
-      const randomSeed = await buildFinalizeSeedHex(closedRound, proof.randomness);
+      const randomSeed = randomnessWitness.randomSeedHex;
       const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, activeCovenant.soldTickets);
       const winnerRange = findTicketRange(tickets, winnerIndex + 1);
       let winner = winnerRange ? { ...winnerRange, ticketId: winnerIndex + 1, ticketCount: 1 } : undefined;
@@ -1603,8 +1595,8 @@ export function App() {
         appId: "KASPA_RAFFLE_FINAL_V1",
         roundId: metadata.roundId || "pending-round",
         randomSeed,
-        drandRound,
-        drandRandomness: proof.randomness,
+        targetBlockHash: randomnessWitness.target.hash,
+        targetDaaScore: randomnessWitness.target.daaScore.toString(),
         winnerTicketId: winner.ticketId,
         winnerAddress: winner.owner,
         payoutTxId: ""
@@ -1618,9 +1610,9 @@ export function App() {
       const result = await finalizeRaffleCovenantRound({
         connection: rpcConnectionRef.current,
         wallet,
-        round: closedRound,
+        round: activeRound,
         covenant: activeCovenant,
-        proof,
+        randomnessWitness,
         winner,
         winnerProofHex,
         callerTicketId,
@@ -1628,15 +1620,10 @@ export function App() {
         payload: encodePayload({
           app: "kaspa-raffle-static",
           type: "round-finalize",
-          version: metadata.version,
           roundId: metadata.roundId,
           winnerTicketId: winner.ticketId,
           winnerAddress: winner.owner,
-          amount: closedRound.potAmount.toString(),
-          randomSeed,
-          drandRound,
-          drandRandomness: proof.randomness,
-          finalizedAt: new Date().toISOString()
+          amount: activeRound.potAmount.toString()
         })
       });
 
@@ -1659,11 +1646,13 @@ export function App() {
         ? {
             ...historyRound,
             latestCovenant: undefined,
+            soldTickets: activeCovenant.soldTickets,
+            potAmount: activeRound.potAmount,
             payouts: [{
               txId: result.txId,
               winnerTicketId: winner.ticketId,
               winnerAddress: winner.owner,
-              amount: closedRound.potAmount
+              amount: activeRound.potAmount
             }, ...historyRound.payouts.filter((payout) => payout.txId !== result.txId)]
           }
         : historyRound));
@@ -1815,6 +1804,9 @@ export function App() {
         setChainMessage(activeCovenant.refundCursor === refundCursor
           ? `Batch refund contract started: ${result.txId}`
           : `Refund cursor ${activeCovenant.refundCursor}/${activeCovenant.soldTickets}: ${result.txId}`);
+
+        // Let the refund successor UTXO propagate before attempting to spend it.
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
       }
 
       while (activeCovenant) {
@@ -2031,7 +2023,17 @@ export function App() {
       ? "Refunded"
       : historyRound.payouts[0]
         ? "Paid"
-        : historyRound.latestCovenant?.status ?? (historyRound.closeTxId ? "Closed" : "Open");
+        : historyRound.latestCovenant?.status === "Refunding"
+          ? "Refunding"
+          : historyRound.latestCovenant?.status === "Refunded"
+            ? "Refunded"
+            : historyRound.latestCovenant?.status === "Finalized"
+              ? "Paid"
+              : historyRound.latestCovenant?.status === "Closed" || (
+                (historyRound.maxTickets ?? 0) > 0 && (historyRound.soldTickets ?? 0) >= (historyRound.maxTickets ?? 0)
+              )
+                ? "Closed"
+                : "Open";
   }
 
   function networkFromKaspaAddress(address: string) {
@@ -2098,7 +2100,6 @@ export function App() {
     setRpcUrl(networkEndpoints[loadedNetwork]);
     setHistoryApiBase(loadedProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[loadedNetwork]);
-    setBeaconProofUrl(selectedHistoryRound.beaconProofUrl || beaconEndpoints[loadedNetwork]);
     setCreateRegistryAddress(loadedRegistryAddress);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setMetadata({
@@ -2116,7 +2117,6 @@ export function App() {
       creatorAddress: selectedHistoryRound.creator ?? "",
       creatorPubkey: selectedHistoryRound.creatorPubkey ?? covenant.creatorPubkey,
       creatorCommitment: "",
-      beaconProofUrl: selectedHistoryRound.beaconProofUrl || beaconEndpoints[loadedNetwork],
       refundAfterDaaScore: selectedHistoryRound.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
       treasuryAddress: covenant.address,
       registryAddress: loadedRegistryAddress,
@@ -2137,7 +2137,7 @@ export function App() {
       }))
     );
     setFinalized(undefined);
-    setRoundActionTab("buy");
+    setRoundActionTab(covenant.status === "Open" ? "buy" : "payout");
     setBuyerSecret("");
     setMetadataMessage("Round loaded from history.");
     setHistoryMessage(`Loaded ${selectedHistoryRound.roundId}. You can buy if open, or finalize/refund when eligible.`);
@@ -2235,7 +2235,7 @@ export function App() {
                     >
                       <span className="network-check" aria-hidden="true">{selected ? <Check size={16} /> : null}</span>
                       <span className="network-option-copy">
-                        <strong>{networkLabel(profile.id)}{profile.id === "testnet-10" ? <small className="network-code">TN10</small> : null}</strong>
+                        <strong>{networkLabel(profile.id)}{profile.id === "testnet-10" ? <small className="network-code">TN12</small> : null}</strong>
                         <small>{networkEndpoints[profile.id]}</small>
                       </span>
                     </button>
@@ -2588,10 +2588,7 @@ export function App() {
                     type="button"
                     className="secondary"
                     onClick={handleJoinSelectedHistoryRound}
-                    disabled={
-                      selectedHistoryRound.latestCovenant.status === "Refunding" ||
-                      selectedHistoryRound.latestCovenant.status === "Refunded"
-                    }
+                    disabled={selectedHistoryRound.latestCovenant.status === "Refunded"}
                   >
                     {t("loadThisRound")}
                   </button>
@@ -2832,15 +2829,6 @@ export function App() {
                 />
               </label>
             </div>
-            <label className="field">
-              <span>Beacon proof service</span>
-              <input
-                type="url"
-                value={beaconProofUrl}
-                onChange={(event) => handleBeaconProofUrlInput(event.target.value)}
-                placeholder={DEFAULT_BEACON_PROOF_URL}
-              />
-            </label>
             <dl className="stat-list dense">
               <div><dt>{t("network")}</dt><dd>{networkLabel(networkId)}</dd></div>
               <div><dt>{t("roundId")}</dt><dd className="mono">{metadata.roundId || t("pending")}</dd></div>

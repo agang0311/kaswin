@@ -60,12 +60,11 @@ function writeTicketFixture() {
 
   const summary = {
     roundId,
-    contractVersion: "raffle-v8-drand-risc0-tn12",
+    contractVersion: "raffle-v12-chain-pow-tn12",
     version: "0.6.0",
     status: "Open",
     refundCursor: 0,
     creatorPubkey: ownerPubkey(0).toString("hex"),
-    beaconProofUrl: "https://beacon.example",
     ticketPrice: "30000000",
     maxTickets: USERS,
     minTickets: 1,

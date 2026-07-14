@@ -1,7 +1,7 @@
 import type { RaffleMetadata } from "./types";
 
-export const MAINNET_RAFFLE_CONTRACT_VERSION = "raffle-v8-drand-risc0-mainnet";
-export const TN12_RAFFLE_CONTRACT_VERSION = "raffle-v8-drand-risc0-tn12";
+export const MAINNET_RAFFLE_CONTRACT_VERSION = "raffle-v12-chain-pow-mainnet";
+export const TN12_RAFFLE_CONTRACT_VERSION = "raffle-v12-chain-pow-tn12";
 
 export function raffleContractVersionForNetwork(network: string): string {
   return network === "mainnet" ? MAINNET_RAFFLE_CONTRACT_VERSION : TN12_RAFFLE_CONTRACT_VERSION;
@@ -10,7 +10,7 @@ export function raffleContractVersionForNetwork(network: string): string {
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.6.0",
+    version: "0.7.0",
     network,
     roundId: "",
     createTxId: "",
@@ -20,7 +20,6 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     creatorAddress: "",
     creatorPubkey: "",
     creatorCommitment: "",
-    beaconProofUrl: "",
     refundTimeoutSeconds: "600",
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",

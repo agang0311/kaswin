@@ -1,5 +1,5 @@
 {
-  "contract_name": "RaffleRoundV8Mainnet",
+  "contract_name": "RaffleRoundV9Mainnet",
   "compiler_version": "0.1.0",
   "script": [
     107,
@@ -825,6 +825,12 @@
     0,
     156,
     105,
+    185,
+    192,
+    86,
+    121,
+    159,
+    105,
     90,
     121,
     168,
@@ -3936,7 +3942,7 @@
     118,
     201,
     2,
-    203,
+    33,
     27,
     148,
     118,
@@ -3950,7 +3956,7 @@
     201,
     118,
     2,
-    203,
+    33,
     27,
     148,
     2,
@@ -4024,181 +4030,6 @@
     156,
     99,
     117,
-    118,
-    0,
-    156,
-    105,
-    83,
-    121,
-    0,
-    160,
-    105,
-    83,
-    121,
-    88,
-    121,
-    156,
-    181,
-    86,
-    121,
-    162,
-    155,
-    105,
-    185,
-    203,
-    81,
-    156,
-    105,
-    185,
-    0,
-    204,
-    0,
-    156,
-    105,
-    180,
-    81,
-    156,
-    105,
-    0,
-    194,
-    185,
-    190,
-    3,
-    176,
-    166,
-    23,
-    148,
-    156,
-    105,
-    87,
-    121,
-    88,
-    205,
-    1,
-    8,
-    124,
-    126,
-    87,
-    121,
-    88,
-    205,
-    1,
-    8,
-    124,
-    126,
-    87,
-    121,
-    1,
-    32,
-    124,
-    126,
-    87,
-    121,
-    88,
-    205,
-    1,
-    8,
-    124,
-    126,
-    87,
-    121,
-    88,
-    205,
-    1,
-    8,
-    124,
-    126,
-    87,
-    121,
-    1,
-    32,
-    124,
-    126,
-    87,
-    121,
-    3,
-    77,
-    128,
-    2,
-    124,
-    126,
-    81,
-    143,
-    88,
-    205,
-    1,
-    8,
-    124,
-    126,
-    126,
-    126,
-    126,
-    126,
-    126,
-    126,
-    126,
-    185,
-    118,
-    201,
-    2,
-    203,
-    27,
-    148,
-    118,
-    81,
-    147,
-    188,
-    124,
-    126,
-    185,
-    118,
-    201,
-    118,
-    2,
-    203,
-    27,
-    148,
-    2,
-    243,
-    2,
-    147,
-    124,
-    188,
-    126,
-    170,
-    2,
-    0,
-    0,
-    1,
-    170,
-    126,
-    1,
-    32,
-    126,
-    124,
-    126,
-    1,
-    135,
-    126,
-    0,
-    195,
-    135,
-    105,
-    117,
-    117,
-    117,
-    117,
-    117,
-    117,
-    117,
-    117,
-    81,
-    103,
-    118,
-    82,
-    156,
-    99,
-    117,
     185,
     203,
     0,
@@ -4229,333 +4060,312 @@
     160,
     105,
     118,
-    81,
-    143,
+    0,
     156,
     105,
-    95,
+    83,
     121,
+    88,
+    121,
+    156,
+    181,
+    86,
+    121,
+    162,
+    155,
+    105,
+    84,
+    121,
+    1,
+    30,
+    147,
+    84,
+    121,
+    89,
+    121,
+    156,
+    99,
     185,
     192,
     1,
     30,
-    150,
-    4,
-    95,
-    194,
-    216,
-    0,
-    147,
-    1,
-    40,
-    147,
-    156,
-    105,
-    1,
-    20,
-    121,
-    1,
-    20,
-    121,
-    1,
-    20,
-    121,
-    1,
-    20,
-    121,
-    1,
-    19,
-    121,
-    88,
-    205,
-    1,
-    19,
-    121,
-    126,
-    168,
-    32,
-    6,
-    13,
-    190,
-    128,
-    221,
-    137,
-    192,
-    212,
-    41,
-    193,
-    51,
-    130,
-    85,
-    114,
-    24,
-    236,
-    98,
-    146,
-    98,
-    167,
-    200,
-    93,
-    57,
-    127,
-    232,
-    206,
-    13,
-    125,
-    229,
-    28,
-    254,
-    135,
-    1,
-    22,
-    121,
-    1,
-    1,
-    1,
-    33,
-    166,
-    105,
-    82,
-    121,
-    95,
-    121,
-    126,
-    168,
-    118,
-    0,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    120,
-    81,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    82,
-    121,
-    82,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    83,
-    121,
-    83,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    84,
-    121,
-    84,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    85,
-    121,
-    85,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    86,
-    121,
-    86,
-    81,
-    149,
-    118,
-    81,
-    147,
-    127,
-    86,
-    121,
-    0,
-    159,
-    99,
-    86,
-    121,
-    2,
-    0,
-    1,
-    147,
-    87,
-    122,
-    117,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    108,
-    108,
-    108,
-    108,
-    108,
-    108,
-    104,
-    85,
-    121,
-    0,
-    159,
-    99,
-    85,
-    121,
-    2,
-    0,
-    1,
-    147,
-    86,
-    122,
-    117,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    108,
-    108,
-    108,
-    108,
-    108,
-    104,
-    84,
-    121,
-    0,
-    159,
-    99,
-    84,
-    121,
-    2,
-    0,
-    1,
-    147,
-    85,
-    122,
-    117,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    108,
-    108,
-    108,
-    108,
-    104,
-    83,
-    121,
-    0,
-    159,
-    99,
-    83,
-    121,
-    2,
-    0,
-    1,
-    147,
-    84,
-    122,
-    117,
-    124,
-    107,
-    124,
-    107,
-    124,
-    107,
-    108,
-    108,
-    108,
-    104,
-    82,
-    121,
-    0,
-    159,
-    99,
-    82,
-    121,
-    2,
-    0,
-    1,
-    147,
-    83,
-    122,
-    117,
-    123,
-    123,
-    104,
-    120,
-    0,
-    159,
-    99,
-    120,
-    2,
-    0,
-    1,
-    147,
-    123,
-    117,
-    124,
-    104,
-    118,
-    0,
-    159,
-    99,
-    118,
-    2,
-    0,
-    1,
     147,
     119,
     104,
-    86,
+    1,
+    18,
     121,
-    86,
+    120,
+    159,
+    1,
+    25,
     121,
+    82,
+    121,
+    162,
+    154,
+    105,
+    1,
+    18,
+    121,
+    1,
+    25,
+    121,
+    159,
+    105,
+    1,
+    25,
+    121,
+    1,
+    18,
+    1,
+    50,
+    127,
+    1,
+    21,
+    121,
+    135,
+    105,
+    1,
+    19,
+    121,
+    1,
+    17,
+    121,
+    120,
+    130,
+    124,
+    117,
+    81,
+    150,
+    2,
+    166,
+    0,
+    162,
+    105,
+    118,
+    130,
+    124,
+    117,
+    81,
+    150,
+    88,
+    162,
+    120,
+    130,
+    124,
+    117,
+    81,
+    150,
+    1,
+    40,
+    161,
+    154,
+    105,
+    118,
+    0,
+    88,
+    127,
+    206,
+    118,
+    0,
+    162,
+    120,
+    88,
+    147,
+    83,
+    121,
+    130,
+    124,
+    117,
+    81,
+    150,
+    156,
+    154,
+    105,
+    82,
+    121,
+    1,
+    22,
+    121,
+    88,
+    205,
+    126,
+    1,
+    21,
+    121,
+    88,
+    205,
+    126,
+    82,
+    121,
+    126,
+    1,
+    19,
+    121,
+    126,
+    9,
+    66,
+    108,
+    111,
+    99,
+    107,
+    72,
+    97,
+    115,
+    104,
+    167,
+    1,
+    24,
+    121,
+    135,
+    105,
+    1,
+    28,
+    121,
+    1,
+    26,
+    121,
+    120,
+    130,
+    124,
+    117,
+    81,
+    150,
+    2,
+    166,
+    0,
+    162,
+    105,
+    118,
+    130,
+    124,
+    117,
+    81,
+    150,
+    88,
+    162,
+    120,
+    130,
+    124,
+    117,
+    81,
+    150,
+    1,
+    40,
+    161,
+    154,
+    105,
+    118,
+    0,
+    88,
+    127,
+    206,
+    118,
+    0,
+    162,
+    120,
+    88,
+    147,
+    83,
+    121,
+    130,
+    124,
+    117,
+    81,
+    150,
+    156,
+    154,
+    105,
+    82,
+    121,
+    1,
+    31,
+    121,
+    88,
+    205,
+    126,
+    1,
+    30,
+    121,
+    88,
+    205,
+    126,
+    82,
+    121,
+    126,
+    1,
+    28,
+    121,
+    126,
+    9,
+    66,
+    108,
+    111,
+    99,
+    107,
+    72,
+    97,
+    115,
+    104,
+    167,
+    90,
+    121,
+    120,
+    126,
+    120,
+    212,
+    126,
+    168,
+    1,
+    22,
+    121,
+    120,
+    0,
+    81,
+    127,
+    1,
+    0,
+    126,
+    206,
+    82,
+    121,
+    81,
+    82,
+    127,
+    1,
+    0,
+    126,
+    206,
     2,
     0,
     1,
     149,
     147,
-    85,
+    82,
     121,
+    82,
+    83,
+    127,
+    1,
+    0,
+    126,
+    206,
     3,
     0,
     0,
     1,
     149,
     147,
-    84,
+    82,
     121,
+    83,
+    84,
+    127,
+    1,
+    0,
+    126,
+    206,
     4,
     0,
     0,
@@ -4563,8 +4373,15 @@
     1,
     149,
     147,
-    83,
+    82,
     121,
+    84,
+    85,
+    127,
+    1,
+    0,
+    126,
+    206,
     5,
     0,
     0,
@@ -4575,6 +4392,13 @@
     147,
     82,
     121,
+    85,
+    86,
+    127,
+    1,
+    0,
+    126,
+    206,
     6,
     0,
     0,
@@ -4584,7 +4408,15 @@
     1,
     149,
     147,
-    120,
+    82,
+    121,
+    86,
+    87,
+    127,
+    1,
+    0,
+    126,
+    206,
     7,
     0,
     0,
@@ -4595,13 +4427,9 @@
     1,
     149,
     147,
-    92,
+    94,
     121,
     151,
-    1,
-    22,
-    121,
-    120,
     156,
     105,
     1,
@@ -6782,11 +6610,10 @@
     190,
     120,
     148,
-    4,
-    128,
-    240,
-    250,
-    2,
+    3,
+    64,
+    75,
+    76,
     148,
     118,
     0,
@@ -6939,10 +6766,14 @@
     117,
     117,
     117,
+    117,
+    117,
+    117,
+    117,
     81,
     103,
     118,
-    83,
+    82,
     156,
     99,
     117,
@@ -6985,9 +6816,9 @@
     185,
     190,
     3,
-    240,
-    6,
-    34,
+    0,
+    159,
+    36,
     148,
     156,
     105,
@@ -6997,38 +6828,38 @@
     121,
     126,
     32,
-    122,
-    106,
-    20,
-    111,
-    11,
-    124,
+    51,
+    247,
+    94,
+    154,
     120,
-    133,
-    219,
-    197,
-    60,
-    207,
-    163,
-    37,
-    184,
-    99,
+    214,
     142,
-    30,
+    78,
+    236,
+    5,
+    145,
+    181,
+    197,
+    64,
+    166,
+    158,
+    5,
+    250,
+    217,
+    128,
+    169,
+    104,
+    52,
+    153,
+    236,
+    147,
+    204,
+    190,
     1,
-    67,
-    111,
-    185,
-    220,
-    226,
-    61,
-    246,
-    9,
-    117,
-    232,
-    66,
-    47,
-    65,
+    43,
+    176,
+    161,
     124,
     170,
     135,
@@ -7115,11 +6946,10 @@
     105,
     104,
     104,
-    104,
     104
   ],
   "ast": {
-    "name": "RaffleRoundV8Mainnet",
+    "name": "RaffleRoundV9Mainnet",
     "params": [],
     "structs": [
       {
@@ -10859,168 +10689,168 @@
           "data": [
             {
               "kind": "byte",
-              "data": 122,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 51,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 106,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 247,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 20,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 94,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 111,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 11,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 124,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 154,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
               "data": 120,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 133,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 219,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 197,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 60,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 207,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 163,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 37,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 184,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 99,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 214,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
               "data": 142,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 30,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 78,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 236,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 5,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 145,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 181,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 197,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 64,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 166,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 158,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 5,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 250,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 217,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 128,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 169,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 104,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 52,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 153,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 236,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 147,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 204,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
+            },
+            {
+              "kind": "byte",
+              "data": 190,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
               "data": 1,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 67,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 43,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 111,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 176,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             },
             {
               "kind": "byte",
-              "data": 185,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 220,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 226,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 61,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 246,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 9,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 117,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 232,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 66,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 47,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
-            },
-            {
-              "kind": "byte",
-              "data": 65,
-              "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+              "data": 161,
+              "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
             }
           ],
-          "span": "0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41"
+          "span": "0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1"
         },
-        "span": "byte[32] constant REFUND_TEMPLATE = 0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41;",
+        "span": "byte[32] constant REFUND_TEMPLATE = 0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1;",
         "type_span": "byte[32]",
         "name_span": "REFUND_TEMPLATE"
       },
@@ -11030,222 +10860,79 @@
           "array_dims": [
             {
               "kind": "fixed",
-              "value": 32
+              "value": 9
             }
           ]
         },
-        "name": "DRAND_GUEST_IMAGE_ID",
+        "name": "BLOCK_HASH_KEY",
         "expr": {
           "kind": "array",
           "data": [
             {
               "kind": "byte",
-              "data": 6,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 66,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 13,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 108,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 190,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 111,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 128,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 99,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 221,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 107,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 137,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 72,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 192,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 97,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 212,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 115,
+              "span": "0x426c6f636b48617368"
             },
             {
               "kind": "byte",
-              "data": 41,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 193,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 51,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 130,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 85,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 114,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 24,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 236,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 98,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 146,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 98,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 167,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 200,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 93,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 57,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 127,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 232,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 206,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 13,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 125,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 229,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 28,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 254,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
-            },
-            {
-              "kind": "byte",
-              "data": 135,
-              "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+              "data": 104,
+              "span": "0x426c6f636b48617368"
             }
           ],
-          "span": "0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87"
+          "span": "0x426c6f636b48617368"
         },
-        "span": "byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;",
-        "type_span": "byte[32]",
-        "name_span": "DRAND_GUEST_IMAGE_ID"
+        "span": "byte[9] constant BLOCK_HASH_KEY = 0x426c6f636b48617368;",
+        "type_span": "byte[9]",
+        "name_span": "BLOCK_HASH_KEY"
       },
       {
         "type_ref": {
           "base": "int"
         },
-        "name": "DRAND_ROUND_OFFSET",
+        "name": "RANDOM_DELAY_DAA",
         "expr": {
           "kind": "int",
-          "data": 14205535,
-          "span": "14205535"
+          "data": 30,
+          "span": "30"
         },
-        "span": "int constant DRAND_ROUND_OFFSET = 14205535;",
+        "span": "int constant RANDOM_DELAY_DAA = 30;",
         "type_span": "int ",
-        "name_span": "DRAND_ROUND_OFFSET"
-      },
-      {
-        "type_ref": {
-          "base": "int"
-        },
-        "name": "DRAND_DELAY_ROUNDS",
-        "expr": {
-          "kind": "int",
-          "data": 40,
-          "span": "40"
-        },
-        "span": "int constant DRAND_DELAY_ROUNDS = 40;",
-        "type_span": "int ",
-        "name_span": "DRAND_DELAY_ROUNDS"
-      },
-      {
-        "type_ref": {
-          "base": "int"
-        },
-        "name": "CLOSE_FEE",
-        "expr": {
-          "kind": "int",
-          "data": 1550000,
-          "span": "1550000"
-        },
-        "span": "int constant CLOSE_FEE = 1550000;",
-        "type_span": "int ",
-        "name_span": "CLOSE_FEE"
+        "name_span": "RANDOM_DELAY_DAA"
       },
       {
         "type_ref": {
@@ -11254,15 +10941,485 @@
         "name": "FINALIZE_FEE",
         "expr": {
           "kind": "int",
-          "data": 50000000,
-          "span": "50000000"
+          "data": 5000000,
+          "span": "5000000"
         },
-        "span": "int constant FINALIZE_FEE = 50000000;",
+        "span": "int constant FINALIZE_FEE = 5000000;",
         "type_span": "int ",
         "name_span": "FINALIZE_FEE"
       }
     ],
     "functions": [
+      {
+        "name": "blockHash",
+        "params": [
+          {
+            "type_ref": {
+              "base": "byte",
+              "array_dims": [
+                {
+                  "kind": "dynamic"
+                }
+              ]
+            },
+            "name": "before_daa",
+            "span": "byte[] before_daa",
+            "type_span": "byte[]",
+            "name_span": "before_daa"
+          },
+          {
+            "type_ref": {
+              "base": "int"
+            },
+            "name": "daa_score",
+            "span": "int daa_score",
+            "type_span": "int ",
+            "name_span": "daa_score"
+          },
+          {
+            "type_ref": {
+              "base": "int"
+            },
+            "name": "blue_score",
+            "span": "int blue_score",
+            "type_span": "int ",
+            "name_span": "blue_score"
+          },
+          {
+            "type_ref": {
+              "base": "byte",
+              "array_dims": [
+                {
+                  "kind": "dynamic"
+                }
+              ]
+            },
+            "name": "encoded_blue_work",
+            "span": "byte[] encoded_blue_work",
+            "type_span": "byte[]",
+            "name_span": "encoded_blue_work"
+          },
+          {
+            "type_ref": {
+              "base": "byte",
+              "array_dims": [
+                {
+                  "kind": "fixed",
+                  "value": 32
+                }
+              ]
+            },
+            "name": "pruning_point",
+            "span": "byte[32] pruning_point",
+            "type_span": "byte[32]",
+            "name_span": "pruning_point"
+          }
+        ],
+        "entrypoint": false,
+        "return_types": [
+          {
+            "base": "byte",
+            "array_dims": [
+              {
+                "kind": "fixed",
+                "value": 32
+              }
+            ]
+          }
+        ],
+        "returns_tuple": false,
+        "body": [
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "ge",
+                  "left": {
+                    "kind": "unary_suffix",
+                    "data": {
+                      "source": {
+                        "kind": "identifier",
+                        "data": "before_daa",
+                        "span": "before_daa"
+                      },
+                      "kind": "length",
+                      "span": ".length"
+                    },
+                    "span": "before_daa.length"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "data": 166,
+                    "span": "166"
+                  }
+                },
+                "span": "before_daa.length >= 166"
+              },
+              "message": null,
+              "span": "require(before_daa.length >= 166);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "unary_suffix",
+                        "data": {
+                          "source": {
+                            "kind": "identifier",
+                            "data": "encoded_blue_work",
+                            "span": "encoded_blue_work"
+                          },
+                          "kind": "length",
+                          "span": ".length"
+                        },
+                        "span": "encoded_blue_work.length"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 8,
+                        "span": "8 "
+                      }
+                    },
+                    "span": "encoded_blue_work.length >= 8 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "le",
+                      "left": {
+                        "kind": "unary_suffix",
+                        "data": {
+                          "source": {
+                            "kind": "identifier",
+                            "data": "encoded_blue_work",
+                            "span": "encoded_blue_work"
+                          },
+                          "kind": "length",
+                          "span": ".length"
+                        },
+                        "span": "encoded_blue_work.length"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 40,
+                        "span": "40"
+                      }
+                    },
+                    "span": "encoded_blue_work.length <= 40"
+                  }
+                },
+                "span": "encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40"
+              },
+              "message": null,
+              "span": "require(encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "variable_definition",
+            "data": {
+              "type_ref": {
+                "base": "int"
+              },
+              "modifiers": [],
+              "name": "work_length",
+              "expr": {
+                "kind": "call",
+                "data": {
+                  "name": "OpBin2Num",
+                  "args": [
+                    {
+                      "kind": "slice",
+                      "data": {
+                        "source": {
+                          "kind": "identifier",
+                          "data": "encoded_blue_work",
+                          "span": "encoded_blue_work"
+                        },
+                        "start": {
+                          "kind": "int",
+                          "data": 0,
+                          "span": "0"
+                        },
+                        "end": {
+                          "kind": "int",
+                          "data": 8,
+                          "span": "8"
+                        },
+                        "span": ".slice(0, 8)"
+                      },
+                      "span": "encoded_blue_work.slice(0, 8)"
+                    }
+                  ],
+                  "name_span": "OpBin2Num"
+                },
+                "span": "OpBin2Num(encoded_blue_work.slice(0, 8))"
+              },
+              "span": "int work_length = OpBin2Num(encoded_blue_work.slice(0, 8));",
+              "type_span": "int ",
+              "modifier_spans": [],
+              "name_span": "work_length"
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "work_length",
+                        "span": "work_length"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "data": 0,
+                        "span": "0 "
+                      }
+                    },
+                    "span": "work_length >= 0 "
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "binary",
+                        "data": {
+                          "op": "add",
+                          "left": {
+                            "kind": "identifier",
+                            "data": "work_length",
+                            "span": "work_length"
+                          },
+                          "right": {
+                            "kind": "int",
+                            "data": 8,
+                            "span": "8 "
+                          }
+                        },
+                        "span": "work_length + 8 "
+                      },
+                      "right": {
+                        "kind": "unary_suffix",
+                        "data": {
+                          "source": {
+                            "kind": "identifier",
+                            "data": "encoded_blue_work",
+                            "span": "encoded_blue_work"
+                          },
+                          "kind": "length",
+                          "span": ".length"
+                        },
+                        "span": "encoded_blue_work.length"
+                      }
+                    },
+                    "span": "work_length + 8 == encoded_blue_work.length"
+                  }
+                },
+                "span": "work_length >= 0 && work_length + 8 == encoded_blue_work.length"
+              },
+              "message": null,
+              "span": "require(work_length >= 0 && work_length + 8 == encoded_blue_work.length);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "variable_definition",
+            "data": {
+              "type_ref": {
+                "base": "byte",
+                "array_dims": [
+                  {
+                    "kind": "dynamic"
+                  }
+                ]
+              },
+              "modifiers": [],
+              "name": "header",
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "add",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "add",
+                      "left": {
+                        "kind": "binary",
+                        "data": {
+                          "op": "add",
+                          "left": {
+                            "kind": "binary",
+                            "data": {
+                              "op": "add",
+                              "left": {
+                                "kind": "identifier",
+                                "data": "before_daa",
+                                "span": "before_daa"
+                              },
+                              "right": {
+                                "kind": "call",
+                                "data": {
+                                  "name": "byte[]",
+                                  "args": [
+                                    {
+                                      "kind": "call",
+                                      "data": {
+                                        "name": "byte[8]",
+                                        "args": [
+                                          {
+                                            "kind": "identifier",
+                                            "data": "daa_score",
+                                            "span": "daa_score"
+                                          }
+                                        ],
+                                        "name_span": "byte[8]"
+                                      },
+                                      "span": "byte[8](daa_score)"
+                                    }
+                                  ],
+                                  "name_span": "byte[]"
+                                },
+                                "span": "byte[](byte[8](daa_score))"
+                              }
+                            },
+                            "span": "before_daa + byte[](byte[8](daa_score))"
+                          },
+                          "right": {
+                            "kind": "call",
+                            "data": {
+                              "name": "byte[]",
+                              "args": [
+                                {
+                                  "kind": "call",
+                                  "data": {
+                                    "name": "byte[8]",
+                                    "args": [
+                                      {
+                                        "kind": "identifier",
+                                        "data": "blue_score",
+                                        "span": "blue_score"
+                                      }
+                                    ],
+                                    "name_span": "byte[8]"
+                                  },
+                                  "span": "byte[8](blue_score)"
+                                }
+                              ],
+                              "name_span": "byte[]"
+                            },
+                            "span": "byte[](byte[8](blue_score))"
+                          }
+                        },
+                        "span": "before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score))"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "encoded_blue_work",
+                        "span": "encoded_blue_work"
+                      }
+                    },
+                    "span": "before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work"
+                  },
+                  "right": {
+                    "kind": "call",
+                    "data": {
+                      "name": "byte[]",
+                      "args": [
+                        {
+                          "kind": "identifier",
+                          "data": "pruning_point",
+                          "span": "pruning_point"
+                        }
+                      ],
+                      "name_span": "byte[]"
+                    },
+                    "span": "byte[](pruning_point)"
+                  }
+                },
+                "span": "before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point)"
+              },
+              "span": "byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);",
+              "type_span": "byte[]",
+              "modifier_spans": [],
+              "name_span": "header"
+            }
+          },
+          {
+            "kind": "return",
+            "data": {
+              "exprs": [
+                {
+                  "kind": "call",
+                  "data": {
+                    "name": "byte[32]",
+                    "args": [
+                      {
+                        "kind": "call",
+                        "data": {
+                          "name": "OpBlake2bWithKey",
+                          "args": [
+                            {
+                              "kind": "identifier",
+                              "data": "header",
+                              "span": "header"
+                            },
+                            {
+                              "kind": "call",
+                              "data": {
+                                "name": "byte[]",
+                                "args": [
+                                  {
+                                    "kind": "identifier",
+                                    "data": "BLOCK_HASH_KEY",
+                                    "span": "BLOCK_HASH_KEY"
+                                  }
+                                ],
+                                "name_span": "byte[]"
+                              },
+                              "span": "byte[](BLOCK_HASH_KEY)"
+                            }
+                          ],
+                          "name_span": "OpBlake2bWithKey"
+                        },
+                        "span": "OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))"
+                      }
+                    ],
+                    "name_span": "byte[32]"
+                  },
+                  "span": "byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY)))"
+                }
+              ],
+              "span": "return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));"
+            }
+          }
+        ],
+        "return_type_spans": [
+          "byte[32]"
+        ],
+        "span": "function blockHash(byte[] before_daa, int daa_score, int blue_score, byte[] encoded_blue_work, byte[32] pruning_point) : byte[32] {\n        require(before_daa.length >= 166);\n        require(encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40);\n        int work_length = OpBin2Num(encoded_blue_work.slice(0, 8));\n        require(work_length >= 0 && work_length + 8 == encoded_blue_work.length);\n        byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);\n        return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));\n    }",
+        "name_span": "blockHash",
+        "body_span": "require(before_daa.length >= 166);\n        require(encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40);\n        int work_length = OpBin2Num(encoded_blue_work.slice(0, 8));\n        require(work_length >= 0 && work_length + 8 == encoded_blue_work.length);\n        byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);\n        return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));"
+      },
       {
         "name": "merkleRoot",
         "params": [
@@ -12120,6 +12277,41 @@
               },
               "message": null,
               "span": "require(refund_cursor == 0);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "lt",
+                  "left": {
+                    "kind": "call",
+                    "data": {
+                      "name": "OpTxInputDaaScore",
+                      "args": [
+                        {
+                          "kind": "nullary",
+                          "data": "active_input_index",
+                          "span": "this.activeInputIndex"
+                        }
+                      ],
+                      "name_span": "OpTxInputDaaScore"
+                    },
+                    "span": "OpTxInputDaaScore(this.activeInputIndex)"
+                  },
+                  "right": {
+                    "kind": "identifier",
+                    "data": "refund_after_daa",
+                    "span": "refund_after_daa"
+                  }
+                },
+                "span": "OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa"
+              },
+              "message": null,
+              "span": "require(OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa);",
               "message_span": null
             }
           },
@@ -13642,401 +13834,9 @@
           }
         ],
         "return_type_spans": [],
-        "span": "entrypoint function buy(pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });\n    }",
+        "span": "entrypoint function buy(pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n        require(OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });\n    }",
         "name_span": "buy",
-        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });"
-      },
-      {
-        "name": "close",
-        "params": [],
-        "entrypoint": true,
-        "return_types": [],
-        "returns_tuple": false,
-        "body": [
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "eq",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "refund_cursor",
-                    "span": "refund_cursor"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "refund_cursor == 0"
-              },
-              "message": null,
-              "span": "require(refund_cursor == 0);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "gt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "sold_tickets",
-                    "span": "sold_tickets"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "sold_tickets > 0"
-              },
-              "message": null,
-              "span": "require(sold_tickets > 0);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "or",
-                  "left": {
-                    "kind": "binary",
-                    "data": {
-                      "op": "eq",
-                      "left": {
-                        "kind": "identifier",
-                        "data": "sold_tickets",
-                        "span": "sold_tickets"
-                      },
-                      "right": {
-                        "kind": "identifier",
-                        "data": "max_tickets",
-                        "span": "max_tickets"
-                      }
-                    },
-                    "span": "sold_tickets == max_tickets"
-                  },
-                  "right": {
-                    "kind": "binary",
-                    "data": {
-                      "op": "ge",
-                      "left": {
-                        "kind": "nullary",
-                        "data": "tx_lock_time",
-                        "span": "tx.locktime"
-                      },
-                      "right": {
-                        "kind": "identifier",
-                        "data": "refund_after_daa",
-                        "span": "refund_after_daa"
-                      }
-                    },
-                    "span": "tx.locktime >= refund_after_daa"
-                  }
-                },
-                "span": "sold_tickets == max_tickets || tx.locktime >= refund_after_daa"
-              },
-              "message": null,
-              "span": "require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "eq",
-                  "left": {
-                    "kind": "call",
-                    "data": {
-                      "name": "OpAuthOutputCount",
-                      "args": [
-                        {
-                          "kind": "nullary",
-                          "data": "active_input_index",
-                          "span": "this.activeInputIndex"
-                        }
-                      ],
-                      "name_span": "OpAuthOutputCount"
-                    },
-                    "span": "OpAuthOutputCount(this.activeInputIndex)"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 1,
-                    "span": "1"
-                  }
-                },
-                "span": "OpAuthOutputCount(this.activeInputIndex) == 1"
-              },
-              "message": null,
-              "span": "require(OpAuthOutputCount(this.activeInputIndex) == 1);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "variable_definition",
-            "data": {
-              "type_ref": {
-                "base": "int"
-              },
-              "modifiers": [],
-              "name": "cov_out_idx",
-              "expr": {
-                "kind": "call",
-                "data": {
-                  "name": "OpAuthOutputIdx",
-                  "args": [
-                    {
-                      "kind": "nullary",
-                      "data": "active_input_index",
-                      "span": "this.activeInputIndex"
-                    },
-                    {
-                      "kind": "int",
-                      "data": 0,
-                      "span": "0"
-                    }
-                  ],
-                  "name_span": "OpAuthOutputIdx"
-                },
-                "span": "OpAuthOutputIdx(this.activeInputIndex, 0)"
-              },
-              "span": "int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);",
-              "type_span": "int ",
-              "modifier_spans": [],
-              "name_span": "cov_out_idx"
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "eq",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "cov_out_idx",
-                    "span": "cov_out_idx"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "cov_out_idx == 0"
-              },
-              "message": null,
-              "span": "require(cov_out_idx == 0);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "eq",
-                  "left": {
-                    "kind": "nullary",
-                    "data": "tx_outputs_length",
-                    "span": "tx.outputs.length"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 1,
-                    "span": "1"
-                  }
-                },
-                "span": "tx.outputs.length == 1"
-              },
-              "message": null,
-              "span": "require(tx.outputs.length == 1);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "binary",
-                "data": {
-                  "op": "eq",
-                  "left": {
-                    "kind": "introspection",
-                    "data": {
-                      "kind": "output_value",
-                      "index": {
-                        "kind": "int",
-                        "data": 0,
-                        "span": "0"
-                      },
-                      "field_span": ".value"
-                    },
-                    "span": "tx.outputs[0].value"
-                  },
-                  "right": {
-                    "kind": "binary",
-                    "data": {
-                      "op": "sub",
-                      "left": {
-                        "kind": "introspection",
-                        "data": {
-                          "kind": "input_value",
-                          "index": {
-                            "kind": "nullary",
-                            "data": "active_input_index",
-                            "span": "this.activeInputIndex"
-                          },
-                          "field_span": ".value"
-                        },
-                        "span": "tx.inputs[this.activeInputIndex].value"
-                      },
-                      "right": {
-                        "kind": "identifier",
-                        "data": "CLOSE_FEE",
-                        "span": "CLOSE_FEE"
-                      }
-                    },
-                    "span": "tx.inputs[this.activeInputIndex].value - CLOSE_FEE"
-                  }
-                },
-                "span": "tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE"
-              },
-              "message": null,
-              "span": "require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);",
-              "message_span": null
-            }
-          },
-          {
-            "kind": "function_call",
-            "data": {
-              "name": "validateOutputState",
-              "args": [
-                {
-                  "kind": "int",
-                  "data": 0,
-                  "span": "0"
-                },
-                {
-                  "kind": "state_object",
-                  "data": [
-                    {
-                      "name": "max_tickets",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "max_tickets",
-                        "span": "max_tickets"
-                      },
-                      "span": "max_tickets: max_tickets",
-                      "name_span": "max_tickets"
-                    },
-                    {
-                      "name": "ticket_price",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "ticket_price",
-                        "span": "ticket_price"
-                      },
-                      "span": "ticket_price: ticket_price",
-                      "name_span": "ticket_price"
-                    },
-                    {
-                      "name": "creator_pubkey",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "creator_pubkey",
-                        "span": "creator_pubkey"
-                      },
-                      "span": "creator_pubkey: creator_pubkey",
-                      "name_span": "creator_pubkey"
-                    },
-                    {
-                      "name": "refund_after_daa",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "refund_after_daa",
-                        "span": "refund_after_daa"
-                      },
-                      "span": "refund_after_daa: refund_after_daa",
-                      "name_span": "refund_after_daa"
-                    },
-                    {
-                      "name": "sold_tickets",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "sold_tickets",
-                        "span": "sold_tickets"
-                      },
-                      "span": "sold_tickets: sold_tickets",
-                      "name_span": "sold_tickets"
-                    },
-                    {
-                      "name": "ticket_root",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "ticket_root",
-                        "span": "ticket_root"
-                      },
-                      "span": "ticket_root: ticket_root",
-                      "name_span": "ticket_root"
-                    },
-                    {
-                      "name": "frontier",
-                      "expr": {
-                        "kind": "identifier",
-                        "data": "frontier",
-                        "span": "frontier"
-                      },
-                      "span": "frontier: frontier",
-                      "name_span": "frontier"
-                    },
-                    {
-                      "name": "refund_cursor",
-                      "expr": {
-                        "kind": "unary",
-                        "data": {
-                          "op": "neg",
-                          "expr": {
-                            "kind": "int",
-                            "data": 1,
-                            "span": "1"
-                          }
-                        },
-                        "span": "-1"
-                      },
-                      "span": "refund_cursor: -1",
-                      "name_span": "refund_cursor"
-                    }
-                  ],
-                  "span": "{\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        }"
-                }
-              ],
-              "span": "validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });",
-              "name_span": "validateOutputState"
-            }
-          }
-        ],
-        "return_type_spans": [],
-        "span": "entrypoint function close() {\n        require(refund_cursor == 0);\n        require(sold_tickets > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(cov_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);\n        validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });\n    }",
-        "name_span": "close",
-        "body_span": "require(refund_cursor == 0);\n        require(sold_tickets > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(cov_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);\n        validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });"
+        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n        require(OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });"
       },
       {
         "name": "finalize",
@@ -14046,45 +13846,32 @@
               "base": "byte",
               "array_dims": [
                 {
-                  "kind": "fixed",
-                  "value": 32
+                  "kind": "dynamic"
                 }
               ]
             },
-            "name": "claim",
-            "span": "byte[32] claim",
-            "type_span": "byte[32]",
-            "name_span": "claim"
+            "name": "target_before_daa",
+            "span": "byte[] target_before_daa",
+            "type_span": "byte[]",
+            "name_span": "target_before_daa"
           },
           {
             "type_ref": {
-              "base": "byte",
-              "array_dims": [
-                {
-                  "kind": "fixed",
-                  "value": 4
-                }
-              ]
+              "base": "int"
             },
-            "name": "control_index",
-            "span": "byte[4] control_index",
-            "type_span": "byte[4]",
-            "name_span": "control_index"
+            "name": "target_daa",
+            "span": "int target_daa",
+            "type_span": "int ",
+            "name_span": "target_daa"
           },
           {
             "type_ref": {
-              "base": "byte",
-              "array_dims": [
-                {
-                  "kind": "fixed",
-                  "value": 256
-                }
-              ]
+              "base": "int"
             },
-            "name": "control_digests",
-            "span": "byte[256] control_digests",
-            "type_span": "byte[256]",
-            "name_span": "control_digests"
+            "name": "target_blue_score",
+            "span": "int target_blue_score",
+            "type_span": "int ",
+            "name_span": "target_blue_score"
           },
           {
             "type_ref": {
@@ -14095,10 +13882,10 @@
                 }
               ]
             },
-            "name": "seal",
-            "span": "byte[] seal",
+            "name": "target_blue_work",
+            "span": "byte[] target_blue_work",
             "type_span": "byte[]",
-            "name_span": "seal"
+            "name_span": "target_blue_work"
           },
           {
             "type_ref": {
@@ -14110,19 +13897,71 @@
                 }
               ]
             },
-            "name": "control_id",
-            "span": "byte[32] control_id",
+            "name": "target_pruning_point",
+            "span": "byte[32] target_pruning_point",
             "type_span": "byte[32]",
-            "name_span": "control_id"
+            "name_span": "target_pruning_point"
+          },
+          {
+            "type_ref": {
+              "base": "byte",
+              "array_dims": [
+                {
+                  "kind": "fixed",
+                  "value": 32
+                }
+              ]
+            },
+            "name": "parent_hash",
+            "span": "byte[32] parent_hash",
+            "type_span": "byte[32]",
+            "name_span": "parent_hash"
+          },
+          {
+            "type_ref": {
+              "base": "byte",
+              "array_dims": [
+                {
+                  "kind": "dynamic"
+                }
+              ]
+            },
+            "name": "parent_before_daa",
+            "span": "byte[] parent_before_daa",
+            "type_span": "byte[]",
+            "name_span": "parent_before_daa"
           },
           {
             "type_ref": {
               "base": "int"
             },
-            "name": "drand_round",
-            "span": "int drand_round",
+            "name": "parent_daa",
+            "span": "int parent_daa",
             "type_span": "int ",
-            "name_span": "drand_round"
+            "name_span": "parent_daa"
+          },
+          {
+            "type_ref": {
+              "base": "int"
+            },
+            "name": "parent_blue_score",
+            "span": "int parent_blue_score",
+            "type_span": "int ",
+            "name_span": "parent_blue_score"
+          },
+          {
+            "type_ref": {
+              "base": "byte",
+              "array_dims": [
+                {
+                  "kind": "dynamic"
+                }
+              ]
+            },
+            "name": "parent_blue_work",
+            "span": "byte[] parent_blue_work",
+            "type_span": "byte[]",
+            "name_span": "parent_blue_work"
           },
           {
             "type_ref": {
@@ -14134,10 +13973,10 @@
                 }
               ]
             },
-            "name": "randomness",
-            "span": "byte[32] randomness",
+            "name": "parent_pruning_point",
+            "span": "byte[32] parent_pruning_point",
             "type_span": "byte[32]",
-            "name_span": "randomness"
+            "name_span": "parent_pruning_point"
           },
           {
             "type_ref": {
@@ -14359,22 +14198,64 @@
                     "span": "refund_cursor"
                   },
                   "right": {
-                    "kind": "unary",
-                    "data": {
-                      "op": "neg",
-                      "expr": {
-                        "kind": "int",
-                        "data": 1,
-                        "span": "1"
-                      }
-                    },
-                    "span": "-1"
+                    "kind": "int",
+                    "data": 0,
+                    "span": "0"
                   }
                 },
-                "span": "refund_cursor == -1"
+                "span": "refund_cursor == 0"
               },
               "message": null,
-              "span": "require(refund_cursor == -1);",
+              "span": "require(refund_cursor == 0);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "or",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "eq",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "sold_tickets",
+                        "span": "sold_tickets"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "max_tickets",
+                        "span": "max_tickets"
+                      }
+                    },
+                    "span": "sold_tickets == max_tickets"
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "nullary",
+                        "data": "tx_lock_time",
+                        "span": "tx.locktime"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "refund_after_daa",
+                        "span": "refund_after_daa"
+                      }
+                    },
+                    "span": "tx.locktime >= refund_after_daa"
+                  }
+                },
+                "span": "sold_tickets == max_tickets || tx.locktime >= refund_after_daa"
+              },
+              "message": null,
+              "span": "require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);",
               "message_span": null
             }
           },
@@ -14385,62 +14266,165 @@
                 "base": "int"
               },
               "modifiers": [],
-              "name": "expected_round",
+              "name": "target_boundary",
               "expr": {
                 "kind": "binary",
                 "data": {
                   "op": "add",
                   "left": {
-                    "kind": "binary",
-                    "data": {
-                      "op": "add",
-                      "left": {
-                        "kind": "binary",
-                        "data": {
-                          "op": "div",
-                          "left": {
-                            "kind": "call",
-                            "data": {
-                              "name": "OpTxInputDaaScore",
-                              "args": [
-                                {
-                                  "kind": "nullary",
-                                  "data": "active_input_index",
-                                  "span": "this.activeInputIndex"
-                                }
-                              ],
-                              "name_span": "OpTxInputDaaScore"
-                            },
-                            "span": "OpTxInputDaaScore(this.activeInputIndex)"
-                          },
-                          "right": {
-                            "kind": "int",
-                            "data": 30,
-                            "span": "30 "
-                          }
-                        },
-                        "span": "OpTxInputDaaScore(this.activeInputIndex) / 30 "
-                      },
-                      "right": {
-                        "kind": "identifier",
-                        "data": "DRAND_ROUND_OFFSET",
-                        "span": "DRAND_ROUND_OFFSET"
-                      }
-                    },
-                    "span": "OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET"
+                    "kind": "identifier",
+                    "data": "refund_after_daa",
+                    "span": "refund_after_daa"
                   },
                   "right": {
                     "kind": "identifier",
-                    "data": "DRAND_DELAY_ROUNDS",
-                    "span": "DRAND_DELAY_ROUNDS"
+                    "data": "RANDOM_DELAY_DAA",
+                    "span": "RANDOM_DELAY_DAA"
                   }
                 },
-                "span": "OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS"
+                "span": "refund_after_daa + RANDOM_DELAY_DAA"
               },
-              "span": "int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;",
+              "span": "int target_boundary = refund_after_daa + RANDOM_DELAY_DAA;",
               "type_span": "int ",
               "modifier_spans": [],
-              "name_span": "expected_round"
+              "name_span": "target_boundary"
+            }
+          },
+          {
+            "kind": "if",
+            "data": {
+              "condition": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "identifier",
+                    "data": "sold_tickets",
+                    "span": "sold_tickets"
+                  },
+                  "right": {
+                    "kind": "identifier",
+                    "data": "max_tickets",
+                    "span": "max_tickets"
+                  }
+                },
+                "span": "sold_tickets == max_tickets"
+              },
+              "then_branch": [
+                {
+                  "kind": "assign",
+                  "data": {
+                    "name": "target_boundary",
+                    "expr": {
+                      "kind": "binary",
+                      "data": {
+                        "op": "add",
+                        "left": {
+                          "kind": "call",
+                          "data": {
+                            "name": "OpTxInputDaaScore",
+                            "args": [
+                              {
+                                "kind": "nullary",
+                                "data": "active_input_index",
+                                "span": "this.activeInputIndex"
+                              }
+                            ],
+                            "name_span": "OpTxInputDaaScore"
+                          },
+                          "span": "OpTxInputDaaScore(this.activeInputIndex)"
+                        },
+                        "right": {
+                          "kind": "identifier",
+                          "data": "RANDOM_DELAY_DAA",
+                          "span": "RANDOM_DELAY_DAA"
+                        }
+                      },
+                      "span": "OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA"
+                    },
+                    "span": "target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;",
+                    "name_span": "target_boundary"
+                  }
+                }
+              ],
+              "else_branch": null,
+              "span": "if (sold_tickets == max_tickets) {\n            target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;\n        }\n        ",
+              "then_span": "target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;",
+              "else_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "and",
+                  "left": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "lt",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "parent_daa",
+                        "span": "parent_daa"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "target_boundary",
+                        "span": "target_boundary"
+                      }
+                    },
+                    "span": "parent_daa < target_boundary"
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "data": {
+                      "op": "ge",
+                      "left": {
+                        "kind": "identifier",
+                        "data": "target_daa",
+                        "span": "target_daa"
+                      },
+                      "right": {
+                        "kind": "identifier",
+                        "data": "target_boundary",
+                        "span": "target_boundary"
+                      }
+                    },
+                    "span": "target_daa >= target_boundary"
+                  }
+                },
+                "span": "parent_daa < target_boundary && target_daa >= target_boundary"
+              },
+              "message": null,
+              "span": "require(parent_daa < target_boundary && target_daa >= target_boundary);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "lt",
+                  "left": {
+                    "kind": "identifier",
+                    "data": "parent_daa",
+                    "span": "parent_daa"
+                  },
+                  "right": {
+                    "kind": "identifier",
+                    "data": "target_daa",
+                    "span": "target_daa"
+                  }
+                },
+                "span": "parent_daa < target_daa"
+              },
+              "message": null,
+              "span": "require(parent_daa < target_daa);",
+              "message_span": null
             }
           },
           {
@@ -14451,20 +14435,102 @@
                 "data": {
                   "op": "eq",
                   "left": {
-                    "kind": "identifier",
-                    "data": "drand_round",
-                    "span": "drand_round"
+                    "kind": "call",
+                    "data": {
+                      "name": "byte[32]",
+                      "args": [
+                        {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "target_before_daa",
+                              "span": "target_before_daa"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 18,
+                              "span": "18"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 50,
+                              "span": "50"
+                            },
+                            "span": ".slice(18, 50)"
+                          },
+                          "span": "target_before_daa.slice(18, 50)"
+                        }
+                      ],
+                      "name_span": "byte[32]"
+                    },
+                    "span": "byte[32](target_before_daa.slice(18, 50))"
                   },
                   "right": {
                     "kind": "identifier",
-                    "data": "expected_round",
-                    "span": "expected_round"
+                    "data": "parent_hash",
+                    "span": "parent_hash"
                   }
                 },
-                "span": "drand_round == expected_round"
+                "span": "byte[32](target_before_daa.slice(18, 50)) == parent_hash"
               },
               "message": null,
-              "span": "require(drand_round == expected_round);",
+              "span": "require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);",
+              "message_span": null
+            }
+          },
+          {
+            "kind": "require",
+            "data": {
+              "expr": {
+                "kind": "binary",
+                "data": {
+                  "op": "eq",
+                  "left": {
+                    "kind": "call",
+                    "data": {
+                      "name": "blockHash",
+                      "args": [
+                        {
+                          "kind": "identifier",
+                          "data": "parent_before_daa",
+                          "span": "parent_before_daa"
+                        },
+                        {
+                          "kind": "identifier",
+                          "data": "parent_daa",
+                          "span": "parent_daa"
+                        },
+                        {
+                          "kind": "identifier",
+                          "data": "parent_blue_score",
+                          "span": "parent_blue_score"
+                        },
+                        {
+                          "kind": "identifier",
+                          "data": "parent_blue_work",
+                          "span": "parent_blue_work"
+                        },
+                        {
+                          "kind": "identifier",
+                          "data": "parent_pruning_point",
+                          "span": "parent_pruning_point"
+                        }
+                      ],
+                      "name_span": "blockHash"
+                    },
+                    "span": "blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point)"
+                  },
+                  "right": {
+                    "kind": "identifier",
+                    "data": "parent_hash",
+                    "span": "parent_hash"
+                  }
+                },
+                "span": "blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash"
+              },
+              "message": null,
+              "span": "require(blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash);",
               "message_span": null
             }
           },
@@ -14481,243 +14547,91 @@
                 ]
               },
               "modifiers": [],
-              "name": "journal_digest",
+              "name": "target_hash",
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "sha256",
+                  "name": "blockHash",
                   "args": [
                     {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "call",
-                          "data": {
-                            "name": "byte[]",
-                            "args": [
-                              {
-                                "kind": "call",
-                                "data": {
-                                  "name": "byte[8]",
-                                  "args": [
-                                    {
-                                      "kind": "identifier",
-                                      "data": "drand_round",
-                                      "span": "drand_round"
-                                    }
-                                  ],
-                                  "name_span": "byte[8]"
-                                },
-                                "span": "byte[8](drand_round)"
-                              }
-                            ],
-                            "name_span": "byte[]"
-                          },
-                          "span": "byte[](byte[8](drand_round))"
-                        },
-                        "right": {
-                          "kind": "call",
-                          "data": {
-                            "name": "byte[]",
-                            "args": [
-                              {
-                                "kind": "identifier",
-                                "data": "randomness",
-                                "span": "randomness"
-                              }
-                            ],
-                            "name_span": "byte[]"
-                          },
-                          "span": "byte[](randomness)"
-                        }
-                      },
-                      "span": "byte[](byte[8](drand_round)) + byte[](randomness)"
-                    }
-                  ],
-                  "name_span": "sha256"
-                },
-                "span": "sha256(byte[](byte[8](drand_round)) + byte[](randomness))"
-              },
-              "span": "byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));",
-              "type_span": "byte[32]",
-              "modifier_spans": [],
-              "name_span": "journal_digest"
-            }
-          },
-          {
-            "kind": "require",
-            "data": {
-              "expr": {
-                "kind": "call",
-                "data": {
-                  "name": "OpZkPrecompile",
-                  "args": [
-                    {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[]",
-                        "args": [
-                          {
-                            "kind": "identifier",
-                            "data": "claim",
-                            "span": "claim"
-                          }
-                        ],
-                        "name_span": "byte[]"
-                      },
-                      "span": "byte[](claim)"
-                    },
-                    {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[]",
-                        "args": [
-                          {
-                            "kind": "identifier",
-                            "data": "control_index",
-                            "span": "control_index"
-                          }
-                        ],
-                        "name_span": "byte[]"
-                      },
-                      "span": "byte[](control_index)"
-                    },
-                    {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[]",
-                        "args": [
-                          {
-                            "kind": "identifier",
-                            "data": "control_digests",
-                            "span": "control_digests"
-                          }
-                        ],
-                        "name_span": "byte[]"
-                      },
-                      "span": "byte[](control_digests)"
+                      "kind": "identifier",
+                      "data": "target_before_daa",
+                      "span": "target_before_daa"
                     },
                     {
                       "kind": "identifier",
-                      "data": "seal",
-                      "span": "seal"
+                      "data": "target_daa",
+                      "span": "target_daa"
                     },
                     {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[]",
-                        "args": [
-                          {
-                            "kind": "identifier",
-                            "data": "journal_digest",
-                            "span": "journal_digest"
-                          }
-                        ],
-                        "name_span": "byte[]"
-                      },
-                      "span": "byte[](journal_digest)"
+                      "kind": "identifier",
+                      "data": "target_blue_score",
+                      "span": "target_blue_score"
                     },
                     {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[]",
-                        "args": [
-                          {
-                            "kind": "identifier",
-                            "data": "DRAND_GUEST_IMAGE_ID",
-                            "span": "DRAND_GUEST_IMAGE_ID"
-                          }
-                        ],
-                        "name_span": "byte[]"
-                      },
-                      "span": "byte[](DRAND_GUEST_IMAGE_ID)"
+                      "kind": "identifier",
+                      "data": "target_blue_work",
+                      "span": "target_blue_work"
                     },
                     {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[]",
-                        "args": [
-                          {
-                            "kind": "identifier",
-                            "data": "control_id",
-                            "span": "control_id"
-                          }
-                        ],
-                        "name_span": "byte[]"
-                      },
-                      "span": "byte[](control_id)"
-                    },
-                    {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[1]",
-                        "args": [
-                          {
-                            "kind": "call",
-                            "data": {
-                              "name": "byte[1]",
-                              "args": [
-                                {
-                                  "kind": "array",
-                                  "data": [
-                                    {
-                                      "kind": "byte",
-                                      "data": 1,
-                                      "span": "0x01"
-                                    }
-                                  ],
-                                  "span": "0x01"
-                                }
-                              ],
-                              "name_span": "byte"
-                            },
-                            "span": "byte(0x01)"
-                          }
-                        ],
-                        "name_span": "byte[1]"
-                      },
-                      "span": "byte[1](byte(0x01))"
-                    },
-                    {
-                      "kind": "call",
-                      "data": {
-                        "name": "byte[1]",
-                        "args": [
-                          {
-                            "kind": "call",
-                            "data": {
-                              "name": "byte[1]",
-                              "args": [
-                                {
-                                  "kind": "array",
-                                  "data": [
-                                    {
-                                      "kind": "byte",
-                                      "data": 33,
-                                      "span": "0x21"
-                                    }
-                                  ],
-                                  "span": "0x21"
-                                }
-                              ],
-                              "name_span": "byte"
-                            },
-                            "span": "byte(0x21)"
-                          }
-                        ],
-                        "name_span": "byte[1]"
-                      },
-                      "span": "byte[1](byte(0x21))"
+                      "kind": "identifier",
+                      "data": "target_pruning_point",
+                      "span": "target_pruning_point"
                     }
                   ],
-                  "name_span": "OpZkPrecompile"
+                  "name_span": "blockHash"
                 },
-                "span": "OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        )"
+                "span": "blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point)"
               },
-              "message": null,
-              "span": "require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));",
-              "message_span": null
+              "span": "byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);",
+              "type_span": "byte[32]",
+              "modifier_spans": [],
+              "name_span": "target_hash"
+            }
+          },
+          {
+            "kind": "variable_definition",
+            "data": {
+              "type_ref": {
+                "base": "byte",
+                "array_dims": [
+                  {
+                    "kind": "fixed",
+                    "value": 32
+                  }
+                ]
+              },
+              "modifiers": [],
+              "name": "seqcommit",
+              "expr": {
+                "kind": "call",
+                "data": {
+                  "name": "byte[32]",
+                  "args": [
+                    {
+                      "kind": "call",
+                      "data": {
+                        "name": "OpChainblockSeqCommit",
+                        "args": [
+                          {
+                            "kind": "identifier",
+                            "data": "target_hash",
+                            "span": "target_hash"
+                          }
+                        ],
+                        "name_span": "OpChainblockSeqCommit"
+                      },
+                      "span": "OpChainblockSeqCommit(target_hash)"
+                    }
+                  ],
+                  "name_span": "byte[32]"
+                },
+                "span": "byte[32](OpChainblockSeqCommit(target_hash))"
+              },
+              "span": "byte[32] seqcommit = byte[32](OpChainblockSeqCommit(target_hash));",
+              "type_span": "byte[32]",
+              "modifier_spans": [],
+              "name_span": "seqcommit"
             }
           },
           {
@@ -14744,19 +14658,41 @@
                       "data": {
                         "op": "add",
                         "left": {
-                          "kind": "call",
+                          "kind": "binary",
                           "data": {
-                            "name": "byte[]",
-                            "args": [
-                              {
-                                "kind": "identifier",
-                                "data": "ticket_root",
-                                "span": "ticket_root"
-                              }
-                            ],
-                            "name_span": "byte[]"
+                            "op": "add",
+                            "left": {
+                              "kind": "call",
+                              "data": {
+                                "name": "byte[]",
+                                "args": [
+                                  {
+                                    "kind": "identifier",
+                                    "data": "ticket_root",
+                                    "span": "ticket_root"
+                                  }
+                                ],
+                                "name_span": "byte[]"
+                              },
+                              "span": "byte[](ticket_root)"
+                            },
+                            "right": {
+                              "kind": "call",
+                              "data": {
+                                "name": "byte[]",
+                                "args": [
+                                  {
+                                    "kind": "identifier",
+                                    "data": "target_hash",
+                                    "span": "target_hash"
+                                  }
+                                ],
+                                "name_span": "byte[]"
+                              },
+                              "span": "byte[](target_hash)"
+                            }
                           },
-                          "span": "byte[](ticket_root)"
+                          "span": "byte[](ticket_root) + byte[](target_hash)"
                         },
                         "right": {
                           "kind": "call",
@@ -14765,23 +14701,23 @@
                             "args": [
                               {
                                 "kind": "identifier",
-                                "data": "randomness",
-                                "span": "randomness"
+                                "data": "seqcommit",
+                                "span": "seqcommit"
                               }
                             ],
                             "name_span": "byte[]"
                           },
-                          "span": "byte[](randomness)"
+                          "span": "byte[](seqcommit)"
                         }
                       },
-                      "span": "byte[](ticket_root) + byte[](randomness)"
+                      "span": "byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit)"
                     }
                   ],
                   "name_span": "sha256"
                 },
-                "span": "sha256(byte[](ticket_root) + byte[](randomness))"
+                "span": "sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit))"
               },
-              "span": "byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));",
+              "span": "byte[32] seed = sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit));",
               "type_span": "byte[32]",
               "modifier_spans": [],
               "name_span": "seed"
@@ -14798,30 +14734,54 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 0,
+                              "span": "0"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 1,
+                              "span": "1"
+                            },
+                            "span": ".slice(0, 1)"
+                          },
+                          "span": "seed.slice(0, 1)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 0,
-                          "span": "0"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[0]"
+                      "span": "seed.slice(0, 1) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[0])"
+                "span": "OpBin2Num(seed.slice(0, 1) + 0x00)"
               },
-              "span": "int seed_0 = int(seed[0]);",
+              "span": "int seed_0 = OpBin2Num(seed.slice(0, 1) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_0"
@@ -14838,30 +14798,54 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 1,
+                              "span": "1"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 2,
+                              "span": "2"
+                            },
+                            "span": ".slice(1, 2)"
+                          },
+                          "span": "seed.slice(1, 2)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 1,
-                          "span": "1"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[1]"
+                      "span": "seed.slice(1, 2) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[1])"
+                "span": "OpBin2Num(seed.slice(1, 2) + 0x00)"
               },
-              "span": "int seed_1 = int(seed[1]);",
+              "span": "int seed_1 = OpBin2Num(seed.slice(1, 2) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_1"
@@ -14878,30 +14862,54 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 2,
+                              "span": "2"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 3,
+                              "span": "3"
+                            },
+                            "span": ".slice(2, 3)"
+                          },
+                          "span": "seed.slice(2, 3)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 2,
-                          "span": "2"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[2]"
+                      "span": "seed.slice(2, 3) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[2])"
+                "span": "OpBin2Num(seed.slice(2, 3) + 0x00)"
               },
-              "span": "int seed_2 = int(seed[2]);",
+              "span": "int seed_2 = OpBin2Num(seed.slice(2, 3) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_2"
@@ -14918,30 +14926,54 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 3,
+                              "span": "3"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 4,
+                              "span": "4"
+                            },
+                            "span": ".slice(3, 4)"
+                          },
+                          "span": "seed.slice(3, 4)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 3,
-                          "span": "3"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[3]"
+                      "span": "seed.slice(3, 4) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[3])"
+                "span": "OpBin2Num(seed.slice(3, 4) + 0x00)"
               },
-              "span": "int seed_3 = int(seed[3]);",
+              "span": "int seed_3 = OpBin2Num(seed.slice(3, 4) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_3"
@@ -14958,30 +14990,54 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 4,
+                              "span": "4"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 5,
+                              "span": "5"
+                            },
+                            "span": ".slice(4, 5)"
+                          },
+                          "span": "seed.slice(4, 5)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 4,
-                          "span": "4"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[4]"
+                      "span": "seed.slice(4, 5) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[4])"
+                "span": "OpBin2Num(seed.slice(4, 5) + 0x00)"
               },
-              "span": "int seed_4 = int(seed[4]);",
+              "span": "int seed_4 = OpBin2Num(seed.slice(4, 5) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_4"
@@ -14998,30 +15054,54 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 5,
+                              "span": "5"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 6,
+                              "span": "6"
+                            },
+                            "span": ".slice(5, 6)"
+                          },
+                          "span": "seed.slice(5, 6)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 5,
-                          "span": "5"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[5]"
+                      "span": "seed.slice(5, 6) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[5])"
+                "span": "OpBin2Num(seed.slice(5, 6) + 0x00)"
               },
-              "span": "int seed_5 = int(seed[5]);",
+              "span": "int seed_5 = OpBin2Num(seed.slice(5, 6) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_5"
@@ -15038,404 +15118,57 @@
               "expr": {
                 "kind": "call",
                 "data": {
-                  "name": "int",
+                  "name": "OpBin2Num",
                   "args": [
                     {
-                      "kind": "array_index",
+                      "kind": "binary",
                       "data": {
-                        "source": {
-                          "kind": "identifier",
-                          "data": "seed",
-                          "span": "seed"
+                        "op": "add",
+                        "left": {
+                          "kind": "slice",
+                          "data": {
+                            "source": {
+                              "kind": "identifier",
+                              "data": "seed",
+                              "span": "seed"
+                            },
+                            "start": {
+                              "kind": "int",
+                              "data": 6,
+                              "span": "6"
+                            },
+                            "end": {
+                              "kind": "int",
+                              "data": 7,
+                              "span": "7"
+                            },
+                            "span": ".slice(6, 7)"
+                          },
+                          "span": "seed.slice(6, 7)"
                         },
-                        "index": {
-                          "kind": "int",
-                          "data": 6,
-                          "span": "6"
+                        "right": {
+                          "kind": "array",
+                          "data": [
+                            {
+                              "kind": "byte",
+                              "data": 0,
+                              "span": "0x00"
+                            }
+                          ],
+                          "span": "0x00"
                         }
                       },
-                      "span": "seed[6]"
+                      "span": "seed.slice(6, 7) + 0x00"
                     }
                   ],
-                  "name_span": "int"
+                  "name_span": "OpBin2Num"
                 },
-                "span": "int(seed[6])"
+                "span": "OpBin2Num(seed.slice(6, 7) + 0x00)"
               },
-              "span": "int seed_6 = int(seed[6]);",
+              "span": "int seed_6 = OpBin2Num(seed.slice(6, 7) + 0x00);",
               "type_span": "int ",
               "modifier_spans": [],
               "name_span": "seed_6"
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_0",
-                    "span": "seed_0"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_0 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_0",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_0",
-                          "span": "seed_0"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_0 + 256"
-                    },
-                    "span": "seed_0 = seed_0 + 256;",
-                    "name_span": "seed_0"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        ",
-              "then_span": "seed_0 = seed_0 + 256;",
-              "else_span": null
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_1",
-                    "span": "seed_1"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_1 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_1",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_1",
-                          "span": "seed_1"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_1 + 256"
-                    },
-                    "span": "seed_1 = seed_1 + 256;",
-                    "name_span": "seed_1"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        ",
-              "then_span": "seed_1 = seed_1 + 256;",
-              "else_span": null
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_2",
-                    "span": "seed_2"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_2 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_2",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_2",
-                          "span": "seed_2"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_2 + 256"
-                    },
-                    "span": "seed_2 = seed_2 + 256;",
-                    "name_span": "seed_2"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        ",
-              "then_span": "seed_2 = seed_2 + 256;",
-              "else_span": null
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_3",
-                    "span": "seed_3"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_3 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_3",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_3",
-                          "span": "seed_3"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_3 + 256"
-                    },
-                    "span": "seed_3 = seed_3 + 256;",
-                    "name_span": "seed_3"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        ",
-              "then_span": "seed_3 = seed_3 + 256;",
-              "else_span": null
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_4",
-                    "span": "seed_4"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_4 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_4",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_4",
-                          "span": "seed_4"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_4 + 256"
-                    },
-                    "span": "seed_4 = seed_4 + 256;",
-                    "name_span": "seed_4"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        ",
-              "then_span": "seed_4 = seed_4 + 256;",
-              "else_span": null
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_5",
-                    "span": "seed_5"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_5 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_5",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_5",
-                          "span": "seed_5"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_5 + 256"
-                    },
-                    "span": "seed_5 = seed_5 + 256;",
-                    "name_span": "seed_5"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        ",
-              "then_span": "seed_5 = seed_5 + 256;",
-              "else_span": null
-            }
-          },
-          {
-            "kind": "if",
-            "data": {
-              "condition": {
-                "kind": "binary",
-                "data": {
-                  "op": "lt",
-                  "left": {
-                    "kind": "identifier",
-                    "data": "seed_6",
-                    "span": "seed_6"
-                  },
-                  "right": {
-                    "kind": "int",
-                    "data": 0,
-                    "span": "0"
-                  }
-                },
-                "span": "seed_6 < 0"
-              },
-              "then_branch": [
-                {
-                  "kind": "assign",
-                  "data": {
-                    "name": "seed_6",
-                    "expr": {
-                      "kind": "binary",
-                      "data": {
-                        "op": "add",
-                        "left": {
-                          "kind": "identifier",
-                          "data": "seed_6",
-                          "span": "seed_6"
-                        },
-                        "right": {
-                          "kind": "int",
-                          "data": 256,
-                          "span": "256"
-                        }
-                      },
-                      "span": "seed_6 + 256"
-                    },
-                    "span": "seed_6 = seed_6 + 256;",
-                    "name_span": "seed_6"
-                  }
-                }
-              ],
-              "else_branch": null,
-              "span": "if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        ",
-              "then_span": "seed_6 = seed_6 + 256;",
-              "else_span": null
             }
           },
           {
@@ -16256,9 +15989,9 @@
           }
         ],
         "return_type_spans": [],
-        "span": "entrypoint function finalize(\n        byte[32] claim,\n        byte[4] control_index,\n        byte[256] control_digests,\n        byte[] seal,\n        byte[32] control_id,\n        int drand_round,\n        byte[32] randomness,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == -1);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }",
+        "span": "entrypoint function finalize(\n        byte[] target_before_daa,\n        int target_daa,\n        int target_blue_score,\n        byte[] target_blue_work,\n        byte[32] target_pruning_point,\n        byte[32] parent_hash,\n        byte[] parent_before_daa,\n        int parent_daa,\n        int parent_blue_score,\n        byte[] parent_blue_work,\n        byte[32] parent_pruning_point,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        int target_boundary = refund_after_daa + RANDOM_DELAY_DAA;\n        if (sold_tickets == max_tickets) {\n            target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;\n        }\n        require(parent_daa < target_boundary && target_daa >= target_boundary);\n        require(parent_daa < target_daa);\n        require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);\n        require(blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash);\n        byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);\n        byte[32] seqcommit = byte[32](OpChainblockSeqCommit(target_hash));\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit));\n        int seed_0 = OpBin2Num(seed.slice(0, 1) + 0x00);\n        int seed_1 = OpBin2Num(seed.slice(1, 2) + 0x00);\n        int seed_2 = OpBin2Num(seed.slice(2, 3) + 0x00);\n        int seed_3 = OpBin2Num(seed.slice(3, 4) + 0x00);\n        int seed_4 = OpBin2Num(seed.slice(4, 5) + 0x00);\n        int seed_5 = OpBin2Num(seed.slice(5, 6) + 0x00);\n        int seed_6 = OpBin2Num(seed.slice(6, 7) + 0x00);\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }",
         "name_span": "finalize",
-        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == -1);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);"
+        "body_span": "require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        int target_boundary = refund_after_daa + RANDOM_DELAY_DAA;\n        if (sold_tickets == max_tickets) {\n            target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;\n        }\n        require(parent_daa < target_boundary && target_daa >= target_boundary);\n        require(parent_daa < target_daa);\n        require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);\n        require(blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash);\n        byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);\n        byte[32] seqcommit = byte[32](OpChainblockSeqCommit(target_hash));\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit));\n        int seed_0 = OpBin2Num(seed.slice(0, 1) + 0x00);\n        int seed_1 = OpBin2Num(seed.slice(1, 2) + 0x00);\n        int seed_2 = OpBin2Num(seed.slice(2, 3) + 0x00);\n        int seed_3 = OpBin2Num(seed.slice(3, 4) + 0x00);\n        int seed_4 = OpBin2Num(seed.slice(4, 5) + 0x00);\n        int seed_5 = OpBin2Num(seed.slice(5, 6) + 0x00);\n        int seed_6 = OpBin2Num(seed.slice(6, 7) + 0x00);\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);"
       },
       {
         "name": "startRefund",
@@ -16560,17 +16293,17 @@
                       },
                       "right": {
                         "kind": "int",
-                        "data": 2230000,
-                        "span": "2230000"
+                        "data": 2400000,
+                        "span": "2400000"
                       }
                     },
-                    "span": "tx.inputs[this.activeInputIndex].value - 2230000"
+                    "span": "tx.inputs[this.activeInputIndex].value - 2400000"
                   }
                 },
-                "span": "tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000"
+                "span": "tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2400000"
               },
               "message": null,
-              "span": "require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);",
+              "span": "require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2400000);",
               "message_span": null
             }
           },
@@ -16681,13 +16414,13 @@
           }
         ],
         "return_type_spans": [],
-        "span": "entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }",
+        "span": "entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2400000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }",
         "name_span": "startRefund",
-        "body_span": "require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);"
+        "body_span": "require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2400000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);"
       }
     ],
-    "span": "contract RaffleRoundV8Mainnet() {\n    struct RefundState {\n        int ticket_price;\n        byte[32] creator_pubkey;\n        int sold_tickets;\n        byte[32] ticket_root;\n        int refund_cursor;\n    }\n\n    byte[32] constant REFUND_TEMPLATE = 0x7a6a146f0b7c7885dbc53ccfa325b8638e1e01436fb9dce23df60975e8422f41;\n    byte[32] constant DRAND_GUEST_IMAGE_ID = 0x060dbe80dd89c0d429c13382557218ec629262a7c85d397fe8ce0d7de51cfe87;\n    int constant DRAND_ROUND_OFFSET = 14205535;\n    int constant DRAND_DELAY_ROUNDS = 40;\n    int constant CLOSE_FEE = 1550000;\n    int constant FINALIZE_FEE = 50000000;\n\n    int max_tickets = 0;\n    int ticket_price = 0;\n    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int refund_after_daa = 0;\n    int sold_tickets = 0;\n    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[640] frontier = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;\n    int refund_cursor = 0;\n\n    function merkleRoot(byte[32] leaf, int ticket_id, byte[] proof) : byte[32] {\n        require(proof.length == 640);\n        byte[32] node = leaf;\n        int path = ticket_id;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            byte[32] sibling = byte[32](proof.slice(start, start + 32));\n            if (path % 2 == 0) {\n                node = sha256(byte[](node) + byte[](sibling));\n            } else {\n                node = sha256(byte[](sibling) + byte[](node));\n            }\n            path = path / 2;\n        }\n        return(node);\n    }\n\n    function ticketLeaf(pubkey owner_pubkey) : byte[32] {\n        return(sha256(byte[](owner_pubkey)));\n    }\n\n    entrypoint function buy(pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });\n    }\n\n    entrypoint function close() {\n        require(refund_cursor == 0);\n        require(sold_tickets > 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(cov_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - CLOSE_FEE);\n        validateOutputState(0, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            frontier: frontier,\n            refund_cursor: -1,\n        });\n    }\n\n    entrypoint function finalize(\n        byte[32] claim,\n        byte[4] control_index,\n        byte[256] control_digests,\n        byte[] seal,\n        byte[32] control_id,\n        int drand_round,\n        byte[32] randomness,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == -1);\n\n        int expected_round = OpTxInputDaaScore(this.activeInputIndex) / 30 + DRAND_ROUND_OFFSET + DRAND_DELAY_ROUNDS;\n        require(drand_round == expected_round);\n        byte[32] journal_digest = sha256(byte[](byte[8](drand_round)) + byte[](randomness));\n        require(OpZkPrecompile(\n            byte[](claim),\n            byte[](control_index),\n            byte[](control_digests),\n            seal,\n            byte[](journal_digest),\n            byte[](DRAND_GUEST_IMAGE_ID),\n            byte[](control_id),\n            byte[1](byte(0x01)),\n            byte[1](byte(0x21))\n        ));\n\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](randomness));\n        int seed_0 = int(seed[0]);\n        int seed_1 = int(seed[1]);\n        int seed_2 = int(seed[2]);\n        int seed_3 = int(seed[3]);\n        int seed_4 = int(seed[4]);\n        int seed_5 = int(seed[5]);\n        int seed_6 = int(seed[6]);\n        if (seed_0 < 0) { seed_0 = seed_0 + 256; }\n        if (seed_1 < 0) { seed_1 = seed_1 + 256; }\n        if (seed_2 < 0) { seed_2 = seed_2 + 256; }\n        if (seed_3 < 0) { seed_3 = seed_3 + 256; }\n        if (seed_4 < 0) { seed_4 = seed_4 + 256; }\n        if (seed_5 < 0) { seed_5 = seed_5 + 256; }\n        if (seed_6 < 0) { seed_6 = seed_6 + 256; }\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }\n\n    entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2230000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }\n}",
-    "name_span": "RaffleRoundV8Mainnet"
+    "span": "contract RaffleRoundV9Mainnet() {\n    struct RefundState {\n        int ticket_price;\n        byte[32] creator_pubkey;\n        int sold_tickets;\n        byte[32] ticket_root;\n        int refund_cursor;\n    }\n\n    byte[32] constant REFUND_TEMPLATE = 0x33f75e9a78d68e4eec0591b5c540a69e05fad980a9683499ec93ccbe012bb0a1;\n    byte[9] constant BLOCK_HASH_KEY = 0x426c6f636b48617368;\n    int constant RANDOM_DELAY_DAA = 30;\n    int constant FINALIZE_FEE = 5000000;\n\n    int max_tickets = 0;\n    int ticket_price = 0;\n    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    int refund_after_daa = 0;\n    int sold_tickets = 0;\n    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;\n    byte[640] frontier = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;\n    int refund_cursor = 0;\n\n    function blockHash(byte[] before_daa, int daa_score, int blue_score, byte[] encoded_blue_work, byte[32] pruning_point) : byte[32] {\n        require(before_daa.length >= 166);\n        require(encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40);\n        int work_length = OpBin2Num(encoded_blue_work.slice(0, 8));\n        require(work_length >= 0 && work_length + 8 == encoded_blue_work.length);\n        byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);\n        return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));\n    }\n\n    function merkleRoot(byte[32] leaf, int ticket_id, byte[] proof) : byte[32] {\n        require(proof.length == 640);\n        byte[32] node = leaf;\n        int path = ticket_id;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            byte[32] sibling = byte[32](proof.slice(start, start + 32));\n            if (path % 2 == 0) {\n                node = sha256(byte[](node) + byte[](sibling));\n            } else {\n                node = sha256(byte[](sibling) + byte[](node));\n            }\n            path = path / 2;\n        }\n        return(node);\n    }\n\n    function ticketLeaf(pubkey owner_pubkey) : byte[32] {\n        return(sha256(byte[](owner_pubkey)));\n    }\n\n    entrypoint function buy(pubkey owner_pubkey, int ticket_count) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(max_tickets > 0);\n        require(max_tickets <= 1000000);\n        require(ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8);\n        require(sold_tickets % ticket_count == 0);\n        require(sold_tickets + ticket_count <= max_tickets);\n        require(refund_cursor == 0);\n        require(OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa);\n\n        byte[32] node = ticketLeaf(owner_pubkey);\n        byte[] next_frontier = byte[](frontier);\n        int start_level = 0;\n        if (ticket_count >= 2) {\n            next_frontier = byte[](node) + next_frontier.slice(32, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 1;\n        }\n        if (ticket_count >= 4) {\n            next_frontier = next_frontier.slice(0, 32) + byte[](node) + next_frontier.slice(64, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 2;\n        }\n        if (ticket_count == 8) {\n            next_frontier = next_frontier.slice(0, 64) + byte[](node) + next_frontier.slice(96, 640);\n            node = sha256(byte[](node) + byte[](node));\n            start_level = 3;\n        }\n\n        int path = sold_tickets;\n        bool carrying = true;\n        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;\n        for(level, 0, 20, 20) {\n            int start = level * 32;\n            if (level >= start_level) {\n                byte[32] sibling = empty_node;\n                if (path % 2 == 0) {\n                    if (carrying) {\n                        next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640);\n                        carrying = false;\n                    }\n                    node = sha256(byte[](node) + byte[](sibling));\n                } else {\n                    sibling = byte[32](frontier.slice(start, start + 32));\n                    node = sha256(byte[](sibling) + byte[](node));\n                }\n            }\n            empty_node = sha256(byte[](empty_node) + byte[](empty_node));\n            path = path / 2;\n        }\n\n        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);\n        validateOutputState(cov_out_idx, {\n            max_tickets: max_tickets,\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            refund_after_daa: refund_after_daa,\n            sold_tickets: sold_tickets + ticket_count,\n            ticket_root: node,\n            frontier: byte[640](next_frontier),\n            refund_cursor: 0,\n        });\n    }\n\n    entrypoint function finalize(\n        byte[] target_before_daa,\n        int target_daa,\n        int target_blue_score,\n        byte[] target_blue_work,\n        byte[32] target_pruning_point,\n        byte[32] parent_hash,\n        byte[] parent_before_daa,\n        int parent_daa,\n        int parent_blue_score,\n        byte[] parent_blue_work,\n        byte[32] parent_pruning_point,\n        int winner_ticket_id,\n        pubkey winner_pubkey,\n        byte[] winner_proof,\n        int caller_ticket_id,\n        pubkey caller_pubkey,\n        byte[] caller_proof\n    ) {\n        require(OpAuthOutputCount(this.activeInputIndex) == 0);\n        require(tx.inputs.length == 2);\n        require(tx.inputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(sold_tickets > 0);\n        require(refund_cursor == 0);\n        require(sold_tickets == max_tickets || tx.locktime >= refund_after_daa);\n        int target_boundary = refund_after_daa + RANDOM_DELAY_DAA;\n        if (sold_tickets == max_tickets) {\n            target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA;\n        }\n        require(parent_daa < target_boundary && target_daa >= target_boundary);\n        require(parent_daa < target_daa);\n        require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);\n        require(blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash);\n        byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);\n        byte[32] seqcommit = byte[32](OpChainblockSeqCommit(target_hash));\n        byte[32] seed = sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit));\n        int seed_0 = OpBin2Num(seed.slice(0, 1) + 0x00);\n        int seed_1 = OpBin2Num(seed.slice(1, 2) + 0x00);\n        int seed_2 = OpBin2Num(seed.slice(2, 3) + 0x00);\n        int seed_3 = OpBin2Num(seed.slice(3, 4) + 0x00);\n        int seed_4 = OpBin2Num(seed.slice(4, 5) + 0x00);\n        int seed_5 = OpBin2Num(seed.slice(5, 6) + 0x00);\n        int seed_6 = OpBin2Num(seed.slice(6, 7) + 0x00);\n        int winner_from_seed = (\n            seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 +\n            seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656\n        ) % sold_tickets;\n        require(winner_ticket_id == winner_from_seed);\n        require(winner_ticket_id >= 0 && winner_ticket_id < sold_tickets);\n        require(caller_ticket_id >= 0 && caller_ticket_id < sold_tickets);\n        require(merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root);\n        require(merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root);\n\n        int prize = ticket_price * sold_tickets;\n        int creator_refund = tx.inputs[this.activeInputIndex].value - prize - FINALIZE_FEE;\n        require(creator_refund >= 0);\n        require(tx.outputs.length == 3);\n        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)));\n        require(tx.outputs[0].value == prize);\n        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));\n        require(tx.outputs[1].value == creator_refund);\n        require(tx.outputs[2].scriptPubKey == byte[](new ScriptPubKeyP2PK(caller_pubkey)));\n        require(tx.outputs[2].value == tx.inputs[1].value);\n    }\n\n    entrypoint function startRefund(byte[] refund_prefix, byte[] refund_suffix) {\n        require(tx.locktime >= refund_after_daa);\n        require(sold_tickets > 0);\n        require(refund_cursor == 0 || refund_cursor == -1);\n        require(OpAuthOutputCount(this.activeInputIndex) == 1);\n        int refund_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);\n        require(refund_out_idx == 0);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - 2400000);\n        RefundState next_refund = {\n            ticket_price: ticket_price,\n            creator_pubkey: creator_pubkey,\n            sold_tickets: sold_tickets,\n            ticket_root: ticket_root,\n            refund_cursor: 0\n        };\n        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);\n    }\n}",
+    "name_span": "RaffleRoundV9Mainnet"
   },
   "abi": [
     {
@@ -16704,38 +16437,50 @@
       ]
     },
     {
-      "name": "close",
-      "inputs": []
-    },
-    {
       "name": "finalize",
       "inputs": [
         {
-          "name": "claim",
-          "type_name": "byte[32]"
-        },
-        {
-          "name": "control_index",
-          "type_name": "byte[4]"
-        },
-        {
-          "name": "control_digests",
-          "type_name": "byte[256]"
-        },
-        {
-          "name": "seal",
+          "name": "target_before_daa",
           "type_name": "byte[]"
         },
         {
-          "name": "control_id",
-          "type_name": "byte[32]"
-        },
-        {
-          "name": "drand_round",
+          "name": "target_daa",
           "type_name": "int"
         },
         {
-          "name": "randomness",
+          "name": "target_blue_score",
+          "type_name": "int"
+        },
+        {
+          "name": "target_blue_work",
+          "type_name": "byte[]"
+        },
+        {
+          "name": "target_pruning_point",
+          "type_name": "byte[32]"
+        },
+        {
+          "name": "parent_hash",
+          "type_name": "byte[32]"
+        },
+        {
+          "name": "parent_before_daa",
+          "type_name": "byte[]"
+        },
+        {
+          "name": "parent_daa",
+          "type_name": "int"
+        },
+        {
+          "name": "parent_blue_score",
+          "type_name": "int"
+        },
+        {
+          "name": "parent_blue_work",
+          "type_name": "byte[]"
+        },
+        {
+          "name": "parent_pruning_point",
           "type_name": "byte[32]"
         },
         {

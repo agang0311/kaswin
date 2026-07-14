@@ -14,10 +14,8 @@ import {
 } from "@onekeyfe/kaspa-wasm";
 import {
   assertRaffleRedeemScriptMatchesRound,
-  buildFinalizeSeedHex,
   buildRaffleAddress,
   buildRaffleBuySignatureScript,
-  buildRaffleCloseSignatureScript,
   buildRaffleFinalizeSignatureScript,
   buildRaffleRefundBatch8SignatureScript,
   buildRaffleRefundNextSignatureScript,
@@ -25,17 +23,16 @@ import {
   buildRaffleRedeemScript,
   buildRaffleScriptPublicKey,
   bytesToHex,
-  expectedDrandRoundForDaa,
   getRaffleRefundRuntimeArtifact,
   getRaffleRuntimeArtifact,
   pubkeyHexFromAddress,
   raffleCovenantStateFromRound,
-  raffleWinnerIndexFromSeed,
-  RISC0_DRAND_IMAGE_ID
+  raffleWinnerIndexFromSeed
 } from "./covenant";
 import type { KaspaRpcConnection } from "./rpc";
+import type { ChainRandomnessWitness } from "./chain-randomness";
 import { hexToBytes } from "../raffle/randomness";
-import type { DrandRisc0Proof, RaffleCovenantCursor, RoundState, TicketState } from "../raffle/types";
+import type { RaffleCovenantCursor, RoundState, TicketState } from "../raffle/types";
 import { appendTicketLeaves, verifyTicketProof, verifyTicketRange8 } from "../raffle/merkle";
 import type { BrowserTestWallet } from "./wallet";
 import { ensureKaspaWasmReady } from "./wasm";
@@ -84,18 +81,11 @@ export interface FinalizeRaffleCovenantRoundInput {
   wallet: BrowserTestWallet;
   round: RoundState;
   covenant: RaffleCovenantCursor;
-  proof: DrandRisc0Proof;
+  randomnessWitness: ChainRandomnessWitness;
   winner: TicketState;
   winnerProofHex?: string;
   callerTicketId?: number;
   callerProofHex?: string;
-  payload?: Uint8Array;
-}
-
-export interface CloseRaffleCovenantRoundInput {
-  connection: KaspaRpcConnection;
-  round: RoundState;
-  covenant: RaffleCovenantCursor;
   payload?: Uint8Array;
 }
 
@@ -122,12 +112,11 @@ export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n;
 export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 100_000n;
 export const REGISTRY_PAYMENT_FEE_SOMPI = 350_000n;
 export const COVENANT_CREATE_FEE_SOMPI = 300_000n;
-export const V8_COVENANT_BUY_FEE_SOMPI = 1_630_000n;
-export const V8_COVENANT_FINALIZE_FEE_SOMPI = 50_000_000n;
-export const V8_COVENANT_CLOSE_FEE_SOMPI = 1_550_000n;
-export const REFUND_TRANSITION_FEE_SOMPI = 2_230_000n;
+export const V9_COVENANT_BUY_FEE_SOMPI = 1_750_000n;
+export const V9_COVENANT_FINALIZE_FEE_SOMPI = 5_000_000n;
+export const REFUND_TRANSITION_FEE_SOMPI = 2_400_000n;
 export const REFUND_BATCH_FEE_PER_TICKET_SOMPI = 150_000n;
-export const REFUND_TAIL_FEE_PER_TICKET_SOMPI = 1_900_000n;
+export const REFUND_TAIL_FEE_PER_TICKET_SOMPI = 1_000_000n;
 const STANDARD_REFUND_MIN_SOMPI = 5_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 56_550_000n;
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 57_000_000n;
@@ -137,18 +126,17 @@ const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
 const LOW_COST_FUNDING_MIN_SOMPI = 20_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
 const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11;
-const V8_RAFFLE_FINALIZE_COMPUTE_BUDGET = 2_800;
-const V8_RAFFLE_CLOSE_COMPUTE_BUDGET = 4;
+const V9_RAFFLE_FINALIZE_COMPUTE_BUDGET = 300;
 const REFUND_TRANSITION_COMPUTE_BUDGET = 4;
 const REFUND_BATCH_COMPUTE_BUDGET = 5;
 const REFUND_TAIL_COMPUTE_BUDGET = 4;
 
 export function covenantBuyFeeSompi(_contractVersion: string, _ticketCount = 1): bigint {
-  return V8_COVENANT_BUY_FEE_SOMPI;
+  return V9_COVENANT_BUY_FEE_SOMPI;
 }
 
 export function covenantFinalizeFeeSompi(_contractVersion: string): bigint {
-  return V8_COVENANT_FINALIZE_FEE_SOMPI;
+  return V9_COVENANT_FINALIZE_FEE_SOMPI;
 }
 
 export function covenantRefundFeeSompi(_contractVersion: string): bigint {
@@ -165,44 +153,6 @@ function formatKasAmount(value: bigint): string {
   return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} KAS`;
 }
 
-async function assertValidDrandRisc0Proof(proof: DrandRisc0Proof, expectedRound: number): Promise<void> {
-  if (!proof || proof.round !== expectedRound) {
-    throw new Error(`Beacon proof is for drand round ${proof?.round ?? "unknown"}; round ${expectedRound} is required by this covenant UTXO.`);
-  }
-  if (proof.imageId.toLowerCase() !== RISC0_DRAND_IMAGE_ID) {
-    throw new Error("Beacon proof was produced by an unrecognized RISC Zero guest image.");
-  }
-  if (proof.hashfn !== 1) throw new Error("Beacon proof must use the Toccata Poseidon2 receipt hash function.");
-
-  const fixedHexFields: Array<[string, string, number]> = [
-    ["randomness", proof.randomness, 32],
-    ["claim", proof.claim, 32],
-    ["controlIndex", proof.controlIndex, 4],
-    ["controlDigests", proof.controlDigests, 256],
-    ["journalDigest", proof.journalDigest, 32],
-    ["controlId", proof.controlId, 32]
-  ];
-  for (const [name, value, bytes] of fixedHexFields) {
-    if (!new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`).test(value)) {
-      throw new Error(`Beacon proof ${name} must be exactly ${bytes} bytes of hex.`);
-    }
-  }
-  if (!/^[0-9a-fA-F]+$/.test(proof.seal) || proof.seal.length % 2 !== 0) {
-    throw new Error("Beacon proof seal must be non-empty even-length hex.");
-  }
-
-  const journal = new Uint8Array(40);
-  let round = BigInt(proof.round);
-  for (let index = 0; index < 8; index += 1) {
-    journal[index] = Number(round & 0xffn);
-    round >>= 8n;
-  }
-  journal.set(hexToBytes(proof.randomness), 8);
-  const digest = bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", journal)));
-  if (digest !== proof.journalDigest.toLowerCase()) {
-    throw new Error("Beacon proof journal digest does not match its drand round and randomness.");
-  }
-}
 const ZERO_SUBNETWORK_ID = "0000000000000000000000000000000000000000";
 const LOW_COST_REDEEM_SCRIPT = new Uint8Array([0x51]);
 
@@ -395,13 +345,12 @@ async function getCurrentCovenantUtxo(connection: KaspaRpcConnection, covenant: 
   return waitForAddressUtxo(connection, covenant.address, covenant.txId, covenant.outputIndex);
 }
 
-export async function requiredDrandRoundForRaffleCovenant(
+export async function currentRaffleCovenantDaaScore(
   connection: KaspaRpcConnection,
-  contractVersion: string,
   covenant: RaffleCovenantCursor
-): Promise<number> {
+): Promise<bigint> {
   const utxo = await getCurrentCovenantUtxo(connection, covenant);
-  return expectedDrandRoundForDaa(contractVersion, BigInt(utxo.blockDaaScore));
+  return BigInt(utxo.blockDaaScore);
 }
 
 async function waitForAddressUtxo(
@@ -527,6 +476,7 @@ function nextCovenantCursor(input: {
   status: RoundState["status"];
   ticketRoot: string;
   ticketFrontier?: string;
+  chainSearchHintHash?: string;
   refundCursor?: number;
   creatorPubkey: string;
   refundAfterDaaScore: string;
@@ -546,6 +496,7 @@ function nextCovenantCursor(input: {
     status: input.status,
     ticketRoot: input.ticketRoot,
     ticketFrontier: input.ticketFrontier,
+    chainSearchHintHash: input.chainSearchHintHash ?? input.previous.chainSearchHintHash,
     refundCursor: input.refundCursor,
     creatorPubkey: input.creatorPubkey,
     refundAfterDaaScore: input.refundAfterDaaScore,
@@ -796,6 +747,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
     );
 
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
+    const chainSearchHintHash = (await input.connection.client.getBlockDagInfo()).sink;
     const walletUtxos = await input.connection.client.getUtxosByAddresses({ addresses: [input.wallet.address] });
     const buyFee = covenantBuyFeeSompi(input.round.contractVersion, input.ticketCount);
     const stagingAmount = lowCostFundingAmount(purchaseAmount, buyFee);
@@ -910,6 +862,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
         status: "Open",
         ticketRoot: nextTicketRoot,
         ticketFrontier: nextRound.ticketFrontier,
+        chainSearchHintHash,
         refundCursor: nextRound.refundCursor,
         creatorPubkey: input.covenant.creatorPubkey,
         refundAfterDaaScore: input.covenant.refundAfterDaaScore,
@@ -923,90 +876,15 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
   }
 }
 
-export async function closeRaffleCovenantRound(input: CloseRaffleCovenantRoundInput): Promise<RaffleCovenantSpendResult> {
-  await ensureKaspaWasmReady();
-
-  try {
-    const currentRound: RoundState = {
-      ...input.round,
-      soldTickets: input.covenant.soldTickets,
-      potAmount: BigInt(input.covenant.potAmount),
-      status: "Open",
-      ticketRoot: input.covenant.ticketRoot,
-      ticketFrontier: input.covenant.ticketFrontier,
-      refundCursor: 0,
-      creatorPubkey: input.covenant.creatorPubkey,
-      refundAfterDaaScore: input.covenant.refundAfterDaaScore,
-      soldBatches: covenantSoldBatches(input.covenant),
-      ticketBatchEnds: covenantBatchEnds(input.covenant),
-      ticketOwnerPubkeys: input.covenant.ticketOwnerPubkeys
-    };
-    await assertRaffleRedeemScriptMatchesRound(currentRound, input.covenant.redeemScriptHex, "Close");
-    if (currentRound.soldTickets <= 0) throw new Error("There are no tickets to close.");
-
-    const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
-    const nextRound: RoundState = { ...currentRound, status: "Closed" };
-    const nextState = await raffleCovenantStateFromRound(nextRound);
-    const runtimeArtifact = getRaffleRuntimeArtifact(nextRound.contractVersion);
-    const nextRedeemScript = buildRaffleRedeemScript(nextState, runtimeArtifact);
-    const nextScriptPublicKey = await buildRaffleScriptPublicKey(nextState, runtimeArtifact);
-    const nextAddress = await buildRaffleAddress(nextState, input.connection.status.network, runtimeArtifact);
-    const nextAmount = BigInt(input.covenant.amountSompi) - V8_COVENANT_CLOSE_FEE_SOMPI;
-    if (nextAmount < currentRound.potAmount + V8_COVENANT_FINALIZE_FEE_SOMPI + STANDARD_REFUND_MIN_SOMPI) {
-      throw new Error("The covenant carrier is too small to close and finalize this round.");
-    }
-    const tx = buildManualTransaction({
-      inputs: [{
-        previousOutpoint: covenantOutpoint(input.covenant),
-        signatureScript: buildRaffleCloseSignatureScript(hexToBytes(input.covenant.redeemScriptHex)),
-        sequence: 0n,
-        sigOpCount: 0,
-        computeBudget: V8_RAFFLE_CLOSE_COMPUTE_BUDGET,
-        utxo: asInputUtxo(covenantUtxo)
-      }],
-      outputs: [new TransactionOutput(nextAmount, nextScriptPublicKey)],
-      payload: input.payload,
-      lockTime: currentRound.soldTickets >= currentRound.maxTickets
-        ? 0n
-        : BigInt(currentRound.refundAfterDaaScore)
-    });
-    bindSuccessorCovenant(tx, input.covenant.covenantId);
-    const txId = await submitTransaction(input.connection, tx);
-    return {
-      txId,
-      covenant: nextCovenantCursor({
-        previous: input.covenant,
-        address: nextAddress,
-        txId,
-        amountSompi: nextAmount,
-        redeemScript: nextRedeemScript,
-        soldTickets: currentRound.soldTickets,
-        potAmount: currentRound.potAmount,
-        status: "Closed",
-        ticketRoot: currentRound.ticketRoot,
-        ticketFrontier: currentRound.ticketFrontier,
-        refundCursor: 0,
-        creatorPubkey: currentRound.creatorPubkey,
-        refundAfterDaaScore: currentRound.refundAfterDaaScore,
-        soldBatches: currentRound.soldBatches,
-        ticketBatchEnds: currentRound.ticketBatchEnds,
-        ticketOwnerPubkeys: currentRound.ticketOwnerPubkeys
-      })
-    };
-  } catch (error) {
-    throw normalizeTransactionError(error);
-  }
-}
-
 export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantRoundInput): Promise<RaffleCovenantSpendResult> {
   await ensureKaspaWasmReady();
 
   try {
-    const closedRound: RoundState = {
+    const activeRound: RoundState = {
       ...input.round,
       soldTickets: input.covenant.soldTickets,
       potAmount: BigInt(input.covenant.potAmount),
-      status: "Closed",
+      status: "Open",
       ticketRoot: input.covenant.ticketRoot,
       ticketFrontier: input.covenant.ticketFrontier,
       refundCursor: input.covenant.refundCursor ?? 0,
@@ -1017,7 +895,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
       ticketOwnerPubkeys: input.covenant.ticketOwnerPubkeys
     };
 
-    await assertRaffleRedeemScriptMatchesRound(closedRound, input.covenant.redeemScriptHex, "Finalize");
+    await assertRaffleRedeemScriptMatchesRound(activeRound, input.covenant.redeemScriptHex, "Finalize");
 
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
     const callerPubkey = pubkeyHexFromAddress(input.wallet.address);
@@ -1025,7 +903,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     if (input.callerTicketId === undefined || !input.callerProofHex) {
       throw new Error("A participant ticket proof is required to draw this round.");
     }
-    if (!await verifyTicketProof(closedRound.ticketRoot, callerPubkey, input.callerTicketId, input.callerProofHex)) {
+    if (!await verifyTicketProof(activeRound.ticketRoot, callerPubkey, input.callerTicketId, input.callerProofHex)) {
       throw new Error("The caller ticket proof does not belong to the connected wallet.");
     }
 
@@ -1038,10 +916,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
       throw new Error(`The participant wallet needs a spendable UTXO of at least ${formatKasAmount(STANDARD_REFUND_MIN_SOMPI)} to authorize the draw. It is returned unchanged.`);
     }
 
-    const covenantDaaScore = BigInt(covenantUtxo.blockDaaScore);
-    const expectedDrandRound = expectedDrandRoundForDaa(closedRound.contractVersion, covenantDaaScore);
-    await assertValidDrandRisc0Proof(input.proof, expectedDrandRound);
-    const randomSeed = await buildFinalizeSeedHex(closedRound, input.proof.randomness);
+    const randomSeed = input.randomnessWitness.randomSeedHex;
     const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, input.covenant.soldTickets);
 
     if (winnerIndex + 1 !== input.winner.ticketId) {
@@ -1049,25 +924,25 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     }
 
     const winnerPubkey = input.winner.ownerPubkey || pubkeyHexFromAddress(input.winner.owner);
-    if (!input.winnerProofHex || !await verifyTicketProof(closedRound.ticketRoot, winnerPubkey, winnerIndex, input.winnerProofHex)) {
+    if (!input.winnerProofHex || !await verifyTicketProof(activeRound.ticketRoot, winnerPubkey, winnerIndex, input.winnerProofHex)) {
       throw new Error("The winner ticket proof does not match the covenant ticket root.");
     }
 
     const currentAmount = BigInt(input.covenant.amountSompi);
 
-    if (currentAmount < closedRound.potAmount) {
+    if (currentAmount < activeRound.potAmount) {
       throw new Error("Covenant UTXO does not contain enough funds for the prize.");
     }
 
     const winnerScriptPublicKey = payToAddressScript(input.winner.owner);
-    const outputs = [new TransactionOutput(closedRound.potAmount, winnerScriptPublicKey)];
-    const creatorRefundAmount = currentAmount - closedRound.potAmount - covenantFinalizeFeeSompi(closedRound.contractVersion);
+    const outputs = [new TransactionOutput(activeRound.potAmount, winnerScriptPublicKey)];
+    const creatorRefundAmount = currentAmount - activeRound.potAmount - covenantFinalizeFeeSompi(activeRound.contractVersion);
 
-    if (creatorRefundAmount < STANDARD_REFUND_MIN_SOMPI || !closedRound.creator || closedRound.creator === "no-wallet") {
+    if (creatorRefundAmount < STANDARD_REFUND_MIN_SOMPI || !activeRound.creator || activeRound.creator === "no-wallet") {
       throw new Error("Covenant carrier refund is too small or the creator address is missing.");
     }
 
-    outputs.push(new TransactionOutput(creatorRefundAmount, payToAddressScript(closedRound.creator)));
+    outputs.push(new TransactionOutput(creatorRefundAmount, payToAddressScript(activeRound.creator)));
     const callerScriptPublicKey = payToAddressScript(input.wallet.address);
     outputs.push(new TransactionOutput(authorizationUtxo.amount, callerScriptPublicKey));
 
@@ -1077,7 +952,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
           previousOutpoint: covenantOutpoint(input.covenant),
           signatureScript: buildRaffleFinalizeSignatureScript(
             hexToBytes(input.covenant.redeemScriptHex),
-            input.proof,
+            input.randomnessWitness,
             winnerIndex,
             winnerScriptPublicKey,
             callerScriptPublicKey,
@@ -1087,7 +962,7 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
           ),
           sequence: 0n,
           sigOpCount: 0,
-          computeBudget: V8_RAFFLE_FINALIZE_COMPUTE_BUDGET,
+          computeBudget: V9_RAFFLE_FINALIZE_COMPUTE_BUDGET,
           utxo: asInputUtxo(covenantUtxo)
         },
         {

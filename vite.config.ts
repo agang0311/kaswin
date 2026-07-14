@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -7,6 +8,26 @@ const brokenOneKeyWasmLoader =
   'return await WebAssembly.instantiate(require("./kaspa_bg.wasm.js")(), imports);';
 const unusedOneKeyDefaultWasmUrl =
   "module_or_path = new URL('kaspa_bg.wasm.bin', import.meta.url);";
+
+function inlineCompressedKaspaWasm(): Plugin {
+  const virtualModuleId = "\0kaspa-raffle-gzip-wasm";
+  const wasmImport = "@onekeyfe/kaspa-wasm/kaspa_bg.wasm.bin?url";
+
+  return {
+    name: "inline-compressed-kaspa-wasm",
+    enforce: "pre",
+    resolveId(source) {
+      return source === wasmImport ? virtualModuleId : null;
+    },
+    load(id) {
+      if (id !== virtualModuleId) return null;
+      const wasmPath = path.resolve("node_modules/@onekeyfe/kaspa-wasm/kaspa_bg.wasm.bin");
+      const compressed = zlib.gzipSync(fs.readFileSync(wasmPath), { level: 9 });
+      const dataUrl = `data:application/gzip;base64,${compressed.toString("base64")}`;
+      return `export default ${JSON.stringify(dataUrl)};`;
+    }
+  };
+}
 
 function patchOneKeyBrowserWasmLoader(): Plugin {
   const unusedWasmModule = "\0kaspa-raffle-unused-default-wasm";
@@ -79,7 +100,7 @@ function localTestWalletPlugin(): Plugin {
 
 export default defineConfig({
   base: "./",
-  plugins: [patchOneKeyBrowserWasmLoader(), localTestWalletPlugin(), react()],
+  plugins: [inlineCompressedKaspaWasm(), patchOneKeyBrowserWasmLoader(), localTestWalletPlugin(), react()],
   build: {
     assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     cssCodeSplit: false,

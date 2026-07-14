@@ -1,18 +1,5 @@
 export type RoundStatus = "Open" | "Closed" | "Finalized" | "Refunding" | "Refunded";
-export type RandomnessMode = "drand-risc0";
-
-export interface DrandRisc0Proof {
-  round: number;
-  randomness: string;
-  claim: string;
-  controlIndex: string;
-  controlDigests: string;
-  seal: string;
-  journalDigest: string;
-  imageId: string;
-  controlId: string;
-  hashfn: number;
-}
+export type RandomnessMode = "kaspa-chain-pow";
 
 export interface RoundState {
   appId: "KASPA_RAFFLE_ROUND_V1";
@@ -31,6 +18,7 @@ export interface RoundState {
   refundAfterDaaScore: string;
   ticketRoot: string;
   ticketFrontier?: string;
+  chainSearchHintHash?: string;
   refundCursor?: number;
   soldBatches: number;
   ticketBatchEnds: number[];
@@ -53,8 +41,8 @@ export interface FinalizeState {
   appId: "KASPA_RAFFLE_FINAL_V1";
   roundId: string;
   randomSeed: string;
-  drandRound: number;
-  drandRandomness: string;
+  targetBlockHash: string;
+  targetDaaScore: string;
   winnerTicketId: number;
   winnerAddress: string;
   payoutTxId: string;
@@ -72,6 +60,7 @@ export interface RaffleCovenantCursor {
   status: RoundStatus;
   ticketRoot: string;
   ticketFrontier?: string;
+  chainSearchHintHash?: string;
   refundCursor?: number;
   creatorPubkey: string;
   refundAfterDaaScore: string;
@@ -96,7 +85,6 @@ export interface RaffleMetadata {
   creatorAddress?: string;
   creatorPubkey?: string;
   creatorCommitment?: string;
-  beaconProofUrl?: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
   registryAddress?: string;

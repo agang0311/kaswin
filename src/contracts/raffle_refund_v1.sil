@@ -127,7 +127,7 @@ contract RaffleRefundV1() {
         require(sold_tickets - refund_cursor < 8);
         require(merkleRoot(ticketLeaf(owner_pubkey), ticket_id, owner_proof) == ticket_root);
 
-        int refund_amount = ticket_price - 1900000;
+        int refund_amount = ticket_price - 1000000;
         require(refund_amount > 0);
 
         if (ticket_id + 1 < sold_tickets) {

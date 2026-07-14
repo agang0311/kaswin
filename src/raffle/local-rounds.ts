@@ -2,7 +2,7 @@ import type { FinalizeState, RaffleMetadata, TicketState } from "./types";
 import type { RaffleHistoryRound } from "../kaspa/history";
 import { isCurrentRaffleContractVersion } from "../kaspa/covenant";
 
-const STORAGE_KEY = "kaspa-raffle-participated-rounds-v8";
+const STORAGE_KEY = "kaspa-raffle-participated-rounds-v12";
 const MAX_CACHED_ROUNDS = 100;
 
 interface StoredTicket extends Omit<TicketState, "paidAmount"> {
@@ -86,7 +86,6 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
         creator: round.metadata.creatorAddress,
         creatorPubkey: round.metadata.creatorPubkey,
         creatorCommitment: round.metadata.creatorCommitment,
-        beaconProofUrl: round.metadata.beaconProofUrl,
         createdAtDaaScore: round.metadata.createdAtDaaScore,
         refundTimeoutSeconds: round.metadata.refundTimeoutSeconds,
         refundAfterDaaScore: round.metadata.refundAfterDaaScore,
