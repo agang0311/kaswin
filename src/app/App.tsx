@@ -24,7 +24,6 @@ import { loadChainRandomnessWitness } from "../kaspa/chain-randomness";
 import { loadIndexedRaffleHistory, loadRaffleHistory, type RaffleHistoryRound } from "../kaspa/history";
 import {
   DEFAULT_RAFFLE_INDEX_API,
-  loadIndexedOwnerProof,
   loadIndexedTicketRange8,
   loadIndexedTicketProof,
   partitionRaffleRoundsByIndexer,
@@ -57,6 +56,7 @@ import {
   DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
   finalizeRaffleCovenantRound,
   getRaffleRegistryConfig,
+  MAX_COVENANT_FINALIZE_FEE_SOMPI,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
   currentRaffleCovenantDaaScore,
@@ -415,7 +415,6 @@ export function App() {
   const [historyError, setHistoryError] = useState("");
   const [historyMessage, setHistoryMessage] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [indexedParticipantTicketId, setIndexedParticipantTicketId] = useState<number | undefined>();
   const [roundSourceTab, setRoundSourceTab] = useState<"create" | "history">("create");
   const [roundActionTab, setRoundActionTab] = useState<"buy" | "payout">("buy");
   const isCreatingRoundRef = useRef(false);
@@ -578,35 +577,6 @@ export function App() {
     };
   }, [finalized, metadata, tickets, wallet]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setIndexedParticipantTicketId(undefined);
-    const covenant = metadata.covenant;
-    if (!wallet || !covenant || !metadata.roundId) {
-      return () => { cancelled = true; };
-    }
-
-    const ownerPubkey = pubkeyHexFromAddress(wallet.address);
-    const localTicket = tickets.find((ticket) => (
-      (ticket.ownerPubkey || pubkeyHexFromAddress(ticket.owner)) === ownerPubkey
-    ));
-    if (localTicket) {
-      setIndexedParticipantTicketId(localTicket.ticketId);
-      return () => { cancelled = true; };
-    }
-    if (!requiresRaffleIndexer(metadata.maxTickets)) {
-      return () => { cancelled = true; };
-    }
-    void loadIndexedOwnerProof(indexApiBase, metadata.roundId, ownerPubkey)
-      .then((proof) => {
-        if (!cancelled && proof.rootHex === covenant.ticketRoot) setIndexedParticipantTicketId(proof.ticketId);
-      })
-      .catch(() => {
-        // A local unconfirmed ticket remains usable after the complete ticket set is loaded.
-      });
-    return () => { cancelled = true; };
-  }, [indexApiBase, metadata.contractVersion, metadata.covenant, metadata.maxTickets, metadata.roundId, tickets, wallet]);
-
   const remainingTickets = Math.max(0, metadata.maxTickets - round.soldTickets);
   const parsedTicketQuantity = Number(ticketQuantity);
   const ticketQuantityIsAvailable = Number.isInteger(parsedTicketQuantity) &&
@@ -643,7 +613,8 @@ export function App() {
   const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(covenantBuyFeeSompi(round.contractVersion, parsedTicketQuantity)) });
   const payoutCostTooltip = t("cost.payout", {
     prize: formatKas(round.potAmount),
-    fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion))
+    fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion)),
+    maxFee: formatKas(MAX_COVENANT_FINALIZE_FEE_SOMPI)
   });
   const refundCostTooltip = t("cost.refund.current", {
     refund: formatKas(round.potAmount),
@@ -655,13 +626,6 @@ export function App() {
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
-  const walletIsParticipant = Boolean(
-    wallet && metadata.covenant && (
-      indexedParticipantTicketId !== undefined || tickets.some((ticket) =>
-        (ticket.ownerPubkey || pubkeyHexFromAddress(ticket.owner)) === pubkeyHexFromAddress(wallet.address)
-      )
-    )
-  );
   const drawTimeReached = round.soldTickets >= round.maxTickets || refundAvailable;
   const soldPercent = metadata.maxTickets > 0
     ? Math.min(100, (round.soldTickets / metadata.maxTickets) * 100)
@@ -1248,7 +1212,7 @@ export function App() {
       const registryResultMessage = registryTxIds.length
         ? autoRefundRegistryMarker
           ? `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. ${registryRefundTxId ? `${formatKas(registryMarkerRefundAmount)} returned after the ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee: ${registryRefundTxId}.` : "Automatic marker refund is pending or failed."}`
-          : `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. Custom registry markers are not automatically refunded.`
+          : `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. ${usesDefaultRegistry ? "The default registry marker remains at its address for public indexing." : "Custom registry markers are not automatically refunded."}`
         : "Registry marker was not submitted.";
       setChainMessage(`Covenant round created: ${result.txId}. ${registryResultMessage}`);
       setChainError(registryWarning);
@@ -1453,38 +1417,6 @@ export function App() {
         throw new Error("Create or import a covenant round first.");
       }
 
-      if (!wallet) {
-        throw new Error("Connect a participant wallet before drawing this round.");
-      }
-
-      const callerPubkey = pubkeyHexFromAddress(wallet.address);
-      let callerTicket = tickets.find((ticket) =>
-        (ticket.ownerPubkey || pubkeyHexFromAddress(ticket.owner)) === callerPubkey
-      );
-
-      if (!callerTicket && requiresRaffleIndexer(metadata.maxTickets)) {
-        try {
-          const indexedCaller = await loadIndexedOwnerProof(indexApiBase, metadata.roundId, callerPubkey);
-          if (indexedCaller.rootHex !== covenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
-          callerTicket = {
-            appId: "KASPA_RAFFLE_TICKET_V1",
-            roundId: metadata.roundId,
-            ticketId: indexedCaller.ticketId,
-            ticketCount: 1,
-            owner: indexedCaller.owner,
-            ownerPubkey: indexedCaller.ownerPubkey,
-            paidAmount: BigInt(metadata.ticketPrice),
-            ticketTxId: indexedCaller.transactionId || ""
-          };
-        } catch (error) {
-          if (!callerTicket) throw error;
-        }
-      }
-
-      if (!callerTicket) {
-        throw new Error("Only a wallet that bought tickets in this round can draw and pay the winner.");
-      }
-
       if (covenant.status !== "Open") {
         throw new Error("This round is no longer available to finalize.");
       }
@@ -1546,14 +1478,9 @@ export function App() {
       let winner = winnerRange ? { ...winnerRange, ticketId: winnerIndex + 1, ticketCount: 1 } : undefined;
 
       let winnerProofHex: string | undefined;
-      let callerProofHex: string | undefined;
-      let callerTicketId: number | undefined;
       if (requiresRaffleIndexer(metadata.maxTickets)) {
-          const [indexedWinner, indexedCaller] = await Promise.all([
-            loadIndexedTicketProof(indexApiBase, metadata.roundId, winnerIndex + 1),
-            loadIndexedOwnerProof(indexApiBase, metadata.roundId, callerPubkey)
-          ]);
-          if (indexedWinner.rootHex !== activeCovenant.ticketRoot || indexedCaller.rootHex !== activeCovenant.ticketRoot) {
+          const indexedWinner = await loadIndexedTicketProof(indexApiBase, metadata.roundId, winnerIndex + 1);
+          if (indexedWinner.rootHex !== activeCovenant.ticketRoot) {
             throw new Error("Raffle index is behind the current covenant root.");
           }
           winner = {
@@ -1567,17 +1494,10 @@ export function App() {
             ticketTxId: indexedWinner.transactionId || ""
           };
           winnerProofHex = indexedWinner.proofHex;
-          callerTicketId = indexedCaller.ticketId - 1;
-          callerProofHex = indexedCaller.proofHex;
       } else {
         const winnerWitness = await buildLocalTicketWitness(winnerIndex + 1);
-        const callerTicketNumber = callerTicket?.ticketId ?? 0;
-        if (callerTicketNumber < 1) throw new Error("The connected participant has no locally loaded ticket.");
-        const callerWitness = await buildLocalTicketWitness(callerTicketNumber);
         winner = winnerWitness.ticket;
         winnerProofHex = winnerWitness.proofHex;
-        callerTicketId = callerTicketNumber - 1;
-        callerProofHex = callerWitness.proofHex;
       }
 
       if (!winner) {
@@ -1602,14 +1522,11 @@ export function App() {
 
       const result = await finalizeRaffleCovenantRound({
         connection: rpcConnectionRef.current,
-        wallet,
         round: activeRound,
         covenant: activeCovenant,
         randomnessWitness,
         winner,
         winnerProofHex,
-        callerTicketId,
-        callerProofHex,
         payload: encodePayload({
           app: "kaspa-raffle-static",
           type: "round-finalize",
@@ -1649,7 +1566,7 @@ export function App() {
             }, ...historyRound.payouts.filter((payout) => payout.txId !== result.txId)]
           }
         : historyRound));
-      setChainMessage(`Winner #${winner.ticketId} was paid: ${result.txId}`);
+      setChainMessage(`Winner #${winner.ticketId} was paid: ${result.txId} (finalize fee ${formatKas(result.feeSompi ?? 0n)}).`);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to finalize covenant round."));
     } finally {
@@ -2743,10 +2660,10 @@ export function App() {
             <>
               <p className="pane-copy">
                 {round.soldTickets >= round.maxTickets
-                  ? walletIsParticipant ? t("soldOutCanDraw") : t("soldOutConnectParticipant")
+                  ? t("soldOutCanDraw")
                   : round.soldTickets > 0
                     ? refundAvailable
-                      ? walletIsParticipant ? t("timeoutCanDrawOrRefund") : t("timeoutConnectOrRefund")
+                      ? t("timeoutCanDrawOrRefund")
                       : t("ticketsRemain", { count: remainingTickets.toLocaleString() })
                     : t("buyBeforeDraw")}
               </p>
@@ -2760,7 +2677,6 @@ export function App() {
                     !covenantStatus.enabled ||
                     isFinalizing ||
                     !metadata.covenant ||
-                    !walletIsParticipant ||
                     !drawTimeReached ||
                     (metadata.covenant.status !== "Open" && metadata.covenant.status !== "Closed") ||
                     metadata.covenant.soldTickets <= 0

@@ -7,7 +7,7 @@ import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa
 
 const root = process.cwd();
 const refundSource = path.join(root, "src/contracts/raffle_refund_v1.sil");
-const roundSources = ["raffle_round_v9_tn12.sil", "raffle_round_v9_mainnet.sil"]
+const roundSources = ["raffle_round_v10.sil"]
   .map((name) => path.join(root, "src/contracts", name));
 const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v1.artifact.json"), "utf8"));
 const debuggerDir = path.join(root, ".tools/silverscript/target/debug");

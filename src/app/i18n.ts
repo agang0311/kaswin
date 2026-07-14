@@ -123,10 +123,8 @@ const en: Record<string, string> = {
   "drawPayout": "Draw and payout",
   "winnerTicket": "Ticket #{ticket}",
   "paidInTransaction": "Paid in transaction {tx}",
-  "soldOutCanDraw": "All tickets are sold. A connected participant can draw now.",
-  "soldOutConnectParticipant": "All tickets are sold. Connect a participant wallet to draw.",
-  "timeoutCanDrawOrRefund": "The timeout has passed. A connected participant can draw, or anyone can refund.",
-  "timeoutConnectOrRefund": "The timeout has passed. Connect a participant wallet to draw, or refund without a wallet.",
+  "soldOutCanDraw": "All tickets are sold. Anyone can trigger the on-chain draw now.",
+  "timeoutCanDrawOrRefund": "The timeout has passed. Anyone can trigger the on-chain draw or refund.",
   "ticketsRemain": "{count} tickets remain. Draw and refund unlock at the timeout.",
   "buyBeforeDraw": "Buy at least one ticket before drawing.",
   "drawingPaying": "Drawing and paying...",
@@ -163,7 +161,7 @@ const en: Record<string, string> = {
   "cost.create.custom": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the custom registry + variable registry payment fee. A custom registry marker is not automatically refunded and remains at the destination. Carrier returns when the round ends.",
   "cost.create.retained": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the default registry + variable registry payment fee. The registry marker remains at the destination. Carrier returns when the round ends.",
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
-  "cost.payout": "{prize} prize from the pot + {fee} covenant fee from the carrier. A participant authorization UTXO is spent and returned unchanged; wallet payment: 0 KAS.",
+  "cost.payout": "{prize} prize from the pot + about {fee} from the carrier; the exact chain-mass fee is calculated before submission and capped at {maxFee}. Anyone can broadcast; no wallet payment or signature is required.",
   "cost.refund.current": "First call: {transitionFee} to start refunds. Then each 8-ticket batch costs {batchFee} ({perTicketFee} per ticket); each final tail ticket costs {tailFee}. Anyone may broadcast after timeout; wallet payment: 0 KAS."
 };
 
@@ -290,10 +288,8 @@ const zh: Record<string, string> = {
   "drawPayout": "开奖并派奖",
   "winnerTicket": "中奖票 #{ticket}",
   "paidInTransaction": "已在交易 {tx} 中派奖",
-  "soldOutCanDraw": "所有票已售罄，已连接的参与者现在可以开奖。",
-  "soldOutConnectParticipant": "所有票已售罄，请连接参与过购票的钱包开奖。",
-  "timeoutCanDrawOrRefund": "超时已到，已连接的参与者可以开奖，任何人也可以退款。",
-  "timeoutConnectOrRefund": "超时已到，请连接参与者钱包开奖，或无需钱包直接退款。",
+  "soldOutCanDraw": "所有票已售罄，任何人现在都可以触发链上开奖。",
+  "timeoutCanDrawOrRefund": "超时已到，任何人都可以触发链上开奖或退款。",
   "ticketsRemain": "还剩 {count} 张票，超时后开放开奖和退款。",
   "buyBeforeDraw": "请至少购买一张票后再开奖。",
   "drawingPaying": "正在开奖并派奖...",
@@ -330,7 +326,7 @@ const zh: Record<string, string> = {
   "cost.create.custom": "{carrier} carrier 预留 + {createFee} 创建费 + {marker} 发送到自定义 Registry + 可变 Registry 支付网络费。自定义 marker 不自动退款并留在目标地址。抽奖结束后退还 carrier。",
   "cost.create.retained": "{carrier} carrier 预留 + {createFee} 创建费 + {marker} 发送到默认 Registry + 可变 Registry 支付网络费。Registry marker 留在目标地址。抽奖结束后退还 carrier。",
   "cost.buy": "{price} 票价 + {fee} covenant 费 + funding 交易网络费（取决于钱包 UTXO）。",
-  "cost.payout": "从奖池支付 {prize} 奖金 + 从 carrier 扣除 {fee} covenant 费。参与者授权 UTXO 会原额返还；钱包支付：0 KAS。",
+  "cost.payout": "从奖池支付 {prize} 奖金 + 从 carrier 预估扣除约 {fee}；提交前按实际链上 mass 精确计算，最高 {maxFee}。任何人都可广播，无需钱包付款或签名。",
   "cost.refund": "从奖池退还 {refund} 票款 + 从 carrier 扣除 {fee} covenant 费。钱包支付：0 KAS。"
 };
 
@@ -427,6 +423,7 @@ export function translateRuntimeText(language: Language, text: string): string {
     .replace(/^Loaded (\d+) raffle rounds?\.$/, "已加载 $1 轮抽奖。")
     .replace(/^Loaded ([^.]+)\. You can buy if open, or finalize\/refund when eligible\.$/, "已加载 $1。开放时可购票，满足条件后可开奖或退款。")
     .replace(/^Winner #(\d+) was paid: /, "中奖票 #$1 已派奖：")
+    .replace(/ \(finalize fee ([\d.]+ KAS)\)\.$/, "（开奖费 $1）。")
     .replace(/^Timed-out round refunded: /, "超时抽奖已退款：")
     .replace(/^Ticket #(\d+) submitted: /, "票 #$1 已提交：")
     .replace(/^Tickets #(\d+)-(\d+) submitted: /, "票 #$1-$2 已提交：")
@@ -435,6 +432,7 @@ export function translateRuntimeText(language: Language, text: string): string {
     .replace(/; payment fee ([\d.]+ KAS)\./, "；支付网络费 $1。")
     .replace(/([\d.]+ KAS) returned after the ([\d.]+ KAS) refund fee: /, "扣除 $2 退款费后已退回 $1：")
     .replace(/Custom registry markers are not automatically refunded\./, "自定义 Registry marker 不会自动退款。")
+    .replace(/The default registry marker remains at its address for public indexing\./, "默认 Registry marker 留在该地址用于公开索引。")
     .replace(/Automatic marker refund is pending or failed\./, "Marker 自动退款仍在等待或已失败。")
     .replace(/Registry marker was not submitted\./, "Registry marker 未提交。")
     .replace(/^Registry address must belong to (.+)\.$/, "Registry 地址必须属于 $1。")

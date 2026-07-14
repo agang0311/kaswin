@@ -20,7 +20,7 @@ const createPayload = {
   type: "round-create",
   version: "0.6.0",
   roundId,
-  contractVersion: "raffle-v12-chain-pow-tn12",
+  contractVersion: "raffle-v13-chain-pow",
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
   creatorPubkey: owners[0].toString("hex"),
   ticketPrice: "30000000",
@@ -90,7 +90,7 @@ fs.writeFileSync(path.join(fixtureDir, "state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v12-chain-pow-tn12",
+      contractVersion: "raffle-v13-chain-pow",
       version: "0.6.0",
       creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
       creatorPubkey: owners[0].toString("hex"),
@@ -118,7 +118,7 @@ fs.writeFileSync(path.join(fixtureDir, "base-state.json"), JSON.stringify({
   rounds: {
     [roundId]: {
       roundId,
-      contractVersion: "raffle-v12-chain-pow-tn12",
+      contractVersion: "raffle-v13-chain-pow",
       version: "0.6.0",
       creator: createPayload.creator,
       creatorPubkey: owners[0].toString("hex"),

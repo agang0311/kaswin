@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const sources = ["raffle_round_v9_tn12.sil", "raffle_round_v9_mainnet.sil"];
+const sources = ["raffle_round_v10.sil"];
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -23,7 +23,10 @@ for (const name of sources) {
   assert(source.includes("require(winner_ticket_id == winner_from_seed)"), `${name} rejects a caller-selected winner`);
   assert(source.includes("merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root"), `${name} binds the winner to the committed ticket tree`);
   assert(source.includes("tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey))") && source.includes("tx.outputs[0].value == prize"), `${name} enforces the prize address and amount`);
-  assert(source.includes("merkleRoot(ticketLeaf(caller_pubkey), caller_ticket_id, caller_proof) == ticket_root"), `${name} requires the draw caller to be a participant`);
+  assert(source.includes("require(tx.inputs.length == 1)"), `${name} allows a signature-free public draw trigger`);
+  assert(source.includes("require(tx.outputs.length == 2)"), `${name} pays only the winner and returns the carrier remainder`);
+  assert(source.includes("finalize_fee > 0 && finalize_fee <= MAX_FINALIZE_FEE"), `${name} caps the caller-supplied mass fee`);
+  assert(!/caller_pubkey|caller_ticket_id|caller_proof/.test(source), `${name} does not require a participant authorization proof`);
   assert(source.includes("OpTxInputDaaScore(this.activeInputIndex) < refund_after_daa"), `${name} stops repeated buys after timeout`);
   assert(!source.includes("entrypoint function close"), `${name} finalizes without a close transaction`);
   assert(!/drand|groth16|oracle|random_anchor/i.test(source), `${name} has no external randomness dependency`);

@@ -1,10 +1,10 @@
 import type { RaffleMetadata } from "./types";
 
-export const MAINNET_RAFFLE_CONTRACT_VERSION = "raffle-v12-chain-pow-mainnet";
-export const TN12_RAFFLE_CONTRACT_VERSION = "raffle-v12-chain-pow-tn12";
+export const RAFFLE_CONTRACT_VERSION = "raffle-v13-chain-pow";
 
 export function raffleContractVersionForNetwork(network: string): string {
-  return network === "mainnet" ? MAINNET_RAFFLE_CONTRACT_VERSION : TN12_RAFFLE_CONTRACT_VERSION;
+  void network;
+  return RAFFLE_CONTRACT_VERSION;
 }
 
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {

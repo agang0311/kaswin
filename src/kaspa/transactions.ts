@@ -1,5 +1,6 @@
 import {
   Address,
+  calculateTransactionFee,
   CovenantBinding,
   createTransactions,
   GenesisCovenantGroup,
@@ -78,14 +79,11 @@ export interface BuyRaffleCovenantTicketInput {
 
 export interface FinalizeRaffleCovenantRoundInput {
   connection: KaspaRpcConnection;
-  wallet: BrowserTestWallet;
   round: RoundState;
   covenant: RaffleCovenantCursor;
   randomnessWitness: ChainRandomnessWitness;
   winner: TicketState;
   winnerProofHex?: string;
-  callerTicketId?: number;
-  callerProofHex?: string;
   payload?: Uint8Array;
 }
 
@@ -103,6 +101,7 @@ export interface RefundRaffleCovenantRoundInput {
 
 export interface RaffleCovenantSpendResult {
   txId: string;
+  feeSompi?: bigint;
   covenant?: RaffleCovenantCursor;
   winnerTicketId?: number;
   randomSeed?: string;
@@ -112,8 +111,9 @@ export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n;
 export const REGISTRY_MARKER_REFUND_FEE_SOMPI = 100_000n;
 export const REGISTRY_PAYMENT_FEE_SOMPI = 350_000n;
 export const COVENANT_CREATE_FEE_SOMPI = 300_000n;
-export const V9_COVENANT_BUY_FEE_SOMPI = 1_750_000n;
-export const V9_COVENANT_FINALIZE_FEE_SOMPI = 5_000_000n;
+export const V10_COVENANT_BUY_FEE_SOMPI = 1_750_000n;
+export const ESTIMATED_COVENANT_FINALIZE_FEE_SOMPI = 6_000_000n;
+export const MAX_COVENANT_FINALIZE_FEE_SOMPI = 20_000_000n;
 export const REFUND_TRANSITION_FEE_SOMPI = 2_400_000n;
 export const REFUND_BATCH_FEE_PER_TICKET_SOMPI = 150_000n;
 export const REFUND_TAIL_FEE_PER_TICKET_SOMPI = 1_000_000n;
@@ -125,18 +125,19 @@ export const MAINNET_DEFAULT_RAFFLE_REGISTRY_ADDRESS =
 const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
 const LOW_COST_FUNDING_MIN_SOMPI = 20_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
-const RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET = 11;
-const V9_RAFFLE_FINALIZE_COMPUTE_BUDGET = 300;
+const V10_RAFFLE_FINALIZE_COMPUTE_BUDGET = 200;
 const REFUND_TRANSITION_COMPUTE_BUDGET = 4;
 const REFUND_BATCH_COMPUTE_BUDGET = 5;
 const REFUND_TAIL_COMPUTE_BUDGET = 4;
+const NORMALIZED_TRANSIENT_GRAMS_PER_BYTE = 2n;
+const MIN_RELAY_FEE_SOMPI_PER_GRAM = 100n;
 
 export function covenantBuyFeeSompi(_contractVersion: string, _ticketCount = 1): bigint {
-  return V9_COVENANT_BUY_FEE_SOMPI;
+  return V10_COVENANT_BUY_FEE_SOMPI;
 }
 
 export function covenantFinalizeFeeSompi(_contractVersion: string): bigint {
-  return V9_COVENANT_FINALIZE_FEE_SOMPI;
+  return ESTIMATED_COVENANT_FINALIZE_FEE_SOMPI;
 }
 
 export function covenantRefundFeeSompi(_contractVersion: string): bigint {
@@ -151,6 +152,33 @@ function formatKasAmount(value: bigint): string {
   const whole = value / 100_000_000n;
   const fraction = (value % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
   return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} KAS`;
+}
+
+function scriptPublicKeyLength(scriptPublicKey: { toJSON(): unknown }): number {
+  const json = scriptPublicKey.toJSON() as { script?: string };
+  if (!json.script || json.script.length % 2 !== 0) {
+    throw new Error("Unable to measure the transaction output script.");
+  }
+  return json.script.length / 2;
+}
+
+function minimumV1TransientRelayFeeSompi(input: {
+  signatureScriptHex: string;
+  outputScriptLengths: number[];
+  payloadLength: number;
+}): bigint {
+  const signatureScriptLength = input.signatureScriptHex.length / 2;
+  if (!Number.isInteger(signatureScriptLength)) {
+    throw new Error("Unable to measure the covenant signature script.");
+  }
+
+  let size = 2 + 8;
+  size += 36 + 8 + signatureScriptLength + 8 + 2;
+  size += 8;
+  size += input.outputScriptLengths.reduce((total, scriptLength) => total + 8 + 2 + 8 + scriptLength, 0);
+  size += 8 + 20 + 8 + 32 + 8 + input.payloadLength;
+
+  return BigInt(size) * NORMALIZED_TRANSIENT_GRAMS_PER_BYTE * MIN_RELAY_FEE_SOMPI_PER_GRAM;
 }
 
 const ZERO_SUBNETWORK_ID = "0000000000000000000000000000000000000000";
@@ -898,24 +926,6 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     await assertRaffleRedeemScriptMatchesRound(activeRound, input.covenant.redeemScriptHex, "Finalize");
 
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
-    const callerPubkey = pubkeyHexFromAddress(input.wallet.address);
-
-    if (input.callerTicketId === undefined || !input.callerProofHex) {
-      throw new Error("A participant ticket proof is required to draw this round.");
-    }
-    if (!await verifyTicketProof(activeRound.ticketRoot, callerPubkey, input.callerTicketId, input.callerProofHex)) {
-      throw new Error("The caller ticket proof does not belong to the connected wallet.");
-    }
-
-    const walletUtxos = await input.connection.client.getUtxosByAddresses({ addresses: [input.wallet.address] });
-    const authorizationUtxo = [...(walletUtxos.entries ?? [])]
-      .filter((entry) => entry.amount >= STANDARD_REFUND_MIN_SOMPI)
-      .sort((left, right) => left.amount === right.amount ? 0 : left.amount > right.amount ? -1 : 1)[0];
-
-    if (!authorizationUtxo) {
-      throw new Error(`The participant wallet needs a spendable UTXO of at least ${formatKasAmount(STANDARD_REFUND_MIN_SOMPI)} to authorize the draw. It is returned unchanged.`);
-    }
-
     const randomSeed = input.randomnessWitness.randomSeedHex;
     const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, input.covenant.soldTickets);
 
@@ -935,57 +945,86 @@ export async function finalizeRaffleCovenantRound(input: FinalizeRaffleCovenantR
     }
 
     const winnerScriptPublicKey = payToAddressScript(input.winner.owner);
-    const outputs = [new TransactionOutput(activeRound.potAmount, winnerScriptPublicKey)];
-    const creatorRefundAmount = currentAmount - activeRound.potAmount - covenantFinalizeFeeSompi(activeRound.contractVersion);
-
-    if (creatorRefundAmount < STANDARD_REFUND_MIN_SOMPI || !activeRound.creator || activeRound.creator === "no-wallet") {
-      throw new Error("Covenant carrier refund is too small or the creator address is missing.");
+    if (!activeRound.creator || activeRound.creator === "no-wallet") {
+      throw new Error("The creator address is missing.");
     }
 
-    outputs.push(new TransactionOutput(creatorRefundAmount, payToAddressScript(activeRound.creator)));
-    const callerScriptPublicKey = payToAddressScript(input.wallet.address);
-    outputs.push(new TransactionOutput(authorizationUtxo.amount, callerScriptPublicKey));
+    const creatorScriptPublicKey = payToAddressScript(activeRound.creator);
+    const outputScriptLengths = [scriptPublicKeyLength(winnerScriptPublicKey), scriptPublicKeyLength(creatorScriptPublicKey)];
+    const buildFinalizeTransaction = (finalizeFeeSompi: bigint): { tx: Transaction; signatureScriptHex: string } => {
+      const creatorRefundAmount = currentAmount - activeRound.potAmount - finalizeFeeSompi;
+      if (creatorRefundAmount < STANDARD_REFUND_MIN_SOMPI) {
+        throw new Error("Covenant carrier refund is too small.");
+      }
 
-    const tx = buildManualTransaction({
-      inputs: [
-        {
-          previousOutpoint: covenantOutpoint(input.covenant),
-          signatureScript: buildRaffleFinalizeSignatureScript(
-            hexToBytes(input.covenant.redeemScriptHex),
-            input.randomnessWitness,
-            winnerIndex,
-            winnerScriptPublicKey,
-            callerScriptPublicKey,
-            input.winnerProofHex,
-            input.callerTicketId,
-            input.callerProofHex
-          ),
-          sequence: 0n,
-          sigOpCount: 0,
-          computeBudget: V9_RAFFLE_FINALIZE_COMPUTE_BUDGET,
-          utxo: asInputUtxo(covenantUtxo)
-        },
-        {
-          previousOutpoint: authorizationUtxo.outpoint,
-          signatureScript: "",
-          sequence: 0n,
-          sigOpCount: 0,
-          computeBudget: RAFFLE_PARTICIPANT_AUTH_COMPUTE_BUDGET,
-          utxo: asInputUtxo(authorizationUtxo)
-        }
-      ],
-      outputs,
-      payload: input.payload,
-      lockTime: input.covenant.soldTickets >= input.round.maxTickets
-        ? 0n
-        : BigInt(input.covenant.refundAfterDaaScore)
+      const signatureScriptHex = buildRaffleFinalizeSignatureScript(
+        hexToBytes(input.covenant.redeemScriptHex),
+        input.randomnessWitness,
+        finalizeFeeSompi,
+        winnerIndex,
+        winnerScriptPublicKey,
+        input.winnerProofHex
+      );
+      const tx = buildManualTransaction({
+        inputs: [
+          {
+            previousOutpoint: covenantOutpoint(input.covenant),
+            signatureScript: signatureScriptHex,
+            sequence: 0n,
+            sigOpCount: 0,
+            computeBudget: V10_RAFFLE_FINALIZE_COMPUTE_BUDGET,
+            utxo: asInputUtxo(covenantUtxo)
+          }
+        ],
+        outputs: [
+          new TransactionOutput(activeRound.potAmount, winnerScriptPublicKey),
+          new TransactionOutput(creatorRefundAmount, creatorScriptPublicKey)
+        ],
+        payload: input.payload,
+        lockTime: input.covenant.soldTickets >= input.round.maxTickets
+          ? 0n
+          : BigInt(input.covenant.refundAfterDaaScore)
+      });
+      return { tx, signatureScriptHex };
+    };
+
+    let finalizeFeeSompi = 0n;
+    let built = buildFinalizeTransaction(finalizeFeeSompi);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const staticRequiredFee = calculateTransactionFee(transactionNetworkId(input.connection.status.network), built.tx, 0);
+      if (staticRequiredFee === undefined) {
+        throw new Error("The finalize transaction exceeds the standard mass limit.");
+      }
+      const transientRequiredFee = minimumV1TransientRelayFeeSompi({
+        signatureScriptHex: built.signatureScriptHex,
+        outputScriptLengths,
+        payloadLength: input.payload?.length ?? 0
+      });
+      const requiredFee = staticRequiredFee > transientRequiredFee ? staticRequiredFee : transientRequiredFee;
+      if (requiredFee > MAX_COVENANT_FINALIZE_FEE_SOMPI) {
+        throw new Error(`The finalize transaction needs more than the ${formatKasAmount(MAX_COVENANT_FINALIZE_FEE_SOMPI)} covenant fee cap.`);
+      }
+      if (requiredFee <= finalizeFeeSompi) {
+        break;
+      }
+      finalizeFeeSompi = requiredFee;
+      built = buildFinalizeTransaction(finalizeFeeSompi);
+    }
+
+    const finalStaticRequiredFee = calculateTransactionFee(transactionNetworkId(input.connection.status.network), built.tx, 0);
+    const finalTransientRequiredFee = minimumV1TransientRelayFeeSompi({
+      signatureScriptHex: built.signatureScriptHex,
+      outputScriptLengths,
+      payloadLength: input.payload?.length ?? 0
     });
-    tx.finalize();
-    await input.wallet.signTransaction(tx, [1]);
-    const txId = await submitTransaction(input.connection, tx);
+    if (finalStaticRequiredFee === undefined || finalStaticRequiredFee > finalizeFeeSompi || finalTransientRequiredFee > finalizeFeeSompi) {
+      throw new Error("Unable to converge on the finalize transaction fee.");
+    }
+    const txId = await submitTransaction(input.connection, built.tx);
 
     return {
       txId,
+      feeSompi: finalizeFeeSompi,
       winnerTicketId: input.winner.ticketId,
       randomSeed
     };

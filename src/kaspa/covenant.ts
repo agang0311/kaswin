@@ -5,17 +5,13 @@ import {
   ScriptBuilder,
   type ScriptPublicKey
 } from "@onekeyfe/kaspa-wasm";
-import raffleRoundV9MainnetArtifact from "../contracts/compiled/raffle-round-v9-mainnet.artifact.json";
-import raffleRoundV9Tn12Artifact from "../contracts/compiled/raffle-round-v9-tn12.artifact.json";
+import raffleRoundV10Artifact from "../contracts/compiled/raffle-round-v10.artifact.json";
 import raffleRefundV1Artifact from "../contracts/compiled/raffle-refund-v1.artifact.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
 import { TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX, TICKET_MERKLE_PROOF_BYTES } from "../raffle/merkle";
 import type { RoundState } from "../raffle/types";
 import type { ChainRandomnessWitness } from "./chain-randomness";
-import {
-  MAINNET_RAFFLE_CONTRACT_VERSION,
-  TN12_RAFFLE_CONTRACT_VERSION
-} from "../raffle/metadata";
+import { RAFFLE_CONTRACT_VERSION } from "../raffle/metadata";
 import { ensureKaspaWasmReady } from "./wasm";
 
 export interface CovenantArtifactStatus {
@@ -60,10 +56,9 @@ export type RaffleCovenantEntrypoint = "buy" | "finalize" | "refund_next" | "sta
 export type RaffleCovenantStateValue = bigint | Uint8Array;
 export type RaffleCovenantStateValues = Record<string, RaffleCovenantStateValue>;
 
-const mainnetArtifact = raffleRoundV9MainnetArtifact as RaffleRoundRuntimeArtifact;
-const tn12Artifact = raffleRoundV9Tn12Artifact as RaffleRoundRuntimeArtifact;
+const raffleArtifact = raffleRoundV10Artifact as RaffleRoundRuntimeArtifact;
 const refundArtifact = raffleRefundV1Artifact as RaffleRoundRuntimeArtifact;
-export const CURRENT_RAFFLE_CONTRACT_VERSION = TN12_RAFFLE_CONTRACT_VERSION;
+export const CURRENT_RAFFLE_CONTRACT_VERSION = RAFFLE_CONTRACT_VERSION;
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
 
@@ -76,14 +71,13 @@ const entrypointNames: Record<RaffleCovenantEntrypoint, string> = {
 };
 
 export function getRaffleCovenantStatus(): CovenantArtifactStatus {
-  const enabled = mainnetArtifact.contract === "RaffleRoundV9Mainnet" &&
-    tn12Artifact.contract === "RaffleRoundV9Tn12" &&
+  const enabled = raffleArtifact.contract === "RaffleRoundV10" &&
     refundArtifact.contract === "RaffleRefundV1" &&
-    [mainnetArtifact, tn12Artifact, refundArtifact].every((candidate) => Boolean(candidate.script) && candidate.abi.length > 0);
+    [raffleArtifact, refundArtifact].every((candidate) => Boolean(candidate.script) && candidate.abi.length > 0);
 
   return {
     enabled,
-    contract: `${mainnetArtifact.contract} / ${tn12Artifact.contract}`,
+    contract: raffleArtifact.contract,
     network: "toccata-v1",
     status: enabled ? "compiled-runtime" : "unavailable",
     message: enabled
@@ -93,7 +87,7 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
 }
 
 export function isCurrentRaffleContractVersion(contractVersion: string): boolean {
-  return contractVersion === MAINNET_RAFFLE_CONTRACT_VERSION || contractVersion === TN12_RAFFLE_CONTRACT_VERSION;
+  return contractVersion === RAFFLE_CONTRACT_VERSION;
 }
 
 export function assertRaffleCovenantReady(): void {
@@ -146,7 +140,7 @@ export function raffleStatusCode(status: RoundState["status"]): bigint {
 }
 
 export function emptyRaffleCovenantState(
-  runtimeArtifact: RaffleRoundRuntimeArtifact = tn12Artifact
+  runtimeArtifact: RaffleRoundRuntimeArtifact = raffleArtifact
 ): RaffleCovenantStateValues {
   return Object.fromEntries(
     runtimeArtifact.stateFields.map((field) => [
@@ -204,7 +198,7 @@ async function raffleCovenantStateFromRoundWithArtifact(
 
 export function encodeRaffleCovenantState(
   state: RaffleCovenantStateValues,
-  runtimeArtifact: RaffleRoundRuntimeArtifact = tn12Artifact
+  runtimeArtifact: RaffleRoundRuntimeArtifact = raffleArtifact
 ): Uint8Array {
   const chunks = runtimeArtifact.stateFields.map((field) => encodeStateField(field, state[field.name]));
   const encoded = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
@@ -224,7 +218,7 @@ export function encodeRaffleCovenantState(
 
 export function buildRaffleRedeemScript(
   state: RaffleCovenantStateValues,
-  runtimeArtifact: RaffleRoundRuntimeArtifact = tn12Artifact
+  runtimeArtifact: RaffleRoundRuntimeArtifact = raffleArtifact
 ): Uint8Array {
   const script = hexToBytes(runtimeArtifact.script);
   const encodedState = encodeRaffleCovenantState(state, runtimeArtifact);
@@ -265,7 +259,7 @@ export async function assertRaffleRedeemScriptMatchesRound(
 
 export async function buildRaffleScriptPublicKey(
   state: RaffleCovenantStateValues,
-  runtimeArtifact: RaffleRoundRuntimeArtifact = tn12Artifact
+  runtimeArtifact: RaffleRoundRuntimeArtifact = raffleArtifact
 ): Promise<ScriptPublicKey> {
   await ensureKaspaWasmReady();
   return payToScriptHashScript(buildRaffleRedeemScript(state, runtimeArtifact));
@@ -274,7 +268,7 @@ export async function buildRaffleScriptPublicKey(
 export async function buildRaffleAddress(
   state: RaffleCovenantStateValues,
   network: string,
-  runtimeArtifact: RaffleRoundRuntimeArtifact = tn12Artifact
+  runtimeArtifact: RaffleRoundRuntimeArtifact = raffleArtifact
 ): Promise<string> {
   const scriptPublicKey = await buildRaffleScriptPublicKey(state, runtimeArtifact);
   const address = addressFromScriptPublicKey(scriptPublicKey, network);
@@ -320,25 +314,20 @@ function addChainHeaderPair(builder: ScriptBuilder, witness: ChainRandomnessWitn
 export function buildRaffleFinalizeSignatureScript(
   currentRedeemScript: Uint8Array,
   witness: ChainRandomnessWitness,
+  finalizeFeeSompi: bigint,
   winnerTicketId: number,
   winnerScriptPublicKey: ScriptPublicKey,
-  callerScriptPublicKey: ScriptPublicKey,
-  winnerProofHex?: string,
-  callerTicketId?: number,
-  callerProofHex?: string
+  winnerProofHex?: string
 ): string {
   return buildRaffleP2shSignatureScript("finalize", currentRedeemScript, (builder) => {
-    if (!winnerProofHex || callerTicketId === undefined || !callerProofHex) {
-      throw new Error("Finalize requires winner and caller Merkle proofs.");
+    if (!winnerProofHex) {
+      throw new Error("Finalize requires the winner Merkle proof.");
     }
     addChainHeaderPair(builder, witness);
+    builder.addI64(finalizeFeeSompi);
     builder.addI64(BigInt(winnerTicketId));
     builder.addData(pubkeyFromP2pkScriptPublicKey(winnerScriptPublicKey));
-
     builder.addData(ticketProofFromHex(winnerProofHex, "winner"));
-    builder.addI64(BigInt(callerTicketId));
-    builder.addData(pubkeyFromP2pkScriptPublicKey(callerScriptPublicKey));
-    builder.addData(ticketProofFromHex(callerProofHex, "caller"));
   });
 }
 
@@ -418,7 +407,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [mainnetArtifact, tn12Artifact, refundArtifact];
+  const candidates = [raffleArtifact, refundArtifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);
@@ -474,8 +463,7 @@ function encodeStateField(field: RuntimeStateField, value: RaffleCovenantStateVa
 }
 
 function raffleArtifactForContractVersion(contractVersion?: string): RaffleRoundRuntimeArtifact {
-  if (contractVersion === MAINNET_RAFFLE_CONTRACT_VERSION) return mainnetArtifact;
-  if (contractVersion === TN12_RAFFLE_CONTRACT_VERSION) return tn12Artifact;
+  if (contractVersion === RAFFLE_CONTRACT_VERSION) return raffleArtifact;
   throw new Error(`Unsupported raffle contract version: ${contractVersion || "missing"}.`);
 }
 

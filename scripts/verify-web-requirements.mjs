@@ -117,7 +117,8 @@ try {
 
   const app = fs.readFileSync(path.join(root, "src/app/App.tsx"), "utf8");
   const localWallet = fs.readFileSync(path.join(root, "src/kaspa/wallet-local-test.ts"), "utf8");
-  const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v9_tn12.sil"), "utf8");
+  const transactions = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
+  const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v10.sil"), "utf8");
   const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
   assert(app.includes("needsIndexer") && app.includes("? await Promise.allSettled([loadIndexedRaffleHistory(indexApiBase)])"), "history only contacts the indexer when a loaded round exceeds the threshold");
@@ -127,6 +128,7 @@ try {
   assert(localWallet.includes("new URLSearchParams({ wallet: input.wallet, network })") && viteConfig.includes('"experiment-mainnet.json"'), "the development wallet can run the same flow against Mainnet once funded");
   assert(roundContract.includes("ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8"), "the covenant validates multi-ticket purchase sizes");
   assert(roundContract.includes("ticket_price * ticket_count"), "the covenant charges the exact multi-ticket amount");
+  assert(transactions.includes("calculateTransactionFee") && transactions.includes("minimumV1TransientRelayFeeSompi"), "finalize fees include static and normalized transient mass");
 } finally {
   await vite.close();
   delete globalThis.localStorage;
