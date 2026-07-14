@@ -46,7 +46,8 @@ function createLocalTestWalletAdapter(input: { id: string; name: string; wallet:
     isInstalled: () => true,
     async connect(network) {
       await ensureKaspaWasmReady();
-      const response = await fetch(`/__kaspa_raffle_local_test_wallet?wallet=${input.wallet}`, { cache: "no-store" });
+      const params = new URLSearchParams({ wallet: input.wallet, network });
+      const response = await fetch(`/__kaspa_raffle_local_test_wallet?${params.toString()}`, { cache: "no-store" });
 
       if (!response.ok) {
         throw new Error("The local test wallet is unavailable from this development server.");

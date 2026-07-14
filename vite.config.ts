@@ -73,9 +73,18 @@ function localTestWalletPlugin(): Plugin {
         }
 
         const requestUrl = new URL(request.url ?? "", "http://localhost");
-        const walletFile = requestUrl.searchParams.get("wallet") === "outsider"
-          ? "round-testnet-12.json"
-          : "experiment-testnet-12.json";
+        const walletRole = requestUrl.searchParams.get("wallet");
+        const network = requestUrl.searchParams.get("network");
+        const walletFile = network === "mainnet"
+          ? walletRole === "participant" ? "experiment-mainnet.json" : undefined
+          : walletRole === "outsider" ? "round-testnet-12.json" : "experiment-testnet-12.json";
+
+        if (!walletFile) {
+          response.statusCode = 404;
+          response.end("Local test wallet unavailable");
+          return;
+        }
+
         const walletPath = path.resolve("wallets", walletFile);
 
         try {

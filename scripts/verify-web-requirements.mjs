@@ -116,12 +116,15 @@ try {
   assert(rejectedLegacyMetadata, "legacy imported metadata is rejected");
 
   const app = fs.readFileSync(path.join(root, "src/app/App.tsx"), "utf8");
+  const localWallet = fs.readFileSync(path.join(root, "src/kaspa/wallet-local-test.ts"), "utf8");
   const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v9_tn12.sil"), "utf8");
+  const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
   assert(app.includes("needsIndexer") && app.includes("? await Promise.allSettled([loadIndexedRaffleHistory(indexApiBase)])"), "history only contacts the indexer when a loaded round exceeds the threshold");
   assert(app.includes("for (const historyRound of historyPartition.indexed) byRoundId.delete(historyRound.roundId)"), "an unavailable large-round index cannot block direct small-round history");
   assert(app.includes("const TICKET_BATCH_SIZES = [1, 2, 4, 8] as const") && app.includes("ticketCount: quantity"), "the wallet UI submits 1, 2, 4, or 8 tickets in one purchase");
   assert(app.includes("disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}"), "the wallet blocks a stale or unaligned batch before signing");
+  assert(localWallet.includes("new URLSearchParams({ wallet: input.wallet, network })") && viteConfig.includes('"experiment-mainnet.json"'), "the development wallet can run the same flow against Mainnet once funded");
   assert(roundContract.includes("ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8"), "the covenant validates multi-ticket purchase sizes");
   assert(roundContract.includes("ticket_price * ticket_count"), "the covenant charges the exact multi-ticket amount");
 } finally {

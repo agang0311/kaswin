@@ -16,6 +16,10 @@ if (!html.includes("data:application/gzip;base64,")) {
   throw new Error("The single HTML does not contain the compressed Kaspa WASM payload.");
 }
 
+if (html.includes("experiment-mainnet.json") || html.includes("__kaspa_raffle_local_test_wallet")) {
+  throw new Error("The release contains the development-only local wallet harness.");
+}
+
 if (size >= 7_000_000) {
   throw new Error(`The single HTML is ${size} bytes; expected less than 7 MB.`);
 }
