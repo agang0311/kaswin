@@ -7,6 +7,18 @@ export function requiresRaffleIndexer(maxTickets: number): boolean {
   return maxTickets > INDEXER_FREE_TICKET_LIMIT;
 }
 
+export function partitionRaffleRoundsByIndexer<T extends { maxTickets?: number }>(rounds: Iterable<T>): {
+  direct: T[];
+  indexed: T[];
+} {
+  const direct: T[] = [];
+  const indexed: T[] = [];
+  for (const round of rounds) {
+    (requiresRaffleIndexer(round.maxTickets ?? 1_000_000) ? indexed : direct).push(round);
+  }
+  return { direct, indexed };
+}
+
 export interface IndexedTicketProof {
   ticketId: number;
   ownerPubkey: string;

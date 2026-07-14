@@ -27,6 +27,7 @@ import {
   loadIndexedOwnerProof,
   loadIndexedTicketRange8,
   loadIndexedTicketProof,
+  partitionRaffleRoundsByIndexer,
   requiresRaffleIndexer
 } from "../kaspa/indexer";
 import {
@@ -1959,9 +1960,8 @@ export function App() {
           } : historyRound);
         }
       }
-      const needsIndexer = [...byRoundId.values()].some((historyRound) => (
-        requiresRaffleIndexer(historyRound.maxTickets ?? 1_000_000)
-      ));
+      const historyPartition = partitionRaffleRoundsByIndexer(byRoundId.values());
+      const needsIndexer = historyPartition.indexed.length > 0;
       const indexResult = needsIndexer
         ? await Promise.allSettled([loadIndexedRaffleHistory(indexApiBase)]).then(([result]) => result)
         : undefined;
@@ -1978,8 +1978,13 @@ export function App() {
         }
       }
       if (!byRoundId.size && restResult.status === "rejected") throw restResult.reason;
+      let skippedLargeRounds = 0;
       if (needsIndexer && indexResult?.status === "rejected") {
-        throw new Error(`Large rounds require the configured raffle index: ${errorMessage(indexResult.reason, "index unavailable")}`);
+        if (!historyPartition.direct.length) {
+          throw new Error(`Large rounds require the configured raffle index: ${errorMessage(indexResult.reason, "index unavailable")}`);
+        }
+        for (const historyRound of historyPartition.indexed) byRoundId.delete(historyRound.roundId);
+        skippedLargeRounds = historyPartition.indexed.length;
       }
       const rounds = [...byRoundId.values()].sort((left, right) => {
         const leftDaa = BigInt(left.createdAtDaaScore || "0");
@@ -1992,7 +1997,11 @@ export function App() {
       setSelectedHistoryRoundId(rounds[0]?.roundId ?? "");
       setHistoryMessage(
         `Loaded ${rounds.length} raffle round${rounds.length === 1 ? "" : "s"}. ` +
-        (needsIndexer ? "Large-round proofs came from the configured index." : "No raffle index was needed.")
+        (indexResult?.status === "fulfilled"
+          ? "Large-round proofs came from the configured index."
+          : skippedLargeRounds
+            ? `No raffle index was needed for these rounds; skipped ${skippedLargeRounds} unavailable large round${skippedLargeRounds === 1 ? "" : "s"}.`
+            : "No raffle index was needed.")
       );
     } catch (error) {
       setHistoryError(errorMessage(error, "Unable to load raffle history."));

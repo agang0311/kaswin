@@ -15,9 +15,11 @@ for (const name of sources) {
   assert(source.includes("target_boundary = OpTxInputDaaScore(this.activeInputIndex) + RANDOM_DELAY_DAA"), `${name} fixes a sold-out round's randomness after its final ticket`);
   assert(source.includes("OpBin2Num(seed.slice(0, 1) + 0x00)"), `${name} decodes random bytes as unsigned script numbers`);
   assert(source.includes("OpChainblockSeqCommit(target_hash)"), `${name} binds the random block to the selected chain`);
+  assert((source.match(/OpChainblockSeqCommit\(/g) ?? []).length === 1, `${name} uses one fixed on-chain randomness beacon`);
   assert(source.includes("parent_daa < target_boundary && target_daa >= target_boundary"), `${name} accepts only the unique selected-chain boundary crossing`);
   assert(source.includes("target_before_daa.slice(18, 50)) == parent_hash"), `${name} binds the target header to its selected parent`);
   assert(source.includes("blockHash(parent_before_daa") && source.includes("byte[32] target_hash = blockHash(target_before_daa"), `${name} rehashes both supplied headers inside the covenant`);
+  assert(source.includes("sha256(byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit))"), `${name} binds the seed to tickets, proof of work, and chain sequencing`);
   assert(source.includes("require(winner_ticket_id == winner_from_seed)"), `${name} rejects a caller-selected winner`);
   assert(source.includes("merkleRoot(ticketLeaf(winner_pubkey), winner_ticket_id, winner_proof) == ticket_root"), `${name} binds the winner to the committed ticket tree`);
   assert(source.includes("tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey))") && source.includes("tx.outputs[0].value == prize"), `${name} enforces the prize address and amount`);

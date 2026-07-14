@@ -21,7 +21,6 @@ export interface ChainHeaderWitness {
 export interface ChainRandomnessWitness {
   target: ChainHeaderWitness;
   parent: ChainHeaderWitness;
-  targetBoundaryDaa: bigint;
   randomSeedHex: string;
 }
 
@@ -230,7 +229,7 @@ export async function loadChainRandomnessWitness(
     const target = headerWitness(pair.target);
     const parent = headerWitness(pair.parent);
     const seedBytes = concatBytes([hexToBytes(ticketRootHex), hexToBytes(target.hash), hexToBytes(target.seqcommit)]);
-    return { target, parent, targetBoundaryDaa, randomSeedHex: await sha256BytesHex(seedBytes) };
+    return { target, parent, randomSeedHex: await sha256BytesHex(seedBytes) };
   }
 
   throw new Error(`Unable to locate the selected-chain headers crossing DAA ${targetBoundaryDaa}. Use a node retaining recent headers.`);
