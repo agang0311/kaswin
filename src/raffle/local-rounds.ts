@@ -1,6 +1,6 @@
 import type { FinalizeState, RaffleMetadata, TicketState } from "./types";
 import type { RaffleHistoryRound } from "../kaspa/history";
-import { isCurrentRaffleContractVersion } from "../kaspa/covenant";
+import { isSupportedRaffleCovenantVersion } from "../kaspa/covenant";
 
 const STORAGE_KEY = "kaspa-raffle-participated-rounds-v12";
 const MAX_CACHED_ROUNDS = 100;
@@ -171,7 +171,7 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
   return readStore()
     .filter((round) => (
       round.metadata.network === network &&
-      isCurrentRaffleContractVersion(round.metadata.contractVersion)
+      isSupportedRaffleCovenantVersion(round.metadata.contractVersion)
     ))
     .map((round) => {
       const ticketPrice = BigInt(round.metadata.ticketPrice || "0");

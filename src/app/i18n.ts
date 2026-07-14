@@ -175,7 +175,7 @@ const en: Record<string, string> = {
   "cost.create.retained": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the default registry + variable registry payment fee. The registry marker remains at the destination. Carrier returns when the round ends.",
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
   "cost.payout": "{prize} prize from the pot + about {fee} from the carrier; the exact chain-mass fee is calculated before submission and capped at {maxFee}. Anyone can broadcast; no wallet payment or signature is required.",
-  "cost.refund.current": "First call: {transitionFee} from the carrier to start refunds. Each original 1 / 10 / 100 / 1,000 / 10,000 / 100,000-ticket purchase is then refunded in one transaction; its actual fee is calculated before submission (about {fee}, capped at {maxFee}). Anyone may broadcast after timeout; wallet payment: 0 KAS."
+  "cost.refund.current": "First call: {transitionFee} from the carrier to start refunds. Each transaction starts with up to {batches} consecutive purchase batches, then shrinks to the largest standard compute/storage-mass candidate. Its fee is shared across the outputs (up to about {fee}, capped at {maxFee}). Anyone may broadcast after timeout; wallet payment: 0 KAS."
 };
 
 const zh: Record<string, string> = {
@@ -296,7 +296,7 @@ const zh: Record<string, string> = {
   "indexerConnectionFailed": "Indexer 不可用：{detail}",
   "indexerRequiredError": "本轮需要 Indexer proof。请配置并检查抽奖索引 API 后重试。{detail}",
   "indexerWrongNetwork": "Indexer 网络为 {actual}，当前需要 {expected}。",
-  "cost.refund.current": "首次调用从 carrier 扣除 {transitionFee} 启动退款；之后每个原始的 1 / 10 / 100 / 1,000 / 10,000 / 100,000 张购票批次各用一笔交易退回，提交前按实际 mass 计算费用（约 {fee}，上限 {maxFee}）。超时后任何人都可广播，钱包支付 0 KAS。",
+  "cost.refund.current": "首次调用从 carrier 扣除 {transitionFee} 启动退款；之后每笔交易先装入最多 {batches} 个连续购票批次，再按实际 compute/storage mass 缩小到可标准中继的最大批次，费用由这些退款输出均摊（最高约 {fee}，上限 {maxFee}）。超时后任何人都可广播，钱包支付 0 KAS。",
   "actionTabs": "购票或派奖",
   "buyTickets": "购买抽奖票",
   "participant": "参与者",

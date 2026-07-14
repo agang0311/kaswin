@@ -1,6 +1,17 @@
 import type { RaffleMetadata } from "./types";
 
-export const RAFFLE_CONTRACT_VERSION = "raffle-v14-batch-range";
+export const RAFFLE_CONTRACT_VERSION = "raffle-v15-arbitrary-batched-refund";
+export const LEGACY_RAFFLE_CONTRACT_VERSION = "raffle-v14-batch-range";
+export const SUPPORTED_RAFFLE_CONTRACT_VERSIONS = [
+  RAFFLE_CONTRACT_VERSION,
+  LEGACY_RAFFLE_CONTRACT_VERSION
+] as const;
+
+export function isSupportedRaffleContractVersion(contractVersion: string): boolean {
+  return SUPPORTED_RAFFLE_CONTRACT_VERSIONS.includes(
+    contractVersion as (typeof SUPPORTED_RAFFLE_CONTRACT_VERSIONS)[number]
+  );
+}
 
 export function raffleContractVersionForNetwork(network: string): string {
   void network;
@@ -10,7 +21,7 @@ export function raffleContractVersionForNetwork(network: string): string {
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.8.0",
+    version: "0.9.0",
     network,
     roundId: "",
     createTxId: "",
@@ -51,9 +62,8 @@ export function parseMetadata(raw: string): RaffleMetadata {
     }
   }
 
-  const expectedContractVersion = raffleContractVersionForNetwork(String(parsed.network));
-  if (parsed.contractVersion !== expectedContractVersion) {
-    throw new Error(`Unsupported raffle contract version. This page only accepts ${expectedContractVersion} on ${parsed.network}.`);
+  if (!isSupportedRaffleContractVersion(String(parsed.contractVersion))) {
+    throw new Error(`Unsupported raffle contract version: ${parsed.contractVersion}.`);
   }
 
   if (Number(parsed.ticketPrice) <= 0) {

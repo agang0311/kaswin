@@ -5,7 +5,7 @@
 - 网页：React/Vite 构建后内联为单个 `dist/index.html`，直接连接用户配置的 Kaspa wRPC。
 - 合约：`RaffleRoundV11` 负责购票与开奖，`RaffleRefundV2` 负责超时后可续执行退款。
 - Indexer：`indexer/raffle-indexer.mjs` 是独立只读应用，只保存公开购买区间并生成 Merkle proof，不持有私钥、不签名、不生成随机数。
-- 兼容策略：只接受 `raffle-v14-batch-range`，不解析旧 state layout 或旧 metadata。
+- 当前版本：新轮次使用 `raffle-v15-arbitrary-batched-refund`；保留 `raffle-v14-batch-range` artifact 处理已经创建的轮次。
 
 ## 购买区间树
 
@@ -15,7 +15,7 @@
 SHA256(owner_pubkey || uint64_le(first_ticket_id_zero_based) || uint64_le(ticket_count))
 ```
 
-`ticket_count` 只能是 `1 / 10 / 100 / 1,000 / 10,000 / 100,000`。一百万张票可以由 10 个 100,000 张批次组成，也可以由一百万个 1 张批次组成；两者票数相同，但退款交易数量不同。
+`ticket_count` 可以是任意正整数，但 `sold_tickets + ticket_count` 不能超过本轮上限 1,000,000。每次购买仍只生成一个 Merkle 叶子，所以任意数量不会按票展开链上状态。
 
 ## 开奖
 
@@ -35,7 +35,7 @@ winner = uint56_le(seed[0..7]) % sold_tickets
 - `refund_cursor`：已经覆盖的票数；
 - `refund_batch_cursor`：已经完成的原始购买批次数。
 
-每次 `refundNext` 验证一个原始购买区间 proof，只创建一个买家退款输出。调用者可中断；其他人 load 最新 covenant 后按两个链上游标继续。单个 100,000 张购买批次是一笔退款，但 100,000 个不同买家不能压成一笔 100,000 输出交易。
+每次 `refundNext` 验证最多 13 个连续原始购买区间 proof，并为每个区间创建独立买家退款输出。调用者可中断；其他人 load 最新 covenant 后按两个链上游标继续。13 批实测 454,618 script units，14 批 498,904，后者无法给 500,000 上限下的交易基础 mass 留出安全空间。浏览器随后用 SDK 试算完整交易的 compute/storage mass；若候选不可标准中继，会逐条移除末尾批次，直到得到当前金额布局下最大的可行前缀。
 
 ## 数据规模
 
@@ -54,4 +54,4 @@ npm run verify
 npm run benchmark:indexer:1m
 ```
 
-当前 VM 门禁包含 100,000 张单输出退款、load 后从下一购买批次续退、错误 proof 拒绝和 round-to-refund 模板切换。Mainnet 广播还会检查官方 Toccata 激活 DAA。
+当前 VM 门禁包含任意 37 张购票、13 个购买批次单交易退款、load 后从下一组批次续退、错误 proof 拒绝和 round-to-refund 模板切换。Mainnet 广播还会检查官方 Toccata 激活 DAA。

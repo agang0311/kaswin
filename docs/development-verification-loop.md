@@ -1,6 +1,6 @@
 # Development Verification Loop
 
-The release supports only `raffle-v14-batch-range` with `RaffleRoundV11` and `RaffleRefundV2`. Older metadata, state layouts, sources, and artifacts are intentionally unsupported.
+New rounds use `raffle-v15-arbitrary-batched-refund` with `RaffleRoundV12` and `RaffleRefundV3`. The v14 round/refund artifacts remain available for already-created rounds.
 
 ## Automated gate
 
@@ -14,10 +14,10 @@ npm run benchmark:indexer:1m
 
 - one self-contained `dist/index.html` is produced;
 - Mainnet and Testnet 10 derive the compiled covenant script correctly;
-- purchases accept exactly `1 / 10 / 100 / 1,000 / 10,000 / 100,000` tickets;
+- purchases accept any positive whole-number count up to the round remainder;
 - one purchase appends one range leaf regardless of ticket count;
 - finalize recomputes the selected-chain boundary block and pays the proven winning range owner;
-- a 100,000-ticket purchase refunds through one output;
+- one refund transaction processes up to 13 consecutive purchase batches and preserves one output per owner range;
 - a second client can load `refundCursor` and `refundBatchCursor` and continue;
 - all Registry rounds remain visible without an indexer, and any round with complete local batch history can draw or refund locally; only missing batch proofs require the standalone indexer.
 
@@ -29,7 +29,7 @@ Use a disposable funded Testnet 10 wallet and Chrome. Run at least three new rou
 2. Create and buy, reload the page, load the round through History, then draw and confirm payout.
 3. Create with a short timeout, buy at least two purchase batches, start refund, reload/load from History after at least one batch, then continue until `Refunded`.
 
-For every transaction, refresh History and confirm its indexed status, ticket/batch cursors, output owner, amount, and transaction id. Large `10,000` and `100,000` quantities are covered by VM and mass tests unless a funded test round intentionally exercises them.
+For every transaction, refresh History and confirm its indexed status, ticket/batch cursors, output owner, amount, and transaction id. Arbitrary quantity `37`, the 13-batch maximum, and load-after-partial-refund are covered by VM/indexer tests unless a funded test round intentionally exercises them.
 
 ### 2026-07-14 TN12 refund gate
 

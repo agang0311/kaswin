@@ -40,6 +40,9 @@ try {
   const localRounds = await vite.ssrLoadModule("/src/raffle/local-rounds.ts");
   const ticketRanges = await vite.ssrLoadModule("/src/raffle/tickets.ts");
   const transactionsModule = await vite.ssrLoadModule("/src/kaspa/transactions.ts");
+  const covenantModule = await vite.ssrLoadModule("/src/kaspa/covenant.ts");
+  const wasmModule = await vite.ssrLoadModule("/src/kaspa/wasm.ts");
+  await wasmModule.ensureKaspaWasmReady();
 
   assert(!indexer.requiresRaffleIndexer(1_000), "rounds with up to 1,000 tickets never require an indexer");
   assert(indexer.requiresRaffleIndexer(1_001), "rounds above 1,000 tickets may require the standalone indexer");
@@ -97,6 +100,28 @@ try {
     ticketTxId: "66".repeat(32)
   };
 
+  const refundArtifact = covenantModule.getRaffleRefundRuntimeArtifact(metadata.contractVersion);
+  const refundState = covenantModule.emptyRaffleCovenantState(refundArtifact);
+  refundState.ticket_price = 30_000_000n;
+  refundState.creator_pubkey = covenantModule.bytes32FromHex("44".repeat(32), "creator public key");
+  refundState.sold_tickets = 13n;
+  refundState.sold_batches = 13n;
+  refundState.ticket_root = covenantModule.bytes32FromHex("33".repeat(32), "ticket root");
+  refundState.refund_cursor = 0n;
+  refundState.refund_batch_cursor = 0n;
+  const refundRedeemScript = covenantModule.buildRaffleRedeemScript(refundState, refundArtifact);
+  const groupedSignatureScript = covenantModule.buildRaffleRefundBatchSignatureScript(
+    refundRedeemScript,
+    47_000_000n,
+    Array.from({ length: 13 }, (_, index) => ({
+      ownerPubkeyHex: "55".repeat(32),
+      firstTicketId: index,
+      ticketCount: 1,
+      ownerProofHex: "00".repeat(640)
+    }))
+  );
+  assert(groupedSignatureScript.length / 2 > 13 * 640, "the browser packs 13 owner proofs into one grouped-refund signature script");
+
   localRounds.cacheParticipatedRound(metadata, [ticket]);
   const restored = localRounds.loadCachedRound("testnet-10", metadata.roundId);
   assert(restored?.tickets.length === 1 && restored.tickets[0].ticketCount === 100, "a decimal-scale purchase round-trips through browser storage");
@@ -126,12 +151,26 @@ try {
     ...storedRounds[0],
     metadata: {
       ...storedRounds[0].metadata,
-      roundId: "legacy-round",
+      roundId: "supported-v14-round",
+      contractVersion: "raffle-v14-batch-range"
+    }
+  });
+  storage.set(storageKey, JSON.stringify(storedRounds));
+  assert(localRounds.loadCachedRaffleHistory("testnet-10").length === 2, "v14 cached rounds remain loadable after the v15 upgrade");
+  assert(
+    metadataModule.parseMetadata(JSON.stringify({ ...metadata, covenant: undefined, contractVersion: "raffle-v14-batch-range" })).contractVersion === "raffle-v14-batch-range",
+    "v14 imported metadata remains supported"
+  );
+  storedRounds.push({
+    ...storedRounds[0],
+    metadata: {
+      ...storedRounds[0].metadata,
+      roundId: "unsupported-legacy-round",
       contractVersion: "raffle-v10-chain-pow-tn12"
     }
   });
   storage.set(storageKey, JSON.stringify(storedRounds));
-  assert(localRounds.loadCachedRaffleHistory("testnet-10").length === 1, "legacy cached contracts are not loaded");
+  assert(localRounds.loadCachedRaffleHistory("testnet-10").length === 2, "unsupported legacy cached contracts are not loaded");
 
   let rejectedLegacyMetadata = false;
   try {
@@ -145,7 +184,8 @@ try {
   const localWallet = fs.readFileSync(path.join(root, "src/kaspa/wallet-local-test.ts"), "utf8");
   const transactions = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
   const history = fs.readFileSync(path.join(root, "src/kaspa/history.ts"), "utf8");
-  const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v11.sil"), "utf8");
+  const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v12.sil"), "utf8");
+  const refundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_refund_v3.sil"), "utf8");
   const merkle = fs.readFileSync(path.join(root, "src/raffle/merkle.ts"), "utf8");
   const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
@@ -164,12 +204,15 @@ try {
   assert(transactions.includes("nextRound.soldTickets === input.round.maxTickets") && transactions.includes("input.covenant.chainSearchHintHash ?? currentChainHash"), "ticket purchases preserve the creation anchor until a round sells out");
   assert(history.includes("transaction.accepting_block_hash ?? transaction.block_hash?.[0]") && app.includes("loadTransactionChainAnchor(historyApiBase, metadata.createTxId)"), "legacy rounds recover an early selected-chain anchor from their creation transaction");
   assert(history.includes("blueScoreLt=${probe + 1n}") && history.includes("blueScoreGte=${cursor}") && app.includes("anchorHeader.blueScore + targetBoundaryDaa - anchorHeader.daaScore"), "draw lookup calibrates and corrects a bounded target blue-score search from the creation block");
-  assert(merkle.includes("[1, 10, 100, 1_000, 10_000, 100_000]") && app.includes("ticketCount: quantity"), "the wallet UI submits decimal batches up to 100,000 tickets in one purchase");
-  assert(app.includes("disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}"), "the wallet blocks an unsupported or oversized batch before signing");
+  assert(merkle.includes("MAX_TICKET_BATCH_SIZE = 1_000_000") && app.includes('type="number"') && app.includes("ticketCount: quantity"), "the wallet UI accepts any positive whole-number ticket quantity up to the round remainder");
+  assert(app.includes("disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}"), "the wallet blocks a non-positive, fractional, or oversized quantity before signing");
   assert(localWallet.includes("new URLSearchParams({ wallet: input.wallet, network })") && viteConfig.includes('"experiment-mainnet.json"'), "the development wallet can run the same flow against Mainnet once funded");
-  assert(roundContract.includes("ticket_count == 1 || ticket_count == 10 || ticket_count == 100 || ticket_count == 1000 || ticket_count == 10000 || ticket_count == 100000"), "the covenant validates decimal purchase sizes");
+  assert(roundContract.includes("require(ticket_count > 0)") && !roundContract.includes("ticket_count == 100000"), "the covenant validates arbitrary positive purchase quantities");
   assert(roundContract.includes("ticket_price * ticket_count"), "the covenant charges the exact multi-ticket amount");
   assert(roundContract.includes("sold_batches: sold_batches + 1"), "one purchase appends one on-chain batch regardless of ticket count");
+  assert(refundContract.includes("MAX_BATCHES_PER_TX = 13") && app.includes("MAX_REFUND_PURCHASE_BATCHES_PER_TX"), "refunds automatically group the maximum safe 13 consecutive purchase batches");
+  assert(app.includes("shouldShrinkRefundBatch") && app.includes("storage[- ]mass") && app.includes("candidateBatches.slice(0, -1)"), "the browser shrinks a 13-batch candidate until compute and storage mass are standard");
+  assert(transactions.includes("refundBatchComputeBudget") && transactions.includes("verifiedBatches.map"), "grouped refunds commit a batch-sized compute budget and build every owner output");
   assert(transactions.includes("calculateTransactionFee") && transactions.includes("minimumV1TransientRelayFeeSompi"), "finalize fees include static and normalized transient mass");
   assert(transactions.includes("requiredFeeFromNodeRejection") && transactions.includes("nodeRequiredFee"), "covenant spends retry with the node's exact compute-mass fee floor");
   assert(transactions.includes("buildRefundTransaction(refundFeeSompi, false)") && transactions.includes("Measure an unbound twin"), "refund mass uses an unbound twin before rebuilding the successor covenant");

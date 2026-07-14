@@ -70,6 +70,13 @@ button.wide {
   width: 100%;
 }
 
+input,
+select {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .kas-cost-button {
   overflow: visible;
   position: relative;
@@ -80,6 +87,7 @@ button.wide {
   border: 1px solid #34473e;
   border-radius: 6px;
   bottom: calc(100% + 9px);
+  box-sizing: border-box;
   color: #fff;
   content: attr(data-cost);
   font-size: 0.78rem;
@@ -808,33 +816,11 @@ textarea {
   align-items: end;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(120px, 0.5fr) minmax(230px, 1fr);
+  grid-template-columns: minmax(180px, 1fr);
 }
 
 .quantity-field {
   margin-bottom: 0;
-}
-
-.segmented-control {
-  background: #eef1ed;
-  border-radius: 6px;
-  display: grid;
-  gap: 2px;
-  grid-template-columns: repeat(3, 1fr);
-  padding: 3px;
-}
-
-.segmented-control button {
-  background: transparent;
-  border: 0;
-  color: #33423b;
-  min-height: 38px;
-}
-
-.segmented-control button:hover,
-.segmented-control button.active {
-  background: #fff;
-  color: #174c43;
 }
 
 .purchase-summary {
@@ -1182,6 +1168,18 @@ dd {
 
   .workspace-tab {
     padding: 0 10px;
+  }
+
+  .kas-cost-button::after {
+    left: 0;
+    max-width: 100%;
+    transform: translate(0, 6px);
+    width: 100%;
+  }
+
+  .kas-cost-button:hover::after,
+  .kas-cost-button:focus-visible::after {
+    transform: translate(0, 0);
   }
 
   .setup-primary .inline-field > span {

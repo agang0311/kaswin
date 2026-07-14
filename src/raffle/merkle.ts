@@ -4,7 +4,7 @@ import type { TicketRange } from "./tickets";
 export const TICKET_MERKLE_DEPTH = 20;
 export const TICKET_MERKLE_CAPACITY = 1 << TICKET_MERKLE_DEPTH;
 export const TICKET_MERKLE_PROOF_BYTES = TICKET_MERKLE_DEPTH * 32;
-export const TICKET_BATCH_SIZES = [1, 10, 100, 1_000, 10_000, 100_000] as const;
+export const MAX_TICKET_BATCH_SIZE = 1_000_000;
 
 export const TICKET_EMPTY_NODES_HEX = [
   "00".repeat(32),
@@ -54,14 +54,14 @@ async function hashPair(left: Uint8Array, right: Uint8Array): Promise<Uint8Array
   return hexToBytes(await sha256BytesHex(bytes));
 }
 
-export function isTicketBatchSize(value: number): value is (typeof TICKET_BATCH_SIZES)[number] {
-  return TICKET_BATCH_SIZES.includes(value as (typeof TICKET_BATCH_SIZES)[number]);
+export function isTicketBatchSize(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0 && value <= MAX_TICKET_BATCH_SIZE;
 }
 
 export async function ticketBatchLeaf(ownerPubkeyHex: string, firstTicketId: number, ticketCount: number): Promise<Uint8Array> {
   const owner = hexToBytes(ownerPubkeyHex);
   if (owner.length !== 32) throw new Error("Ticket owner public key must be exactly 32 bytes.");
-  if (!isTicketBatchSize(ticketCount)) throw new Error("Ticket batch size must be 1, 10, 100, 1000, 10000, or 100000.");
+  if (!isTicketBatchSize(ticketCount)) throw new Error("Ticket batch size must be a positive integer no greater than 1000000.");
   const bytes = new Uint8Array(48);
   bytes.set(owner, 0);
   bytes.set(uint64Le(firstTicketId), 32);

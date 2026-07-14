@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 
 const DEPTH = 20;
 const CAPACITY = 1 << DEPTH;
-const ALLOWED = [1, 10, 100, 1_000, 10_000, 100_000];
+const ARBITRARY_COUNTS = [2, 37, 999, 12_345, 543_210];
+const MAX_REFUND_BATCHES_PER_TX = 13;
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest(); }
 function pair(left, right) { return hash(Buffer.concat([left, right])); }
@@ -86,25 +87,33 @@ if (verify(tree.root, { ...million[9], count: 10_000 }, 9, proof(tree, 9))) thro
 
 let refundTicketCursor = 0;
 let refundBatchCursor = 0;
-for (const batch of million) {
-  if (batch.first !== refundTicketCursor) throw new Error("Refund range skipped or overlapped tickets.");
-  refundTicketCursor += batch.count;
-  refundBatchCursor += 1;
+let refundTransactions = 0;
+while (refundBatchCursor < million.length) {
+  const grouped = million.slice(refundBatchCursor, refundBatchCursor + MAX_REFUND_BATCHES_PER_TX);
+  for (const batch of grouped) {
+    if (batch.first !== refundTicketCursor) throw new Error("Refund range skipped or overlapped tickets.");
+    refundTicketCursor += batch.count;
+  }
+  refundBatchCursor += grouped.length;
+  refundTransactions += 1;
 }
-if (refundTicketCursor !== 1_000_000 || refundBatchCursor !== 10) throw new Error("Million-ticket refund cursors did not finish exactly.");
+if (refundTicketCursor !== 1_000_000 || refundBatchCursor !== 10 || refundTransactions !== 1) {
+  throw new Error("Million-ticket grouped refund cursors did not finish exactly.");
+}
 
 const mixed = [];
 let first = 0;
-for (let index = 0; index < ALLOWED.length; index += 1) {
-  mixed.push({ owner: owner(index + 20), first, count: ALLOWED[index] });
-  first += ALLOWED[index];
+for (let index = 0; index < ARBITRARY_COUNTS.length; index += 1) {
+  mixed.push({ owner: owner(index + 20), first, count: ARBITRARY_COUNTS[index] });
+  first += ARBITRARY_COUNTS[index];
 }
 const mixedTree = buildTree(mixed);
 if (!mixed.every((batch, index) => verify(mixedTree.root, batch, index, proof(mixedTree, index)))) {
-  throw new Error("Not every supported decimal batch size produced a valid proof.");
+  throw new Error("Not every arbitrary purchase count produced a valid proof.");
 }
 if (CAPACITY < 1_000_000) throw new Error("Depth-20 tree cannot hold one million one-ticket purchase batches.");
 
 console.log(`One million tickets fit in 10 x 100,000-ticket purchase batches; root ${tree.root.toString("hex")}.`);
-console.log("One refund transaction per original purchase covers all 1,000,000 tickets in 10 transactions.");
-console.log("Verified 1/10/100/1,000/10,000/100,000 batch leaves and depth-20 worst-case batch capacity.");
+console.log("The 13-batch chain limit refunds those 10 purchase batches in one transaction.");
+console.log(`The compute-only lower bound for one million separate purchasers is ${Math.ceil(1_000_000 / MAX_REFUND_BATCHES_PER_TX).toLocaleString()} transactions; runtime storage-mass sizing may reduce each prefix.`);
+console.log("Verified arbitrary purchase-count leaves and depth-20 worst-case batch capacity.");

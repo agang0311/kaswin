@@ -2,7 +2,14 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import initKaspaWasm, { addressFromScriptPublicKey, payToAddressScript, payToScriptHashScript } from "@onekeyfe/kaspa-wasm/kaspa.js";
+import initKaspaWasm, {
+  Transaction,
+  TransactionOutput,
+  addressFromScriptPublicKey,
+  calculateTransactionFee,
+  payToAddressScript,
+  payToScriptHashScript
+} from "@onekeyfe/kaspa-wasm/kaspa.js";
 import { createServer } from "vite";
 
 const root = process.cwd();
@@ -27,6 +34,8 @@ try {
   const metadata = await vite.ssrLoadModule("/src/raffle/metadata.ts");
   const networks = await vite.ssrLoadModule("/src/kaspa/networks.ts");
   const transactions = await vite.ssrLoadModule("/src/kaspa/transactions.ts");
+  const wasmModule = await vite.ssrLoadModule("/src/kaspa/wasm.ts");
+  await wasmModule.ensureKaspaWasmReady();
 
   assert(
     transactions.requiredFeeFromNodeRejection(new Error("transaction has 2604600 fees which is under the required amount of 3374300 for compute mass 33743")) === 3_374_300n,
@@ -89,6 +98,80 @@ try {
       testnetRoundTrip.script === scriptPublicKey.script,
     "Mainnet and testnet addresses decode to the same covenant ScriptPublicKey"
   );
+
+  const refundArtifact = covenant.getRaffleRefundRuntimeArtifact(contractVersion);
+  const refundRound = {
+    ...round,
+    status: "Refunding",
+    soldTickets: 13,
+    soldBatches: 13,
+    potAmount: 390_000_000n,
+    ticketRoot: "22".repeat(32),
+    refundCursor: 0,
+    refundBatchCursor: 0
+  };
+  const refundState = await covenant.raffleCovenantStateFromRound(refundRound);
+  const refundRedeemScript = covenant.buildRaffleRedeemScript(refundState, refundArtifact);
+  const refundScriptPublicKey = payToScriptHashScript(refundRedeemScript);
+  const feasibleBatchCounts = [];
+  for (let batchCount = 1; batchCount <= 13; batchCount += 1) {
+    let refundFee = 0n;
+    let converged = false;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const feePerBatch = refundFee / BigInt(batchCount);
+      const feeRemainder = refundFee % BigInt(batchCount);
+      const witnesses = Array.from({ length: batchCount }, (_, index) => ({
+        ownerPubkeyHex: "11".repeat(32),
+        firstTicketId: index,
+        ticketCount: 1,
+        ownerProofHex: "00".repeat(640)
+      }));
+      const refundSignatureScript = covenant.buildRaffleRefundBatchSignatureScript(refundRedeemScript, refundFee, witnesses);
+      const inputAmount = 57_000_000n + 30_000_000n * BigInt(batchCount);
+      const groupedRefund = new Transaction({
+        version: 1,
+        inputs: [{
+          previousOutpoint: { transactionId: "33".repeat(32), index: 0 },
+          signatureScript: refundSignatureScript,
+          sequence: 0n,
+          sigOpCount: 0,
+          computeBudget: Math.min(470, 15 + batchCount * 35),
+          utxo: {
+            address: mainnetAddress,
+            outpoint: { transactionId: "33".repeat(32), index: 0 },
+            amount: inputAmount,
+            scriptPublicKey: refundScriptPublicKey,
+            blockDaaScore: 474_175_565n,
+            isCoinbase: false
+          }
+        }],
+        outputs: [
+          new TransactionOutput(57_000_000n, refundScriptPublicKey),
+          ...Array.from({ length: batchCount }, (_, index) => new TransactionOutput(
+            30_000_000n - feePerBatch - (index === 0 ? feeRemainder : 0n),
+            mainnetRoundTrip
+          ))
+        ],
+        lockTime: 474_175_565n,
+        subnetworkId: "00".repeat(20),
+        gas: 0n,
+        payload: "",
+        mass: 0n,
+        storageMass: 0n
+      });
+      const requiredFee = calculateTransactionFee("mainnet", groupedRefund, 0);
+      if (requiredFee === undefined || requiredFee > 60_000_000n) break;
+      if (requiredFee <= refundFee) {
+        converged = true;
+        break;
+      }
+      refundFee = requiredFee;
+    }
+    if (converged) feasibleBatchCounts.push(batchCount);
+  }
+  assert(feasibleBatchCounts.length > 0, "grouped refunds retain at least one standard transaction for 0.3 KAS tickets");
+  assert(feasibleBatchCounts.at(-1) < 13, "storage mass lowers the practical batch maximum for many small refund outputs");
+  console.log(`0.3 KAS one-ticket outputs fit ${feasibleBatchCounts.at(-1)} purchase batches in one standard refund transaction.`);
 } finally {
   await vite.close();
 }

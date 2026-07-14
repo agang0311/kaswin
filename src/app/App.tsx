@@ -50,6 +50,7 @@ import {
   COVENANT_CREATE_FEE_SOMPI,
   covenantBuyFeeSompi,
   covenantFinalizeFeeSompi,
+  covenantRefundMaxFeeSompi,
   covenantRefundFeeSompi,
   createRaffleCovenantRound,
   DEFAULT_COVENANT_CARRIER_SOMPI,
@@ -57,7 +58,7 @@ import {
   finalizeRaffleCovenantRound,
   getRaffleRegistryConfig,
   MAX_COVENANT_FINALIZE_FEE_SOMPI,
-  MAX_REFUND_BATCH_FEE_SOMPI,
+  MAX_REFUND_PURCHASE_BATCHES_PER_TX,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
   currentRaffleCovenantDaaScore,
@@ -76,7 +77,7 @@ import {
   type BrowserTestWallet,
   type WalletAdapterOption
 } from "../kaspa/wallet";
-import { createEmptyMetadata, parseMetadata, raffleContractVersionForNetwork, stringifyMetadata } from "../raffle/metadata";
+import { RAFFLE_CONTRACT_VERSION, createEmptyMetadata, parseMetadata, raffleContractVersionForNetwork, stringifyMetadata } from "../raffle/metadata";
 import {
   cacheParticipatedRound,
   hasCachedParticipatedRound,
@@ -86,7 +87,7 @@ import {
 } from "../raffle/local-rounds";
 import { randomHex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
-import { buildTicketBatchProof, TICKET_BATCH_SIZES, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
+import { buildTicketBatchProof, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import { findTicketRange, hasCompleteTicketBatchHistory, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
 import { translate, translateRuntimeText, type Language, type TranslationValues } from "./i18n";
@@ -341,6 +342,11 @@ function decodeShareMetadata(value: string) {
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : String(error || fallback);
+}
+
+function shouldShrinkRefundBatch(error: unknown): boolean {
+  const message = errorMessage(error, "");
+  return /refund batch candidate|standard mass limit|storage[- ]mass(?: minimum)?|compute mass .*larger than|max allowed size|covenant fee cap/i.test(message);
 }
 
 async function currentVirtualDaaScore(connection: KaspaRpcConnection): Promise<bigint> {
@@ -623,7 +629,7 @@ export function App() {
   const remainingTickets = Math.max(0, metadata.maxTickets - round.soldTickets);
   const parsedTicketQuantity = Number(ticketQuantity);
   const ticketQuantityIsAvailable = Number.isInteger(parsedTicketQuantity) &&
-    TICKET_BATCH_SIZES.includes(parsedTicketQuantity as (typeof TICKET_BATCH_SIZES)[number]) &&
+    parsedTicketQuantity > 0 &&
     parsedTicketQuantity <= remainingTickets;
   const purchaseTotal = ticketQuantityIsAvailable
     ? round.ticketPrice * BigInt(parsedTicketQuantity)
@@ -658,10 +664,19 @@ export function App() {
     fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion)),
     maxFee: formatKas(MAX_COVENANT_FINALIZE_FEE_SOMPI)
   });
+  const remainingRefundBatches = Math.max(
+    1,
+    (metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 1) -
+      (metadata.covenant?.refundBatchCursor ?? 0)
+  );
+  const estimatedRefundBatchCount = round.contractVersion === RAFFLE_CONTRACT_VERSION
+    ? Math.min(MAX_REFUND_PURCHASE_BATCHES_PER_TX, remainingRefundBatches)
+    : 1;
   const refundCostTooltip = t("cost.refund.current", {
-    fee: formatKas(covenantRefundFeeSompi(round.contractVersion)),
+    fee: formatKas(covenantRefundFeeSompi(round.contractVersion, estimatedRefundBatchCount)),
     transitionFee: formatKas(REFUND_TRANSITION_FEE_SOMPI),
-    maxFee: formatKas(MAX_REFUND_BATCH_FEE_SOMPI)
+    maxFee: formatKas(covenantRefundMaxFeeSompi(round.contractVersion)),
+    batches: estimatedRefundBatchCount
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
@@ -1340,10 +1355,6 @@ export function App() {
         throw new Error("Ticket quantity must be a positive integer.");
       }
 
-      if (!TICKET_BATCH_SIZES.includes(quantity as (typeof TICKET_BATCH_SIZES)[number])) {
-        throw new Error("Batch purchases must contain 1, 10, 100, 1000, 10000, or 100000 tickets.");
-      }
-
       if (quantity > metadata.maxTickets - covenant.soldTickets) {
         throw new Error("Ticket quantity exceeds the remaining tickets.");
       }
@@ -1759,53 +1770,74 @@ export function App() {
       }
 
       while (activeCovenant) {
-        const batchIndex = activeCovenant.refundBatchCursor ?? 0;
-        const nextTicketId = (activeCovenant.refundCursor ?? 0) + 1;
-        let ticket: TicketState;
-        let proofHex: string;
+        const firstBatchIndex = activeCovenant.refundBatchCursor ?? 0;
+        let nextTicketId = (activeCovenant.refundCursor ?? 0) + 1;
+        const remainingPurchaseBatches = (activeCovenant.soldBatches ?? activeCovenant.ticketOwnerPubkeys.length) - firstBatchIndex;
+        const contractBatchLimit = metadata.contractVersion === RAFFLE_CONTRACT_VERSION
+          ? MAX_REFUND_PURCHASE_BATCHES_PER_TX
+          : 1;
+        const targetBatchCount = Math.min(contractBatchLimit, remainingPurchaseBatches);
+        const refundBatches: Array<{ ticket: TicketState; batchIndex: number; ownerProofHex: string }> = [];
 
-        if (requiresIndexerProof) {
-          const indexed = await loadIndexedBatchProof(indexApiBase, metadata.roundId, batchIndex).catch((error) => {
-            throw new Error(t("indexerRequiredError", { detail: errorMessage(error, "Unable to load the refund proof.") }));
-          });
-          if (indexed.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
-          if (indexed.firstTicketId !== nextTicketId) throw new Error("Raffle index refund batch is not the next on-chain batch.");
-          ticket = {
-            appId: "KASPA_RAFFLE_TICKET_V1",
-            roundId: metadata.roundId,
-            ticketId: indexed.firstTicketId,
-            ticketCount: indexed.ticketCount,
-            owner: indexed.owner,
-            ownerPubkey: indexed.ownerPubkey,
-            paidAmount: BigInt(metadata.ticketPrice),
-            ticketTxId: indexed.transactionId || ""
-          };
-          proofHex = indexed.proofHex;
-        } else {
-          const local = await buildLocalBatchWitness(nextTicketId);
-          if (local.batchIndex !== batchIndex) throw new Error("Local refund batch cursor does not match the covenant.");
-          ticket = local.ticket;
-          proofHex = local.proofHex;
+        for (let offset = 0; offset < targetBatchCount; offset += 1) {
+          const batchIndex = firstBatchIndex + offset;
+          let ticket: TicketState;
+          let proofHex: string;
+          if (requiresIndexerProof) {
+            const indexed = await loadIndexedBatchProof(indexApiBase, metadata.roundId, batchIndex).catch((error) => {
+              throw new Error(t("indexerRequiredError", { detail: errorMessage(error, "Unable to load the refund proof.") }));
+            });
+            if (indexed.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
+            if (indexed.firstTicketId !== nextTicketId) throw new Error("Raffle index refund batch is not the next on-chain batch.");
+            ticket = {
+              appId: "KASPA_RAFFLE_TICKET_V1",
+              roundId: metadata.roundId,
+              ticketId: indexed.firstTicketId,
+              ticketCount: indexed.ticketCount,
+              owner: indexed.owner,
+              ownerPubkey: indexed.ownerPubkey,
+              paidAmount: BigInt(metadata.ticketPrice),
+              ticketTxId: indexed.transactionId || ""
+            };
+            proofHex = indexed.proofHex;
+          } else {
+            const local = await buildLocalBatchWitness(nextTicketId);
+            if (local.batchIndex !== batchIndex) throw new Error("Local refund batch cursor does not match the covenant.");
+            ticket = local.ticket;
+            proofHex = local.proofHex;
+          }
+          refundBatches.push({ ticket, batchIndex, ownerProofHex: proofHex });
+          nextTicketId += ticketRangeCount(ticket);
         }
 
-        const ticketCount = ticketRangeCount(ticket);
-        const step = await refundRaffleCovenantRound({
-          connection: rpcConnectionRef.current,
-          round: roundFromCovenant(activeCovenant),
-          covenant: activeCovenant,
-          tickets,
-          ticket,
-          batchIndex,
-          ownerProofHex: proofHex,
-          payload: encodePayload({
-            app: "kaspa-raffle-static",
-            type: "round-refund-batch",
-            roundId: metadata.roundId,
-            refundCursor: activeCovenant.refundCursor ?? 0,
-            refundBatchCursor: batchIndex,
-            ticketCount
-          })
-        });
+        let candidateBatches = refundBatches;
+        let ticketCount = 0;
+        let step: Awaited<ReturnType<typeof refundRaffleCovenantRound>>;
+        while (true) {
+          ticketCount = candidateBatches.reduce((total, batch) => total + ticketRangeCount(batch.ticket), 0);
+          try {
+            step = await refundRaffleCovenantRound({
+              connection: rpcConnectionRef.current,
+              round: roundFromCovenant(activeCovenant),
+              covenant: activeCovenant,
+              tickets,
+              refundBatches: candidateBatches,
+              payload: encodePayload({
+                app: "kaspa-raffle-static",
+                type: "round-refund-batch",
+                roundId: metadata.roundId,
+                refundCursor: activeCovenant.refundCursor ?? 0,
+                refundBatchCursor: firstBatchIndex,
+                ticketCount,
+                batchCount: candidateBatches.length
+              })
+            });
+            break;
+          } catch (error) {
+            if (candidateBatches.length <= 1 || !shouldShrinkRefundBatch(error)) throw error;
+            candidateBatches = candidateBatches.slice(0, -1);
+          }
+        }
         lastTxId = step.txId;
         activeCovenant = step.covenant!;
         const cursor = activeCovenant?.refundCursor ?? covenant.soldTickets;
@@ -1817,7 +1849,7 @@ export function App() {
             : current.covenant)
         }));
         setChainMessage(activeCovenant
-          ? `Refunded ${ticketCount.toLocaleString()} tickets; cursor ${cursor}/${covenant.soldTickets}: ${step.txId}`
+          ? `Refunded ${(step.refundedTicketCount ?? ticketCount).toLocaleString()} tickets from ${step.refundedBatchCount ?? candidateBatches.length} purchase batches; cursor ${cursor}/${covenant.soldTickets}: ${step.txId}`
           : `Timed-out round refunded: ${step.txId}`);
         if (activeCovenant) await new Promise((resolve) => window.setTimeout(resolve, 750));
       }
@@ -2709,23 +2741,19 @@ export function App() {
                 <h2>{t("buyTickets")}</h2>
               </div>
               <div className="purchase-form">
-                <div className="field quantity-field">
+                <label className="field quantity-field">
                   <span>{t("quantity")}</span>
-                  <div className="segmented-control" aria-label={t("quantityPresets")}>
-                  {TICKET_BATCH_SIZES.map((quantity) => (
-                    <button
-                      type="button"
-                      className={parsedTicketQuantity === quantity ? "active" : ""}
-                      disabled={remainingTickets < quantity}
-                      key={quantity}
-                      onClick={() => setTicketQuantity(String(quantity))}
-                    >
-                      {quantity.toLocaleString()}
-                    </button>
-                  ))}
-                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max={remainingTickets}
+                    step="1"
+                    value={ticketQuantity}
+                    onChange={(event) => setTicketQuantity(event.target.value)}
+                  />
+                </label>
                 </div>
-              </div>
               <dl className="purchase-summary">
                 <div><dt>{t("total")}</dt><dd>{formatKas(purchaseTotal)}</dd></div>
                 <div><dt>{t("remaining")}</dt><dd>{remainingTickets.toLocaleString()}</dd></div>

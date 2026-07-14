@@ -6,12 +6,12 @@ import process from "node:process";
 
 const DEPTH = 20;
 const RECORD_BYTES = 80;
-const CONTRACT_VERSION = "raffle-v14-batch-range";
+const CONTRACT_VERSION = "raffle-v15-arbitrary-batched-refund";
 const root = process.cwd();
 const fixtureDir = path.join(root, ".tmp", "indexer-fixture");
 const roundId = "ab".repeat(32);
 const port = Number(process.env.RAFFLE_INDEX_TEST_PORT ?? 28790);
-const sizes = [1, 10, 100, 1_000];
+const sizes = [3, 17, 29, 1_000];
 const owners = sizes.map((_, index) => createHash("sha256").update(`owner-${index + 1}`).digest());
 const txIds = sizes.map((_, index) => Buffer.alloc(32, index + 1));
 
@@ -56,7 +56,7 @@ const blockHashes = Array.from({ length: 7 }, (_, index) => (index + 1).toString
 const createPayload = {
   app: "kaspa-raffle-static",
   type: "round-create",
-  version: "0.8.0",
+  version: "0.9.0",
   roundId,
   contractVersion: CONTRACT_VERSION,
   creator: "kaspatest:qzrhkehvwlzpzh8dv9ecl8eadayyzhrqlkcldzfzu32mrgv2m9npqq7nx4zen",
@@ -71,7 +71,7 @@ const baseSummary = {
   status: "Open",
   refundCursor: 0,
   refundBatchCursor: 0,
-  soldTickets: 1,
+  soldTickets: sizes[0],
   soldBatches: 1,
   covenantId: "cd".repeat(32),
   latest: {
@@ -84,7 +84,7 @@ const baseSummary = {
 delete baseSummary.app;
 delete baseSummary.type;
 
-let firstTicketId = 1;
+let firstTicketId = sizes[0];
 const buyBlocks = sizes.slice(1).map((ticketCount, offset) => {
   const index = offset + 1;
   const block = {
@@ -128,7 +128,8 @@ const refundFirstBlock = {
       roundId,
       refundCursor: 0,
       refundBatchCursor: 0,
-      ticketCount: 1
+      ticketCount: sizes[0] + sizes[1],
+      batchCount: 2
     },
     transactionId: "fb".repeat(32),
     output: { index: 0, amountSompi: "3302700000", address: "kaspatest:pqrefundnext", covenantId: "ef".repeat(32) }
@@ -198,38 +199,38 @@ try {
 
   const rounds = await (await fetch(`http://127.0.0.1:${port}/rounds`)).json();
   if (
-    rounds.length !== 1 || rounds[0].soldTickets !== 111 || rounds[0].soldBatches !== 3 ||
-    rounds[0].status !== "Refunding" || rounds[0].refundCursor !== 1 || rounds[0].refundBatchCursor !== 1 ||
-    rounds[0].latestCovenant?.txId !== "fb".repeat(32) || rounds[0].latestCovenant?.refundBatchCursor !== 1
+    rounds.length !== 1 || rounds[0].soldTickets !== 49 || rounds[0].soldBatches !== 3 ||
+    rounds[0].status !== "Refunding" || rounds[0].refundCursor !== 20 || rounds[0].refundBatchCursor !== 2 ||
+    rounds[0].latestCovenant?.txId !== "fb".repeat(32) || rounds[0].latestCovenant?.refundBatchCursor !== 2
   ) {
     throw new Error("Indexer did not restore both batch and ticket cursors after rollback.");
   }
 
-  const ticket = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/tickets/11`)).json();
-  if (ticket.ownerPubkey !== owners[1].toString("hex") || ticket.firstTicketId !== 2 || ticket.ticketCount !== 10) {
-    throw new Error("Ticket lookup did not resolve the containing 10-ticket purchase batch.");
+  const ticket = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/tickets/10`)).json();
+  if (ticket.ownerPubkey !== owners[1].toString("hex") || ticket.firstTicketId !== 4 || ticket.ticketCount !== 17) {
+    throw new Error("Ticket lookup did not resolve the containing arbitrary-size purchase batch.");
   }
   assertProof(ticket, owners[1]);
 
-  const nextRefund = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/batches/1`)).json();
-  if (nextRefund.firstTicketId !== 2 || nextRefund.ticketCount !== 10 || nextRefund.batchIndex !== 1) {
+  const nextRefund = await (await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/batches/2`)).json();
+  if (nextRefund.firstTicketId !== 21 || nextRefund.ticketCount !== 29 || nextRefund.batchIndex !== 2) {
     throw new Error("A loaded client could not obtain the next purchase batch for refund continuation.");
   }
-  assertProof(nextRefund, owners[1]);
+  assertProof(nextRefund, owners[2]);
 
   const ownerResponse = await fetch(
     `http://127.0.0.1:${port}/rounds/${roundId}/owners/${owners[2].toString("hex")}/proof`
   );
   const ownerProof = await ownerResponse.json();
-  if (!ownerResponse.ok || ownerProof.firstTicketId !== 12 || ownerProof.ticketCount !== 100) {
-    throw new Error("Owner lookup did not return the 100-ticket purchase batch.");
+  if (!ownerResponse.ok || ownerProof.firstTicketId !== 21 || ownerProof.ticketCount !== 29) {
+    throw new Error("Owner lookup did not return the arbitrary-size purchase batch.");
   }
   assertProof(ownerProof, owners[2]);
 
-  const removed = await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/tickets/112`);
+  const removed = await fetch(`http://127.0.0.1:${port}/rounds/${roundId}/tickets/50`);
   if (removed.status !== 404) throw new Error("Reorg-removed 1,000-ticket batch is still indexed.");
 
-  console.log(`Indexer restored 111 tickets in 3 purchase batches, resumed refund batch 2 after load, and rejected the reorg-removed batch. Root: ${ticket.rootHex}`);
+  console.log(`Indexer restored 49 arbitrary-count tickets in 3 purchase batches, resumed after a 2-batch refund transaction, and rejected the reorg-removed batch. Root: ${ticket.rootHex}`);
 } finally {
   if (child.exitCode === null) {
     child.kill("SIGTERM");

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const sources = ["raffle_round_v11.sil"];
+const sources = ["raffle_round_v12.sil"];
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

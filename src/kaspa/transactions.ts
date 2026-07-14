@@ -18,7 +18,7 @@ import {
   buildRaffleAddress,
   buildRaffleBuySignatureScript,
   buildRaffleFinalizeSignatureScript,
-  buildRaffleRefundNextSignatureScript,
+  buildRaffleRefundBatchSignatureScript,
   buildRaffleStartRefundSignatureScript,
   buildRaffleRedeemScript,
   buildRaffleScriptPublicKey,
@@ -35,6 +35,7 @@ import { hexToBytes } from "../raffle/randomness";
 import type { RaffleCovenantCursor, RoundState, TicketState } from "../raffle/types";
 import { appendTicketBatch, isTicketBatchSize, verifyTicketBatchProof } from "../raffle/merkle";
 import { ticketRangeCount } from "../raffle/tickets";
+import { LEGACY_RAFFLE_CONTRACT_VERSION, RAFFLE_CONTRACT_VERSION } from "../raffle/metadata";
 import type { BrowserTestWallet } from "./wallet";
 import { ensureKaspaWasmReady } from "./wasm";
 
@@ -98,6 +99,11 @@ export interface RefundRaffleCovenantRoundInput {
   ticket?: TicketState;
   batchIndex?: number;
   ownerProofHex?: string;
+  refundBatches?: Array<{
+    ticket: TicketState;
+    batchIndex: number;
+    ownerProofHex: string;
+  }>;
   payload?: Uint8Array;
 }
 
@@ -107,6 +113,8 @@ export interface RaffleCovenantSpendResult {
   covenant?: RaffleCovenantCursor;
   winnerTicketId?: number;
   randomSeed?: string;
+  refundedTicketCount?: number;
+  refundedBatchCount?: number;
 }
 
 export const DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 5_000_000n;
@@ -118,7 +126,9 @@ export const ESTIMATED_COVENANT_FINALIZE_FEE_SOMPI = 6_000_000n;
 export const MAX_COVENANT_FINALIZE_FEE_SOMPI = 20_000_000n;
 export const REFUND_TRANSITION_FEE_SOMPI = 2_400_000n;
 export const ESTIMATED_REFUND_BATCH_FEE_SOMPI = 4_000_000n;
-export const MAX_REFUND_BATCH_FEE_SOMPI = 20_000_000n;
+const LEGACY_MAX_REFUND_BATCH_FEE_SOMPI = 20_000_000n;
+export const MAX_REFUND_BATCH_FEE_SOMPI = 60_000_000n;
+export const MAX_REFUND_PURCHASE_BATCHES_PER_TX = 13;
 const STANDARD_REFUND_MIN_SOMPI = 5_000_000n;
 export const MIN_COVENANT_CARRIER_SOMPI = 56_550_000n;
 export const DEFAULT_COVENANT_CARRIER_SOMPI = 57_000_000n;
@@ -128,8 +138,9 @@ const MANUAL_TX_FEE_SOMPI = COVENANT_CREATE_FEE_SOMPI;
 const LOW_COST_FUNDING_MIN_SOMPI = 20_000_000n;
 const SAFE_PAYMENT_CHANGE_SOMPI = 200_000_000n;
 const RAFFLE_FINALIZE_COMPUTE_BUDGET = 200;
-const REFUND_TRANSITION_COMPUTE_BUDGET = 4;
-const REFUND_BATCH_COMPUTE_BUDGET = 100;
+const LEGACY_REFUND_TRANSITION_COMPUTE_BUDGET = 4;
+const GROUPED_REFUND_TRANSITION_COMPUTE_BUDGET = 150;
+const LEGACY_REFUND_BATCH_COMPUTE_BUDGET = 100;
 const NORMALIZED_TRANSIENT_GRAMS_PER_BYTE = 2n;
 const MIN_RELAY_FEE_SOMPI_PER_GRAM = 100n;
 
@@ -141,12 +152,31 @@ export function covenantFinalizeFeeSompi(_contractVersion: string): bigint {
   return ESTIMATED_COVENANT_FINALIZE_FEE_SOMPI;
 }
 
-export function covenantRefundFeeSompi(_contractVersion: string): bigint {
-  return ESTIMATED_REFUND_BATCH_FEE_SOMPI;
+export function covenantRefundFeeSompi(contractVersion: string, batchCount = 1): bigint {
+  if (contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION) return ESTIMATED_REFUND_BATCH_FEE_SOMPI;
+  return BigInt(refundBatchComputeBudget(contractVersion, Math.max(1, Math.min(MAX_REFUND_PURCHASE_BATCHES_PER_TX, batchCount)))) * 100_000n;
+}
+
+export function covenantRefundMaxFeeSompi(contractVersion: string): bigint {
+  return contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION
+    ? LEGACY_MAX_REFUND_BATCH_FEE_SOMPI
+    : MAX_REFUND_BATCH_FEE_SOMPI;
 }
 
 function raffleBuyComputeBudget(_ticketCount = 1): number {
   return 12;
+}
+
+function refundTransitionComputeBudget(contractVersion: string): number {
+  return contractVersion === RAFFLE_CONTRACT_VERSION
+    ? GROUPED_REFUND_TRANSITION_COMPUTE_BUDGET
+    : LEGACY_REFUND_TRANSITION_COMPUTE_BUDGET;
+}
+
+function refundBatchComputeBudget(contractVersion: string, batchCount: number): number {
+  if (contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION) return LEGACY_REFUND_BATCH_COMPUTE_BUDGET;
+  if (contractVersion !== RAFFLE_CONTRACT_VERSION) throw new Error(`Unsupported refund contract version: ${contractVersion}.`);
+  return Math.min(470, 15 + batchCount * 35);
 }
 
 function formatKasAmount(value: bigint): string {
@@ -761,7 +791,7 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
     await assertRaffleRedeemScriptMatchesRound(currentRound, input.covenant.redeemScriptHex, "Buy");
 
     if (!isTicketBatchSize(input.ticketCount)) {
-      throw new Error("A purchase must contain 1, 10, 100, 1000, 10000, or 100000 tickets.");
+      throw new Error("A purchase must contain a positive whole number of tickets no greater than 1000000.");
     }
 
     if (input.covenant.soldTickets + input.ticketCount > input.round.maxTickets) {
@@ -1112,7 +1142,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
 
     const covenantUtxo = await getCurrentCovenantUtxo(input.connection, input.covenant);
     const currentAmount = BigInt(input.covenant.amountSompi);
-    const refundArtifact = getRaffleRefundRuntimeArtifact();
+    const refundArtifact = getRaffleRefundRuntimeArtifact(currentRound.contractVersion);
 
       if (input.covenant.status !== "Refunding") {
         const nextRound: RoundState = { ...currentRound, status: "Refunding", refundCursor: 0, refundBatchCursor: 0 };
@@ -1128,7 +1158,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             signatureScript: buildRaffleStartRefundSignatureScript(hexToBytes(input.covenant.redeemScriptHex)),
             sequence: 0n,
             sigOpCount: 0,
-            computeBudget: REFUND_TRANSITION_COMPUTE_BUDGET,
+            computeBudget: refundTransitionComputeBudget(currentRound.contractVersion),
             utxo: asInputUtxo(covenantUtxo)
           }],
           outputs: [new TransactionOutput(nextAmount, nextScriptPublicKey)],
@@ -1163,32 +1193,64 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
 
       const refundCursor = input.covenant.refundCursor ?? 0;
       const refundBatchCursor = input.covenant.refundBatchCursor ?? 0;
-      const ticket = input.ticket;
-      const batchIndex = input.batchIndex;
-      if (!ticket || !input.ownerProofHex || batchIndex === undefined) {
+      const requestedBatches = input.refundBatches?.length
+        ? input.refundBatches
+        : input.ticket && input.ownerProofHex && input.batchIndex !== undefined
+          ? [{ ticket: input.ticket, batchIndex: input.batchIndex, ownerProofHex: input.ownerProofHex }]
+          : [];
+      const maximumBatchCount = currentRound.contractVersion === RAFFLE_CONTRACT_VERSION
+        ? MAX_REFUND_PURCHASE_BATCHES_PER_TX
+        : 1;
+      if (!requestedBatches.length) {
         throw new Error(`Purchase batch #${refundBatchCursor + 1} and its Merkle proof are required for the next refund.`);
       }
-      if (batchIndex !== refundBatchCursor || ticket.ticketId - 1 !== refundCursor) {
-        throw new Error("Refund batch cursor does not match the next purchase batch.");
+      if (requestedBatches.length > maximumBatchCount) {
+        throw new Error(`A refund transaction supports at most ${maximumBatchCount} consecutive purchase batches.`);
       }
 
-      const ticketCount = ticketRangeCount(ticket);
-      if (!isTicketBatchSize(ticketCount)) throw new Error("Refund ticket batch size is invalid.");
-      const ownerPubkey = ticket.ownerPubkey || pubkeyHexFromAddress(ticket.owner);
-      if (!await verifyTicketBatchProof(
-        currentRound.ticketRoot,
-        ownerPubkey,
-        refundCursor,
-        ticketCount,
-        refundBatchCursor,
-        input.ownerProofHex
-      )) {
-        throw new Error(`Purchase batch #${refundBatchCursor + 1} does not match the covenant ticket root.`);
+      let nextRefundCursor = refundCursor;
+      let totalBatchValue = 0n;
+      const verifiedBatches: Array<{
+        ticket: TicketState;
+        batchIndex: number;
+        ownerProofHex: string;
+        ownerPubkey: string;
+        ticketCount: number;
+        batchValue: bigint;
+        ownerScriptPublicKey: ReturnType<typeof payToAddressScript>;
+      }> = [];
+      for (let offset = 0; offset < requestedBatches.length; offset += 1) {
+        const candidate = requestedBatches[offset];
+        const expectedBatchIndex = refundBatchCursor + offset;
+        if (candidate.batchIndex !== expectedBatchIndex || candidate.ticket.ticketId - 1 !== nextRefundCursor) {
+          throw new Error("Refund batch cursor does not match the next purchase batch.");
+        }
+        const ticketCount = ticketRangeCount(candidate.ticket);
+        if (!isTicketBatchSize(ticketCount)) throw new Error("Refund ticket batch size is invalid.");
+        const ownerPubkey = candidate.ticket.ownerPubkey || pubkeyHexFromAddress(candidate.ticket.owner);
+        if (!await verifyTicketBatchProof(
+          currentRound.ticketRoot,
+          ownerPubkey,
+          nextRefundCursor,
+          ticketCount,
+          expectedBatchIndex,
+          candidate.ownerProofHex
+        )) {
+          throw new Error(`Purchase batch #${expectedBatchIndex + 1} does not match the covenant ticket root.`);
+        }
+        const batchValue = currentRound.ticketPrice * BigInt(ticketCount);
+        totalBatchValue += batchValue;
+        verifiedBatches.push({
+          ...candidate,
+          ownerPubkey,
+          ticketCount,
+          batchValue,
+          ownerScriptPublicKey: payToAddressScript(candidate.ticket.owner)
+        });
+        nextRefundCursor += ticketCount;
       }
 
-      const batchValue = currentRound.ticketPrice * BigInt(ticketCount);
-      const nextRefundCursor = refundCursor + ticketCount;
-      const nextRefundBatchCursor = refundBatchCursor + 1;
+      const nextRefundBatchCursor = refundBatchCursor + verifiedBatches.length;
       const hasSuccessor = nextRefundBatchCursor < currentRound.soldBatches;
       if (hasSuccessor && nextRefundCursor >= currentRound.soldTickets) {
         throw new Error("Refund batch metadata exceeds the sold ticket count.");
@@ -1196,9 +1258,8 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       if (!hasSuccessor && nextRefundCursor !== currentRound.soldTickets) {
         throw new Error("The final refund batch does not cover all sold tickets.");
       }
-      if (currentAmount < batchValue) throw new Error("The refund covenant does not contain this purchase batch.");
+      if (currentAmount < totalBatchValue) throw new Error("The refund covenant does not contain these purchase batches.");
 
-      const ownerScriptPublicKey = payToAddressScript(ticket.owner);
       const creatorScriptPublicKey = payToAddressScript(currentRound.creator);
       let nextRedeemScript: Uint8Array | undefined;
       let nextAddress = "";
@@ -1207,7 +1268,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         const nextRound: RoundState = {
           ...currentRound,
           status: "Refunding",
-          potAmount: currentRound.potAmount - batchValue,
+          potAmount: currentRound.potAmount - totalBatchValue,
           refundCursor: nextRefundCursor,
           refundBatchCursor: nextRefundBatchCursor
         };
@@ -1218,24 +1279,28 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       }
 
       const buildRefundTransaction = (refundFeeSompi: bigint, includeCovenantBinding = true): { tx: Transaction; signatureScriptHex: string } => {
-        const refundAmount = batchValue - refundFeeSompi;
-        if (refundAmount < STANDARD_REFUND_MIN_SOMPI) throw new Error("The purchase batch is too small after its refund network fee.");
+        const feePerBatch = refundFeeSompi / BigInt(verifiedBatches.length);
+        const feeRemainder = refundFeeSompi % BigInt(verifiedBatches.length);
+        const ownerOutputs = verifiedBatches.map((batch, index) => {
+          const ownerFee = feePerBatch + (index === 0 ? feeRemainder : 0n);
+          const refundAmount = batch.batchValue - ownerFee;
+          if (refundAmount < STANDARD_REFUND_MIN_SOMPI) {
+            throw new Error(`Purchase batch #${batch.batchIndex + 1} is too small after its share of the refund network fee.`);
+          }
+          return new TransactionOutput(refundAmount, batch.ownerScriptPublicKey);
+        });
         const outputs = hasSuccessor
-          ? [
-              new TransactionOutput(currentAmount - batchValue, nextScriptPublicKey!),
-              new TransactionOutput(refundAmount, ownerScriptPublicKey)
-            ]
-          : [
-              new TransactionOutput(refundAmount, ownerScriptPublicKey),
-              new TransactionOutput(currentAmount - batchValue, creatorScriptPublicKey)
-            ];
-        const signatureScriptHex = buildRaffleRefundNextSignatureScript(
+          ? [new TransactionOutput(currentAmount - totalBatchValue, nextScriptPublicKey!), ...ownerOutputs]
+          : [...ownerOutputs, new TransactionOutput(currentAmount - totalBatchValue, creatorScriptPublicKey)];
+        const signatureScriptHex = buildRaffleRefundBatchSignatureScript(
           hexToBytes(input.covenant.redeemScriptHex),
           refundFeeSompi,
-          ownerPubkey,
-          refundCursor,
-          ticketCount,
-          input.ownerProofHex!
+          verifiedBatches.map((batch) => ({
+            ownerPubkeyHex: batch.ownerPubkey,
+            firstTicketId: batch.ticket.ticketId - 1,
+            ticketCount: batch.ticketCount,
+            ownerProofHex: batch.ownerProofHex
+          }))
         );
         const tx = buildManualTransaction({
           inputs: [{
@@ -1243,7 +1308,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             signatureScript: signatureScriptHex,
             sequence: 0n,
             sigOpCount: 0,
-            computeBudget: REFUND_BATCH_COMPUTE_BUDGET,
+            computeBudget: refundBatchComputeBudget(currentRound.contractVersion, verifiedBatches.length),
             utxo: asInputUtxo(covenantUtxo)
           }],
           outputs,
@@ -1254,22 +1319,26 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         return { tx, signatureScriptHex };
       };
 
+      const ownerOutputScriptLengths = verifiedBatches.map((batch) => scriptPublicKeyLength(batch.ownerScriptPublicKey));
       const outputScriptLengths = hasSuccessor
-        ? [scriptPublicKeyLength(nextScriptPublicKey!), scriptPublicKeyLength(ownerScriptPublicKey)]
-        : [scriptPublicKeyLength(ownerScriptPublicKey), scriptPublicKeyLength(creatorScriptPublicKey)];
+        ? [scriptPublicKeyLength(nextScriptPublicKey!), ...ownerOutputScriptLengths]
+        : [...ownerOutputScriptLengths, scriptPublicKeyLength(creatorScriptPublicKey)];
       let refundFeeSompi = 0n;
       let built = buildRefundTransaction(refundFeeSompi, false);
       for (let attempt = 0; attempt < 8; attempt += 1) {
         const staticRequiredFee = calculateTransactionFee(transactionNetworkId(input.connection.status.network), built.tx, 0);
-        if (staticRequiredFee === undefined) throw new Error("The refund transaction exceeds the standard mass limit.");
+        if (staticRequiredFee === undefined) {
+          throw new Error(`Refund batch candidate of ${verifiedBatches.length} purchase batches exceeds the standard mass limit.`);
+        }
         const transientRequiredFee = minimumV1TransientRelayFeeSompi({
           signatureScriptHex: built.signatureScriptHex,
           outputScriptLengths,
           payloadLength: input.payload?.length ?? 0
         });
         const requiredFee = staticRequiredFee > transientRequiredFee ? staticRequiredFee : transientRequiredFee;
-        if (requiredFee > MAX_REFUND_BATCH_FEE_SOMPI) {
-          throw new Error(`The refund transaction needs more than the ${formatKasAmount(MAX_REFUND_BATCH_FEE_SOMPI)} covenant fee cap.`);
+        const maximumRefundFee = covenantRefundMaxFeeSompi(currentRound.contractVersion);
+        if (requiredFee > maximumRefundFee) {
+          throw new Error(`The refund transaction needs more than the ${formatKasAmount(maximumRefundFee)} covenant fee cap.`);
         }
         if (requiredFee <= refundFeeSompi) break;
         refundFeeSompi = requiredFee;
@@ -1297,14 +1366,17 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         } catch (error) {
           const nodeRequiredFee = requiredFeeFromNodeRejection(error);
           if (nodeRequiredFee === undefined || nodeRequiredFee <= refundFeeSompi || attempt === 2) throw error;
-          if (nodeRequiredFee > MAX_REFUND_BATCH_FEE_SOMPI) {
-            throw new Error(`The refund transaction needs more than the ${formatKasAmount(MAX_REFUND_BATCH_FEE_SOMPI)} covenant fee cap.`);
+          const maximumRefundFee = covenantRefundMaxFeeSompi(currentRound.contractVersion);
+          if (nodeRequiredFee > maximumRefundFee) {
+            throw new Error(`The refund transaction needs more than the ${formatKasAmount(maximumRefundFee)} covenant fee cap.`);
           }
 
           refundFeeSompi = nodeRequiredFee;
           built = buildRefundTransaction(refundFeeSompi, false);
           const retryStaticFee = calculateTransactionFee(transactionNetworkId(input.connection.status.network), built.tx, 0);
-          if (retryStaticFee === undefined) throw new Error("The refund transaction exceeds the standard mass limit.");
+          if (retryStaticFee === undefined) {
+            throw new Error(`Refund batch candidate of ${verifiedBatches.length} purchase batches exceeds the standard mass limit.`);
+          }
           const retryTransientFee = minimumV1TransientRelayFeeSompi({
             signatureScriptHex: built.signatureScriptHex,
             outputScriptLengths,
@@ -1320,14 +1392,16 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
       return {
         txId,
         feeSompi: refundFeeSompi,
+        refundedTicketCount: nextRefundCursor - refundCursor,
+        refundedBatchCount: verifiedBatches.length,
         covenant: hasSuccessor && nextRedeemScript ? nextCovenantCursor({
           previous: input.covenant,
           address: nextAddress,
           txId,
-          amountSompi: currentAmount - batchValue,
+          amountSompi: currentAmount - totalBatchValue,
           redeemScript: nextRedeemScript,
           soldTickets: input.covenant.soldTickets,
-          potAmount: currentRound.potAmount - batchValue,
+          potAmount: currentRound.potAmount - totalBatchValue,
           status: "Refunding",
           ticketRoot: currentRound.ticketRoot,
           ticketFrontier: currentRound.ticketFrontier,

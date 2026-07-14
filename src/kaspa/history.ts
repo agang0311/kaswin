@@ -1,7 +1,7 @@
 import {
   buildRaffleRedeemScriptForContractVersion,
   bytesToHex,
-  isCurrentRaffleContractVersion,
+  isSupportedRaffleCovenantVersion,
   raffleCovenantStateFromRound
 } from "./covenant";
 import { appendTicketBatch, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
@@ -191,6 +191,7 @@ interface RafflePayload {
   contractVersion?: string;
   refundCursor?: number;
   refundBatchCursor?: number;
+  batchCount?: number;
 }
 
 function decodeHexPayload(hex: string): RafflePayload | null {
@@ -390,7 +391,7 @@ async function buildLatestCovenantCursor(
     : 0;
   const refundBatchCursor = status === "Refunding"
     ? txPayload?.type === "round-refund-batch"
-      ? Math.max(0, Number(txPayload.refundBatchCursor || 0) + 1)
+      ? Math.max(0, Number(txPayload.refundBatchCursor || 0) + Number(txPayload.batchCount || 1))
       : 0
     : 0;
   const stateRound: RoundState = {
@@ -528,7 +529,7 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
   applyHistoryTransactions(rounds, registryTransactions);
 
   for (const round of [...rounds.values()]) {
-    if (!round.contractVersion || !isCurrentRaffleContractVersion(round.contractVersion)) {
+    if (!round.contractVersion || !isSupportedRaffleCovenantVersion(round.contractVersion)) {
       rounds.delete(round.roundId);
       continue;
     }
@@ -547,7 +548,7 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
 
 export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<RaffleHistoryRound[]> {
   const indexedRounds = (await loadIndexedRaffleRounds(apiBaseUrl)).filter((round) => (
-    isCurrentRaffleContractVersion(round.contractVersion)
+    isSupportedRaffleCovenantVersion(round.contractVersion)
   ));
   return Promise.all(indexedRounds.map(async (indexed): Promise<RaffleHistoryRound> => {
     const ticketPrice = BigInt(indexed.ticketPrice || "0");

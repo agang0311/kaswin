@@ -6,9 +6,9 @@ import process from "node:process";
 import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa-wasm/kaspa.js";
 
 const root = process.cwd();
-const refundSource = path.join(root, "src/contracts/raffle_refund_v2.sil");
-const roundSource = path.join(root, "src/contracts/raffle_round_v11.sil");
-const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v2.artifact.json"), "utf8"));
+const refundSource = path.join(root, "src/contracts/raffle_refund_v3.sil");
+const roundSource = path.join(root, "src/contracts/raffle_round_v12.sil");
+const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v3.artifact.json"), "utf8"));
 const debuggerDir = path.join(root, ".tools/silverscript/target/debug");
 const debuggerPath = path.join(debuggerDir, process.platform === "win32" ? "cli-debugger.exe" : "cli-debugger");
 
@@ -20,10 +20,10 @@ const ticketPrice = 30_000_000;
 const carrier = 57_000_000;
 const transitionFee = 2_400_000;
 const refundFee = 4_000_000;
-const batches = [
-  { first: 0, count: 100_000 },
-  { first: 100_000, count: 10 }
-];
+const batches = Array.from({ length: 15 }, (_, index) => ({
+  first: (index * (index + 1)) / 2,
+  count: index + 1
+}));
 const soldTickets = batches.reduce((sum, batch) => sum + batch.count, 0);
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest(); }
@@ -83,6 +83,34 @@ function roundState(rootHash) {
   };
 }
 
+function emptyRoundState() {
+  return {
+    max_tickets: 1_000,
+    ticket_price: ticketPrice,
+    creator_pubkey: `0x${owner}`,
+    refund_after_daa: 1_000,
+    sold_tickets: 0,
+    sold_batches: 0,
+    ticket_root: `0x${emptyNodes[20].toString("hex")}`,
+    frontier: `0x${"00".repeat(640)}`,
+    refund_cursor: 0,
+    refund_batch_cursor: 0
+  };
+}
+
+function roundStateAfterArbitraryBuy(batch) {
+  const singleTree = buildTree([batch]);
+  const frontier = Buffer.alloc(640);
+  leaf(batch).copy(frontier, 0);
+  return {
+    ...emptyRoundState(),
+    sold_tickets: batch.count,
+    sold_batches: 1,
+    ticket_root: `0x${singleTree.root.toString("hex")}`,
+    frontier: `0x${frontier.toString("hex")}`
+  };
+}
+
 function scriptI64(value) {
   const bytes = u64(value);
   return Buffer.concat([Buffer.from([8]), bytes]);
@@ -114,42 +142,68 @@ function materializeRefund(state) {
 function ownerOutput(value) { return { value, p2pk_pubkey: `0x${owner}` }; }
 const tree = buildTree(batches);
 const initial = refundState(0, 0, tree.root);
-const afterLarge = refundState(100_000, 1, tree.root);
+const maxBatchCount = 13;
+const firstRefundTicketCount = batches.slice(0, maxBatchCount).reduce((sum, batch) => sum + batch.count, 0);
+const afterMaximumBatch = refundState(firstRefundTicketCount, maxBatchCount, tree.root);
 const carrierAfterTransition = carrier - transitionFee;
 const totalValue = carrierAfterTransition + ticketPrice * soldTickets;
-const largeValue = ticketPrice * 100_000;
-const finalValue = ticketPrice * 10;
+const firstRefundValue = ticketPrice * firstRefundTicketCount;
+const finalBatches = batches.slice(maxBatchCount);
+const finalTicketCount = finalBatches.reduce((sum, batch) => sum + batch.count, 0);
+const finalValue = ticketPrice * finalTicketCount;
+
+function packedArgs(selectedBatches, startIndex) {
+  return [
+    refundFee,
+    selectedBatches.length,
+    `0x${Buffer.concat(selectedBatches.map(() => Buffer.from(owner, "hex"))).toString("hex")}`,
+    `0x${Buffer.concat(selectedBatches.map((batch) => u64(batch.count))).toString("hex")}`,
+    `0x${Buffer.concat(selectedBatches.map((_, offset) => proof(tree, startIndex + offset))).toString("hex")}`
+  ];
+}
+
+function refundOutputs(selectedBatches, hasSuccessor, covenantValue, nextState) {
+  const feePerBatch = Math.floor(refundFee / selectedBatches.length);
+  const feeRemainder = refundFee % selectedBatches.length;
+  const outputs = selectedBatches.map((batch, index) => ownerOutput(
+    ticketPrice * batch.count - feePerBatch - (index === 0 ? feeRemainder : 0)
+  ));
+  if (hasSuccessor) {
+    const refundedValue = selectedBatches.reduce((sum, batch) => sum + ticketPrice * batch.count, 0);
+    outputs.unshift({ value: covenantValue - refundedValue, covenant_id: covenantId, authorizing_input: 0, state: nextState });
+  } else {
+    outputs.push(ownerOutput(carrierAfterTransition));
+  }
+  return outputs;
+}
 
 const refundTests = { tests: [
   {
-    name: "refund_100000_ticket_purchase_in_one_transaction",
+    name: "refund_maximum_13_purchase_batches_in_one_transaction",
     function: "refundNext",
-    args: [refundFee, `0x${owner}`, 0, 100_000, `0x${proof(tree, 0).toString("hex")}`],
+    args: packedArgs(batches.slice(0, maxBatchCount), 0),
     expect: "pass",
     tx: {
       active_input_index: 0,
       inputs: [{ utxo_value: totalValue, covenant_id: covenantId, state: initial }],
-      outputs: [
-        { value: totalValue - largeValue, covenant_id: covenantId, authorizing_input: 0, state: afterLarge },
-        ownerOutput(largeValue - refundFee)
-      ]
+      outputs: refundOutputs(batches.slice(0, maxBatchCount), true, totalValue, afterMaximumBatch)
     }
   },
   {
-    name: "loaded_refund_cursor_finishes_10_ticket_purchase",
+    name: "loaded_refund_cursor_finishes_remaining_purchase_batches",
     function: "refundNext",
-    args: [refundFee, `0x${owner}`, 100_000, 10, `0x${proof(tree, 1).toString("hex")}`],
+    args: packedArgs(finalBatches, maxBatchCount),
     expect: "pass",
     tx: {
       active_input_index: 0,
-      inputs: [{ utxo_value: carrierAfterTransition + finalValue, covenant_id: covenantId, state: afterLarge }],
-      outputs: [ownerOutput(finalValue - refundFee), ownerOutput(carrierAfterTransition)]
+      inputs: [{ utxo_value: carrierAfterTransition + finalValue, covenant_id: covenantId, state: afterMaximumBatch }],
+      outputs: refundOutputs(finalBatches, false, carrierAfterTransition + finalValue)
     }
   },
   {
     name: "wrong_batch_proof_is_rejected",
     function: "refundNext",
-    args: [refundFee, `0x${owner}`, 0, 100_000, `0x${Buffer.alloc(640, 0x55).toString("hex")}`],
+    args: [refundFee, 1, `0x${owner}`, `0x${u64(batches[0].count).toString("hex")}`, `0x${Buffer.alloc(640, 0x55).toString("hex")}`],
     expect: "fail",
     tx: { active_input_index: 0, inputs: [{ utxo_value: totalValue, covenant_id: covenantId, state: initial }], outputs: [] }
   }
@@ -158,7 +212,23 @@ const refundTests = { tests: [
 const refundPrefix = Buffer.from(refundArtifact.script, "hex").subarray(0, refundArtifact.stateLayout.start);
 const refundSuffix = Buffer.from(refundArtifact.script, "hex").subarray(refundArtifact.stateLayout.start + refundArtifact.stateLayout.len);
 const refundOutputScript = payToScriptHashScript(materializeRefund(initial)).toJSON().script;
+const arbitraryPurchase = { first: 0, count: 37 };
 const transitionTests = { tests: [{
+  name: "buy_arbitrary_37_ticket_quantity",
+  function: "buy",
+  args: [`0x${owner}`, arbitraryPurchase.count],
+  expect: "pass",
+  tx: {
+    active_input_index: 0,
+    inputs: [{ utxo_value: carrier, covenant_id: covenantId, state: emptyRoundState() }],
+    outputs: [{
+      value: carrier + ticketPrice * arbitraryPurchase.count,
+      covenant_id: covenantId,
+      authorizing_input: 0,
+      state: roundStateAfterArbitraryBuy(arbitraryPurchase)
+    }]
+  }
+}, {
   name: "timed_out_round_enters_batch_refund_contract",
   function: "startRefund",
   args: [`0x${refundPrefix.toString("hex")}`, `0x${refundSuffix.toString("hex")}`],
@@ -183,6 +253,6 @@ function run(source, name, tests) {
 }
 
 if (!fs.existsSync(debuggerPath)) throw new Error("Build the SilverScript cli-debugger before running refund VM tests.");
-run(refundSource, "raffle_refund_v2", refundTests);
-run(roundSource, "raffle_round_v11_transition", transitionTests);
-console.log("Decimal purchase batches refund through one output per purchase.");
+run(refundSource, "raffle_refund_v3", refundTests);
+run(roundSource, "raffle_round_v12_transition", transitionTests);
+console.log("Arbitrary purchase counts refund in the largest supported consecutive on-chain batch.");

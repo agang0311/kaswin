@@ -86,8 +86,8 @@ function writeBatchFixture() {
 
   const summary = {
     roundId,
-    contractVersion: "raffle-v14-batch-range",
-    version: "0.8.0",
+    contractVersion: "raffle-v15-arbitrary-batched-refund",
+    version: "0.9.0",
     status: "Open",
     refundCursor: 0,
     refundBatchCursor: 0,
