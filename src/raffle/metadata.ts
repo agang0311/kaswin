@@ -19,7 +19,6 @@ export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
     minTickets: 1,
     creatorAddress: "",
     creatorPubkey: "",
-    creatorCommitment: "",
     refundTimeoutSeconds: "600",
     refundTimeoutDaa: "6000",
     refundAfterDaaScore: "",

@@ -28,9 +28,13 @@ for (const name of sources) {
 }
 
 const client = fs.readFileSync(path.join(root, "src/kaspa/chain-randomness.ts"), "utf8");
+const app = fs.readFileSync(path.join(root, "src/app/App.tsx"), "utf8");
+const raffleTypes = fs.readFileSync(path.join(root, "src/raffle/types.ts"), "utf8");
 assert(client.includes('BigInt(`0x${normalized}`)'), "RPC blue work is always decoded as hexadecimal");
 assert(client.includes("candidate.finalize()"), "node headers are rehashed before building a witness");
 assert(client.includes("target.daaScore >= targetDaa && parent.daaScore < targetDaa"), "client selects the same boundary crossing enforced by the covenant");
 assert(client.includes("target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()"), "client rejects a non-selected parent before submission");
+assert(!/indexer|fetch\(|https?:|oracle|attestation/i.test(client), "randomness is loaded only from the configured Kaspa RPC node");
+assert(!/buyerCommitment|creatorCommitment|buyerSecret/.test(`${app}\n${raffleTypes}`), "client has no legacy commit-reveal state");
 
 console.log("Chain-only randomness checks passed.");

@@ -381,19 +381,6 @@ export function buildRaffleRefundBatch8SignatureScript(
   });
 }
 
-export function buildNextTicketRootHex(
-  roundId: string,
-  currentTicketRoot: string,
-  ticket: { ticketId: number; owner: string; buyerCommitment: string; ticketCount?: number }
-): Promise<string> {
-  const root = currentTicketRoot || ZERO32_HEX;
-  const ticketRange = ticket.ticketCount === undefined
-    ? `${ticket.ticketId}`
-    : `${ticket.ticketId}-${ticket.ticketId + ticket.ticketCount - 1}`;
-
-  return sha256Hex(`${roundId}|${root}|${ticketRange}:${ticket.owner}:${ticket.buyerCommitment}`);
-}
-
 export function raffleWinnerIndexFromSeed(seedHex: string, soldTickets: number): number {
   if (soldTickets <= 0) {
     throw new Error("Cannot select a winner without tickets.");

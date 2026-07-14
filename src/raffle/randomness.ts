@@ -22,10 +22,6 @@ export async function sha256BytesHex(data: Uint8Array): Promise<string> {
   }).join("");
 }
 
-export async function creatorCommitment(secretHex: string): Promise<string> {
-  return sha256BytesHex(hexToBytes(secretHex));
-}
-
 export function hexToBytes(hex: string): Uint8Array {
   const normalized = hex.trim().toLowerCase();
 

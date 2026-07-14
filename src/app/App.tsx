@@ -78,7 +78,7 @@ import {
 } from "../kaspa/wallet";
 import { createEmptyMetadata, parseMetadata, raffleContractVersionForNetwork, stringifyMetadata } from "../raffle/metadata";
 import { cacheParticipatedRound, loadCachedRaffleHistory } from "../raffle/local-rounds";
-import { randomHex, sha256Hex } from "../raffle/randomness";
+import { randomHex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
 import { buildTicketProof, buildTicketRange8Proof, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import { findTicketRange, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
@@ -390,7 +390,6 @@ export function App() {
   const [metadataText, setMetadataText] = useState(stringifyMetadata(emptyMetadata));
   const [metadataError, setMetadataError] = useState("");
   const [metadataMessage, setMetadataMessage] = useState("");
-  const [buyerSecret, setBuyerSecret] = useState("");
   const [ticketQuantity, setTicketQuantity] = useState("1");
   const [tickets, setTickets] = useState<TicketState[]>([]);
   const [finalized, setFinalized] = useState<FinalizeState | undefined>();
@@ -834,7 +833,6 @@ export function App() {
     setMetadata(createEmptyMetadata(nextNetwork));
     setTickets([]);
     setFinalized(undefined);
-    setBuyerSecret("");
     setChainError("");
     setChainMessage("");
     setRpcError("");
@@ -964,7 +962,6 @@ export function App() {
         ...current,
         roundId,
         createTxId: "",
-        creatorCommitment: "",
         contractVersion: raffleContractVersionForNetwork(networkId),
         treasuryAddress: "",
         covenant: undefined
@@ -988,7 +985,6 @@ export function App() {
     setHistoryAddress(normalizedMetadata.registryAddress ?? "");
     setTickets([]);
     setFinalized(undefined);
-    setBuyerSecret("");
     setChainError("");
     setChainMessage("");
     setMetadataError("");
@@ -1202,7 +1198,6 @@ export function App() {
       setMetadata((current) => ({
         ...current,
         roundId,
-        creatorCommitment: "",
         contractVersion,
         createTxId: result.txId,
         creatorAddress: wallet.address,
@@ -1331,8 +1326,6 @@ export function App() {
       }
 
       const ticketId = covenant.soldTickets + 1;
-      const secret = randomHex(32);
-      const buyerCommitment = await sha256Hex(secret);
       const ownerPubkey = pubkeyHexFromAddress(wallet.address);
       const nextTicket: TicketState = {
         appId: "KASPA_RAFFLE_TICKET_V1",
@@ -1342,7 +1335,6 @@ export function App() {
         owner: wallet.address,
         ownerPubkey,
         paidAmount,
-        buyerCommitment,
         ticketTxId: ""
       };
       const chainSearchHintHash = (await rpcConnectionRef.current.client.getBlockDagInfo()).sink;
@@ -1354,7 +1346,6 @@ export function App() {
         ticketId,
         buyer: wallet.address,
         buyerPubkey: ownerPubkey,
-        buyerCommitment,
         ticketCount: quantity,
         paidAmount: purchaseAmount.toString(),
         chainSearchHintHash,
@@ -1391,7 +1382,6 @@ export function App() {
       await new Promise((resolve) => window.setTimeout(resolve, 4_000));
       const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, wallet.address);
 
-      setBuyerSecret(secret);
       setWallet(withWalletBalance(wallet, balanceSompi));
       setMetadata((current) => ({
         ...current,
@@ -1413,8 +1403,7 @@ export function App() {
                 ticketCount: quantity,
                 buyer: wallet.address,
                 buyerPubkey: ownerPubkey,
-                paidAmount,
-                buyerCommitment
+                paidAmount
               }
             ]
           }
@@ -1479,7 +1468,6 @@ export function App() {
             owner: indexedCaller.owner,
             ownerPubkey: indexedCaller.ownerPubkey,
             paidAmount: BigInt(metadata.ticketPrice),
-            buyerCommitment: "",
             ticketTxId: indexedCaller.transactionId || ""
           };
         } catch (error) {
@@ -1570,7 +1558,6 @@ export function App() {
             owner: indexedWinner.owner,
             ownerPubkey: indexedWinner.ownerPubkey,
             paidAmount: BigInt(metadata.ticketPrice),
-            buyerCommitment: "",
             ticketTxId: indexedWinner.transactionId || ""
           };
           winnerProofHex = indexedWinner.proofHex;
@@ -1717,7 +1704,6 @@ export function App() {
             owner: indexedRange.owners[index],
             ownerPubkey,
             paidAmount: BigInt(metadata.ticketPrice),
-            buyerCommitment: "",
             ticketTxId: ""
           }));
           rangeProofHex = indexedRange.proofHex;
@@ -1738,7 +1724,6 @@ export function App() {
             owner: indexedTicket.owner,
             ownerPubkey: indexedTicket.ownerPubkey,
             paidAmount: BigInt(metadata.ticketPrice),
-            buyerCommitment: "",
             ticketTxId: indexedTicket.transactionId || ""
           };
           ownerProofHex = indexedTicket.proofHex;
@@ -1829,7 +1814,6 @@ export function App() {
               owner: indexedRange.owners[index],
               ownerPubkey,
               paidAmount: BigInt(metadata.ticketPrice),
-              buyerCommitment: "",
               ticketTxId: ""
             }));
             nextRangeProofHex = indexedRange.proofHex;
@@ -1850,7 +1834,6 @@ export function App() {
               owner: indexedTicket.owner,
               ownerPubkey: indexedTicket.ownerPubkey,
               paidAmount: BigInt(metadata.ticketPrice),
-              buyerCommitment: "",
               ticketTxId: indexedTicket.transactionId || ""
             };
             nextOwnerProofHex = indexedTicket.proofHex;
@@ -2116,7 +2099,6 @@ export function App() {
       minTickets: selectedHistoryRound.minTickets,
       creatorAddress: selectedHistoryRound.creator ?? "",
       creatorPubkey: selectedHistoryRound.creatorPubkey ?? covenant.creatorPubkey,
-      creatorCommitment: "",
       refundAfterDaaScore: selectedHistoryRound.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
       treasuryAddress: covenant.address,
       registryAddress: loadedRegistryAddress,
@@ -2132,13 +2114,11 @@ export function App() {
         owner: ticket.buyer,
         ownerPubkey: ticket.buyerPubkey,
         paidAmount: ticket.paidAmount,
-        buyerCommitment: ticket.buyerCommitment ?? "",
         ticketTxId: ticket.txId
       }))
     );
     setFinalized(undefined);
     setRoundActionTab(covenant.status === "Open" ? "buy" : "payout");
-    setBuyerSecret("");
     setMetadataMessage("Round loaded from history.");
     setHistoryMessage(`Loaded ${selectedHistoryRound.roundId}. You can buy if open, or finalize/refund when eligible.`);
   }

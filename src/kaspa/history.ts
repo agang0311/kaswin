@@ -16,7 +16,6 @@ export interface RaffleHistoryTicket {
   buyer: string;
   buyerPubkey?: string;
   paidAmount: bigint;
-  buyerCommitment?: string;
   blockTime?: number;
 }
 
@@ -39,7 +38,6 @@ export interface RaffleHistoryRound {
   latestCovenant?: RaffleCovenantCursor;
   creator?: string;
   creatorPubkey?: string;
-  creatorCommitment?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
@@ -82,7 +80,6 @@ interface RafflePayload {
   ticketCount?: number;
   buyer?: string;
   paidAmount?: string;
-  buyerCommitment?: string;
   buyerPubkey?: string;
   winnerTicketId?: number;
   winnerAddress?: string;
@@ -93,7 +90,6 @@ interface RafflePayload {
   covenantId?: string;
   creator?: string;
   creatorPubkey?: string;
-  creatorCommitment?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
   refundAfterDaaScore?: string;
@@ -183,7 +179,6 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.covenantId = payload.covenantId ?? outputZero(tx)?.covenant_id ?? round.covenantId;
       round.creator = payload.creator ?? round.creator;
       round.creatorPubkey = payload.creatorPubkey ?? round.creatorPubkey;
-      round.creatorCommitment = payload.creatorCommitment ?? round.creatorCommitment;
       round.createdAtDaaScore = payload.createdAtDaaScore ?? round.createdAtDaaScore;
       round.refundTimeoutSeconds = payload.refundTimeoutSeconds ?? round.refundTimeoutSeconds;
       round.refundAfterDaaScore = payload.refundAfterDaaScore ?? round.refundAfterDaaScore;
@@ -209,7 +204,6 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
           buyer: payload.buyer,
           buyerPubkey: payload.buyerPubkey,
           paidAmount: paidPerTicket,
-          buyerCommitment: payload.buyerCommitment,
           blockTime
         });
         round.potAmount += paidAmount;

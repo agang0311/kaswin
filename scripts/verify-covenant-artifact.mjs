@@ -8,6 +8,7 @@ const rounds = [
 ];
 const refund = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v1.artifact.json"), "utf8"));
 const transactionSource = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
+const networkSource = fs.readFileSync(path.join(root, "src/kaspa/networks.ts"), "utf8");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -24,6 +25,7 @@ function verifyArtifact(artifact, contract, entrypoints) {
 
 for (const [contract, round] of rounds) verifyArtifact(round, contract, ["buy", "finalize", "startRefund"]);
 verifyArtifact(refund, "RaffleRefundV1", ["refundBatch8", "refundNext"]);
+assert(rounds[0][1].script === rounds[1][1].script, "Mainnet and TN12 use identical covenant bytecode");
 
 for (const [, round] of rounds) {
   const buy = round.abi.find((entry) => entry.name === "buy");
@@ -38,5 +40,6 @@ for (const [, round] of rounds) {
 }
 assert(/COVENANT_CREATE_FEE_SOMPI = 300_000n/.test(transactionSource), "create fee covers the observed relay floor");
 assert(/REGISTRY_PAYMENT_FEE_SOMPI = 350_000n/.test(transactionSource), "registry marker fee covers the observed relay floor");
+assert(/toccataActivationDaaScore: "474165565"/.test(networkSource), "Mainnet broadcasts are gated by the official Toccata activation DAA");
 
 console.log("Current-only covenant artifact checks passed.");

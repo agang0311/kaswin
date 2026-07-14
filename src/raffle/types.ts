@@ -33,7 +33,6 @@ export interface TicketState {
   owner: string;
   ownerPubkey?: string;
   paidAmount: bigint;
-  buyerCommitment: string;
   ticketTxId: string;
 }
 
@@ -84,7 +83,6 @@ export interface RaffleMetadata {
   minTickets: number;
   creatorAddress?: string;
   creatorPubkey?: string;
-  creatorCommitment?: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
   registryAddress?: string;

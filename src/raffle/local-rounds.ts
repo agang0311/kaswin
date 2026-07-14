@@ -85,7 +85,6 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
         latestCovenant: round.finalized ? undefined : round.metadata.covenant,
         creator: round.metadata.creatorAddress,
         creatorPubkey: round.metadata.creatorPubkey,
-        creatorCommitment: round.metadata.creatorCommitment,
         createdAtDaaScore: round.metadata.createdAtDaaScore,
         refundTimeoutSeconds: round.metadata.refundTimeoutSeconds,
         refundAfterDaaScore: round.metadata.refundAfterDaaScore,
@@ -101,8 +100,7 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
           ticketCount: ticket.ticketCount,
           buyer: ticket.owner,
           buyerPubkey: ticket.ownerPubkey,
-          paidAmount: BigInt(ticket.paidAmount),
-          buyerCommitment: ticket.buyerCommitment
+          paidAmount: BigInt(ticket.paidAmount)
         })),
         payouts: round.finalized ? [{
           txId: round.finalized.payoutTxId,
