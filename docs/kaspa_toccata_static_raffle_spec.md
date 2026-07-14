@@ -8,7 +8,7 @@ Build a single-page static web app for a Kaspa Toccata raffle game.
 
 The app must not require any backend server controlled by the project. Users should be able to open the static webpage, configure a Kaspa node RPC address, connect directly to that node from the browser, and perform all raffle actions locally.
 
-Working name: **Kaspa Raffle Static V0**
+Product name: **Kaswin**
 
 Core idea:
 

@@ -1,174 +1,110 @@
 import { createHash } from "node:crypto";
-import process from "node:process";
 
 const DEPTH = 20;
 const CAPACITY = 1 << DEPTH;
-const USERS = 1_000_000;
-const HASH_BYTES = 32;
+const ALLOWED = [1, 10, 100, 1_000, 10_000, 100_000];
 
-function hash(bytes) {
-  return createHash("sha256").update(bytes).digest();
-}
+function hash(bytes) { return createHash("sha256").update(bytes).digest(); }
+function pair(left, right) { return hash(Buffer.concat([left, right])); }
+function u64(value) { const bytes = Buffer.alloc(8); bytes.writeBigUInt64LE(BigInt(value)); return bytes; }
+function owner(batchIndex) { return hash(Buffer.from(`owner-${batchIndex}`)); }
+function leaf(batch) { return hash(Buffer.concat([batch.owner, u64(batch.first), u64(batch.count)])); }
 
-function hashPair(left, right) {
-  return hash(Buffer.concat([left, right]));
-}
+const empty = [Buffer.alloc(32)];
+for (let level = 1; level <= DEPTH; level += 1) empty.push(pair(empty[level - 1], empty[level - 1]));
 
-function ownerPubkey(ticketId) {
-  const value = Buffer.alloc(HASH_BYTES);
-  value.writeUInt32LE(ticketId, 0);
-  return hash(Buffer.concat([Buffer.from("kaspa-raffle-v4-owner"), value]));
-}
-
-function ticketLeaf(ticketId) {
-  return hash(ownerPubkey(ticketId));
-}
-
-const levels = [Buffer.alloc(CAPACITY * HASH_BYTES)];
-for (let ticketId = 0; ticketId < USERS; ticketId += 1) {
-  ticketLeaf(ticketId).copy(levels[0], ticketId * HASH_BYTES);
-}
-
-for (let level = 0; level < DEPTH; level += 1) {
-  const current = levels[level];
-  const parent = Buffer.alloc(current.length / 2);
-  for (let offset = 0; offset < current.length; offset += HASH_BYTES * 2) {
-    hashPair(current.subarray(offset, offset + HASH_BYTES), current.subarray(offset + HASH_BYTES, offset + HASH_BYTES * 2))
-      .copy(parent, offset / 2);
+function buildTree(batches) {
+  let nodes = batches.map(leaf);
+  const levels = [nodes];
+  for (let level = 0; level < DEPTH; level += 1) {
+    const parents = [];
+    for (let index = 0; index < nodes.length; index += 2) parents.push(pair(nodes[index], nodes[index + 1] ?? empty[level]));
+    nodes = parents;
+    levels.push(nodes);
   }
-  levels.push(parent);
+  return { root: nodes[0], levels };
 }
 
-const root = levels[DEPTH].toString("hex");
-
-const emptyNodes = [Buffer.alloc(HASH_BYTES)];
-for (let level = 1; level < DEPTH; level += 1) {
-  emptyNodes.push(hashPair(emptyNodes[level - 1], emptyNodes[level - 1]));
-}
-const frontier = Buffer.alloc(DEPTH * HASH_BYTES);
-let frontierRoot = Buffer.alloc(HASH_BYTES);
-for (let ticketId = 0; ticketId < USERS; ticketId += 1) {
-  let node = ticketLeaf(ticketId);
-  let index = ticketId;
+function append(frontier, batch, batchIndex) {
+  const next = Buffer.from(frontier);
+  let node = leaf(batch);
+  let path = batchIndex;
   let carrying = true;
   for (let level = 0; level < DEPTH; level += 1) {
-    const start = level * HASH_BYTES;
-    if ((index & 1) === 0) {
-      if (carrying) {
-        node.copy(frontier, start);
-        carrying = false;
-      }
-      node = hashPair(node, emptyNodes[level]);
+    if ((path & 1) === 0) {
+      if (carrying) { node.copy(next, level * 32); carrying = false; }
+      node = pair(node, empty[level]);
     } else {
-      node = hashPair(frontier.subarray(start, start + HASH_BYTES), node);
+      node = pair(frontier.subarray(level * 32, level * 32 + 32), node);
     }
-    index = Math.floor(index / 2);
+    path >>= 1;
   }
-  frontierRoot = node;
-}
-if (frontierRoot.toString("hex") !== root) {
-  throw new Error("The compact on-chain frontier root does not match the full million-user tree.");
+  return { frontier: next, root: node };
 }
 
-function proof(ticketId) {
-  const chunks = [];
-  let index = ticketId;
+function proof(tree, batchIndex) {
+  const siblings = [];
+  let path = batchIndex;
   for (let level = 0; level < DEPTH; level += 1) {
-    const siblingIndex = index ^ 1;
-    chunks.push(levels[level].subarray(siblingIndex * HASH_BYTES, siblingIndex * HASH_BYTES + HASH_BYTES));
-    index = Math.floor(index / 2);
+    siblings.push(tree.levels[level][path ^ 1] ?? empty[level]);
+    path >>= 1;
   }
-  return Buffer.concat(chunks);
+  return siblings;
 }
 
-function verify(ticketId, owner, merkleProof) {
-  let node = hash(owner);
-  let index = ticketId;
-  for (let level = 0; level < DEPTH; level += 1) {
-    const sibling = merkleProof.subarray(level * HASH_BYTES, level * HASH_BYTES + HASH_BYTES);
-    node = (index & 1) === 0 ? hashPair(node, sibling) : hashPair(sibling, node);
-    index = Math.floor(index / 2);
+function verify(root, batch, batchIndex, siblings) {
+  let node = leaf(batch);
+  let path = batchIndex;
+  for (const sibling of siblings) {
+    node = (path & 1) === 0 ? pair(node, sibling) : pair(sibling, node);
+    path >>= 1;
   }
-  return node.toString("hex") === root;
+  return node.equals(root);
 }
 
-for (const ticketId of [0, 1, 499_999, 999_999]) {
-  const merkleProof = proof(ticketId);
-  if (merkleProof.length !== DEPTH * HASH_BYTES || !verify(ticketId, ownerPubkey(ticketId), merkleProof)) {
-    throw new Error(`Merkle proof failed for ticket ${ticketId}.`);
-  }
-}
+const million = Array.from({ length: 10 }, (_, index) => ({
+  owner: owner(index),
+  first: index * 100_000,
+  count: 100_000
+}));
+const tree = buildTree(million);
+let frontier = Buffer.alloc(DEPTH * 32);
+let appendRoot = empty[DEPTH];
+million.forEach((batch, index) => {
+  const result = append(frontier, batch, index);
+  frontier = result.frontier;
+  appendRoot = result.root;
+});
+if (!appendRoot.equals(tree.root)) throw new Error("Sequential batch frontier does not match the full Merkle tree.");
 
-if (verify(999_999, ownerPubkey(999_998), proof(999_999))) {
-  throw new Error("A wrong owner was accepted for ticket 999999.");
-}
-
-function rangeProof8(firstTicketId) {
-  const chunks = [];
-  let index = firstTicketId >> 3;
-  for (let level = 3; level < DEPTH; level += 1) {
-    const siblingIndex = index ^ 1;
-    chunks.push(levels[level].subarray(siblingIndex * HASH_BYTES, siblingIndex * HASH_BYTES + HASH_BYTES));
-    index >>= 1;
-  }
-  return Buffer.concat(chunks);
-}
-
-function verifyRange8(firstTicketId, owners, rangeProof) {
-  let nodes = owners.map((owner) => hash(owner));
-  while (nodes.length > 1) {
-    const parents = [];
-    for (let index = 0; index < nodes.length; index += 2) parents.push(hashPair(nodes[index], nodes[index + 1]));
-    nodes = parents;
-  }
-  let node = nodes[0];
-  let index = firstTicketId >> 3;
-  for (let level = 0; level < DEPTH - 3; level += 1) {
-    const sibling = rangeProof.subarray(level * HASH_BYTES, level * HASH_BYTES + HASH_BYTES);
-    node = (index & 1) === 0 ? hashPair(node, sibling) : hashPair(sibling, node);
-    index >>= 1;
-  }
-  return node.toString("hex") === root;
-}
-
-for (const firstTicketId of [0, 500_000, 999_992]) {
-  const owners = Array.from({ length: 8 }, (_, offset) => ownerPubkey(firstTicketId + offset));
-  const range = rangeProof8(firstTicketId);
-  if (range.length !== (DEPTH - 3) * HASH_BYTES || !verifyRange8(firstTicketId, owners, range)) {
-    throw new Error(`Merkle range proof failed for tickets ${firstTicketId}-${firstTicketId + 7}.`);
+for (const batchIndex of [0, 4, 9]) {
+  if (!verify(tree.root, million[batchIndex], batchIndex, proof(tree, batchIndex))) {
+    throw new Error(`Batch proof ${batchIndex} failed.`);
   }
 }
+if (verify(tree.root, { ...million[9], count: 10_000 }, 9, proof(tree, 9))) throw new Error("A modified batch range proof was accepted.");
 
-let refundCursor = 0;
-let refundTransactions = 0;
-while (USERS - refundCursor >= 8) {
-  refundCursor += 8;
-  refundTransactions += 1;
+let refundTicketCursor = 0;
+let refundBatchCursor = 0;
+for (const batch of million) {
+  if (batch.first !== refundTicketCursor) throw new Error("Refund range skipped or overlapped tickets.");
+  refundTicketCursor += batch.count;
+  refundBatchCursor += 1;
 }
-while (refundCursor < USERS) {
-  refundCursor += 1;
-  refundTransactions += 1;
-}
-if (refundCursor !== USERS) throw new Error("Refund cursor did not cover every ticket exactly once.");
-if (refundTransactions !== 125_000) throw new Error(`Expected 125,000 refund transactions, got ${refundTransactions}.`);
+if (refundTicketCursor !== 1_000_000 || refundBatchCursor !== 10) throw new Error("Million-ticket refund cursors did not finish exactly.");
 
-const ticketPriceSompi = 30_000_000n;
-const carrierSompi = 57_000_000n;
-const transitionFeeSompi = 2_400_000n;
-const batchFeePerTicketSompi = 150_000n;
-const userRefundsSompi = BigInt(USERS) * (ticketPriceSompi - batchFeePerTicketSompi);
-const creatorRefundSompi = carrierSompi - transitionFeeSompi;
-const networkFeesSompi = transitionFeeSompi + BigInt(USERS) * batchFeePerTicketSompi;
-const covenantInputSompi = carrierSompi + BigInt(USERS) * ticketPriceSompi;
-if (userRefundsSompi + creatorRefundSompi + networkFeesSompi !== covenantInputSompi) {
-  throw new Error("Million-ticket refunds do not conserve the covenant input amount.");
+const mixed = [];
+let first = 0;
+for (let index = 0; index < ALLOWED.length; index += 1) {
+  mixed.push({ owner: owner(index + 20), first, count: ALLOWED[index] });
+  first += ALLOWED[index];
 }
+const mixedTree = buildTree(mixed);
+if (!mixed.every((batch, index) => verify(mixedTree.root, batch, index, proof(mixedTree, index)))) {
+  throw new Error("Not every supported decimal batch size produced a valid proof.");
+}
+if (CAPACITY < 1_000_000) throw new Error("Depth-20 tree cannot hold one million one-ticket purchase batches.");
 
-console.log(`Built a depth-${DEPTH} tree with ${USERS.toLocaleString()} distinct ticket owners.`);
-console.log(`Capacity: ${CAPACITY.toLocaleString()}, root: ${root}`);
-console.log("Replayed 1,000,000 sequential on-chain frontier transitions and matched the full tree root.");
-console.log("Verified first, second, middle, and last ticket proofs plus first/middle/last 8-ticket range proofs; rejected a wrong owner proof.");
-console.log(`Batch refund cursor covered tickets 0-${(USERS - 1).toLocaleString()} exactly once in ${refundTransactions.toLocaleString()} transactions.`);
-console.log("Verified that per-ticket fee deductions fund all 125,000 refund transactions while the fixed carrier returns after the one-time transition fee.");
-console.log(`Resident tree bytes: ${levels.reduce((total, level) => total + level.length, 0).toLocaleString()}.`);
-process.exitCode = 0;
+console.log(`One million tickets fit in 10 x 100,000-ticket purchase batches; root ${tree.root.toString("hex")}.`);
+console.log("One refund transaction per original purchase covers all 1,000,000 tickets in 10 transactions.");
+console.log("Verified 1/10/100/1,000/10,000/100,000 batch leaves and depth-20 worst-case batch capacity.");

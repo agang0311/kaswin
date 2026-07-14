@@ -1,16 +1,18 @@
-# Kaspa Raffle Static
+# Kaswin
 
-单 HTML 的 Kaspa Toccata covenant 抽奖应用。网页直接连接用户配置的 Kaspa wRPC 节点；随机数、开奖条件和派奖金额均由链上 covenant 验证，不依赖 oracle、随机数服务或证明服务器。
+Kaswin 是单 HTML 的 Kaspa Toccata covenant 抽奖应用。网页直接连接用户配置的 Kaspa wRPC 节点；随机数、开奖条件和派奖金额均由链上 covenant 验证，不依赖 oracle、随机数服务或证明服务器。
 
-当前 Mainnet/TN12 共用合约版本：`raffle-v13-chain-pow`。
+链上 payload 继续使用协议标识 `kaspa-raffle-static`，用于兼容已经创建的轮次；它不是当前产品名。
+
+当前 Mainnet/TN12 共用合约版本：`raffle-v14-batch-range`。
 
 旧 metadata 和旧合约不再兼容。
 
-Mainnet Toccata 激活 DAA 为 `474165565`。页面连接节点后会读取实时 virtual DAA，只有达到对应网络的激活点才允许广播 covenant 交易。TN12 已完成四轮真实流程验证；当前合约也已在 Mainnet 连续完成三轮 create、buy、draw/pay，其中一轮覆盖刷新后从历史 load。三轮实际开奖费分别为 `0.040733`、`0.04319`、`0.040733 KAS`。
+Mainnet Toccata 激活 DAA 为 `474165565`。页面连接节点后会读取实时 virtual DAA，只有达到对应网络的激活点才允许广播 covenant 交易。TN12 当前版本已记录七轮真实流程：两轮开奖派奖、五轮超时退款；其中一轮在第一批退款后刷新页面，并从 History Load 后继续完成剩余退款。当前合约也已在 Mainnet 连续完成三轮 create、buy、draw/pay，其中一轮覆盖刷新后从历史 load。三轮实际开奖费分别为 `0.040733`、`0.04319`、`0.040733 KAS`。
 
 ## 抽奖机制
 
-每次购票都会更新同一个奖池 covenant UTXO 和深度 20 的票据 Merkle 树。售罄后，或达到可配置的超时时间后，任何人都可以直接执行一笔无需钱包签名的 `Draw & Pay`：
+每次购票都会更新同一个奖池 covenant UTXO 和深度 20 的购买区间 Merkle 树。单次可买 `1 / 10 / 100 / 1,000 / 10,000 / 100,000` 张；无论买多少张，都只追加一个承诺买家、起始票号和数量的叶子。售罄后，或达到可配置的超时时间后，任何人都可以直接执行一笔无需钱包签名的 `Draw & Pay`：
 
 ```text
 boundary_daa = sold_out ? current_covenant_utxo_daa + 30 : refund_after_daa + 30
@@ -31,18 +33,23 @@ Covenant 在交易中重新计算目标区块及其选中父区块的 keyed BLAK
 
 ## 数据模式
 
-- 最多 1000 张票：浏览器从 Registry 和 covenant 地址读取交易并在本地重建票据树，不需要 indexer。
-- 超过 1000 张票：配置独立 `indexer/raffle-indexer.mjs`，由它保存票据树并返回中奖票 proof。
+- Registry 发现的所有轮次都会显示；indexer 不可用时，大轮次也不会从历史列表消失。
+- 浏览器拥有完整购买批次时，无论轮次上限是 1000、10000 还是 1000000，都直接在本地生成中奖或退款 proof。
+- 只有本地购买批次不完整时，才从独立 `indexer/raffle-indexer.mjs` 取得缺失 proof。
 - 浏览器会在本地缓存参与过的轮次，刷新后可以从“加载历史”恢复。
 
+退款严格按原始购买区间执行，一次购买对应一个退款输出。因此 10 个买家各买 100,000 张时只需 10 笔退款；一百万个买家各买 1 张时仍需一百万笔退款，不能把不同收款地址合并成一笔超大交易。
+
 Indexer 只索引公开交易和生成 Merkle proof，不参与随机数选择。
+
+开奖时，历史 API 可按 blue score 提供少量候选区块哈希以加速定位；候选只作为提示，区块头、父块关系、DAA 边界和 selected-chain commitment 均由所连接的 Kaspa wRPC 与 covenant 重新验证。候选服务无法改变中奖结果，失败时页面回退到纯 wRPC 查找。
 
 ## 费用
 
 - 创建 covenant：`0.003 KAS`
 - 买票 covenant：`0.0175 KAS`
 - 开奖并派奖 covenant：按完整链上区块头见证的实际 mass 计算（通常约 `0.05-0.06 KAS`，合约上限 `0.2 KAS`）
-- Registry marker：默认 `0.05 KAS`，公开 Registry 会扣除 `0.001 KAS` 后自动退回
+- Registry marker：默认 `0.05 KAS`；是否退回取决于所选 Registry 配置，Mainnet 默认公开 Registry 会保留 marker 用于索引
 - Carrier 是可退还预留，不是手续费；派奖或完整退款时返还剩余部分
 
 ## 开发

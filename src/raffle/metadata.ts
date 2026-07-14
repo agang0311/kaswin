@@ -1,6 +1,6 @@
 import type { RaffleMetadata } from "./types";
 
-export const RAFFLE_CONTRACT_VERSION = "raffle-v13-chain-pow";
+export const RAFFLE_CONTRACT_VERSION = "raffle-v14-batch-range";
 
 export function raffleContractVersionForNetwork(network: string): string {
   void network;
@@ -10,7 +10,7 @@ export function raffleContractVersionForNetwork(network: string): string {
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.7.0",
+    version: "0.8.0",
     network,
     roundId: "",
     createTxId: "",

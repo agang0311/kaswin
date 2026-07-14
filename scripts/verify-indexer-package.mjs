@@ -13,7 +13,7 @@ function assert(condition, message) {
   console.log(`PASS ${message}`);
 }
 
-assert(manifest.name === "kaspa-raffle-indexer", "indexer has an independent package manifest");
+assert(manifest.name === "kaswinndexer", "indexer has an independent package manifest");
 assert(manifest.scripts?.start === "node raffle-indexer.mjs", "indexer starts without the web application toolchain");
 assert(Object.keys(manifest.dependencies || {}).length === 1 && manifest.dependencies["@onekeyfe/kaspa-wasm"], "indexer only installs its Kaspa runtime dependency");
 assert(lock.packages?.[""]?.version === manifest.version, "indexer lockfile matches its package version");

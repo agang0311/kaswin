@@ -1,252 +1,57 @@
-# Kaspa Raffle 技术指南
+# 技术指南
 
-本文面向维护者、审计人员和钱包/节点集成人员，描述当前 `main` 分支的实际实现。原始产品规格 `kaspa_toccata_static_raffle_spec.md` 记录早期设计，不再是实现依据。
+## 当前架构
 
-## 1. 当前能力与边界
+- 网页：React/Vite 构建后内联为单个 `dist/index.html`，直接连接用户配置的 Kaspa wRPC。
+- 合约：`RaffleRoundV11` 负责购票与开奖，`RaffleRefundV2` 负责超时后可续执行退款。
+- Indexer：`indexer/raffle-indexer.mjs` 是独立只读应用，只保存公开购买区间并生成 Merkle proof，不持有私钥、不签名、不生成随机数。
+- 兼容策略：只接受 `raffle-v14-batch-range`，不解析旧 state layout 或旧 metadata。
 
-- 单文件静态 React 应用，无项目方后端，构建产物为 `dist/index.html`。
-- 支持 Mainnet 和 Testnet 10，网络、节点、钱包地址前缀会交叉校验。
-- 支持 KasWare、Kastle；钱包私钥不会交给页面。
-- 使用一个持续演进的 `RaffleRound` covenant UTXO 保存奖池和轮次状态。
-- V4 支持每轮最多 1,000,000 个独立用户，每笔 buy 固定购买一张票。
-- 满票或超时后，任意购票参与者可以发起开奖；奖金由 finalize 交易直接支付。
-- 超时后任何人都可以广播无钱包签名的顺序退款交易，covenant 强制支付给 proof 对应的票主。
-- 百万用户历史、当前 covenant cursor 和 Merkle witness 由可替换的 raffle indexer 提供，proof 会在链上再次验证。
+## 购买区间树
 
-当前随机数方案是可公开推导密钥的开发 oracle，适合功能验证，不适合承载需要抗操纵保证的生产抽奖。主网入口存在是为了协议兼容和联调，不代表已经完成安全审计。
-
-主网创建流程已禁止开发 oracle，必须填写外部 Schnorr 公钥和 HTTPS 服务地址。开奖浏览器请求 `GET /attestations/{roundId}?ticketRoot={hex}`，并先验证 `sha256(ticketRoot || seed)` 的签名；covenant 随后在链上再次验证同一签名。仓库只实现该客户端协议，不包含或背书任何独立 oracle 服务。
-
-## 2. 系统结构
+深度 20 的 Merkle 树最多保存 1,048,576 个购买批次。每个叶子为：
 
 ```text
-Browser SPA
-  |-- wallet adapter registry
-  |     |-- KasWare (signPskt)
-  |     `-- Kastle (kas:connect / kas:sign_tx)
-  |-- Kaspa wRPC
-  |     |-- UTXO 查询
-  |     |-- DAA / node 状态
-  |     `-- 交易广播
-  |-- REST history indexer
-  |     `-- registry + covenant 交易追踪
-  `-- embedded covenant runtime
-        |-- compiled Silverscript artifact
-        `-- browser transaction builders
+SHA256(owner_pubkey || uint64_le(first_ticket_id_zero_based) || uint64_le(ticket_count))
 ```
 
-主要模块：
+`ticket_count` 只能是 `1 / 10 / 100 / 1,000 / 10,000 / 100,000`。一百万张票可以由 10 个 100,000 张批次组成，也可以由一百万个 1 张批次组成；两者票数相同，但退款交易数量不同。
 
-| 路径 | 职责 |
-| --- | --- |
-| `src/app/App.tsx` | 页面状态、操作编排、元数据和历史加载 |
-| `src/app/i18n.ts` | 中英文文案、变量插值和运行时交易消息翻译 |
-| `src/kaspa/networks.ts` | 网络注册表、默认节点、地址前缀 |
-| `src/kaspa/rpc.ts` | 浏览器 wRPC 连接和节点状态 |
-| `src/kaspa/wallet.ts` | 钱包 Adapter Registry |
-| `src/kaspa/wallet-*.ts` | KasWare、Kastle 和仅开发环境测试钱包适配器 |
-| `src/kaspa/transactions.ts` | create、buy、finalize、refund 交易构造与广播 |
-| `src/kaspa/covenant.ts` | artifact、状态编码、redeem script 和签名脚本 |
-| `src/kaspa/history.ts` | REST payload 扫描和 covenant lineage 追踪 |
-| `src/contracts/raffle_round.sil` | 当前 Silverscript 合约源码 |
-| `src/contracts/compiled/` | 当前及兼容旧轮次的编译产物 |
+## 开奖
 
-## 3. 网络与节点
+售罄时，随机边界是最终购票 covenant UTXO 的 DAA 加 30；未售罄时，边界是创建时写入的超时 DAA 加 30。客户端提供首个跨越边界的 selected-chain 区块及父区块，合约重算两个区块哈希并验证：
 
-默认配置：
-
-| 网络 | wRPC | History REST | 地址前缀 |
-| --- | --- | --- | --- |
-| Mainnet | `ws://127.0.0.1:18110` | `https://api.kaspa.org` | `kaspa:` |
-| Testnet 10 | `ws://tn12-node.kaspa.com:18210` | `https://api-tn10.kaspa.org` | `kaspatest:` |
-
-测试节点 URL 沿用历史域名 `tn12-node`，但节点报告的 network id 是 `testnet-10`。兼容层会把旧元数据中的 `testnet-12` 归一化为 `testnet-10`。
-
-连接时页面执行以下检查：
-
-1. URL 必须以 `ws://` 或 `wss://` 开头。
-2. 读取节点报告的 network id。
-3. 节点网络必须与页面选择一致。
-4. 钱包地址前缀必须与当前网络一致。
-5. 钱包返回的 public key 必须能推导出所选地址。
-
-本机主网节点需开放浏览器可访问的 JSON wRPC，默认端口为 `18110`，并启用 UTXO index。若页面与节点不在同一台机器，`127.0.0.1` 指向的是浏览器所在设备，需要在齿轮设置中填写节点实际地址，并正确处理防火墙与 TLS。
-
-## 4. 钱包适配器
-
-`KaspaWalletAdapter` 统一暴露：
-
-- `isInstalled()`：检测钱包。
-- `connect(network)`：请求账户并返回地址、公钥、签名函数。
-- `readConnected(network)`：重新读取当前账户。
-- `disconnect()`：断开应用状态。
-- `subscribe(listener)`：监听账户或网络变化。
-
-新钱包只需实现该接口并注册到 `src/kaspa/wallet.ts`，页面无需增加新的业务分支。生产构建只包含浏览器扩展钱包；本地私钥测试适配器仅在 Vite `DEV` 模式动态加载，不会进入 release HTML。
-
-## 5. Covenant 状态模型
-
-当前合约版本：`raffle-v3.5-million-ticket`。v3.4 与 v3.3 artifact 作为历史兼容版本保留。
-
-核心状态字段：
-
-- `max_tickets`、`ticket_price`：轮次参数。
-- `creator_pubkey`：carrier 退款接收者。
-- `oracle_pubkey`：验证 oracle attestation。
-- `refund_after_daa`：允许超时 finalize/refund 的 DAA score。
-- `sold_tickets`、`sold_batches`：售票数量和批次数。
-- `ticket_root`：按顺序累积的购票承诺。
-- `batch_end_01..20`：每个购买批次的结束票号。
-- `owner_01..20`：每个购买批次的 x-only public key。
-
-使用批次而非每张票一个 covenant 输出，可以避免 UTXO 和浏览器对象随票数膨胀。一笔 buy 可以购买多张连续票，但一轮最多有 20 笔 buy；页面与 History 使用“起始票号 + 数量”保存一个批次，不会把 1,000,000 张票展开成 1,000,000 个对象。
-
-### Entrypoints
-
-`buy(next_ticket_root, owner_pubkey, ticket_count)`：
-
-- successor covenant 金额必须增加 `ticket_price * ticket_count`。
-- 票数不能超过 `max_tickets`，批次不能超过 20。
-- 更新 ticket root、batch end 和 owner。
-- 通过 covenant binding 保持同一 lineage。
-
-`finalize(oracle_sig, oracle_seed, winner_ticket_id, winner_pubkey, caller_pubkey)`：
-
-- 必须满票，或交易 locktime 已达到 `refund_after_daa`。
-- caller 必须出现在已记录的购买批次 owner 中。
-- oracle signature 必须验证通过。
-- 合约计算中奖索引，并验证 `winner_pubkey` 是该票所属批次 owner。
-- 输出 0 支付完整奖池；输出 1 退还 creator carrier；输出 2 原额返还参与者授权 UTXO。
-
-`refund_all()`：
-
-- 只在 `refund_after_daa` 后有效。
-- 按购买批次退还全部票款。
-- 最后一个输出退还扣除 covenant fee 后的 carrier。
-- 不需要钱包签名，因此任何加载了完整轮次状态的人都可广播。
-
-`close()` 仍保留在 ABI 中用于旧版本兼容，但当前 UI 不调用。满票状态由 `sold_tickets == max_tickets` 判断，未满票轮次可在超时后直接 finalize 或 refund。
-
-## 6. 交易生命周期
-
-### Create
-
-1. 页面生成 round id 和开发 oracle key。
-2. 读取当前 DAA score，计算 `refund_after_daa`。
-3. 钱包先创建临时 funding UTXO。
-4. funding UTXO 创建 v1 genesis covenant output。
-5. 另发一笔 registry marker 交易供历史扫描。
-6. Registry payment 先创建可控 staging UTXO，再产生 marker 和即时找零，避免钱包碎片 UTXO 造成 storage-mass 失败。Testnet 默认 registry 扣除 0.001 KAS 后退回 marker；Mainnet 默认 registry 和自定义 registry 不自动退款，0.05 KAS 留在目标地址并由地址所有者控制。
-
-### Buy
-
-1. 读取当前 covenant UTXO，验证 redeem script 与本地 round 状态一致。
-2. 钱包为票款与 covenant fee 创建临时 funding UTXO。
-3. 同一交易消费当前 covenant 和 funding，产生 successor covenant。
-4. 足够大的临时 funding 余额在该交易内直接退回钱包。
-5. payload 记录票号范围、buyer、金额和新状态定位信息。
-
-同一 covenant UTXO 不能被并发消费。如果两位用户基于同一旧 outpoint 同时买票，只会有一笔成功；失败方需从 History 重新加载最新 successor 后重试。目前没有自动重试，因为自动重放会重新触发钱包签名并可能掩盖用户看到的票号变化。
-
-### Draw & Pay
-
-1. 页面确认钱包属于购票参与者。
-2. 重放全部票记录并校验 ticket root。
-3. 生成或载入 oracle attestation。
-4. 计算 winner 并构造 finalize 交易。
-5. 钱包只签参与者授权 input；奖池 input 由 covenant 规则授权。
-6. 单笔交易直接支付 winner、退 carrier、返还授权 UTXO。
-
-### Refund
-
-1. 页面比较实时 virtual DAA score 与 deadline。
-2. History 必须已加载全部票和批次 owner。
-3. 构造无钱包 input 的 `refund_all` spend。
-4. covenant 在链上再次验证 locktime、每个 owner 和退款金额。
-
-## 7. 金额、费用与 funding
-
-页面统一显示 KAS；代码内部使用 sompi，`1 KAS = 100,000,000 sompi`。
-
-| 项目 | 当前值 | 说明 |
-| --- | ---: | --- |
-| 默认 carrier | 0.2 KAS | 结束时扣费后退 creator，不属于永久消耗 |
-| 最低 carrier | 0.1 KAS | 当前 covenant output 的 storage-safe 下限 |
-| registry marker transfer | 0.05 KAS | Mainnet/自定义 Registry 由目标地址继续控制 |
-| registry marker refund fee | 0.001 KAS | Testnet 默认 registry 退回 0.049 KAS |
-| registry marker relay fee | 0.003 KAS | marker 手工交易固定费；另有 staging 交易动态网络费 |
-| create covenant fee | 0.002 KAS | 实测 compute mass 1,271，最低 relay 0.001271 KAS |
-| buy covenant fee | 0.02 KAS | 实测 compute mass 12,484，最低 relay 0.012484 KAS |
-| finalize covenant fee | 0.02 KAS | 实测 compute mass 10,872，最低 relay 0.010872 KAS |
-| refund covenant fee | 0.03 KAS | 单批次实测 compute mass 9,504，并为多输出保留余量 |
-| 临时 funding 最小 reserve | 0.2 KAS | staging 找零会在后续交易立即返回 |
-| finalize 授权 UTXO | 至少 0.05 KAS | 原额返回参与者，不构成费用 |
-
-钱包余额短时减少可能来自未确认交易、carrier 锁定、UTXO index 延迟或临时 funding。buy 的可退款余额若达到 1 KAS，会在 covenant spend 内立即作为输出返回；过小余额会并入费用以避免产生不可接受的小 UTXO。
-
-Registry staging payment 还会产生由钱包输入数量和交易 mass 决定的动态网络费，该费用在构造后显示。实测 staging + marker relay 合计 0.005047 KAS；Testnet 再支付 0.001 KAS 自动退款费。自定义 Registry address 可以是当前网络的任意有效地址：若是创建者自己的钱包地址，0.05 KAS marker 仍由该钱包控制；若是第三方地址，则构成真实转账。
-
-Compute budget 当前为 buy 50、finalize 12、参与者授权 11、refund 20。节点实测参与者 P2PK 授权需要 100,000 script units；这些预算值覆盖实测执行量，同时把 normalized compute mass 降到固定费率可以安全承载的范围。
-
-`npm run verify:fees:1m` 使用当前编译 artifact 构造 1,000,000 票精确交易形状，并按 rusty-kaspa Toccata v1 规则分别计算 compute、transient、storage mass。当前结果：create 最低费 0.001926 KAS、20 批最后一次 buy 0.014350 KAS、20 批 finalize 0.015102 KAS、20 输出 timeout refund 0.017391 KAS，均低于当前固定费。20 批平均分票的 refund storage mass 为 58,823，可以提交；但前 19 批各一张、最后一批买剩余票的偏斜 refund storage mass 为 692,150，会超过 500,000 标准交易上限。该失败来自小额退款输出结构，增加 fee 无法解决，脚本会明确报告 `EXPECTED STORAGE REJECT`。
-
-## 8. 随机数与信任假设
-
-当前新轮次的 oracle private key 由固定域分隔字符串和 round id 确定性派生。任何加载该 round 的浏览器都可恢复该 key，因此 creator 不需要回来，参与者可自行 finalize。
-
-这解决了“creator 消失导致资金锁死”的可用性问题，但不提供强随机性：知道派生规则的人可以预先计算 oracle seed 对结果的影响。生产方案必须替换为不可由单方操纵的来源，例如可信外部 oracle、阈值签名或可验证链上随机源。合约已经把 `oracle_pubkey` 固定在创建状态中，可在不改变 payout 约束的情况下替换 attestation 产生方式。
-
-## 9. 历史重建
-
-创建时向网络级 registry 地址写入 `round-register` payload。History scanner：
-
-1. 查询该 round 创建时指定的 registry 地址的 full transactions。
-2. 解析 `kaspa-raffle-static` JSON payload。
-3. 获取 round 的初始 covenant 地址和 covenant id。
-4. 沿 covenant output 的 spend 链追踪 ticket/finalize/refund。
-5. 重放票批次和 ticket root，构造最新 cursor。
-
-wRPC 主要提供 UTXO 和广播能力；完整历史依赖 raffle indexer。索引器使用确认队列、追加事件日志、迁移基线和事件字节 checkpoint；检测到 selected-chain block 被移除时，会过滤对应事件并从基线重建轮次和磁盘 Merkle 层。尚未达到确认数的事件不会进入公开索引。
-
-## 10. 编译与发布
-
-安装依赖并构建：
-
-```bash
-npm install
-npm run build
+```text
+seed = SHA256(ticket_root || target_block_hash || OpChainblockSeqCommit(target_block_hash))
+winner = uint56_le(seed[0..7]) % sold_tickets
 ```
 
-编译 Silverscript：
+中奖 proof 同时提交购买批次下标、起始票号、数量和 owner。合约检查中奖票位于该区间，并强制输出 0 把全部奖池支付给 owner；剩余 carrier 扣除实际 mass fee 后退给创建者。开奖无需钱包签名。
 
-```bash
+## 退款
+
+超时后，任何人都可以把 round covenant 转换为 refund covenant。退款状态同时保存：
+
+- `refund_cursor`：已经覆盖的票数；
+- `refund_batch_cursor`：已经完成的原始购买批次数。
+
+每次 `refundNext` 验证一个原始购买区间 proof，只创建一个买家退款输出。调用者可中断；其他人 load 最新 covenant 后按两个链上游标继续。单个 100,000 张购买批次是一笔退款，但 100,000 个不同买家不能压成一笔 100,000 输出交易。
+
+## 数据规模
+
+- Registry 扫描发现的轮次始终显示，indexer 不可用不会隐藏大轮次。
+- 本地缓存或链历史包含完整购买批次时，页面直接生成中奖和退款 proof，不受 `maxTickets` 影响。
+- 只有完整购买批次不可用时，页面才从用户配置的 indexer URL 获取缺失 proof。
+- Indexer 记录固定 80 字节：owner 32、交易 id 32、起始票号 uint64、数量 uint64；票号查询通过区间二分定位到购买批次。
+
+目标区块查找先用创建交易的接纳区块校准 `DAA - blueScore` 偏移，再从现有历史 API 读取目标附近的有界候选集合。所有候选都会通过 wRPC 重新读取并验证 selected parent、DAA 跨越与区块哈希；历史 API 只优化查找速度，不进入随机数信任边界。若候选不可用，则回退到 wRPC selected-chain 查找。
+
+## 验证
+
+```powershell
 npm run compile:contract
-```
-
-验证：
-
-```bash
 npm run verify
-npm run verify:covenant
+npm run benchmark:indexer:1m
 ```
 
-`verify` 会执行 TypeScript、Vite、单文件内联、静态架构断言和 artifact 检查。`dist/` 最终只允许存在一个自包含 `index.html`，其中嵌入 JavaScript、CSS 和 WASM。
-
-人工发布门槛见 `development-verification-loop.md`。真实网络回归至少跑三轮 create/buy/finalize，其中一轮必须从 History load 后再 finalize；主网验证默认只连接节点，不广播交易。
-
-## 11. 已知风险与后续工作
-
-- 开发 oracle 不具备生产随机性安全。
-- 合约和交易构造器尚未经过独立安全审计。
-- History 和 Merkle witness 仍依赖可替换的索引服务；链上 covenant 会重新验证 proof，因此索引器不能伪造收款人，但可以拒绝服务或延迟数据。
-- covenant UTXO 天然串行，热门轮次会出现购买竞争。
-- 最多 20 个购买批次；每批可含多张票。
-- storage mass 和 relay 规则可能随网络升级改变。0.2 KAS 是当前构建的安全默认 carrier，0.1 KAS 是结合当前 plurality 公式设置的下限；继续降低前必须重新跑 create/buy/finalize/refund 回归。
-- release HTML 虽可离线分发，但使用者仍应核对来源、版本和哈希。
-
-## 12. 兼容性
-
-`src/contracts/compiled/` 保留 v1、v2、v3 beta、v3.1、v3.2 artifact，用于加载或退款旧轮次。新代码不得用当前 state layout 强行解释旧 redeem script；`contractVersion` 决定选择哪个 artifact。旧的 creator-only oracle 轮次不能自动恢复 key，只能由原浏览器、外部 attestation 或超时 refund 处理。
-# V4 architecture update
-
-The default contract is now `raffle-v4-million-users`: a depth-20 Merkle root/frontier supports 1,000,000 independent one-ticket users, finalize consumes winner and caller proofs, and timeout refund advances `refund_cursor`. V3.5 batch fields below are retained only as historical compatibility notes. Practical million-user History and proofs require `npm run start:indexer`. The recoverable development oracle is test-only and must be replaced before real-value deployment.
+当前 VM 门禁包含 100,000 张单输出退款、load 后从下一购买批次续退、错误 proof 拒绝和 round-to-refund 模板切换。Mainnet 广播还会检查官方 Toccata 激活 DAA。

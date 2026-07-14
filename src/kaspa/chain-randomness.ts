@@ -6,7 +6,8 @@ export const CHAIN_RANDOM_DELAY_DAA = 30n;
 const HEADER_PAGE_SIZE = 1_000n;
 const MAX_HEADER_PAGES = 12;
 const MAX_BLOCK_WALK = 12_000;
-const RPC_TIMEOUT_MS = 15_000;
+const RPC_TIMEOUT_MS = 30_000;
+const BLOCK_LOOKUP_RETRIES = 3;
 
 export interface ChainHeaderWitness {
   hash: string;
@@ -127,14 +128,14 @@ async function walkSelectedChain(
   startHash: string,
   targetDaa: bigint
 ): Promise<{ target: IHeader; parent: IHeader } | undefined> {
-  let targetResponse = await connection.client.getBlock({ hash: startHash, includeTransactions: false });
+  let targetResponse = await loadBlock(connection, startHash);
   let target = targetResponse.block.header;
   if (target.daaScore < targetDaa) return undefined;
 
   for (let index = 0; index < MAX_BLOCK_WALK; index += 1) {
     const parentHash = targetResponse.block.verboseData?.selectedParentHash ?? target.parentsByLevel[0]?.[0];
     if (!parentHash) break;
-    const parentResponse = await connection.client.getBlock({ hash: parentHash, includeTransactions: false });
+    const parentResponse = await loadBlock(connection, parentHash);
     const parent = parentResponse.block.header;
     if (parent.daaScore < targetDaa) return { target, parent };
     targetResponse = parentResponse;
@@ -157,11 +158,34 @@ async function withRpcTimeout<T>(operation: Promise<T>, label: string): Promise<
   }
 }
 
+async function loadBlock(connection: KaspaRpcConnection, hash: string) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= BLOCK_LOOKUP_RETRIES; attempt += 1) {
+    try {
+      return await withRpcTimeout(
+        connection.client.getBlock({ hash, includeTransactions: false }),
+        `Block header lookup (${hash.slice(0, 12)})`
+      );
+    } catch (error) {
+      lastError = error;
+      if (attempt < BLOCK_LOOKUP_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function loadFromAnchor(
   connection: KaspaRpcConnection,
   anchorHash: string,
   targetDaa: bigint
 ): Promise<{ target: IHeader; parent: IHeader } | undefined> {
+  const anchorResponse = await loadBlock(connection, anchorHash);
+  if (anchorResponse.block.header.daaScore >= targetDaa) {
+    return walkSelectedChain(connection, anchorHash, targetDaa);
+  }
+
   const chain = await withRpcTimeout(
     connection.client.getVirtualChainFromBlock({
       startHash: anchorHash,
@@ -169,21 +193,67 @@ async function loadFromAnchor(
     }),
     "Selected-chain lookup"
   );
-  const hashes = [anchorHash, ...chain.addedChainBlockHashes];
-  let carry: IHeader | undefined;
+  const hashes = [...chain.addedChainBlockHashes];
+  if (!hashes.length) return undefined;
 
-  for (let offset = 0; offset < hashes.length; offset += 64) {
-    const page = hashes.slice(offset, offset + 64);
-    const loaded = await Promise.all(page.map(async (hash) => (
-      await withRpcTimeout(
-        connection.client.getBlock({ hash, includeTransactions: false }),
-        "Block header lookup"
-      )
-    ).block.header));
-    const headers = carry ? [carry, ...loaded] : loaded;
-    const pair = crossingPair(headers, targetDaa);
-    if (pair) return pair;
-    carry = loaded[loaded.length - 1];
+  const cache = new Map<string, Awaited<ReturnType<typeof loadBlock>>>();
+  cache.set(anchorHash.toLowerCase(), anchorResponse);
+  const responseAt = async (index: number) => {
+    const hash = hashes[index];
+    const key = hash.toLowerCase();
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const loaded = await loadBlock(connection, hash);
+    cache.set(key, loaded);
+    return loaded;
+  };
+
+  const first = await responseAt(0);
+  const last = await responseAt(hashes.length - 1);
+  if (first.block.header.daaScore > last.block.header.daaScore) {
+    hashes.reverse();
+    cache.clear();
+    cache.set(anchorHash.toLowerCase(), anchorResponse);
+  }
+  if ((await responseAt(hashes.length - 1)).block.header.daaScore < targetDaa) return undefined;
+
+  let low = 0;
+  let high = hashes.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const response = await responseAt(middle);
+    if (response.block.header.daaScore >= targetDaa) high = middle;
+    else low = middle + 1;
+  }
+
+  const targetResponse = await responseAt(low);
+  const target = targetResponse.block.header;
+  const parentHash = targetResponse.block.verboseData?.selectedParentHash ?? target.parentsByLevel[0]?.[0];
+  if (!parentHash) return undefined;
+  const parent = (await loadBlock(connection, parentHash)).block.header;
+  if (target.daaScore < targetDaa || parent.daaScore >= targetDaa) return undefined;
+  if (target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()) {
+    throw new Error("The node returned a selected-chain header with an unexpected selected parent.");
+  }
+  return { target, parent };
+}
+
+async function loadFromCandidates(
+  connection: KaspaRpcConnection,
+  candidateHashes: string[],
+  targetDaa: bigint
+): Promise<{ target: IHeader; parent: IHeader } | undefined> {
+  for (const hash of candidateHashes.slice(0, 32)) {
+    if (!/^[0-9a-f]{64}$/i.test(hash)) continue;
+    const targetResponse = await loadBlock(connection, hash);
+    const target = targetResponse.block.header;
+    if (target.daaScore < targetDaa) continue;
+    const parentHash = targetResponse.block.verboseData?.selectedParentHash ?? target.parentsByLevel[0]?.[0];
+    if (!parentHash) continue;
+    const parent = (await loadBlock(connection, parentHash)).block.header;
+    if (parent.daaScore >= targetDaa) continue;
+    if (target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()) continue;
+    return { target, parent };
   }
   return undefined;
 }
@@ -192,7 +262,8 @@ export async function loadChainRandomnessWitness(
   connection: KaspaRpcConnection,
   randomnessBaseDaaScore: bigint,
   ticketRootHex: string,
-  anchorHash?: string
+  anchorHash?: string,
+  candidateHashes: string[] = []
 ): Promise<ChainRandomnessWitness> {
   const targetBoundaryDaa = randomnessBaseDaaScore + CHAIN_RANDOM_DELAY_DAA;
   const info = await connection.client.getBlockDagInfo();
@@ -201,8 +272,11 @@ export async function loadChainRandomnessWitness(
   }
 
   let pair: { target: IHeader; parent: IHeader } | undefined;
+  if (candidateHashes.length) {
+    pair = await loadFromCandidates(connection, candidateHashes, targetBoundaryDaa);
+  }
   if (anchorHash) {
-    pair = await loadFromAnchor(connection, anchorHash, targetBoundaryDaa);
+    pair ??= await loadFromAnchor(connection, anchorHash, targetBoundaryDaa);
   }
 
   if (!pair) {

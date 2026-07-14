@@ -38,7 +38,7 @@ for (;;) {
 }
 const keypair = privateKey.toKeypair();
 const wallet = {
-  label: "Kaspa Raffle Static V0 experiment wallet",
+  label: "Kaswin experiment wallet",
   network,
   address: keypair.toAddress(network).toString(),
   publicKey: keypair.publicKey,

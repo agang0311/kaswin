@@ -1,0 +1,78 @@
+contract RaffleRefundV2() {
+    int constant MAX_REFUND_FEE = 20000000;
+
+    int ticket_price = 0;
+    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int sold_tickets = 0;
+    int sold_batches = 0;
+    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int refund_cursor = 0;
+    int refund_batch_cursor = 0;
+
+    function ticketBatchLeaf(pubkey owner_pubkey, int first_ticket_id, int ticket_count) : byte[32] {
+        return(sha256(byte[](owner_pubkey) + byte[](byte[8](first_ticket_id)) + byte[](byte[8](ticket_count))));
+    }
+
+    function merkleRoot(byte[32] leaf, int batch_index, byte[] proof) : byte[32] {
+        require(proof.length == 640);
+        byte[32] node = leaf;
+        int path = batch_index;
+        for(level, 0, 20, 20) {
+            int start = level * 32;
+            byte[32] sibling = byte[32](proof.slice(start, start + 32));
+            if (path % 2 == 0) {
+                node = sha256(byte[](node) + byte[](sibling));
+            } else {
+                node = sha256(byte[](sibling) + byte[](node));
+            }
+            path = path / 2;
+        }
+        return(node);
+    }
+
+    entrypoint function refundNext(
+        int refund_fee,
+        pubkey owner_pubkey,
+        int first_ticket_id,
+        int ticket_count,
+        byte[] batch_proof
+    ) {
+        require(refund_fee > 0 && refund_fee <= MAX_REFUND_FEE);
+        require(ticket_count == 1 || ticket_count == 10 || ticket_count == 100 || ticket_count == 1000 || ticket_count == 10000 || ticket_count == 100000);
+        require(refund_batch_cursor >= 0 && refund_batch_cursor < sold_batches);
+        require(first_ticket_id == refund_cursor);
+        require(first_ticket_id + ticket_count <= sold_tickets);
+        require(merkleRoot(ticketBatchLeaf(owner_pubkey, first_ticket_id, ticket_count), refund_batch_cursor, batch_proof) == ticket_root);
+
+        int batch_value = ticket_price * ticket_count;
+        int refund_value = batch_value - refund_fee;
+        require(refund_value > 0);
+        bool has_successor = refund_batch_cursor + 1 < sold_batches;
+
+        if (has_successor) {
+            require(OpAuthOutputCount(this.activeInputIndex) == 1);
+            require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
+            require(tx.outputs.length == 2);
+            require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - batch_value);
+            validateOutputState(0, {
+                ticket_price: ticket_price,
+                creator_pubkey: creator_pubkey,
+                sold_tickets: sold_tickets,
+                sold_batches: sold_batches,
+                ticket_root: ticket_root,
+                refund_cursor: refund_cursor + ticket_count,
+                refund_batch_cursor: refund_batch_cursor + 1,
+            });
+            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(owner_pubkey)));
+            require(tx.outputs[1].value == refund_value);
+        } else {
+            require(OpAuthOutputCount(this.activeInputIndex) == 0);
+            require(refund_cursor + ticket_count == sold_tickets);
+            require(tx.outputs.length == 2);
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(owner_pubkey)));
+            require(tx.outputs[0].value == refund_value);
+            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
+            require(tx.outputs[1].value == tx.inputs[this.activeInputIndex].value - batch_value);
+        }
+    }
+}

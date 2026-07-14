@@ -1,10 +1,10 @@
 import { hexToBytes, sha256BytesHex } from "./randomness";
+import type { TicketRange } from "./tickets";
 
 export const TICKET_MERKLE_DEPTH = 20;
 export const TICKET_MERKLE_CAPACITY = 1 << TICKET_MERKLE_DEPTH;
 export const TICKET_MERKLE_PROOF_BYTES = TICKET_MERKLE_DEPTH * 32;
-export const TICKET_REFUND_BATCH_SIZE = 8;
-export const TICKET_RANGE_PROOF_BYTES = (TICKET_MERKLE_DEPTH - 3) * 32;
+export const TICKET_BATCH_SIZES = [1, 10, 100, 1_000, 10_000, 100_000] as const;
 
 export const TICKET_EMPTY_NODES_HEX = [
   "00".repeat(32),
@@ -30,11 +30,21 @@ export const TICKET_EMPTY_NODES_HEX = [
 ] as const;
 
 export const TICKET_EMPTY_ROOT_HEX = "cddba7b592e3133393c16194fac7431abf2f5485ed711db282183c819e08ebaa";
-export const TICKET_EMPTY_NODE_TABLE_HEX = TICKET_EMPTY_NODES_HEX.join("");
 export const TICKET_EMPTY_FRONTIER_HEX = "00".repeat(TICKET_MERKLE_PROOF_BYTES);
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function uint64Le(value: number): Uint8Array {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error("Batch integer must be a non-negative safe integer.");
+  const bytes = new Uint8Array(8);
+  let remaining = BigInt(value);
+  for (let index = 0; index < 8; index += 1) {
+    bytes[index] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+  return bytes;
 }
 
 async function hashPair(left: Uint8Array, right: Uint8Array): Promise<Uint8Array> {
@@ -44,28 +54,38 @@ async function hashPair(left: Uint8Array, right: Uint8Array): Promise<Uint8Array
   return hexToBytes(await sha256BytesHex(bytes));
 }
 
-export async function ticketLeaf(ownerPubkeyHex: string): Promise<Uint8Array> {
-  const owner = hexToBytes(ownerPubkeyHex);
-  if (owner.length !== 32) throw new Error("Ticket owner public key must be exactly 32 bytes.");
-  return hexToBytes(await sha256BytesHex(owner));
+export function isTicketBatchSize(value: number): value is (typeof TICKET_BATCH_SIZES)[number] {
+  return TICKET_BATCH_SIZES.includes(value as (typeof TICKET_BATCH_SIZES)[number]);
 }
 
-export async function appendTicketLeaf(
+export async function ticketBatchLeaf(ownerPubkeyHex: string, firstTicketId: number, ticketCount: number): Promise<Uint8Array> {
+  const owner = hexToBytes(ownerPubkeyHex);
+  if (owner.length !== 32) throw new Error("Ticket owner public key must be exactly 32 bytes.");
+  if (!isTicketBatchSize(ticketCount)) throw new Error("Ticket batch size must be 1, 10, 100, 1000, 10000, or 100000.");
+  const bytes = new Uint8Array(48);
+  bytes.set(owner, 0);
+  bytes.set(uint64Le(firstTicketId), 32);
+  bytes.set(uint64Le(ticketCount), 40);
+  return hexToBytes(await sha256BytesHex(bytes));
+}
+
+export async function appendTicketBatch(
   frontierHex: string,
-  ticketId: number,
-  ownerPubkeyHex: string
+  batchIndex: number,
+  ownerPubkeyHex: string,
+  firstTicketId: number,
+  ticketCount: number
 ): Promise<{ frontierHex: string; rootHex: string }> {
-  if (!Number.isInteger(ticketId) || ticketId < 0 || ticketId >= TICKET_MERKLE_CAPACITY) {
-    throw new Error("Ticket id is outside the Merkle tree capacity.");
+  if (!Number.isInteger(batchIndex) || batchIndex < 0 || batchIndex >= TICKET_MERKLE_CAPACITY) {
+    throw new Error("Ticket batch index is outside the Merkle tree capacity.");
   }
   const frontier = hexToBytes(frontierHex);
   if (frontier.length !== TICKET_MERKLE_PROOF_BYTES) throw new Error("Ticket frontier must be exactly 640 bytes.");
 
   const nextFrontier = frontier.slice();
-  let node = await ticketLeaf(ownerPubkeyHex);
-  let path = ticketId;
+  let node = await ticketBatchLeaf(ownerPubkeyHex, firstTicketId, ticketCount);
+  let path = batchIndex;
   let carrying = true;
-
   for (let level = 0; level < TICKET_MERKLE_DEPTH; level += 1) {
     const start = level * 32;
     if ((path & 1) === 0) {
@@ -79,136 +99,58 @@ export async function appendTicketLeaf(
     }
     path = Math.floor(path / 2);
   }
-
   return { frontierHex: bytesToHex(nextFrontier), rootHex: bytesToHex(node) };
 }
 
-export async function appendTicketLeaves(
-  frontierHex: string,
+export async function merkleRootFromBatchProof(
+  ownerPubkeyHex: string,
   firstTicketId: number,
-  ownerPubkeyHex: string,
-  ticketCount: number
-): Promise<{ frontierHex: string; rootHex: string }> {
-  if (!Number.isInteger(ticketCount) || ticketCount < 1 || ticketCount > 8) {
-    throw new Error("A purchase must contain between 1 and 8 tickets.");
-  }
-  let next = { frontierHex, rootHex: TICKET_EMPTY_ROOT_HEX };
-  for (let offset = 0; offset < ticketCount; offset += 1) {
-    next = await appendTicketLeaf(next.frontierHex, firstTicketId + offset, ownerPubkeyHex);
-  }
-  return next;
-}
-
-export async function merkleRootFromProof(
-  ownerPubkeyHex: string,
-  ticketId: number,
+  ticketCount: number,
+  batchIndex: number,
   proofHex: string
 ): Promise<string> {
   const proof = hexToBytes(proofHex);
-  if (proof.length !== TICKET_MERKLE_PROOF_BYTES) throw new Error("Ticket proof must be exactly 640 bytes.");
-  let node = await ticketLeaf(ownerPubkeyHex);
-  let path = ticketId;
-
+  if (proof.length !== TICKET_MERKLE_PROOF_BYTES) throw new Error("Ticket batch proof must be exactly 640 bytes.");
+  let node = await ticketBatchLeaf(ownerPubkeyHex, firstTicketId, ticketCount);
+  let path = batchIndex;
   for (let level = 0; level < TICKET_MERKLE_DEPTH; level += 1) {
     const sibling = proof.slice(level * 32, level * 32 + 32);
     node = (path & 1) === 0 ? await hashPair(node, sibling) : await hashPair(sibling, node);
     path = Math.floor(path / 2);
   }
-
   return bytesToHex(node);
 }
 
-export async function verifyTicketProof(
+export async function verifyTicketBatchProof(
   expectedRootHex: string,
   ownerPubkeyHex: string,
-  ticketId: number,
-  proofHex: string
-): Promise<boolean> {
-  return (await merkleRootFromProof(ownerPubkeyHex, ticketId, proofHex)) === expectedRootHex.toLowerCase();
-}
-
-export async function verifyTicketRange8(
-  expectedRootHex: string,
-  ownerPubkeysHex: string[],
   firstTicketId: number,
+  ticketCount: number,
+  batchIndex: number,
   proofHex: string
 ): Promise<boolean> {
-  if (ownerPubkeysHex.length !== TICKET_REFUND_BATCH_SIZE || firstTicketId % TICKET_REFUND_BATCH_SIZE !== 0) return false;
-  const proof = hexToBytes(proofHex);
-  if (proof.length !== TICKET_RANGE_PROOF_BYTES) return false;
-  let nodes = await Promise.all(ownerPubkeysHex.map(ticketLeaf));
-  for (let width = 8; width > 1; width /= 2) {
-    const parents: Uint8Array[] = [];
-    for (let index = 0; index < nodes.length; index += 2) parents.push(await hashPair(nodes[index], nodes[index + 1]));
-    nodes = parents;
-  }
-  let node = nodes[0];
-  let path = firstTicketId / TICKET_REFUND_BATCH_SIZE;
-  for (let level = 0; level < TICKET_MERKLE_DEPTH - 3; level += 1) {
-    const sibling = proof.slice(level * 32, level * 32 + 32);
-    node = (path & 1) === 0 ? await hashPair(node, sibling) : await hashPair(sibling, node);
-    path = Math.floor(path / 2);
-  }
-  return bytesToHex(node) === expectedRootHex.toLowerCase();
+  return (await merkleRootFromBatchProof(ownerPubkeyHex, firstTicketId, ticketCount, batchIndex, proofHex)) === expectedRootHex.toLowerCase();
 }
 
-export async function buildTicketProof(
-  ownerPubkeys: string[],
-  ticketId: number
+export interface TicketBatchRecord extends TicketRange {
+  ownerPubkey?: string;
+}
+
+export async function buildTicketBatchProof(
+  batches: TicketBatchRecord[],
+  batchIndex: number
 ): Promise<{ proofHex: string; rootHex: string }> {
-  if (!Number.isInteger(ticketId) || ticketId < 0 || ticketId >= ownerPubkeys.length) {
-    throw new Error("Ticket proof index is outside the loaded ticket set.");
+  if (!Number.isInteger(batchIndex) || batchIndex < 0 || batchIndex >= batches.length) {
+    throw new Error("Ticket batch proof index is outside the loaded batch set.");
   }
-  if (ownerPubkeys.length > TICKET_MERKLE_CAPACITY) {
-    throw new Error("Loaded tickets exceed the Merkle tree capacity.");
-  }
-
-  let nodes = await Promise.all(ownerPubkeys.map(ticketLeaf));
+  if (batches.length > TICKET_MERKLE_CAPACITY) throw new Error("Loaded ticket batches exceed the Merkle tree capacity.");
+  let nodes = await Promise.all(batches.map((batch) => {
+    if (!batch.ownerPubkey) throw new Error("A ticket batch is missing its owner public key.");
+    return ticketBatchLeaf(batch.ownerPubkey, batch.ticketId - 1, Math.max(1, batch.ticketCount ?? 1));
+  }));
   const proof: Uint8Array[] = [];
-  let path = ticketId;
-
+  let path = batchIndex;
   for (let level = 0; level < TICKET_MERKLE_DEPTH; level += 1) {
-    const siblingIndex = path ^ 1;
-    proof.push(nodes[siblingIndex] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level]));
-
-    const parents: Uint8Array[] = [];
-    for (let index = 0; index < nodes.length; index += 2) {
-      parents.push(await hashPair(nodes[index], nodes[index + 1] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level])));
-    }
-    nodes = parents;
-    path = Math.floor(path / 2);
-  }
-
-  const proofBytes = new Uint8Array(TICKET_MERKLE_PROOF_BYTES);
-  proof.forEach((sibling, level) => proofBytes.set(sibling, level * 32));
-  return { proofHex: bytesToHex(proofBytes), rootHex: bytesToHex(nodes[0]) };
-}
-
-export async function buildTicketRange8Proof(
-  ownerPubkeys: string[],
-  firstTicketId: number
-): Promise<{ proofHex: string; rootHex: string }> {
-  if (!Number.isInteger(firstTicketId) || firstTicketId < 0 || firstTicketId % TICKET_REFUND_BATCH_SIZE !== 0) {
-    throw new Error("The first ticket in an 8-ticket proof must be zero-based and aligned to 8.");
-  }
-  if (firstTicketId + TICKET_REFUND_BATCH_SIZE > ownerPubkeys.length) {
-    throw new Error("The loaded ticket set does not contain this 8-ticket range.");
-  }
-
-  let nodes = await Promise.all(ownerPubkeys.map(ticketLeaf));
-  let path = firstTicketId;
-
-  for (let level = 0; level < 3; level += 1) {
-    const parents: Uint8Array[] = [];
-    for (let index = 0; index < nodes.length; index += 2) {
-      parents.push(await hashPair(nodes[index], nodes[index + 1] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level])));
-    }
-    nodes = parents;
-    path = Math.floor(path / 2);
-  }
-
-  const proof: Uint8Array[] = [];
-  for (let level = 3; level < TICKET_MERKLE_DEPTH; level += 1) {
     proof.push(nodes[path ^ 1] ?? hexToBytes(TICKET_EMPTY_NODES_HEX[level]));
     const parents: Uint8Array[] = [];
     for (let index = 0; index < nodes.length; index += 2) {
@@ -217,8 +159,7 @@ export async function buildTicketRange8Proof(
     nodes = parents;
     path = Math.floor(path / 2);
   }
-
-  const proofBytes = new Uint8Array(TICKET_RANGE_PROOF_BYTES);
+  const proofBytes = new Uint8Array(TICKET_MERKLE_PROOF_BYTES);
   proof.forEach((sibling, level) => proofBytes.set(sibling, level * 32));
   return { proofHex: bytesToHex(proofBytes), rootHex: bytesToHex(nodes[0]) };
 }

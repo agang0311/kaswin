@@ -20,14 +20,14 @@ import {
   pubkeyHexFromAddress,
   raffleWinnerIndexFromSeed
 } from "../kaspa/covenant";
-import { loadChainRandomnessWitness } from "../kaspa/chain-randomness";
-import { loadIndexedRaffleHistory, loadRaffleHistory, type RaffleHistoryRound } from "../kaspa/history";
+import { CHAIN_RANDOM_DELAY_DAA, loadChainRandomnessWitness } from "../kaspa/chain-randomness";
+import { loadBlockHashesNearDaa, loadIndexedRaffleHistory, loadRaffleHistory, loadTransactionChainAnchor, type RaffleHistoryRound } from "../kaspa/history";
 import {
   DEFAULT_RAFFLE_INDEX_API,
-  loadIndexedTicketRange8,
+  checkRaffleIndexer,
+  loadIndexedBatchProof,
   loadIndexedTicketProof,
-  partitionRaffleRoundsByIndexer,
-  requiresRaffleIndexer
+  requiresRaffleIndexerProof
 } from "../kaspa/indexer";
 import {
   connectBrowserRpc,
@@ -57,11 +57,10 @@ import {
   finalizeRaffleCovenantRound,
   getRaffleRegistryConfig,
   MAX_COVENANT_FINALIZE_FEE_SOMPI,
+  MAX_REFUND_BATCH_FEE_SOMPI,
   MIN_COVENANT_CARRIER_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
   currentRaffleCovenantDaaScore,
-  REFUND_BATCH_FEE_PER_TICKET_SOMPI,
-  REFUND_TAIL_FEE_PER_TICKET_SOMPI,
   REFUND_TRANSITION_FEE_SOMPI,
   refundRaffleCovenantRound,
   refundRaffleRegistryMarker,
@@ -78,11 +77,17 @@ import {
   type WalletAdapterOption
 } from "../kaspa/wallet";
 import { createEmptyMetadata, parseMetadata, raffleContractVersionForNetwork, stringifyMetadata } from "../raffle/metadata";
-import { cacheParticipatedRound, loadCachedRaffleHistory } from "../raffle/local-rounds";
+import {
+  cacheParticipatedRound,
+  hasCachedParticipatedRound,
+  loadCachedRaffleHistory,
+  loadCachedRound,
+  updateCachedParticipatedRoundFromHistory
+} from "../raffle/local-rounds";
 import { randomHex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
-import { buildTicketProof, buildTicketRange8Proof, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
-import { findTicketRange, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
+import { buildTicketBatchProof, TICKET_BATCH_SIZES, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
+import { findTicketRange, hasCompleteTicketBatchHistory, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
 import { translate, translateRuntimeText, type Language, type TranslationValues } from "./i18n";
 
@@ -97,7 +102,13 @@ const MAINNET_REFUND_TIMEOUT_SECONDS = SECONDS_PER_DAY;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
-const TICKET_BATCH_SIZES = [1, 2, 4, 8] as const;
+
+function historyRoundNeedsIndexer(historyRound: RaffleHistoryRound): boolean {
+  const soldTickets = historyRound.soldTickets ?? totalTicketCount(historyRound.tickets);
+  const soldBatches = historyRound.latestCovenant?.soldBatches ?? historyRound.tickets.length;
+  const completeLocalHistory = hasCompleteTicketBatchHistory(historyRound.tickets, soldTickets, soldBatches);
+  return soldTickets > 0 && requiresRaffleIndexerProof(historyRound.maxTickets ?? 0, completeLocalHistory);
+}
 
 function initialLanguage(): Language {
   try {
@@ -146,15 +157,6 @@ function loadIndexEndpoints(): NetworkEndpoints {
   } catch {
     return defaults;
   }
-}
-
-function expandedOwnerPubkeys(tickets: TicketState[]): string[] {
-  return [...tickets]
-    .sort((left, right) => left.ticketId - right.ticketId)
-    .flatMap((ticket) => Array.from(
-      { length: ticketRangeCount(ticket) },
-      () => ticket.ownerPubkey || pubkeyHexFromAddress(ticket.owner)
-    ));
 }
 
 function validateRpcUrl(value: string): string {
@@ -410,11 +412,16 @@ export function App() {
   const [registryAddress, setRegistryAddress] = useState("");
   const [registryAutoRefund, setRegistryAutoRefund] = useState(false);
   const [createRegistryAddress, setCreateRegistryAddress] = useState("");
-  const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>([]);
-  const [selectedHistoryRoundId, setSelectedHistoryRoundId] = useState("");
+  const [historyRounds, setHistoryRounds] = useState<RaffleHistoryRound[]>(() => loadCachedRaffleHistory("testnet-10"));
+  const [selectedHistoryRoundId, setSelectedHistoryRoundId] = useState(
+    () => loadCachedRaffleHistory("testnet-10")[0]?.roundId ?? ""
+  );
   const [historyError, setHistoryError] = useState("");
   const [historyMessage, setHistoryMessage] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isCheckingIndexer, setIsCheckingIndexer] = useState(false);
+  const [indexerCheckState, setIndexerCheckState] = useState<"idle" | "ready" | "error">("idle");
+  const [indexerCheckMessage, setIndexerCheckMessage] = useState("");
   const [roundSourceTab, setRoundSourceTab] = useState<"create" | "history">("create");
   const [roundActionTab, setRoundActionTab] = useState<"buy" | "payout">("buy");
   const isCreatingRoundRef = useRef(false);
@@ -430,6 +437,18 @@ export function App() {
   const selectedHistoryRound = useMemo(
     () => historyRounds.find((historyRound) => historyRound.roundId === selectedHistoryRoundId) ?? historyRounds[0],
     [historyRounds, selectedHistoryRoundId]
+  );
+  const activeSoldBatches = metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? tickets.length;
+  const activeLocalHistoryComplete = metadata.covenant
+    ? hasCompleteTicketBatchHistory(tickets, metadata.covenant.soldTickets, activeSoldBatches)
+    : true;
+  const activeRoundNeedsIndexer = Boolean(
+    metadata.covenant &&
+    metadata.covenant.soldTickets > 0 &&
+    requiresRaffleIndexerProof(metadata.maxTickets, activeLocalHistoryComplete)
+  );
+  const selectedHistoryRoundRequiresIndexer = Boolean(
+    selectedHistoryRound && historyRoundNeedsIndexer(selectedHistoryRound)
   );
   const refundTimeoutSeconds = useMemo(() => {
     try {
@@ -459,8 +478,31 @@ export function App() {
   }, [metadata]);
 
   useEffect(() => {
-    cacheParticipatedRound(metadata, tickets, finalized);
-  }, [finalized, metadata, tickets]);
+    if (!metadata.roundId || !metadata.covenant && !finalized) return;
+
+    const walletAddress = wallet?.address.toLowerCase();
+    const walletPubkey = wallet?.publicKey.toLowerCase();
+    const participatedWithConnectedWallet = Boolean(wallet && (
+      metadata.creatorAddress?.toLowerCase() === walletAddress ||
+      metadata.creatorPubkey?.toLowerCase() === walletPubkey ||
+      tickets.some((ticket) => (
+        ticket.owner.toLowerCase() === walletAddress ||
+        ticket.ownerPubkey?.toLowerCase() === walletPubkey
+      ))
+    ));
+
+    if (
+      participatedWithConnectedWallet ||
+      hasCachedParticipatedRound(metadata.network, metadata.roundId)
+    ) {
+      cacheParticipatedRound(metadata, tickets, finalized);
+      setHistoryRounds((current) => current.map((historyRound) => (
+        historyRound.roundId === metadata.roundId && !historyRound.localCachedAt
+          ? { ...historyRound, localCachedAt: Date.now() }
+          : historyRound
+      )));
+    }
+  }, [finalized, metadata, tickets, wallet]);
 
   useEffect(() => {
     if (!nodeStatus.connected || !rpcConnectionRef.current) {
@@ -571,6 +613,7 @@ export function App() {
       ticketRoot: covenant?.ticketRoot ?? "",
       ticketFrontier: covenant?.ticketFrontier,
       refundCursor: covenant?.refundCursor ?? 0,
+      refundBatchCursor: covenant?.refundBatchCursor ?? 0,
       soldBatches: covenant?.soldBatches ?? covenant?.ticketOwnerPubkeys.length ?? tickets.length,
       ticketBatchEnds: covenant?.ticketBatchEnds ?? tickets.map(ticketRangeEnd),
       ticketOwnerPubkeys: covenant?.ticketOwnerPubkeys ?? tickets.map((ticket) => ticket.ownerPubkey).filter(Boolean) as string[]
@@ -581,8 +624,7 @@ export function App() {
   const parsedTicketQuantity = Number(ticketQuantity);
   const ticketQuantityIsAvailable = Number.isInteger(parsedTicketQuantity) &&
     TICKET_BATCH_SIZES.includes(parsedTicketQuantity as (typeof TICKET_BATCH_SIZES)[number]) &&
-    parsedTicketQuantity <= remainingTickets &&
-    round.soldTickets % parsedTicketQuantity === 0;
+    parsedTicketQuantity <= remainingTickets;
   const purchaseTotal = ticketQuantityIsAvailable
     ? round.ticketPrice * BigInt(parsedTicketQuantity)
     : 0n;
@@ -617,12 +659,9 @@ export function App() {
     maxFee: formatKas(MAX_COVENANT_FINALIZE_FEE_SOMPI)
   });
   const refundCostTooltip = t("cost.refund.current", {
-    refund: formatKas(round.potAmount),
     fee: formatKas(covenantRefundFeeSompi(round.contractVersion)),
     transitionFee: formatKas(REFUND_TRANSITION_FEE_SOMPI),
-    batchFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI * 8n),
-    perTicketFee: formatKas(REFUND_BATCH_FEE_PER_TICKET_SOMPI),
-    tailFee: formatKas(REFUND_TAIL_FEE_PER_TICKET_SOMPI)
+    maxFee: formatKas(MAX_REFUND_BATCH_FEE_SOMPI)
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
@@ -688,34 +727,18 @@ export function App() {
 
   const verification = useMemo(() => verifyRaffleState({ round, tickets, finalized }), [finalized, round, tickets]);
 
-  async function buildLocalTicketWitness(ticketId: number) {
+  async function buildLocalBatchWitness(ticketId: number) {
     const covenant = metadata.covenant;
     if (!covenant || totalTicketCount(tickets) < covenant.soldTickets) {
       throw new Error("The complete ticket set is not available in this browser. Load the round history first.");
     }
-    const ticket = findTicketRange(tickets, ticketId);
+    const orderedBatches = [...tickets].sort((left, right) => left.ticketId - right.ticketId);
+    const batchIndex = orderedBatches.findIndex((ticket) => ticketId >= ticket.ticketId && ticketId <= ticketRangeEnd(ticket));
+    const ticket = orderedBatches[batchIndex];
     if (!ticket) throw new Error(`Ticket #${ticketId} is missing from local history.`);
-    const ownerPubkeys = expandedOwnerPubkeys(tickets).slice(0, covenant.soldTickets);
-    const proof = await buildTicketProof(ownerPubkeys, ticketId - 1);
+    const proof = await buildTicketBatchProof(orderedBatches, batchIndex);
     if (proof.rootHex !== covenant.ticketRoot) throw new Error("Local ticket history does not match the covenant root.");
-    return { ticket: { ...ticket, ticketId, ticketCount: 1 }, proofHex: proof.proofHex };
-  }
-
-  async function buildLocalRangeWitness(firstTicketId: number) {
-    const covenant = metadata.covenant;
-    if (!covenant || totalTicketCount(tickets) < covenant.soldTickets) {
-      throw new Error("The complete ticket set is not available in this browser. Load the round history first.");
-    }
-    const ownerPubkeys = expandedOwnerPubkeys(tickets).slice(0, covenant.soldTickets);
-    const proof = await buildTicketRange8Proof(ownerPubkeys, firstTicketId - 1);
-    if (proof.rootHex !== covenant.ticketRoot) throw new Error("Local ticket history does not match the covenant root.");
-    const rangeTickets = Array.from({ length: 8 }, (_, index) => {
-      const ticketId = firstTicketId + index;
-      const ticket = findTicketRange(tickets, ticketId);
-      if (!ticket) throw new Error(`Ticket #${ticketId} is missing from local history.`);
-      return { ...ticket, ticketId, ticketCount: 1 };
-    });
-    return { tickets: rangeTickets, proofHex: proof.proofHex };
+    return { ticket, batchIndex, proofHex: proof.proofHex };
   }
 
   function persistNetworkEndpoints(next: NetworkEndpoints) {
@@ -730,9 +753,41 @@ export function App() {
 
   function handleIndexApiInput(value: string) {
     setIndexApiBase(value);
+    setIndexerCheckState("idle");
+    setIndexerCheckMessage("");
     const next = { ...indexEndpoints, [networkId]: value };
     setIndexEndpoints(next);
     localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
+  }
+
+  async function requireReadyIndexer() {
+    setIsCheckingIndexer(true);
+    setIndexerCheckState("idle");
+    setIndexerCheckMessage("");
+
+    try {
+      const health = await checkRaffleIndexer(indexApiBase);
+      if (normalizeNetworkId(health.network) !== networkId) {
+        throw new Error(t("indexerWrongNetwork", { actual: health.network, expected: networkLabel(networkId) }));
+      }
+      setIndexerCheckState("ready");
+      setIndexerCheckMessage(t("indexerReady", {
+        rounds: health.rounds.toLocaleString(),
+        sync: health.syncing ? t("indexerStatus.syncing") : t("indexerStatus.ready")
+      }));
+      return health;
+    } catch (error) {
+      const detail = errorMessage(error, "Unable to reach the raffle indexer.");
+      setIndexerCheckState("error");
+      setIndexerCheckMessage(t("indexerConnectionFailed", { detail }));
+      throw new Error(t("indexerRequiredError", { detail }));
+    } finally {
+      setIsCheckingIndexer(false);
+    }
+  }
+
+  async function handleCheckIndexer() {
+    await requireReadyIndexer().catch(() => undefined);
   }
 
   function openNetworkSettings(profileId: SupportedNetworkId) {
@@ -798,8 +853,9 @@ export function App() {
     setRegistryAddress("");
     setRegistryAutoRefund(false);
     setCreateRegistryAddress("");
-    setHistoryRounds([]);
-    setSelectedHistoryRoundId("");
+    const cachedRounds = loadCachedRaffleHistory(nextNetwork);
+    setHistoryRounds(cachedRounds);
+    setSelectedHistoryRoundId(cachedRounds[0]?.roundId ?? "");
     setMetadata(createEmptyMetadata(nextNetwork));
     setTickets([]);
     setFinalized(undefined);
@@ -811,6 +867,8 @@ export function App() {
     setMetadataMessage("");
     setHistoryError("");
     setHistoryMessage("");
+    setIndexerCheckState("idle");
+    setIndexerCheckMessage("");
     setRoundSourceTab("create");
     setRoundActionTab("buy");
     setNetworkSettingsId(null);
@@ -1054,7 +1112,9 @@ export function App() {
         throw new Error("Refund timeout must be greater than zero seconds.");
       }
 
-      const createdAtDaaScore = await currentVirtualDaaScore(rpcConnectionRef.current);
+      const creationDagInfo = await rpcConnectionRef.current.client.getBlockDagInfo();
+      const createdAtDaaScore = creationDagInfo.virtualDaaScore;
+      const chainSearchHintHash = creationDagInfo.sink;
       assertToccataActive(networkId, createdAtDaaScore);
       const refundAfterDaaScore = createdAtDaaScore + refundDelayDaa;
       const creatorPubkey = pubkeyHexFromAddress(wallet.address);
@@ -1071,7 +1131,9 @@ export function App() {
         status: "Open",
         ticketRoot: TICKET_EMPTY_ROOT_HEX,
         ticketFrontier: TICKET_EMPTY_FRONTIER_HEX,
+        chainSearchHintHash,
         refundCursor: 0,
+        refundBatchCursor: 0,
         soldBatches: 0,
         ticketBatchEnds: [],
         refundAfterDaaScore: refundAfterDaaScore.toString(),
@@ -1089,6 +1151,7 @@ export function App() {
         creatorPubkey,
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
+        chainSearchHintHash,
         refundTimeoutSeconds: refundDelaySeconds.toString(),
         refundTimeoutDaa: refundDelayDaa.toString(),
         registryAddress: targetRegistryAddress,
@@ -1133,6 +1196,7 @@ export function App() {
             creatorPubkey,
             createdAtDaaScore: createdAtDaaScore.toString(),
             refundAfterDaaScore: refundAfterDaaScore.toString(),
+            chainSearchHintHash,
             refundTimeoutSeconds: refundDelaySeconds.toString(),
             refundTimeoutDaa: refundDelayDaa.toString(),
             registryAddress: targetRegistryAddress,
@@ -1173,6 +1237,7 @@ export function App() {
         creatorAddress: wallet.address,
         creatorPubkey,
         createdAtDaaScore: createdAtDaaScore.toString(),
+        startBlockHash: chainSearchHintHash,
         refundTimeoutSeconds: refundDelaySeconds.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         treasuryAddress: result.covenant?.address ?? current.treasuryAddress,
@@ -1196,6 +1261,7 @@ export function App() {
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundTimeoutSeconds: refundDelaySeconds.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
+        chainSearchHintHash,
         refundTimeoutDaa: refundDelayDaa.toString(),
         ticketPrice: BigInt(metadata.ticketPrice),
         maxTickets: metadata.maxTickets,
@@ -1274,14 +1340,8 @@ export function App() {
         throw new Error("Ticket quantity must be a positive integer.");
       }
 
-      if (quantity > 8) {
-        throw new Error("A single purchase can contain at most 8 tickets.");
-      }
-
-      if (
-        !TICKET_BATCH_SIZES.includes(quantity as (typeof TICKET_BATCH_SIZES)[number]) || covenant.soldTickets % quantity !== 0
-      ) {
-        throw new Error("Batch purchases must contain 1, 2, 4, or 8 tickets and start on an aligned ticket boundary.");
+      if (!TICKET_BATCH_SIZES.includes(quantity as (typeof TICKET_BATCH_SIZES)[number])) {
+        throw new Error("Batch purchases must contain 1, 10, 100, 1000, 10000, or 100000 tickets.");
       }
 
       if (quantity > metadata.maxTickets - covenant.soldTickets) {
@@ -1307,7 +1367,10 @@ export function App() {
         paidAmount,
         ticketTxId: ""
       };
-      const chainSearchHintHash = (await rpcConnectionRef.current.client.getBlockDagInfo()).sink;
+      const currentChainHash = (await rpcConnectionRef.current.client.getBlockDagInfo()).sink;
+      const chainSearchHintHash = covenant.soldTickets + quantity === metadata.maxTickets
+        ? currentChainHash
+        : covenant.chainSearchHintHash ?? currentChainHash;
       const payload = {
         app: "kaspa-raffle-static",
         type: "ticket",
@@ -1332,6 +1395,7 @@ export function App() {
           ticketRoot: covenant.ticketRoot,
           ticketFrontier: covenant.ticketFrontier,
           refundCursor: covenant.refundCursor ?? 0,
+          refundBatchCursor: covenant.refundBatchCursor ?? 0,
           creatorPubkey: covenant.creatorPubkey,
           refundAfterDaaScore: covenant.refundAfterDaaScore,
           soldBatches: covenant.soldBatches ?? covenant.ticketOwnerPubkeys.length,
@@ -1341,6 +1405,7 @@ export function App() {
         covenant,
         ticket: nextTicket,
         ticketCount: quantity,
+        chainSearchHintHash,
         payload: encodePayload(payload)
       });
 
@@ -1452,6 +1517,7 @@ export function App() {
         ticketRoot: activeCovenant.ticketRoot,
         ticketFrontier: activeCovenant.ticketFrontier,
         refundCursor: activeCovenant.refundCursor ?? 0,
+        refundBatchCursor: activeCovenant.refundBatchCursor ?? 0,
         creatorPubkey: activeCovenant.creatorPubkey,
         refundAfterDaaScore: activeCovenant.refundAfterDaaScore,
         soldBatches: activeCovenant.soldBatches ?? activeCovenant.ticketOwnerPubkeys.length,
@@ -1463,40 +1529,78 @@ export function App() {
         throw new Error("Prize amount must be greater than zero.");
       }
 
+      const hasCompleteLocalHistory = hasCompleteTicketBatchHistory(
+        tickets,
+        activeCovenant.soldTickets,
+        activeCovenant.soldBatches ?? activeCovenant.ticketOwnerPubkeys.length
+      );
+      const requiresIndexerProof = requiresRaffleIndexerProof(metadata.maxTickets, hasCompleteLocalHistory);
+      if (requiresIndexerProof) await requireReadyIndexer();
+
       const randomnessBaseDaaScore = activeCovenant.soldTickets === metadata.maxTickets
         ? await currentRaffleCovenantDaaScore(rpcConnectionRef.current, activeCovenant)
         : BigInt(activeCovenant.refundAfterDaaScore || "0");
+      const randomnessAnchorHash = metadata.startBlockHash || (
+        metadata.createTxId
+          ? await loadTransactionChainAnchor(historyApiBase, metadata.createTxId).catch(() => activeCovenant.chainSearchHintHash)
+          : activeCovenant.chainSearchHintHash
+      );
+      let randomnessCandidateHashes: string[] = [];
+      if (randomnessAnchorHash) {
+        try {
+          const anchorResponse = await rpcConnectionRef.current.client.getBlock({
+            hash: randomnessAnchorHash,
+            includeTransactions: false
+          });
+          const anchorHeader = anchorResponse.block.header;
+          const targetBoundaryDaa = randomnessBaseDaaScore + CHAIN_RANDOM_DELAY_DAA;
+          if (anchorHeader.daaScore <= targetBoundaryDaa) {
+            const estimatedBlueScore = anchorHeader.blueScore + targetBoundaryDaa - anchorHeader.daaScore;
+            randomnessCandidateHashes = await loadBlockHashesNearDaa(historyApiBase, estimatedBlueScore, targetBoundaryDaa);
+          }
+        } catch {
+          // Candidate hashes are only a lookup optimization; the RPC path remains authoritative.
+        }
+      }
       const randomnessWitness = await loadChainRandomnessWitness(
         rpcConnectionRef.current,
         randomnessBaseDaaScore,
         activeRound.ticketRoot,
-        activeCovenant.chainSearchHintHash
+        randomnessAnchorHash,
+        randomnessCandidateHashes
       );
       const randomSeed = randomnessWitness.randomSeedHex;
       const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, activeCovenant.soldTickets);
       const winnerRange = findTicketRange(tickets, winnerIndex + 1);
-      let winner = winnerRange ? { ...winnerRange, ticketId: winnerIndex + 1, ticketCount: 1 } : undefined;
+      let winner = winnerRange;
+      let winnerBatchIndex = winnerRange
+        ? [...tickets].sort((left, right) => left.ticketId - right.ticketId).findIndex((ticket) => ticket === winnerRange)
+        : -1;
 
       let winnerProofHex: string | undefined;
-      if (requiresRaffleIndexer(metadata.maxTickets)) {
-          const indexedWinner = await loadIndexedTicketProof(indexApiBase, metadata.roundId, winnerIndex + 1);
+      if (requiresIndexerProof) {
+          const indexedWinner = await loadIndexedTicketProof(indexApiBase, metadata.roundId, winnerIndex + 1).catch((error) => {
+            throw new Error(t("indexerRequiredError", { detail: errorMessage(error, "Unable to load the winner proof.") }));
+          });
           if (indexedWinner.rootHex !== activeCovenant.ticketRoot) {
             throw new Error("Raffle index is behind the current covenant root.");
           }
           winner = {
             appId: "KASPA_RAFFLE_TICKET_V1",
             roundId: metadata.roundId,
-            ticketId: indexedWinner.ticketId,
-            ticketCount: 1,
+            ticketId: indexedWinner.firstTicketId,
+            ticketCount: indexedWinner.ticketCount,
             owner: indexedWinner.owner,
             ownerPubkey: indexedWinner.ownerPubkey,
             paidAmount: BigInt(metadata.ticketPrice),
             ticketTxId: indexedWinner.transactionId || ""
           };
+          winnerBatchIndex = indexedWinner.batchIndex;
           winnerProofHex = indexedWinner.proofHex;
       } else {
-        const winnerWitness = await buildLocalTicketWitness(winnerIndex + 1);
+        const winnerWitness = await buildLocalBatchWitness(winnerIndex + 1);
         winner = winnerWitness.ticket;
+        winnerBatchIndex = winnerWitness.batchIndex;
         winnerProofHex = winnerWitness.proofHex;
       }
 
@@ -1510,7 +1614,7 @@ export function App() {
         randomSeed,
         targetBlockHash: randomnessWitness.target.hash,
         targetDaaScore: randomnessWitness.target.daaScore.toString(),
-        winnerTicketId: winner.ticketId,
+        winnerTicketId: winnerIndex + 1,
         winnerAddress: winner.owner,
         payoutTxId: ""
       };
@@ -1526,12 +1630,14 @@ export function App() {
         covenant: activeCovenant,
         randomnessWitness,
         winner,
+        winnerTicketId: winnerIndex + 1,
+        winnerBatchIndex,
         winnerProofHex,
         payload: encodePayload({
           app: "kaspa-raffle-static",
           type: "round-finalize",
           roundId: metadata.roundId,
-          winnerTicketId: winner.ticketId,
+          winnerTicketId: winnerIndex + 1,
           winnerAddress: winner.owner,
           amount: activeRound.potAmount.toString()
         })
@@ -1560,13 +1666,13 @@ export function App() {
             potAmount: activeRound.potAmount,
             payouts: [{
               txId: result.txId,
-              winnerTicketId: winner.ticketId,
+              winnerTicketId: winnerIndex + 1,
               winnerAddress: winner.owner,
               amount: activeRound.potAmount
             }, ...historyRound.payouts.filter((payout) => payout.txId !== result.txId)]
           }
         : historyRound));
-      setChainMessage(`Winner #${winner.ticketId} was paid: ${result.txId} (finalize fee ${formatKas(result.feeSompi ?? 0n)}).`);
+      setChainMessage(`Winner #${winnerIndex + 1} was paid: ${result.txId} (finalize fee ${formatKas(result.feeSompi ?? 0n)}).`);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to finalize covenant round."));
     } finally {
@@ -1578,10 +1684,7 @@ export function App() {
   async function handleRefundTimedOutRound() {
     setChainError("");
     setChainMessage("");
-
-    if (isRefundingRoundRef.current) {
-      return;
-    }
+    if (isRefundingRoundRef.current) return;
 
     isRefundingRoundRef.current = true;
     setIsRefundingRound(true);
@@ -1589,268 +1692,144 @@ export function App() {
 
     try {
       assertRaffleCovenantReady();
-
-      if (!rpcConnectionRef.current) {
-        throw new Error("Connect to a Kaspa wRPC node first.");
-      }
-
-      if (finalized?.payoutTxId || metadata.covenant?.status === "Finalized") {
-        throw new Error("This round is already finalized.");
-      }
+      if (!rpcConnectionRef.current) throw new Error("Connect to a Kaspa wRPC node first.");
+      if (finalized?.payoutTxId || metadata.covenant?.status === "Finalized") throw new Error("This round is already finalized.");
 
       const covenant = metadata.covenant;
-
-      if (!covenant) {
-        throw new Error("Create or import a covenant round first.");
-      }
-
-      if (covenant.soldTickets <= 0) {
-        throw new Error("There are no tickets to refund.");
-      }
-
-      let refundTicket: TicketState | undefined;
-      let ownerProofHex: string | undefined;
-      let batchTickets: TicketState[] | undefined;
-      let rangeProofHex: string | undefined;
-      const refundCursor = covenant.refundCursor ?? 0;
-      const needsBatch = covenant.status === "Refunding" && covenant.soldTickets - refundCursor >= 8;
-      const needsSingleProof = covenant.status === "Refunding" && !needsBatch;
-      if (needsBatch) {
-        if (requiresRaffleIndexer(metadata.maxTickets)) {
-          const indexedRange = await loadIndexedTicketRange8(indexApiBase, metadata.roundId, refundCursor + 1);
-          if (indexedRange.rootHex !== covenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
-          batchTickets = indexedRange.ownerPubkeys.map((ownerPubkey, index) => ({
-            appId: "KASPA_RAFFLE_TICKET_V1",
-            roundId: metadata.roundId,
-            ticketId: refundCursor + index + 1,
-            ticketCount: 1,
-            owner: indexedRange.owners[index],
-            ownerPubkey,
-            paidAmount: BigInt(metadata.ticketPrice),
-            ticketTxId: ""
-          }));
-          rangeProofHex = indexedRange.proofHex;
-        } else {
-          const localRange = await buildLocalRangeWitness(refundCursor + 1);
-          batchTickets = localRange.tickets;
-          rangeProofHex = localRange.proofHex;
-        }
-      } else if (needsSingleProof) {
-        if (requiresRaffleIndexer(metadata.maxTickets)) {
-          const indexedTicket = await loadIndexedTicketProof(indexApiBase, metadata.roundId, refundCursor + 1);
-          if (indexedTicket.rootHex !== covenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
-          refundTicket = {
-            appId: "KASPA_RAFFLE_TICKET_V1",
-            roundId: metadata.roundId,
-            ticketId: indexedTicket.ticketId,
-            ticketCount: 1,
-            owner: indexedTicket.owner,
-            ownerPubkey: indexedTicket.ownerPubkey,
-            paidAmount: BigInt(metadata.ticketPrice),
-            ticketTxId: indexedTicket.transactionId || ""
-          };
-          ownerProofHex = indexedTicket.proofHex;
-        } else {
-          const localTicket = await buildLocalTicketWitness(refundCursor + 1);
-          refundTicket = localTicket.ticket;
-          ownerProofHex = localTicket.proofHex;
-        }
-      }
+      if (!covenant) throw new Error("Create or import a covenant round first.");
+      if (covenant.soldTickets <= 0) throw new Error("There are no tickets to refund.");
 
       const currentDaaScore = await currentVirtualDaaScore(rpcConnectionRef.current);
       assertToccataActive(networkId, currentDaaScore);
       const refundAfterDaaScore = BigInt(covenant.refundAfterDaaScore || "0");
-
       if (currentDaaScore < refundAfterDaaScore) {
         const remainingDaa = refundAfterDaaScore - currentDaaScore;
         const remainingSeconds = (remainingDaa + KASPA_DAA_PER_SECOND - 1n) / KASPA_DAA_PER_SECOND;
-
         throw new Error(
-          `Refund opens in about ${formatDurationSeconds(remainingSeconds, language)} at DAA ${refundAfterDaaScore.toString()}. Current DAA is ${currentDaaScore.toString()}.`
+          `Refund opens in about ${formatDurationSeconds(remainingSeconds, language)} at DAA ${refundAfterDaaScore}. Current DAA is ${currentDaaScore}.`
         );
       }
 
-      let result = await refundRaffleCovenantRound({
-        connection: rpcConnectionRef.current,
-        round: {
-          ...round,
-          soldTickets: covenant.soldTickets,
-          potAmount: BigInt(covenant.potAmount),
-          status: covenant.status,
-          ticketRoot: covenant.ticketRoot,
-          ticketFrontier: covenant.ticketFrontier,
-          refundCursor: covenant.refundCursor ?? 0,
-          creatorPubkey: covenant.creatorPubkey,
-          refundAfterDaaScore: covenant.refundAfterDaaScore,
-          soldBatches: covenant.soldBatches ?? covenant.ticketOwnerPubkeys.length,
-          ticketBatchEnds: covenant.ticketBatchEnds ?? covenant.ticketOwnerPubkeys.map((_, index) => index + 1),
-          ticketOwnerPubkeys: covenant.ticketOwnerPubkeys
-        },
-        covenant,
+      const hasCompleteLocalHistory = hasCompleteTicketBatchHistory(
         tickets,
-        ticket: refundTicket,
-        ownerProofHex,
-        batchTickets,
-        rangeProofHex,
-        payload: encodePayload({
-          app: "kaspa-raffle-static",
-          type: covenant.status !== "Refunding"
-            ? "round-refund-start"
-            : needsBatch
-              ? "round-refund-batch"
-              : "round-refund-ticket",
-          roundId: metadata.roundId,
-          refundCursor,
-          ticketCount: needsBatch ? 8 : undefined
-        })
+        covenant.soldTickets,
+        covenant.soldBatches ?? covenant.ticketOwnerPubkeys.length
+      );
+      const requiresIndexerProof = requiresRaffleIndexerProof(metadata.maxTickets, hasCompleteLocalHistory);
+      if (requiresIndexerProof) await requireReadyIndexer();
+
+      const roundFromCovenant = (active: NonNullable<RaffleMetadata["covenant"]>): RoundState => ({
+        ...round,
+        soldTickets: active.soldTickets,
+        potAmount: BigInt(active.potAmount),
+        status: active.status,
+        ticketRoot: active.ticketRoot,
+        ticketFrontier: active.ticketFrontier,
+        refundCursor: active.refundCursor ?? 0,
+        refundBatchCursor: active.refundBatchCursor ?? 0,
+        creatorPubkey: active.creatorPubkey,
+        refundAfterDaaScore: active.refundAfterDaaScore,
+        soldBatches: active.soldBatches ?? active.ticketOwnerPubkeys.length,
+        ticketBatchEnds: active.ticketBatchEnds ?? tickets.map(ticketRangeEnd),
+        ticketOwnerPubkeys: active.ticketOwnerPubkeys
       });
 
-      let activeCovenant = result.covenant;
-      if (activeCovenant) {
-        setRefundProgress({ cursor: activeCovenant.refundCursor ?? 0, total: activeCovenant.soldTickets });
+      let activeCovenant = covenant;
+      let lastTxId = "";
+      if (activeCovenant.status !== "Refunding") {
+        const transition = await refundRaffleCovenantRound({
+          connection: rpcConnectionRef.current,
+          round: roundFromCovenant(activeCovenant),
+          covenant: activeCovenant,
+          tickets,
+          payload: encodePayload({
+            app: "kaspa-raffle-static",
+            type: "round-refund-start",
+            roundId: metadata.roundId,
+            refundCursor: 0,
+            refundBatchCursor: 0
+          })
+        });
+        lastTxId = transition.txId;
+        if (!transition.covenant) throw new Error("Refund transition did not create its successor covenant.");
+        activeCovenant = transition.covenant;
         setMetadata((current) => ({ ...current, covenant: activeCovenant }));
-        setChainMessage(activeCovenant.refundCursor === refundCursor
-          ? `Batch refund contract started: ${result.txId}`
-          : `Refund cursor ${activeCovenant.refundCursor}/${activeCovenant.soldTickets}: ${result.txId}`);
-
-        // Let the refund successor UTXO propagate before attempting to spend it.
+        setChainMessage(`Batch refund contract started: ${transition.txId}`);
         await new Promise((resolve) => window.setTimeout(resolve, 750));
       }
 
       while (activeCovenant) {
-        const activeRefundCursor = activeCovenant.refundCursor ?? 0;
-        const remainingTickets = activeCovenant.soldTickets - activeRefundCursor;
-        let nextTicket: TicketState | undefined;
-        let nextOwnerProofHex: string | undefined;
-        let nextBatchTickets: TicketState[] | undefined;
-        let nextRangeProofHex: string | undefined;
+        const batchIndex = activeCovenant.refundBatchCursor ?? 0;
+        const nextTicketId = (activeCovenant.refundCursor ?? 0) + 1;
+        let ticket: TicketState;
+        let proofHex: string;
 
-        if (remainingTickets >= 8) {
-          if (requiresRaffleIndexer(metadata.maxTickets)) {
-            const indexedRange = await loadIndexedTicketRange8(indexApiBase, metadata.roundId, activeRefundCursor + 1);
-            if (indexedRange.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
-            nextBatchTickets = indexedRange.ownerPubkeys.map((ownerPubkey, index) => ({
-              appId: "KASPA_RAFFLE_TICKET_V1",
-              roundId: metadata.roundId,
-              ticketId: activeRefundCursor + index + 1,
-              ticketCount: 1,
-              owner: indexedRange.owners[index],
-              ownerPubkey,
-              paidAmount: BigInt(metadata.ticketPrice),
-              ticketTxId: ""
-            }));
-            nextRangeProofHex = indexedRange.proofHex;
-          } else {
-            const localRange = await buildLocalRangeWitness(activeRefundCursor + 1);
-            nextBatchTickets = localRange.tickets;
-            nextRangeProofHex = localRange.proofHex;
-          }
+        if (requiresIndexerProof) {
+          const indexed = await loadIndexedBatchProof(indexApiBase, metadata.roundId, batchIndex).catch((error) => {
+            throw new Error(t("indexerRequiredError", { detail: errorMessage(error, "Unable to load the refund proof.") }));
+          });
+          if (indexed.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
+          if (indexed.firstTicketId !== nextTicketId) throw new Error("Raffle index refund batch is not the next on-chain batch.");
+          ticket = {
+            appId: "KASPA_RAFFLE_TICKET_V1",
+            roundId: metadata.roundId,
+            ticketId: indexed.firstTicketId,
+            ticketCount: indexed.ticketCount,
+            owner: indexed.owner,
+            ownerPubkey: indexed.ownerPubkey,
+            paidAmount: BigInt(metadata.ticketPrice),
+            ticketTxId: indexed.transactionId || ""
+          };
+          proofHex = indexed.proofHex;
         } else {
-          if (requiresRaffleIndexer(metadata.maxTickets)) {
-            const indexedTicket = await loadIndexedTicketProof(indexApiBase, metadata.roundId, activeRefundCursor + 1);
-            if (indexedTicket.rootHex !== activeCovenant.ticketRoot) throw new Error("Raffle index is behind the current covenant root.");
-            nextTicket = {
-              appId: "KASPA_RAFFLE_TICKET_V1",
-              roundId: metadata.roundId,
-              ticketId: indexedTicket.ticketId,
-              ticketCount: 1,
-              owner: indexedTicket.owner,
-              ownerPubkey: indexedTicket.ownerPubkey,
-              paidAmount: BigInt(metadata.ticketPrice),
-              ticketTxId: indexedTicket.transactionId || ""
-            };
-            nextOwnerProofHex = indexedTicket.proofHex;
-          } else {
-            const localTicket = await buildLocalTicketWitness(activeRefundCursor + 1);
-            nextTicket = localTicket.ticket;
-            nextOwnerProofHex = localTicket.proofHex;
-          }
+          const local = await buildLocalBatchWitness(nextTicketId);
+          if (local.batchIndex !== batchIndex) throw new Error("Local refund batch cursor does not match the covenant.");
+          ticket = local.ticket;
+          proofHex = local.proofHex;
         }
 
+        const ticketCount = ticketRangeCount(ticket);
         const step = await refundRaffleCovenantRound({
           connection: rpcConnectionRef.current,
-          round: {
-            ...round,
-            soldTickets: activeCovenant.soldTickets,
-            potAmount: BigInt(activeCovenant.potAmount),
-            status: activeCovenant.status,
-            ticketRoot: activeCovenant.ticketRoot,
-            ticketFrontier: activeCovenant.ticketFrontier,
-            refundCursor: activeRefundCursor,
-            creatorPubkey: activeCovenant.creatorPubkey,
-            refundAfterDaaScore: activeCovenant.refundAfterDaaScore,
-            soldBatches: 0,
-            ticketBatchEnds: [],
-            ticketOwnerPubkeys: []
-          },
+          round: roundFromCovenant(activeCovenant),
           covenant: activeCovenant,
           tickets,
-          ticket: nextTicket,
-          ownerProofHex: nextOwnerProofHex,
-          batchTickets: nextBatchTickets,
-          rangeProofHex: nextRangeProofHex,
+          ticket,
+          batchIndex,
+          ownerProofHex: proofHex,
           payload: encodePayload({
             app: "kaspa-raffle-static",
-            type: remainingTickets >= 8 ? "round-refund-batch" : "round-refund-ticket",
+            type: "round-refund-batch",
             roundId: metadata.roundId,
-            refundCursor: activeRefundCursor,
-            ticketCount: remainingTickets >= 8 ? 8 : 1
+            refundCursor: activeCovenant.refundCursor ?? 0,
+            refundBatchCursor: batchIndex,
+            ticketCount
           })
         });
-
-        if (step.covenant && (step.covenant.refundCursor ?? 0) <= activeRefundCursor) {
-          throw new Error("Refund cursor did not advance after a successful transaction.");
-        }
-        result = step;
-        activeCovenant = step.covenant;
-        setRefundProgress(activeCovenant
-          ? { cursor: activeCovenant.refundCursor ?? 0, total: activeCovenant.soldTickets }
-          : { cursor: covenant.soldTickets, total: covenant.soldTickets });
+        lastTxId = step.txId;
+        activeCovenant = step.covenant!;
+        const cursor = activeCovenant?.refundCursor ?? covenant.soldTickets;
+        setRefundProgress({ cursor, total: covenant.soldTickets });
         setMetadata((current) => ({
           ...current,
           covenant: activeCovenant ?? (current.covenant
-            ? {
-                ...current.covenant,
-                txId: step.txId,
-                status: "Refunded",
-                refundCursor: current.covenant.soldTickets,
-                potAmount: "0"
-              }
+            ? { ...current.covenant, txId: step.txId, status: "Refunded", refundCursor: covenant.soldTickets, refundBatchCursor: covenant.soldBatches, potAmount: "0" }
             : current.covenant)
         }));
         setChainMessage(activeCovenant
-          ? `Refund cursor ${activeCovenant.refundCursor}/${activeCovenant.soldTickets}: ${step.txId}`
+          ? `Refunded ${ticketCount.toLocaleString()} tickets; cursor ${cursor}/${covenant.soldTickets}: ${step.txId}`
           : `Timed-out round refunded: ${step.txId}`);
+        if (activeCovenant) await new Promise((resolve) => window.setTimeout(resolve, 750));
       }
 
-      setMetadata((current) => ({
-        ...current,
-        covenant: result.covenant ?? (current.covenant
-          ? {
-              ...current.covenant,
-              txId: result.txId,
-              status: "Refunded",
-              refundCursor: current.covenant.soldTickets,
-              potAmount: "0"
-            }
-          : current.covenant)
-      }));
       setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
-        ? result.covenant
-          ? { ...historyRound, latestCovenant: result.covenant }
-          : { ...historyRound, latestCovenant: undefined, refundTxId: result.txId }
+        ? { ...historyRound, latestCovenant: undefined, refundTxId: lastTxId }
         : historyRound));
-      setChainMessage(result.covenant
-        ? result.covenant.refundCursor === refundCursor
-          ? `Batch refund contract started: ${result.txId}`
-          : `Tickets #${refundCursor + 1}-${result.covenant.refundCursor} refunded: ${result.txId}`
-        : `Timed-out round refunded: ${result.txId}`);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to refund timed-out round."));
     } finally {
       isRefundingRoundRef.current = false;
       setIsRefundingRound(false);
-      setRefundProgress(null);
     }
   }
 
@@ -1860,30 +1839,54 @@ export function App() {
     setIsLoadingHistory(true);
 
     try {
-      const targetAddress = (historyAddress || registryAddress || metadata.treasuryAddress || "").trim();
-
-      if (!targetAddress) {
+      const targetAddress = (
+        historyAddress || registryAddress || metadata.registryAddress || metadata.treasuryAddress || ""
+      ).trim();
+      const byRoundId = new Map<string, RaffleHistoryRound>();
+      const cachedRounds = loadCachedRaffleHistory(networkId);
+      for (const cachedRound of cachedRounds) {
+        byRoundId.set(cachedRound.roundId, cachedRound);
+      }
+      const registryAddresses = new Set<string>();
+      if (targetAddress) registryAddresses.add(targetAddress);
+      for (const cachedRound of cachedRounds) {
+        if (cachedRound.registryAddress) registryAddresses.add(cachedRound.registryAddress);
+      }
+      if (!registryAddresses.size && !byRoundId.size) {
         throw new Error("Set a registry address to load history.");
       }
 
-      const byRoundId = new Map<string, RaffleHistoryRound>();
-      for (const cachedRound of loadCachedRaffleHistory(networkId)) {
-        byRoundId.set(cachedRound.roundId, cachedRound);
-      }
-      const restResult = await Promise.allSettled([loadRaffleHistory(historyApiBase, targetAddress)]).then(([result]) => result);
-      if (restResult.status === "fulfilled") {
+      const restResults = await Promise.allSettled(
+        [...registryAddresses].map((address) => loadRaffleHistory(historyApiBase, address))
+      );
+      for (const restResult of restResults) {
+        if (restResult.status !== "fulfilled") continue;
+
         for (const historyRound of restResult.value) {
           const cachedRound = byRoundId.get(historyRound.roundId);
+          const incomingHasFinalState = Boolean(historyRound.refundTxId || historyRound.payouts.length);
+          const cachedHasFinalState = Boolean(cachedRound?.refundTxId || cachedRound?.payouts.length);
+          const incomingHasLiveState = Boolean(historyRound.latestCovenant);
           byRoundId.set(historyRound.roundId, cachedRound ? {
             ...cachedRound,
             ...historyRound,
+            latestCovenant: incomingHasFinalState || cachedHasFinalState
+              ? undefined
+              : historyRound.latestCovenant ?? cachedRound.latestCovenant,
             tickets: historyRound.tickets.length ? historyRound.tickets : cachedRound.tickets,
-            payouts: historyRound.payouts.length ? historyRound.payouts : cachedRound.payouts
+            payouts: historyRound.payouts.length ? historyRound.payouts : cachedRound.payouts,
+            soldTickets: incomingHasLiveState || incomingHasFinalState
+              ? historyRound.soldTickets
+              : cachedRound.soldTickets ?? historyRound.soldTickets,
+            potAmount: incomingHasLiveState || incomingHasFinalState
+              ? historyRound.potAmount
+              : cachedRound.potAmount,
+            chainSearchHintHash: historyRound.chainSearchHintHash ?? cachedRound.chainSearchHintHash
           } : historyRound);
         }
       }
-      const historyPartition = partitionRaffleRoundsByIndexer(byRoundId.values());
-      const needsIndexer = historyPartition.indexed.length > 0;
+      const roundsNeedingIndexer = [...byRoundId.values()].filter(historyRoundNeedsIndexer);
+      const needsIndexer = roundsNeedingIndexer.length > 0;
       const indexResult = needsIndexer
         ? await Promise.allSettled([loadIndexedRaffleHistory(indexApiBase)]).then(([result]) => result)
         : undefined;
@@ -1899,14 +1902,11 @@ export function App() {
           } : indexedRound);
         }
       }
-      if (!byRoundId.size && restResult.status === "rejected") throw restResult.reason;
-      let skippedLargeRounds = 0;
+      const firstRestFailure = restResults.find((result) => result.status === "rejected");
+      if (!byRoundId.size && firstRestFailure?.status === "rejected") throw firstRestFailure.reason;
+      let unindexedLargeRounds = 0;
       if (needsIndexer && indexResult?.status === "rejected") {
-        if (!historyPartition.direct.length) {
-          throw new Error(`Large rounds require the configured raffle index: ${errorMessage(indexResult.reason, "index unavailable")}`);
-        }
-        for (const historyRound of historyPartition.indexed) byRoundId.delete(historyRound.roundId);
-        skippedLargeRounds = historyPartition.indexed.length;
+        unindexedLargeRounds = roundsNeedingIndexer.length;
       }
       const rounds = [...byRoundId.values()].sort((left, right) => {
         const leftDaa = BigInt(left.createdAtDaaScore || "0");
@@ -1914,15 +1914,23 @@ export function App() {
         return leftDaa === rightDaa ? 0 : leftDaa > rightDaa ? -1 : 1;
       });
 
-      setHistoryAddress(targetAddress);
+      for (const historyRound of rounds) {
+        if (historyRound.localCachedAt) {
+          updateCachedParticipatedRoundFromHistory(networkId, historyRound);
+        }
+      }
+
+      if (targetAddress) setHistoryAddress(targetAddress);
       setHistoryRounds(rounds);
       setSelectedHistoryRoundId(rounds[0]?.roundId ?? "");
       setHistoryMessage(
         `Loaded ${rounds.length} raffle round${rounds.length === 1 ? "" : "s"}. ` +
-        (indexResult?.status === "fulfilled"
+        (!registryAddresses.size
+          ? "These participated rounds came from browser storage."
+          : indexResult?.status === "fulfilled"
           ? "Large-round proofs came from the configured index."
-          : skippedLargeRounds
-            ? `No raffle index was needed for these rounds; skipped ${skippedLargeRounds} unavailable large round${skippedLargeRounds === 1 ? "" : "s"}.`
+          : unindexedLargeRounds
+            ? `Showing ${unindexedLargeRounds} large round${unindexedLargeRounds === 1 ? "" : "s"} from the registry without index proofs.`
             : "No raffle index was needed.")
       );
     } catch (error) {
@@ -1977,6 +1985,49 @@ export function App() {
       return;
     }
 
+    const cachedRound = loadCachedRound(networkId, selectedHistoryRound.roundId);
+    if (cachedRound) {
+      const loadedProfile = requireNetworkProfile(normalizeNetworkId(cachedRound.metadata.network));
+      const loadedNetwork = loadedProfile.id;
+      const hasFinalChainState = Boolean(selectedHistoryRound.refundTxId || selectedHistoryRound.payouts.length);
+      const restoredCovenant = hasFinalChainState
+        ? undefined
+        : selectedHistoryRound.latestCovenant ?? cachedRound.metadata.covenant;
+      const restoredTickets = selectedHistoryRound.tickets.length
+        ? selectedHistoryRound.tickets.map((ticket) => ({
+            appId: "KASPA_RAFFLE_TICKET_V1" as const,
+            roundId: selectedHistoryRound.roundId,
+            ticketId: ticket.ticketId,
+            ticketCount: ticket.ticketCount,
+            owner: ticket.buyer,
+            ownerPubkey: ticket.buyerPubkey,
+            paidAmount: ticket.paidAmount,
+            ticketTxId: ticket.txId
+          }))
+        : cachedRound.tickets;
+      const restoredMetadata = {
+        ...cachedRound.metadata,
+        covenant: restoredCovenant,
+        treasuryAddress: restoredCovenant?.address ?? cachedRound.metadata.treasuryAddress,
+        registryAddress: selectedHistoryRound.registryAddress ?? cachedRound.metadata.registryAddress
+      };
+
+      setNetworkId(loadedNetwork);
+      setRpcUrl(networkEndpoints[loadedNetwork]);
+      setHistoryApiBase(loadedProfile.historyApiBase);
+      setIndexApiBase(indexEndpoints[loadedNetwork]);
+      setCreateRegistryAddress(restoredMetadata.registryAddress ?? "");
+      setHistoryAddress(restoredMetadata.registryAddress ?? "");
+      setRefundTimeoutParts(refundTimeoutPartsFromSeconds(refundTimeoutSecondsFromMetadata(restoredMetadata)));
+      setMetadata(restoredMetadata);
+      setTickets(restoredTickets);
+      setFinalized(cachedRound.finalized);
+      setRoundActionTab(restoredCovenant?.status === "Open" ? "buy" : "payout");
+      setMetadataMessage("Round restored from browser storage.");
+      setHistoryMessage(`Restored ${selectedHistoryRound.roundId} from this browser.`);
+      return;
+    }
+
     const covenant = selectedHistoryRound.latestCovenant;
 
     if (!covenant || (covenant.status !== "Open" && covenant.status !== "Closed" && covenant.status !== "Refunding")) {
@@ -2009,6 +2060,9 @@ export function App() {
     }
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound, loadedNetwork);
     const loadedRegistryAddress = selectedHistoryRound.registryAddress ?? (historyAddress || registryAddress);
+    const startBlockHash = selectedHistoryRound.createTxId
+      ? await loadTransactionChainAnchor(loadedProfile.historyApiBase, selectedHistoryRound.createTxId).catch(() => undefined)
+      : undefined;
 
     setNetworkId(loadedNetwork);
     setRpcUrl(networkEndpoints[loadedNetwork]);
@@ -2022,6 +2076,7 @@ export function App() {
       network: loadedNetwork,
       roundId: selectedHistoryRound.roundId,
       createTxId: selectedHistoryRound.createTxId ?? "",
+      startBlockHash,
       createdAtDaaScore: selectedHistoryRound.createdAtDaaScore,
       refundTimeoutSeconds: loadedRefundTimeoutSeconds.toString(),
       refundTimeoutDaa: selectedHistoryRound.refundTimeoutDaa,
@@ -2066,6 +2121,48 @@ export function App() {
       ...current,
       [key]: normalizeDurationInput(value)
     }));
+  }
+
+  function renderIndexerRequirement(input: {
+    maxTickets: number;
+    soldTickets: number;
+    soldBatches: number;
+    knownTickets: number;
+    knownBatches: number;
+  }) {
+    return (
+      <div className="indexer-requirement" role="alert">
+        <AlertTriangle size={20} aria-hidden="true" />
+        <div className="indexer-requirement-content">
+          <strong>{t("indexerRequiredTitle")}</strong>
+          <p>{t("indexerRequiredDetail", {
+            max: input.maxTickets.toLocaleString(),
+            sold: input.soldTickets.toLocaleString(),
+            known: input.knownTickets.toLocaleString(),
+            batches: input.knownBatches.toLocaleString(),
+            totalBatches: input.soldBatches.toLocaleString()
+          })}</p>
+          <div className="indexer-config-row">
+            <label className="field">
+              <span>{t("raffleIndexApi")}</span>
+              <input
+                type="url"
+                value={indexApiBase}
+                onChange={(event) => handleIndexApiInput(event.target.value)}
+                placeholder={DEFAULT_RAFFLE_INDEX_API}
+              />
+            </label>
+            <button type="button" className="secondary" onClick={handleCheckIndexer} disabled={isCheckingIndexer}>
+              <ShieldCheck size={17} />
+              {isCheckingIndexer ? t("checkingIndexer") : t("checkIndexer")}
+            </button>
+          </div>
+          {indexerCheckMessage ? (
+            <p className={`indexer-check-message ${indexerCheckState}`}>{indexerCheckMessage}</p>
+          ) : null}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -2449,6 +2546,7 @@ export function App() {
               {historyRounds.length
                 ? t("historySummary", {
                     rounds: historyRounds.length.toLocaleString(),
+                    local: historyRounds.filter((historyRound) => historyRound.localCachedAt).length.toLocaleString(),
                     paid: historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Paid").length.toLocaleString(),
                     refunded: historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Refunded").length.toLocaleString()
                   })
@@ -2476,7 +2574,7 @@ export function App() {
               >
                 {historyRounds.map((historyRound) => (
                   <option key={historyRound.roundId} value={historyRound.roundId}>
-                    {historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t((historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)) === 1 ? "ticketCount.one" : "ticketCount", { count: (historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)).toLocaleString() })}
+                    {historyRound.localCachedAt ? `${t("savedLocally")} - ` : ""}{historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t((historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)) === 1 ? "ticketCount.one" : "ticketCount", { count: (historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)).toLocaleString() })}{historyRoundNeedsIndexer(historyRound) ? ` - ${t("indexerRequiredShort")}` : ""}
                   </option>
                 ))}
               </select>
@@ -2494,12 +2592,23 @@ export function App() {
                   </div>
                 </div>
 
-                {selectedHistoryRound.latestCovenant ? (
+                {selectedHistoryRoundRequiresIndexer ? renderIndexerRequirement({
+                  maxTickets: selectedHistoryRound.maxTickets ?? 0,
+                  soldTickets: selectedHistoryRound.soldTickets ?? totalTicketCount(selectedHistoryRound.tickets),
+                  soldBatches: selectedHistoryRound.latestCovenant?.soldBatches ?? selectedHistoryRound.tickets.length,
+                  knownTickets: totalTicketCount(selectedHistoryRound.tickets),
+                  knownBatches: selectedHistoryRound.tickets.length
+                }) : null}
+
+                {selectedHistoryRound.latestCovenant || selectedHistoryRound.localCachedAt ? (
                   <button
                     type="button"
                     className="secondary"
                     onClick={handleJoinSelectedHistoryRound}
-                    disabled={selectedHistoryRound.latestCovenant.status === "Refunded"}
+                    disabled={Boolean(
+                      selectedHistoryRound.latestCovenant?.status === "Refunded" &&
+                      !selectedHistoryRound.localCachedAt
+                    )}
                   >
                     {t("loadThisRound")}
                   </button>
@@ -2549,6 +2658,7 @@ export function App() {
             <label className="field">
               <span>{t("raffleIndexApi")}</span>
               <input value={indexApiBase} onChange={(event) => handleIndexApiInput(event.target.value)} />
+              <small>{t("indexerWhenNeeded")}</small>
             </label>
             <label className="field">
               <span>{t("registryAddress")}</span>
@@ -2606,11 +2716,11 @@ export function App() {
                     <button
                       type="button"
                       className={parsedTicketQuantity === quantity ? "active" : ""}
-                      disabled={remainingTickets < quantity || round.soldTickets % quantity !== 0}
+                      disabled={remainingTickets < quantity}
                       key={quantity}
                       onClick={() => setTicketQuantity(String(quantity))}
                     >
-                      {quantity}
+                      {quantity.toLocaleString()}
                     </button>
                   ))}
                   </div>
@@ -2658,6 +2768,13 @@ export function App() {
             </div>
           ) : (
             <>
+              {activeRoundNeedsIndexer && metadata.covenant ? renderIndexerRequirement({
+                maxTickets: metadata.maxTickets,
+                soldTickets: metadata.covenant.soldTickets,
+                soldBatches: activeSoldBatches,
+                knownTickets: totalTicketCount(tickets),
+                knownBatches: tickets.length
+              }) : null}
               <p className="pane-copy">
                 {round.soldTickets >= round.maxTickets
                   ? t("soldOutCanDraw")

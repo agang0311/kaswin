@@ -26,6 +26,13 @@ try {
   const merkle = await vite.ssrLoadModule("/src/raffle/merkle.ts");
   const metadata = await vite.ssrLoadModule("/src/raffle/metadata.ts");
   const networks = await vite.ssrLoadModule("/src/kaspa/networks.ts");
+  const transactions = await vite.ssrLoadModule("/src/kaspa/transactions.ts");
+
+  assert(
+    transactions.requiredFeeFromNodeRejection(new Error("transaction has 2604600 fees which is under the required amount of 3374300 for compute mass 33743")) === 3_374_300n,
+    "node compute-mass rejection exposes the exact retry fee"
+  );
+  assert(transactions.requiredFeeFromNodeRejection(new Error("unrelated rejection")) === undefined, "unrelated node failures are not retried as fee errors");
 
   let rejectedBeforeActivation = false;
   try {

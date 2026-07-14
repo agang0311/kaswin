@@ -1,0 +1,188 @@
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa-wasm/kaspa.js";
+
+const root = process.cwd();
+const refundSource = path.join(root, "src/contracts/raffle_refund_v2.sil");
+const roundSource = path.join(root, "src/contracts/raffle_round_v11.sil");
+const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v2.artifact.json"), "utf8"));
+const debuggerDir = path.join(root, ".tools/silverscript/target/debug");
+const debuggerPath = path.join(debuggerDir, process.platform === "win32" ? "cli-debugger.exe" : "cli-debugger");
+
+initSync({ module: fs.readFileSync(path.join(root, "node_modules/@onekeyfe/kaspa-wasm/kaspa_bg.wasm.bin")) });
+
+const owner = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+const covenantId = `0x${"11".repeat(32)}`;
+const ticketPrice = 30_000_000;
+const carrier = 57_000_000;
+const transitionFee = 2_400_000;
+const refundFee = 4_000_000;
+const batches = [
+  { first: 0, count: 100_000 },
+  { first: 100_000, count: 10 }
+];
+const soldTickets = batches.reduce((sum, batch) => sum + batch.count, 0);
+
+function hash(bytes) { return createHash("sha256").update(bytes).digest(); }
+function pair(left, right) { return hash(Buffer.concat([left, right])); }
+function u64(value) { const bytes = Buffer.alloc(8); bytes.writeBigUInt64LE(BigInt(value)); return bytes; }
+function leaf(batch) { return hash(Buffer.concat([Buffer.from(owner, "hex"), u64(batch.first), u64(batch.count)])); }
+
+const emptyNodes = [Buffer.alloc(32)];
+for (let level = 1; level <= 20; level += 1) emptyNodes.push(pair(emptyNodes[level - 1], emptyNodes[level - 1]));
+
+function buildTree(records) {
+  let nodes = records.map(leaf);
+  const levels = [nodes];
+  for (let level = 0; level < 20; level += 1) {
+    const parents = [];
+    for (let index = 0; index < nodes.length; index += 2) parents.push(pair(nodes[index], nodes[index + 1] ?? emptyNodes[level]));
+    nodes = parents;
+    levels.push(nodes);
+  }
+  return { root: nodes[0], levels };
+}
+
+function proof(tree, batchIndex) {
+  let pathIndex = batchIndex;
+  const siblings = [];
+  for (let level = 0; level < 20; level += 1) {
+    siblings.push(tree.levels[level][pathIndex ^ 1] ?? emptyNodes[level]);
+    pathIndex >>= 1;
+  }
+  return Buffer.concat(siblings);
+}
+
+function refundState(refundCursor, refundBatchCursor, rootHash) {
+  return {
+    ticket_price: ticketPrice,
+    creator_pubkey: `0x${owner}`,
+    sold_tickets: soldTickets,
+    sold_batches: batches.length,
+    ticket_root: `0x${rootHash.toString("hex")}`,
+    refund_cursor: refundCursor,
+    refund_batch_cursor: refundBatchCursor
+  };
+}
+
+function roundState(rootHash) {
+  return {
+    max_tickets: soldTickets,
+    ticket_price: ticketPrice,
+    creator_pubkey: `0x${owner}`,
+    refund_after_daa: 1_000,
+    sold_tickets: soldTickets,
+    sold_batches: batches.length,
+    ticket_root: `0x${rootHash.toString("hex")}`,
+    frontier: `0x${"00".repeat(640)}`,
+    refund_cursor: 0,
+    refund_batch_cursor: 0
+  };
+}
+
+function scriptI64(value) {
+  const bytes = u64(value);
+  return Buffer.concat([Buffer.from([8]), bytes]);
+}
+
+function pushData(bytes) {
+  if (bytes.length <= 75) return Buffer.from([bytes.length, ...bytes]);
+  if (bytes.length <= 0xff) return Buffer.from([0x4c, bytes.length, ...bytes]);
+  return Buffer.from([0x4d, bytes.length & 0xff, bytes.length >> 8, ...bytes]);
+}
+
+function materializeRefund(state) {
+  const values = {
+    ticket_price: scriptI64(state.ticket_price),
+    creator_pubkey: pushData(Buffer.from(state.creator_pubkey.slice(2), "hex")),
+    sold_tickets: scriptI64(state.sold_tickets),
+    sold_batches: scriptI64(state.sold_batches),
+    ticket_root: pushData(Buffer.from(state.ticket_root.slice(2), "hex")),
+    refund_cursor: scriptI64(state.refund_cursor),
+    refund_batch_cursor: scriptI64(state.refund_batch_cursor)
+  };
+  const serialized = Buffer.concat(refundArtifact.stateFields.map((field) => values[field.name]));
+  if (serialized.length !== refundArtifact.stateLayout.len) throw new Error("Refund state layout mismatch.");
+  const script = Buffer.from(refundArtifact.script, "hex");
+  serialized.copy(script, refundArtifact.stateLayout.start);
+  return script;
+}
+
+function ownerOutput(value) { return { value, p2pk_pubkey: `0x${owner}` }; }
+const tree = buildTree(batches);
+const initial = refundState(0, 0, tree.root);
+const afterLarge = refundState(100_000, 1, tree.root);
+const carrierAfterTransition = carrier - transitionFee;
+const totalValue = carrierAfterTransition + ticketPrice * soldTickets;
+const largeValue = ticketPrice * 100_000;
+const finalValue = ticketPrice * 10;
+
+const refundTests = { tests: [
+  {
+    name: "refund_100000_ticket_purchase_in_one_transaction",
+    function: "refundNext",
+    args: [refundFee, `0x${owner}`, 0, 100_000, `0x${proof(tree, 0).toString("hex")}`],
+    expect: "pass",
+    tx: {
+      active_input_index: 0,
+      inputs: [{ utxo_value: totalValue, covenant_id: covenantId, state: initial }],
+      outputs: [
+        { value: totalValue - largeValue, covenant_id: covenantId, authorizing_input: 0, state: afterLarge },
+        ownerOutput(largeValue - refundFee)
+      ]
+    }
+  },
+  {
+    name: "loaded_refund_cursor_finishes_10_ticket_purchase",
+    function: "refundNext",
+    args: [refundFee, `0x${owner}`, 100_000, 10, `0x${proof(tree, 1).toString("hex")}`],
+    expect: "pass",
+    tx: {
+      active_input_index: 0,
+      inputs: [{ utxo_value: carrierAfterTransition + finalValue, covenant_id: covenantId, state: afterLarge }],
+      outputs: [ownerOutput(finalValue - refundFee), ownerOutput(carrierAfterTransition)]
+    }
+  },
+  {
+    name: "wrong_batch_proof_is_rejected",
+    function: "refundNext",
+    args: [refundFee, `0x${owner}`, 0, 100_000, `0x${Buffer.alloc(640, 0x55).toString("hex")}`],
+    expect: "fail",
+    tx: { active_input_index: 0, inputs: [{ utxo_value: totalValue, covenant_id: covenantId, state: initial }], outputs: [] }
+  }
+] };
+
+const refundPrefix = Buffer.from(refundArtifact.script, "hex").subarray(0, refundArtifact.stateLayout.start);
+const refundSuffix = Buffer.from(refundArtifact.script, "hex").subarray(refundArtifact.stateLayout.start + refundArtifact.stateLayout.len);
+const refundOutputScript = payToScriptHashScript(materializeRefund(initial)).toJSON().script;
+const transitionTests = { tests: [{
+  name: "timed_out_round_enters_batch_refund_contract",
+  function: "startRefund",
+  args: [`0x${refundPrefix.toString("hex")}`, `0x${refundSuffix.toString("hex")}`],
+  expect: "pass",
+  tx: {
+    version: 1,
+    lock_time: 1_000,
+    active_input_index: 0,
+    inputs: [{ utxo_value: carrier + ticketPrice * soldTickets, covenant_id: covenantId, state: roundState(tree.root) }],
+    outputs: [{ value: totalValue, covenant_id: covenantId, authorizing_input: 0, script_hex: refundOutputScript }]
+  }
+}] };
+
+function run(source, name, tests) {
+  const testPath = path.join(root, `.tmp/${name}.test.json`);
+  fs.mkdirSync(path.dirname(testPath), { recursive: true });
+  fs.writeFileSync(testPath, `${JSON.stringify(tests, null, 2)}\n`);
+  const result = spawnSync(debuggerPath, [source, "--run-all", "--test-file", testPath], { cwd: root, encoding: "utf8" });
+  process.stdout.write(result.stdout ?? "");
+  process.stderr.write(result.stderr ?? "");
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+if (!fs.existsSync(debuggerPath)) throw new Error("Build the SilverScript cli-debugger before running refund VM tests.");
+run(refundSource, "raffle_refund_v2", refundTests);
+run(roundSource, "raffle_round_v11_transition", transitionTests);
+console.log("Decimal purchase batches refund through one output per purchase.");

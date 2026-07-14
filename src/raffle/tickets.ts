@@ -18,3 +18,18 @@ export function totalTicketCount(tickets: TicketRange[]): number {
 export function findTicketRange<T extends TicketRange>(tickets: T[], ticketId: number): T | undefined {
   return tickets.find((ticket) => ticketId >= ticket.ticketId && ticketId <= ticketRangeEnd(ticket));
 }
+
+export function hasCompleteTicketBatchHistory(
+  tickets: TicketRange[],
+  soldTickets: number,
+  soldBatches: number
+): boolean {
+  if (soldTickets < 0 || soldBatches < 0 || tickets.length !== soldBatches) return false;
+  const ordered = [...tickets].sort((left, right) => left.ticketId - right.ticketId);
+  let nextTicketId = 1;
+  for (const ticket of ordered) {
+    if (ticket.ticketId !== nextTicketId) return false;
+    nextTicketId = ticketRangeEnd(ticket) + 1;
+  }
+  return nextTicketId - 1 === soldTickets;
+}

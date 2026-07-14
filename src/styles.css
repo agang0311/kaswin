@@ -244,6 +244,49 @@ h3 {
   color: #70271f;
 }
 
+.indexer-requirement {
+  align-items: start;
+  background: #fff3d7;
+  border-left: 4px solid #d79b2d;
+  color: #513c16;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  margin: 12px 0 16px;
+  padding: 12px 13px;
+}
+
+.indexer-requirement-content {
+  display: grid;
+  gap: 8px;
+}
+
+.indexer-requirement-content > p,
+.indexer-check-message {
+  margin: 0;
+}
+
+.indexer-config-row {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.indexer-config-row button {
+  min-height: 42px;
+}
+
+.indexer-check-message.ready {
+  color: #176232;
+  font-weight: 750;
+}
+
+.indexer-check-message.error {
+  color: #a13d2d;
+  font-weight: 750;
+}
+
 .setup-strip {
   background: #fff;
   border: 1px solid #d9ddd8;
@@ -1178,6 +1221,10 @@ dd {
   .purchase-summary,
   .duration-grid,
   .registry-cost-details {
+    grid-template-columns: 1fr;
+  }
+
+  .indexer-config-row {
     grid-template-columns: 1fr;
   }
 

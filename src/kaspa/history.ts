@@ -4,9 +4,9 @@ import {
   isCurrentRaffleContractVersion,
   raffleCovenantStateFromRound
 } from "./covenant";
-import { appendTicketLeaves, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
+import { appendTicketBatch, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
-import { ticketRangeCount, totalTicketCount } from "../raffle/tickets";
+import { ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import { loadIndexedRaffleRounds, requiresRaffleIndexer } from "./indexer";
 
 export interface RaffleHistoryTicket {
@@ -29,6 +29,7 @@ export interface RaffleHistoryPayout {
 
 export interface RaffleHistoryRound {
   roundId: string;
+  localCachedAt?: number;
   registryTxId?: string;
   registryAddress?: string;
   createTxId?: string;
@@ -49,6 +50,7 @@ export interface RaffleHistoryRound {
   version?: string;
   contractVersion?: string;
   refundCursor?: number;
+  refundBatchCursor?: number;
   tickets: RaffleHistoryTicket[];
   payouts: RaffleHistoryPayout[];
   potAmount: bigint;
@@ -58,10 +60,97 @@ export interface RaffleHistoryRound {
 
 interface RestTransaction {
   transaction_id?: string;
+  block_hash?: string[];
+  accepting_block_hash?: string;
   payload?: string;
   block_time?: number;
   accepting_block_time?: number;
   outputs?: RestTransactionOutput[];
+}
+
+export async function loadTransactionChainAnchor(apiBaseUrl: string, transactionId: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/i.test(transactionId)) throw new Error("A valid transaction id is required to recover its chain anchor.");
+  const apiBase = apiBaseUrl.replace(/\/+$/, "");
+  const response = await fetch(`${apiBase}/transactions/${transactionId}`);
+  if (!response.ok) throw new Error(`History API returned ${response.status} while recovering the round anchor.`);
+  const transaction = await response.json() as RestTransaction;
+  const anchor = transaction.accepting_block_hash ?? transaction.block_hash?.[0];
+  if (!anchor || !/^[0-9a-f]{64}$/i.test(anchor)) {
+    throw new Error("The round creation transaction has no accepted chain block yet.");
+  }
+  return anchor.toLowerCase();
+}
+
+interface RestBlockHint {
+  header?: { blueScore?: string; daaScore?: string };
+  verboseData?: { hash?: string; isChainBlock?: boolean };
+}
+
+async function loadBlocksByBlueScore(apiBaseUrl: string, query: string): Promise<RestBlockHint[]> {
+  const apiBase = apiBaseUrl.replace(/\/+$/, "");
+  const response = await fetch(`${apiBase}/blocks-from-bluescore?${query}&includeTransactions=false`);
+  if (!response.ok) throw new Error(`History API returned ${response.status} while locating the random block.`);
+  const blocks = await response.json() as RestBlockHint[];
+  return Array.isArray(blocks) ? blocks : [];
+}
+
+function blockHintHashes(blocks: RestBlockHint[]): string[] {
+  return blocks
+    .map((block) => block.verboseData?.hash?.toLowerCase())
+    .filter((hash): hash is string => Boolean(hash && /^[0-9a-f]{64}$/.test(hash)))
+    .slice(0, 32);
+}
+
+export async function loadBlockHashesNearDaa(
+  apiBaseUrl: string,
+  estimatedBlueScore: bigint,
+  targetDaa: bigint
+): Promise<string[]> {
+  if (estimatedBlueScore < 0n || targetDaa < 0n) return [];
+  let probe = estimatedBlueScore;
+
+  for (let correction = 0; correction < 4; correction += 1) {
+    const blocks = await loadBlocksByBlueScore(apiBaseUrl, `blueScoreLt=${probe + 1n}`);
+    const chainBlocks = blocks.filter((block) => block.verboseData?.isChainBlock);
+    const atOrAfterTarget = chainBlocks.filter((block) => BigInt(block.header?.daaScore ?? "0") >= targetDaa);
+    if (atOrAfterTarget.length) {
+      const nearest = atOrAfterTarget.reduce((best, block) => (
+        BigInt(block.header?.daaScore ?? "0") < BigInt(best.header?.daaScore ?? "0") ? block : best
+      ));
+      if (BigInt(nearest.header?.daaScore ?? "0") === targetDaa) return blockHintHashes(blocks);
+      probe = BigInt(nearest.header?.blueScore ?? "0") + targetDaa - BigInt(nearest.header?.daaScore ?? "0");
+      continue;
+    }
+
+    const nearestBefore = chainBlocks.reduce<RestBlockHint | undefined>((best, block) => (
+      !best || BigInt(block.header?.daaScore ?? "0") > BigInt(best.header?.daaScore ?? "0") ? block : best
+    ), undefined);
+    if (!nearestBefore) return blockHintHashes(blocks);
+
+    let cursor = BigInt(nearestBefore.header?.blueScore ?? "0") + 1n;
+    let emptyRetries = 0;
+    for (let step = 0; step < 64; step += 1) {
+      const forward = await loadBlocksByBlueScore(apiBaseUrl, `blueScoreGte=${cursor}`);
+      if (!forward.length) {
+        if (emptyRetries >= 5) return [];
+        emptyRetries += 1;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        step -= 1;
+        continue;
+      }
+      emptyRetries = 0;
+      const forwardChain = forward.filter((block) => block.verboseData?.isChainBlock);
+      if (forwardChain.some((block) => BigInt(block.header?.daaScore ?? "0") >= targetDaa)) {
+        return blockHintHashes(forward);
+      }
+      cursor = forward.reduce((highest, block) => {
+        const score = BigInt(block.header?.blueScore ?? "0");
+        return score > highest ? score : highest;
+      }, cursor) + 1n;
+    }
+    return [];
+  }
+  return [];
 }
 
 interface RestTransactionOutput {
@@ -101,6 +190,7 @@ interface RafflePayload {
   createTxId?: string;
   contractVersion?: string;
   refundCursor?: number;
+  refundBatchCursor?: number;
 }
 
 function decodeHexPayload(hex: string): RafflePayload | null {
@@ -182,6 +272,7 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.createdAtDaaScore = payload.createdAtDaaScore ?? round.createdAtDaaScore;
       round.refundTimeoutSeconds = payload.refundTimeoutSeconds ?? round.refundTimeoutSeconds;
       round.refundAfterDaaScore = payload.refundAfterDaaScore ?? round.refundAfterDaaScore;
+      round.chainSearchHintHash = payload.chainSearchHintHash ?? round.chainSearchHintHash;
       round.refundTimeoutDaa = payload.refundTimeoutDaa ?? round.refundTimeoutDaa;
       round.ticketPrice = payload.ticketPrice ? toBigInt(payload.ticketPrice) : round.ticketPrice;
       round.maxTickets = payload.maxTickets ?? round.maxTickets;
@@ -210,10 +301,7 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       }
     }
 
-    if (
-      payload.type === "round-refund" ||
-      ((payload.type === "round-refund-ticket" || payload.type === "round-refund-batch") && !outputZero(tx)?.covenant_id)
-    ) {
+    if (payload.type === "round-refund" || (payload.type === "round-refund-batch" && !outputZero(tx)?.covenant_id)) {
       round.refundTxId = tx.transaction_id;
     }
 
@@ -250,15 +338,17 @@ async function replayTicketTree(round: RaffleHistoryRound): Promise<{ root: stri
   let root = TICKET_EMPTY_ROOT_HEX;
   let frontier = TICKET_EMPTY_FRONTIER_HEX;
   let nextTicketId = 1;
+  let batchIndex = 0;
   for (const ticket of orderedTickets) {
     if (ticket.ticketId !== nextTicketId || !ticket.buyerPubkey) {
       throw new Error(`Round ${round.roundId} is missing canonical ticket #${nextTicketId}.`);
     }
     const count = ticketRangeCount(ticket);
-    const appended = await appendTicketLeaves(frontier, nextTicketId - 1, ticket.buyerPubkey, count);
+    const appended = await appendTicketBatch(frontier, batchIndex, ticket.buyerPubkey, nextTicketId - 1, count);
     frontier = appended.frontierHex;
     root = appended.rootHex;
     nextTicketId += count;
+    batchIndex += 1;
   }
   return { root, frontier };
 }
@@ -295,10 +385,13 @@ async function buildLatestCovenantCursor(
   const txPayload = decodeHexPayload(tx.payload ?? "");
   const refundCursor = status === "Refunding"
     ? txPayload?.type === "round-refund-batch"
-      ? Math.max(0, Number(txPayload.refundCursor || 0) + Number(txPayload.ticketCount || 8))
-      : txPayload?.type === "round-refund-ticket"
-        ? Math.max(0, Number(txPayload.refundCursor || 0) + 1)
-        : 0
+      ? Math.max(0, Number(txPayload.refundCursor || 0) + Number(txPayload.ticketCount || 1))
+      : 0
+    : 0;
+  const refundBatchCursor = status === "Refunding"
+    ? txPayload?.type === "round-refund-batch"
+      ? Math.max(0, Number(txPayload.refundBatchCursor || 0) + 1)
+      : 0
     : 0;
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
@@ -318,9 +411,10 @@ async function buildLatestCovenantCursor(
     ticketRoot,
     ticketFrontier: ticketTree.frontier,
     refundCursor,
-    soldBatches: 0,
-    ticketBatchEnds: [],
-    ticketOwnerPubkeys: []
+    refundBatchCursor,
+    soldBatches: orderedTickets.length,
+    ticketBatchEnds: orderedTickets.map(ticketRangeEnd),
+    ticketOwnerPubkeys: orderedTickets.map((ticket) => ticket.buyerPubkey!)
   };
   const covenantState = await raffleCovenantStateFromRound(stateRound);
 
@@ -338,6 +432,7 @@ async function buildLatestCovenantCursor(
     ticketFrontier: ticketTree.frontier,
     chainSearchHintHash: round.chainSearchHintHash,
     refundCursor,
+    refundBatchCursor,
     creatorPubkey: stateRound.creatorPubkey,
     refundAfterDaaScore: stateRound.refundAfterDaaScore,
     soldBatches: stateRound.soldBatches,
@@ -381,7 +476,7 @@ async function traceRoundCovenantHistory(
           tx.transaction_id &&
           tx.transaction_id !== previousTxId &&
           !visitedTransactions.has(tx.transaction_id) &&
-          (payload.type === "ticket" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch" || payload.type === "round-refund-ticket")
+          (payload.type === "ticket" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch")
         );
       })
       .sort((left, right) => compareByTimeAsc(eventTime(left), eventTime(right)))[0];
@@ -400,13 +495,13 @@ async function traceRoundCovenantHistory(
       break;
     }
 
-    if ((payload?.type === "round-refund-ticket" || payload?.type === "round-refund-batch") && !outputZero(nextSpend)?.covenant_id) {
+    if (payload?.type === "round-refund-batch" && !outputZero(nextSpend)?.covenant_id) {
       finalized = true;
       break;
     }
 
     latestCovenantTransaction = nextSpend;
-    latestStatus = payload?.type === "round-refund-start" || payload?.type === "round-refund-batch" || payload?.type === "round-refund-ticket"
+    latestStatus = payload?.type === "round-refund-start" || payload?.type === "round-refund-batch"
       ? "Refunding"
       : "Open";
     currentAddress = nextCovenantAddressFromTransaction(nextSpend);
@@ -483,7 +578,8 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         ticketRoot: indexed.ticketRoot,
         ticketFrontier: indexed.ticketFrontier,
         refundCursor: indexed.refundCursor,
-        soldBatches: 0,
+        refundBatchCursor: indexed.refundBatchCursor,
+        soldBatches: indexed.soldBatches,
         ticketBatchEnds: [],
         ticketOwnerPubkeys: []
       };
@@ -494,6 +590,8 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         redeemScriptHex: bytesToHex(buildRaffleRedeemScriptForContractVersion(state, indexed.contractVersion, indexed.latestCovenant.status)),
         creatorPubkey: indexed.creatorPubkey,
         refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
+        refundBatchCursor: indexed.refundBatchCursor,
+        soldBatches: indexed.soldBatches,
         ticketOwnerPubkeys: []
       };
     }

@@ -20,6 +20,7 @@ export interface RoundState {
   ticketFrontier?: string;
   chainSearchHintHash?: string;
   refundCursor?: number;
+  refundBatchCursor?: number;
   soldBatches: number;
   ticketBatchEnds: number[];
   ticketOwnerPubkeys: string[];
@@ -61,6 +62,7 @@ export interface RaffleCovenantCursor {
   ticketFrontier?: string;
   chainSearchHintHash?: string;
   refundCursor?: number;
+  refundBatchCursor?: number;
   creatorPubkey: string;
   refundAfterDaaScore: string;
   soldBatches?: number;
