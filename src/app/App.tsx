@@ -97,6 +97,7 @@ const MAINNET_REFUND_TIMEOUT_SECONDS = SECONDS_PER_DAY;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
+const TICKET_BATCH_SIZES = [1, 2, 4, 8] as const;
 
 function initialLanguage(): Language {
   try {
@@ -608,7 +609,11 @@ export function App() {
 
   const remainingTickets = Math.max(0, metadata.maxTickets - round.soldTickets);
   const parsedTicketQuantity = Number(ticketQuantity);
-  const purchaseTotal = Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0
+  const ticketQuantityIsAvailable = Number.isInteger(parsedTicketQuantity) &&
+    TICKET_BATCH_SIZES.includes(parsedTicketQuantity as (typeof TICKET_BATCH_SIZES)[number]) &&
+    parsedTicketQuantity <= remainingTickets &&
+    round.soldTickets % parsedTicketQuantity === 0;
+  const purchaseTotal = ticketQuantityIsAvailable
     ? round.ticketPrice * BigInt(parsedTicketQuantity)
     : 0n;
   const createCarrierAmount = useMemo(() => {
@@ -1310,7 +1315,7 @@ export function App() {
       }
 
       if (
-        ![1, 2, 4, 8].includes(quantity) || covenant.soldTickets % quantity !== 0
+        !TICKET_BATCH_SIZES.includes(quantity as (typeof TICKET_BATCH_SIZES)[number]) || covenant.soldTickets % quantity !== 0
       ) {
         throw new Error("Batch purchases must contain 1, 2, 4, or 8 tickets and start on an aligned ticket boundary.");
       }
@@ -2680,7 +2685,7 @@ export function App() {
                 <div className="field quantity-field">
                   <span>{t("quantity")}</span>
                   <div className="segmented-control" aria-label={t("quantityPresets")}>
-                  {[1, 2, 4, 8].map((quantity) => (
+                  {TICKET_BATCH_SIZES.map((quantity) => (
                     <button
                       type="button"
                       className={parsedTicketQuantity === quantity ? "active" : ""}
@@ -2703,7 +2708,7 @@ export function App() {
                 className="wide kas-cost-button"
                 data-cost={buyCostTooltip}
                 onClick={handleBuyTicket}
-                disabled={isBuying || Boolean(finalized) || remainingTickets <= 0}
+                disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}
               >
                 {isBuying
                   ? t("buyingTickets")

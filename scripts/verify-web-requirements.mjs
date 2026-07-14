@@ -120,7 +120,8 @@ try {
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
   assert(app.includes("needsIndexer") && app.includes("? await Promise.allSettled([loadIndexedRaffleHistory(indexApiBase)])"), "history only contacts the indexer when a loaded round exceeds the threshold");
   assert(app.includes("for (const historyRound of historyPartition.indexed) byRoundId.delete(historyRound.roundId)"), "an unavailable large-round index cannot block direct small-round history");
-  assert(app.includes("[1, 2, 4, 8].map") && app.includes("ticketCount: quantity"), "the wallet UI submits 1, 2, 4, or 8 tickets in one purchase");
+  assert(app.includes("const TICKET_BATCH_SIZES = [1, 2, 4, 8] as const") && app.includes("ticketCount: quantity"), "the wallet UI submits 1, 2, 4, or 8 tickets in one purchase");
+  assert(app.includes("disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}"), "the wallet blocks a stale or unaligned batch before signing");
   assert(roundContract.includes("ticket_count == 1 || ticket_count == 2 || ticket_count == 4 || ticket_count == 8"), "the covenant validates multi-ticket purchase sizes");
   assert(roundContract.includes("ticket_price * ticket_count"), "the covenant charges the exact multi-ticket amount");
 } finally {
