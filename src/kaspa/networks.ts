@@ -7,7 +7,6 @@ export interface NetworkProfile {
   defaultRpcUrl: string;
   historyApiBase: string;
   addressPrefix: "kaspa:" | "kaspatest:";
-  toccataActive: boolean;
   toccataActivationDaaScore: string;
 }
 
@@ -19,8 +18,7 @@ export const NETWORK_PROFILES: readonly NetworkProfile[] = [
     defaultRpcUrl: "ws://127.0.0.1:18110",
     historyApiBase: "https://api.kaspa.org",
     addressPrefix: "kaspa:",
-    toccataActive: false,
-    toccataActivationDaaScore: ""
+    toccataActivationDaaScore: "474165565"
   },
   {
     id: "testnet-10",
@@ -29,7 +27,6 @@ export const NETWORK_PROFILES: readonly NetworkProfile[] = [
     defaultRpcUrl: "ws://tn12-node.kaspa.com:18210",
     historyApiBase: "https://api-tn10.kaspa.org",
     addressPrefix: "kaspatest:",
-    toccataActive: true,
     toccataActivationDaaScore: "467579632"
   }
 ] as const;
@@ -55,10 +52,6 @@ export function requireNetworkProfile(network: string): NetworkProfile {
 
 export function assertToccataActive(network: string, virtualDaaScore: bigint): void {
   const profile = requireNetworkProfile(network);
-
-  if (!profile.toccataActive || !profile.toccataActivationDaaScore) {
-    throw new Error(`Toccata covenant transactions are not active on ${profile.label} yet. Use Testnet 12 until mainnet activation.`);
-  }
 
   const activation = BigInt(profile.toccataActivationDaaScore);
 

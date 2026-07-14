@@ -9,7 +9,7 @@
 
 旧 metadata 和旧合约不再兼容。
 
-Mainnet artifact、地址和本地节点配置已准备好，但页面会在官方 Toccata 主网激活前阻止 covenant 广播；当前真实交易验证使用 TN12。
+Mainnet Toccata 激活 DAA 为 `474165565`。页面连接节点后会读取实时 virtual DAA，只有达到对应网络的激活点才允许广播 covenant 交易。TN12 已完成三轮真实 create、buy、load、draw/pay 验证；Mainnet 的节点连接和激活状态已验证，交易级验证仍需使用真实 KAS。
 
 ## 抽奖机制
 
