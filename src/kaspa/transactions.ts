@@ -421,13 +421,15 @@ async function getCurrentCovenantUtxo(connection: KaspaRpcConnection, covenant: 
 
 async function createLegacyRefundTransitionSponsorUtxo(
   connection: KaspaRpcConnection,
-  wallet: BrowserTestWallet
+  wallet: BrowserTestWallet,
+  amountSompi: bigint
 ): Promise<IUtxoEntry> {
+  requireAtLeastSompi(amountSompi, STANDARD_REFUND_MIN_SOMPI, "Legacy refund fee sponsor");
   const utxos = await connection.client.getUtxosByAddresses({ addresses: [wallet.address] });
-  const selectedEntries = selectPaymentEntries(utxos.entries ?? [], LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI);
+  const selectedEntries = selectPaymentEntries(utxos.entries ?? [], amountSompi);
   const { transactions } = await createTransactions({
     entries: selectedEntries,
-    outputs: [{ address: wallet.address, amount: LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI }],
+    outputs: [{ address: wallet.address, amount: amountSompi }],
     changeAddress: wallet.address,
     priorityFee: 0n,
     networkId: transactionNetworkId(wallet.network)
@@ -437,7 +439,7 @@ async function createLegacyRefundTransitionSponsorUtxo(
 
   await wallet.signTransaction(fundingTransaction);
   const txId = await fundingTransaction.submit(connection.client);
-  return waitForAddressTransactionAmount(connection, wallet.address, txId, LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI);
+  return waitForAddressTransactionAmount(connection, wallet.address, txId, amountSompi);
 }
 
 export async function currentRaffleCovenantDaaScore(
@@ -1202,7 +1204,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
         const supportsDynamicTransitionFee = currentRound.contractVersion === RAFFLE_CONTRACT_VERSION;
         const buildTransitionTransaction = (
           transitionFeeSompi: bigint,
-          sponsorUtxo?: IUtxoEntry,
+          sponsorUtxos: IUtxoEntry[] = [],
           includeCovenantBinding = true
         ): Transaction => {
           const nextAmount = currentAmount - transitionFeeSompi;
@@ -1218,7 +1220,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
             computeBudget: refundTransitionComputeBudget(currentRound.contractVersion),
             utxo: asInputUtxo(covenantUtxo)
           }];
-          if (sponsorUtxo) {
+          sponsorUtxos.forEach((sponsorUtxo) => {
             inputs.push({
               previousOutpoint: sponsorUtxo.outpoint,
               signatureScript: "",
@@ -1227,7 +1229,7 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
               computeBudget: 0,
               utxo: asInputUtxo(sponsorUtxo)
             });
-          }
+          });
           const tx = buildManualTransaction({
             inputs,
             outputs: [new TransactionOutput(nextAmount, nextScriptPublicKey)],
@@ -1270,13 +1272,32 @@ export async function refundRaffleCovenantRound(input: RefundRaffleCovenantRound
           if (!requiresLegacySponsor) throw error;
           if (!input.sponsorWallet) {
             throw new Error(
-              `This v15 round's fixed ${formatKasAmount(REFUND_TRANSITION_FEE_SOMPI)} transition fee is below the current node minimum ${formatKasAmount(nodeRequiredFee)}. Connect a wallet to sponsor the ${formatKasAmount(LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI)} recovery input, then retry.`
+              `This v15 round's fixed ${formatKasAmount(REFUND_TRANSITION_FEE_SOMPI)} transition fee is below the current node minimum ${formatKasAmount(nodeRequiredFee)}. Connect a wallet so this page can automatically sponsor and retry the recovery input.`
             );
           }
-          const sponsorUtxo = await createLegacyRefundTransitionSponsorUtxo(input.connection, input.sponsorWallet);
-          tx = buildTransitionTransaction(transitionFeeSompi, sponsorUtxo);
-          await input.sponsorWallet.signTransaction(tx, [1]);
-          txId = await submitTransaction(input.connection, tx);
+          const sponsorUtxos: IUtxoEntry[] = [];
+          let requiredFee = nodeRequiredFee;
+          for (let attempt = 0; attempt < 6; attempt += 1) {
+            const fundedFee = REFUND_TRANSITION_FEE_SOMPI + sponsorUtxos.reduce((total, utxo) => total + utxo.amount, 0n);
+            const supplement = requiredFee > fundedFee ? requiredFee - fundedFee : 0n;
+            sponsorUtxos.push(await createLegacyRefundTransitionSponsorUtxo(
+              input.connection,
+              input.sponsorWallet,
+              supplement > STANDARD_REFUND_MIN_SOMPI ? supplement : STANDARD_REFUND_MIN_SOMPI
+            ));
+            tx = buildTransitionTransaction(transitionFeeSompi, sponsorUtxos);
+            await input.sponsorWallet.signTransaction(tx, sponsorUtxos.map((_, index) => index + 1));
+            try {
+              txId = await submitTransaction(input.connection, tx);
+              break;
+            } catch (retryError) {
+              const retryRequiredFee = requiredFeeFromNodeRejection(retryError);
+              const retryFundedFee = REFUND_TRANSITION_FEE_SOMPI + sponsorUtxos.reduce((total, utxo) => total + utxo.amount, 0n);
+              if (retryRequiredFee === undefined || retryRequiredFee <= retryFundedFee || attempt === 5) throw retryError;
+              requiredFee = retryRequiredFee;
+            }
+          }
+          if (!txId) throw new Error("Unable to sponsor the legacy refund transition fee.");
         }
         return {
           txId,

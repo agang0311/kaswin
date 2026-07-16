@@ -221,6 +221,12 @@ try {
   assert(transactions.includes("refundBatchComputeBudget") && transactions.includes("verifiedBatches.map"), "grouped refunds commit a batch-sized compute budget and build every owner output");
   assert(transactions.includes("calculateTransactionFee") && transactions.includes("minimumV1TransientRelayFeeSompi"), "finalize fees include static and normalized transient mass");
   assert(transactions.includes("requiredFeeFromNodeRejection") && transactions.includes("nodeRequiredFee"), "covenant spends retry with the node's exact compute-mass fee floor");
+  assert(
+    transactions.includes("const sponsorUtxos: IUtxoEntry[] = []") &&
+      transactions.includes("retryRequiredFee") &&
+      transactions.includes("sponsorUtxos.map((_, index) => index + 1)"),
+    "legacy fixed-fee refunds keep adding signed sponsor inputs until the node fee floor is met"
+  );
   assert(transactions.includes("buildRefundTransaction(refundFeeSompi, false)") && transactions.includes("Measure an unbound twin"), "refund mass uses an unbound twin before rebuilding the successor covenant");
   assert(
     transactions.includes("submitTransaction({ transaction: tx, allowOrphan: false })") &&
