@@ -34,17 +34,14 @@ export async function connectBrowserRpc(endpoint: KaspaRpcEndpoint, network: str
   await ensureKaspaWasmReady();
 
   const startedAt = performance.now();
-  const client = endpoint.mode === "resolver"
-    ? new RpcClient({
-        resolver: new Resolver(),
-        encoding: Encoding.Borsh,
-        networkId: network
-      })
-    : new RpcClient({
-        url: endpoint.url,
-        encoding: encodingForUrl(endpoint.url),
-        networkId: network
-      });
+  const resolvedUrl = endpoint.mode === "resolver"
+    ? await new Resolver().getUrl(Encoding.Borsh, network)
+    : endpoint.url;
+  const client = new RpcClient({
+    url: resolvedUrl,
+    encoding: encodingForUrl(resolvedUrl),
+    networkId: network
+  });
   await client.connect();
 
   const serverInfo = await client.getServerInfo();
@@ -55,7 +52,7 @@ export async function connectBrowserRpc(endpoint: KaspaRpcEndpoint, network: str
       connected: true,
       network: serverInfo.networkId ?? network,
       endpointMode: endpoint.mode,
-      endpointUrl: client.url ?? (endpoint.mode === "custom" ? endpoint.url : undefined),
+      endpointUrl: client.url ?? resolvedUrl,
       syncStatus: syncStatus.isSynced ? "synced" : "syncing",
       daaScore: serverInfo.virtualDaaScore?.toString(),
       latencyMs: Math.round(performance.now() - startedAt),

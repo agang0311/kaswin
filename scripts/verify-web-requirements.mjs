@@ -191,7 +191,8 @@ try {
   const merkle = fs.readFileSync(path.join(root, "src/raffle/merkle.ts"), "utf8");
   const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
-  assert(networks.includes('defaultRpcMode: "resolver"') && rpc.includes("new Resolver()"), "network connections default to the Kaspa resolver");
+  assert(networks.includes('defaultRpcMode: "resolver"') && rpc.includes("new Resolver().getUrl(Encoding.Borsh, network)"), "network connections default to the Kaspa resolver");
+  assert(!rpc.includes("resolver: new Resolver()"), "resolver connections resolve a URL before creating the RPC client");
   assert(app.includes('mode: "custom", url: validateRpcUrl(networkEndpointDraft)') && app.includes("endpointSummary(networkEndpoints[profile.id])"), "users can override resolver routing with a custom wRPC node");
   assert(networks.includes('label: "Testnet 10"') && app.includes("TN10") && !app.includes(`TN${12}`), "the browser labels the live test network as Testnet 10");
   assert(app.includes('useState<RaffleHistoryRound[]>(() => loadCachedRaffleHistory("testnet-10"))'), "browser startup immediately restores participated rounds into history");
