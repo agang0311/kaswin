@@ -510,6 +510,9 @@ export function App() {
   const selectedHistoryRoundRequiresIndexer = Boolean(
     selectedHistoryRound && historyRoundNeedsIndexer(selectedHistoryRound)
   );
+  const selectedHistoryRoundArchivedRelease = selectedHistoryRound
+    ? archivedReleaseForRaffleContractVersion(selectedHistoryRound.contractVersion ?? "")
+    : undefined;
   const refundTimeoutSeconds = useMemo(() => {
     try {
       return refundTimeoutSecondsFromParts(refundTimeoutParts);
@@ -2768,6 +2771,22 @@ export function App() {
                   </div>
                 </div>
 
+                {selectedHistoryRoundArchivedRelease ? (
+                  <p className="error-text">
+                    {t("legacyRoundRequiresRelease", {
+                      version: selectedHistoryRound.contractVersion ?? t("unknown"),
+                      release: selectedHistoryRoundArchivedRelease
+                    })}{" "}
+                    <a
+                      href={`https://github.com/agang0311/kaswin/releases/tag/${selectedHistoryRoundArchivedRelease}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t("downloadCompatibleRelease")}
+                    </a>
+                  </p>
+                ) : null}
+
                 {selectedHistoryRoundRequiresIndexer ? renderIndexerRequirement({
                   maxTickets: selectedHistoryRound.maxTickets ?? 0,
                   soldTickets: selectedHistoryRound.soldTickets ?? totalTicketCount(selectedHistoryRound.tickets),
@@ -2782,9 +2801,13 @@ export function App() {
                     className="secondary"
                     onClick={handleJoinSelectedHistoryRound}
                     disabled={Boolean(
-                      selectedHistoryRound.latestCovenant?.status === "Refunded" &&
-                      !selectedHistoryRound.localCachedAt
+                      (selectedHistoryRound.latestCovenant?.status === "Refunded" && !selectedHistoryRound.localCachedAt) ||
+                      selectedHistoryRoundArchivedRelease
                     )}
+                    title={selectedHistoryRoundArchivedRelease ? t("legacyRoundRequiresRelease", {
+                      version: selectedHistoryRound.contractVersion ?? t("unknown"),
+                      release: selectedHistoryRoundArchivedRelease
+                    }) : undefined}
                   >
                     {t("loadThisRound")}
                   </button>

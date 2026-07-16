@@ -197,7 +197,13 @@ try {
   assert(networks.includes('label: "Testnet 10"') && app.includes("TN10") && !app.includes(`TN${12}`), "the browser labels the live test network as Testnet 10");
   assert(app.includes('useState<RaffleHistoryRound[]>(() => loadCachedRaffleHistory("testnet-10"))'), "browser startup immediately restores participated rounds into history");
   assert(app.includes("selectedHistoryRound.latestCovenant || selectedHistoryRound.localCachedAt"), "locally saved rounds remain loadable after finalization or an API outage");
-  assert(app.includes("archivedReleaseForRaffleContractVersion") && app.includes("legacyRoundRequiresRelease"), "archived protocol rounds point users to their matching browser release");
+  assert(
+    app.includes("archivedReleaseForRaffleContractVersion") &&
+      app.includes("legacyRoundRequiresRelease") &&
+      app.includes("downloadCompatibleRelease") &&
+      app.includes("github.com/agang0311/kaswin/releases/tag/${selectedHistoryRoundArchivedRelease}"),
+    "archived protocol rounds point users to their matching browser release"
+  );
   assert(app.includes('!registryAddresses.size && !byRoundId.size'), "browser history can load local participated rounds without a registry address");
   assert(app.includes("updateCachedParticipatedRoundFromHistory(networkId, historyRound)"), "refreshed network outcomes are written back to participated-round storage");
   assert(app.includes("if (cachedRound.registryAddress) registryAddresses.add(cachedRound.registryAddress)"), "history refresh follows every registry address saved with participated rounds");

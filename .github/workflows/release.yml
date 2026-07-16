@@ -62,15 +62,7 @@ jobs:
             -C indexer package.json package-lock.json raffle-indexer.mjs Dockerfile README.md .dockerignore .github
           sha256sum "kaswin-${GITHUB_REF_NAME}.html" > "kaswin-${GITHUB_REF_NAME}.html.sha256"
           sha256sum "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz" > "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz.sha256"
-          cat > release-notes.md <<'EOF'
-          ## Covenant compatibility
-
-          This release creates and operates `raffle-v16-dynamic-refund-transition` using `RaffleRoundV16` and `RaffleRefundV16`.
-
-          For `raffle-v15-arbitrary-batched-refund` or `raffle-v14-batch-range` rounds, use the archived [Kaswin v0.9.6 release](https://github.com/agang0311/kaswin/releases/tag/v0.9.6).
-
-          `RaffleRoundV16` and `RaffleRefundV16` preserve the exact deployed v16 covenant bytecode previously labeled `RaffleRoundV13` and `RaffleRefundV3`.
-          EOF
+          node scripts/write-release-notes.mjs release-notes.md
 
       - name: Create GitHub release
         env:

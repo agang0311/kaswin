@@ -1,0 +1,19 @@
+{
+  "supported": [
+    {
+      "protocol": "raffle-v16-dynamic-refund-transition",
+      "roundContract": "RaffleRoundV16",
+      "refundContract": "RaffleRefundV16"
+    }
+  ],
+  "archived": [
+    {
+      "protocol": "raffle-v15-arbitrary-batched-refund",
+      "release": "v0.9.6"
+    },
+    {
+      "protocol": "raffle-v14-batch-range",
+      "release": "v0.9.6"
+    }
+  ]
+}
