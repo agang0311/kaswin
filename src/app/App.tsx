@@ -92,6 +92,7 @@ import { buildTicketBatchProof, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX
 import { findTicketRange, hasCompleteTicketBatchHistory, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
 import { translate, translateRuntimeText, type Language, type TranslationValues } from "./i18n";
+import packageJson from "../../package.json";
 
 const emptyMetadata = createEmptyMetadata();
 const KASPA_DAA_PER_SECOND = 10n;
@@ -431,6 +432,8 @@ export function App() {
     syncStatus: "unknown"
   });
   const [virtualDaaScore, setVirtualDaaScore] = useState(0n);
+  const [virtualDaaObservedAt, setVirtualDaaObservedAt] = useState(() => Date.now());
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [rpcError, setRpcError] = useState("");
   const [wallet, setWallet] = useState<BrowserTestWallet | null>(null);
   const [walletError, setWalletError] = useState("");
@@ -566,6 +569,7 @@ export function App() {
       const score = await currentVirtualDaaScore(rpcConnectionRef.current!);
       if (!cancelled) {
         setVirtualDaaScore(score);
+        setVirtualDaaObservedAt(Date.now());
         setNodeStatus((current) => ({ ...current, daaScore: score.toString() }));
       }
     };
@@ -577,6 +581,11 @@ export function App() {
       window.clearInterval(interval);
     };
   }, [nodeStatus.connected]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setCountdownNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     loadSharedRoundFromUrl();
@@ -725,6 +734,18 @@ export function App() {
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
+  const refundCountdownParts = useMemo(() => {
+    if (!metadata.covenant || refundAfterDaaScore <= 0n || virtualDaaScore <= 0n) {
+      return null;
+    }
+
+    // The node refreshes its DAA score every five seconds; advance the display between refreshes.
+    const elapsedSeconds = BigInt(Math.max(0, Math.floor((countdownNow - virtualDaaObservedAt) / 1_000)));
+    const displayedDaaScore = virtualDaaScore + elapsedSeconds * KASPA_DAA_PER_SECOND;
+    const remainingDaa = refundAfterDaaScore > displayedDaaScore ? refundAfterDaaScore - displayedDaaScore : 0n;
+    const remainingSeconds = (remainingDaa + KASPA_DAA_PER_SECOND - 1n) / KASPA_DAA_PER_SECOND;
+    return refundTimeoutPartsFromSeconds(remainingSeconds);
+  }, [countdownNow, metadata.covenant, refundAfterDaaScore, virtualDaaObservedAt, virtualDaaScore]);
   const drawTimeReached = round.soldTickets >= round.maxTickets || refundAvailable;
   const soldPercent = metadata.maxTickets > 0
     ? Math.min(100, (round.soldTickets / metadata.maxTickets) * 100)
@@ -2261,7 +2282,10 @@ export function App() {
       <header className="topbar">
         <div>
           <p className="kicker">Kaspa Toccata · {networkLabel(selectedNetwork.id)}</p>
-          <h1>{t("app.title")}</h1>
+          <h1 className="brand-heading">
+            {t("app.title")}
+            <span className="app-version">v{packageJson.version}</span>
+          </h1>
         </div>
         <div className="header-tools">
           <label className="language-picker">
@@ -2493,7 +2517,18 @@ export function App() {
           </div>
           <div>
             <span>{t("drawRefund")}</span>
-            <strong>{refundTimeoutDisplay}</strong>
+            {refundCountdownParts ? (
+              <time className="round-countdown" dateTime={`PT${refundCountdownParts.months}M${refundCountdownParts.days}DT${refundCountdownParts.hours}H${refundCountdownParts.minutes}M${refundCountdownParts.seconds}S`} aria-live="polite">
+                {REFUND_TIMEOUT_FIELDS.map((field) => (
+                  <span className="countdown-unit" key={field.key}>
+                    <b>{refundCountdownParts[field.key].padStart(2, "0")}</b>
+                    <small>{t(field.labelKey)}</small>
+                  </span>
+                ))}
+              </time>
+            ) : (
+              <strong>{metadata.covenant ? t("pending") : refundTimeoutDisplay}</strong>
+            )}
           </div>
         </div>
 

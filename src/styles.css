@@ -159,6 +159,19 @@ h1 {
   margin-bottom: 0;
 }
 
+.brand-heading {
+  align-items: baseline;
+  display: flex;
+  gap: 7px;
+}
+
+.app-version {
+  color: #718078;
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
 h2 {
   font-size: 1.35rem;
   line-height: 1.2;
@@ -650,6 +663,33 @@ h3 {
 .key-metrics strong {
   font-size: 1.04rem;
   overflow-wrap: anywhere;
+}
+
+.round-countdown {
+  align-items: baseline;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.countdown-unit {
+  align-items: baseline;
+  display: inline-flex;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.countdown-unit b {
+  color: #fff;
+  font-size: 1.18rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.countdown-unit small {
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .progress-track {
@@ -1281,5 +1321,9 @@ dd {
 
   .round-overview {
     padding: 16px;
+  }
+
+  .round-countdown {
+    flex-wrap: wrap;
   }
 }
