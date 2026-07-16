@@ -2,8 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const round = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-round-v13.artifact.json"), "utf8"));
-const refund = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v3.artifact.json"), "utf8"));
+const round = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-round-v16.artifact.json"), "utf8"));
+const refund = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v16.artifact.json"), "utf8"));
+const deployedRound = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-round-v13.artifact.json"), "utf8"));
+const deployedRefund = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v3.artifact.json"), "utf8"));
 const transactionSource = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
 const networkSource = fs.readFileSync(path.join(root, "src/kaspa/networks.ts"), "utf8");
 
@@ -20,8 +22,10 @@ function verifyArtifact(artifact, contract, entrypoints) {
   assert(entrypoints.every((name, selector) => artifact.abi.some((entry) => entry.name === name && entry.selector === selector)), `${contract} ABI selectors are stable`);
 }
 
-verifyArtifact(round, "RaffleRoundV13", ["buy", "finalize", "startRefund"]);
-verifyArtifact(refund, "RaffleRefundV3", ["refundNext"]);
+verifyArtifact(round, "RaffleRoundV16", ["buy", "finalize", "startRefund"]);
+verifyArtifact(refund, "RaffleRefundV16", ["refundNext"]);
+assert(round.script === deployedRound.script, "RaffleRoundV16 preserves the deployed v16 round bytecode");
+assert(refund.script === deployedRefund.script, "RaffleRefundV16 preserves the deployed v16 refund bytecode");
 const buy = round.abi.find((entry) => entry.name === "buy");
 assert(JSON.stringify(buy?.inputs.map((input) => input.type_name)) === JSON.stringify(["pubkey", "int"]), `${round.contract} buy ABI supports batch quantity`);
 assert(round.scriptLength < 7_500, `${round.contract} script remains below 7.5 KB`);

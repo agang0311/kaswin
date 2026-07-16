@@ -6,9 +6,9 @@ import process from "node:process";
 import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa-wasm/kaspa.js";
 
 const root = process.cwd();
-const refundSource = path.join(root, "src/contracts/raffle_refund_v3.sil");
-const roundSource = path.join(root, "src/contracts/raffle_round_v13.sil");
-const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v3.artifact.json"), "utf8"));
+const refundSource = path.join(root, "src/contracts/raffle_refund_v16.sil");
+const roundSource = path.join(root, "src/contracts/raffle_round_v16.sil");
+const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v16.artifact.json"), "utf8"));
 const debuggerDir = path.join(root, ".tools/silverscript/target/debug");
 const debuggerPath = path.join(debuggerDir, process.platform === "win32" ? "cli-debugger.exe" : "cli-debugger");
 
@@ -253,6 +253,6 @@ function run(source, name, tests) {
 }
 
 if (!fs.existsSync(debuggerPath)) throw new Error("Build the SilverScript cli-debugger before running refund VM tests.");
-run(refundSource, "raffle_refund_v3", refundTests);
-run(roundSource, "raffle_round_v13_transition", transitionTests);
+run(refundSource, "raffle_refund_v16", refundTests);
+run(roundSource, "raffle_round_v16_transition", transitionTests);
 console.log("Arbitrary purchase counts refund in the largest supported consecutive on-chain batch.");

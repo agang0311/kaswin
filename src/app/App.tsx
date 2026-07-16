@@ -81,7 +81,9 @@ import {
 } from "../kaspa/wallet";
 import {
   createEmptyMetadata,
+  archivedReleaseForRaffleContractVersion,
   hasFixedRefundTransitionFee,
+  isSupportedRaffleContractVersion,
   parseMetadata,
   raffleContractVersionForNetwork,
   stringifyMetadata,
@@ -2107,6 +2109,15 @@ export function App() {
       return;
     }
 
+    const archivedRelease = archivedReleaseForRaffleContractVersion(selectedHistoryRound.contractVersion ?? "");
+    if (!isSupportedRaffleContractVersion(selectedHistoryRound.contractVersion ?? "")) {
+      setHistoryError(t("legacyRoundRequiresRelease", {
+        version: selectedHistoryRound.contractVersion || t("unknown"),
+        release: archivedRelease ?? "an archived Kaswin release"
+      }));
+      return;
+    }
+
     const cachedRound = loadCachedRound(networkId, selectedHistoryRound.roundId);
     if (cachedRound) {
       const loadedProfile = requireNetworkProfile(normalizeNetworkId(cachedRound.metadata.network));
@@ -2796,6 +2807,7 @@ export function App() {
                 <details className="disclosure compact-disclosure">
                   <summary>{t("transactionsTiming")}</summary>
                   <dl className="stat-list dense disclosure-body">
+                    <div><dt>{t("contractVersion")}</dt><dd>{selectedHistoryRound.contractVersion || t("unknown")}</dd></div>
                     <div><dt>{t("registryTx")}</dt><dd className="mono">{selectedHistoryRound.registryTxId ?? t("unknown")}</dd></div>
                     <div><dt>{t("covenant")}</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.address ?? selectedHistoryRound.treasuryAddress ?? t("unknown")}</dd></div>
                     <div><dt>{t("refundTx")}</dt><dd className="mono">{selectedHistoryRound.refundTxId ?? t("pending")}</dd></div>

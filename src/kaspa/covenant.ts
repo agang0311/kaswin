@@ -5,21 +5,13 @@ import {
   ScriptBuilder,
   type ScriptPublicKey
 } from "@onekeyfe/kaspa-wasm";
-import raffleRoundV13Artifact from "../contracts/compiled/raffle-round-v13.artifact.json";
-import raffleRoundV12Artifact from "../contracts/compiled/raffle-round-v12.artifact.json";
-import raffleRefundV3Artifact from "../contracts/compiled/raffle-refund-v3.artifact.json";
-import raffleRoundV11Artifact from "../contracts/compiled/raffle-round-v11.artifact.json";
-import raffleRefundV2Artifact from "../contracts/compiled/raffle-refund-v2.artifact.json";
+import raffleRoundV16Artifact from "../contracts/compiled/raffle-round-v16.artifact.json";
+import raffleRefundV16Artifact from "../contracts/compiled/raffle-refund-v16.artifact.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
 import { TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX, TICKET_MERKLE_PROOF_BYTES } from "../raffle/merkle";
 import type { RoundState } from "../raffle/types";
 import type { ChainRandomnessWitness } from "./chain-randomness";
-import {
-  LEGACY_RAFFLE_CONTRACT_VERSION,
-  PREVIOUS_RAFFLE_CONTRACT_VERSION,
-  RAFFLE_CONTRACT_VERSION,
-  isSupportedRaffleContractVersion
-} from "../raffle/metadata";
+import { RAFFLE_CONTRACT_VERSION, isSupportedRaffleContractVersion } from "../raffle/metadata";
 import { ensureKaspaWasmReady } from "./wasm";
 
 export interface CovenantArtifactStatus {
@@ -64,11 +56,8 @@ export type RaffleCovenantEntrypoint = "buy" | "finalize" | "refund_next" | "sta
 export type RaffleCovenantStateValue = bigint | Uint8Array;
 export type RaffleCovenantStateValues = Record<string, RaffleCovenantStateValue>;
 
-const raffleArtifact = raffleRoundV13Artifact as RaffleRoundRuntimeArtifact;
-const previousRaffleArtifact = raffleRoundV12Artifact as RaffleRoundRuntimeArtifact;
-const refundArtifact = raffleRefundV3Artifact as RaffleRoundRuntimeArtifact;
-const legacyRaffleArtifact = raffleRoundV11Artifact as RaffleRoundRuntimeArtifact;
-const legacyRefundArtifact = raffleRefundV2Artifact as RaffleRoundRuntimeArtifact;
+const raffleArtifact = raffleRoundV16Artifact as RaffleRoundRuntimeArtifact;
+const refundArtifact = raffleRefundV16Artifact as RaffleRoundRuntimeArtifact;
 export const CURRENT_RAFFLE_CONTRACT_VERSION = RAFFLE_CONTRACT_VERSION;
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
@@ -81,8 +70,8 @@ const entrypointNames: Record<RaffleCovenantEntrypoint, string> = {
 };
 
 export function getRaffleCovenantStatus(): CovenantArtifactStatus {
-  const enabled = raffleArtifact.contract === "RaffleRoundV13" &&
-    refundArtifact.contract === "RaffleRefundV3" &&
+  const enabled = raffleArtifact.contract === "RaffleRoundV16" &&
+    refundArtifact.contract === "RaffleRefundV16" &&
     [raffleArtifact, refundArtifact].every((candidate) => Boolean(candidate.script) && candidate.abi.length > 0);
 
   return {
@@ -385,18 +374,6 @@ export function buildRaffleRefundBatchSignatureScript(
 ): string {
   if (!batches.length) throw new Error("A grouped refund requires at least one purchase batch.");
   const runtimeArtifact = raffleArtifactForRedeemScript(currentRedeemScript);
-  if (runtimeArtifact.contract === legacyRefundArtifact.contract) {
-    if (batches.length !== 1) throw new Error("Legacy raffle refunds support one purchase batch per transaction.");
-    const batch = batches[0];
-    return buildRaffleRefundNextSignatureScript(
-      currentRedeemScript,
-      refundFeeSompi,
-      batch.ownerPubkeyHex,
-      batch.firstTicketId,
-      batch.ticketCount,
-      batch.ownerProofHex
-    );
-  }
   if (runtimeArtifact.contract !== refundArtifact.contract) {
     throw new Error(`Contract ${runtimeArtifact.contract} does not support grouped refunds.`);
   }
@@ -468,7 +445,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [raffleArtifact, previousRaffleArtifact, refundArtifact, legacyRaffleArtifact, legacyRefundArtifact];
+  const candidates = [raffleArtifact, refundArtifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);
@@ -525,22 +502,16 @@ function encodeStateField(field: RuntimeStateField, value: RaffleCovenantStateVa
 
 function raffleArtifactForContractVersion(contractVersion?: string): RaffleRoundRuntimeArtifact {
   if (contractVersion === RAFFLE_CONTRACT_VERSION) return raffleArtifact;
-  if (contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION) return previousRaffleArtifact;
-  if (contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION) return legacyRaffleArtifact;
   throw new Error(`Unsupported raffle contract version: ${contractVersion || "missing"}.`);
 }
 
 function refundArtifactForContractVersion(contractVersion?: string): RaffleRoundRuntimeArtifact {
   if (contractVersion === RAFFLE_CONTRACT_VERSION) return refundArtifact;
-  if (contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION) return refundArtifact;
-  if (contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION) return legacyRefundArtifact;
   throw new Error(`Unsupported raffle refund contract version: ${contractVersion || "missing"}.`);
 }
 
 function refundArtifactForRoundArtifact(roundArtifact: RaffleRoundRuntimeArtifact): RaffleRoundRuntimeArtifact {
   if (roundArtifact.contract === raffleArtifact.contract) return refundArtifact;
-  if (roundArtifact.contract === previousRaffleArtifact.contract) return refundArtifact;
-  if (roundArtifact.contract === legacyRaffleArtifact.contract) return legacyRefundArtifact;
   throw new Error(`Contract ${roundArtifact.contract} cannot start a refund transition.`);
 }
 

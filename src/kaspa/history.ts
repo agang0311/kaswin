@@ -4,6 +4,7 @@ import {
   isSupportedRaffleCovenantVersion,
   raffleCovenantStateFromRound
 } from "./covenant";
+import { isKnownRaffleContractVersion } from "../raffle/metadata";
 import { appendTicketBatch, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
 import { ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
@@ -529,10 +530,11 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
   applyHistoryTransactions(rounds, registryTransactions);
 
   for (const round of [...rounds.values()]) {
-    if (!round.contractVersion || !isSupportedRaffleCovenantVersion(round.contractVersion)) {
+    if (!round.contractVersion || !isKnownRaffleContractVersion(round.contractVersion)) {
       rounds.delete(round.roundId);
       continue;
     }
+    if (!isSupportedRaffleCovenantVersion(round.contractVersion)) continue;
     if (requiresRaffleIndexer(round.maxTickets ?? 1_000_000)) continue;
     await traceRoundCovenantHistory(apiBaseUrl, rounds, round, limit);
   }
@@ -548,13 +550,14 @@ export async function loadRaffleHistory(apiBaseUrl: string, registryAddress: str
 
 export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<RaffleHistoryRound[]> {
   const indexedRounds = (await loadIndexedRaffleRounds(apiBaseUrl)).filter((round) => (
-    isSupportedRaffleCovenantVersion(round.contractVersion)
+    isKnownRaffleContractVersion(round.contractVersion)
   ));
   return Promise.all(indexedRounds.map(async (indexed): Promise<RaffleHistoryRound> => {
     const ticketPrice = BigInt(indexed.ticketPrice || "0");
     let latestCovenant: RaffleCovenantCursor | undefined;
 
     if (
+      isSupportedRaffleCovenantVersion(indexed.contractVersion) &&
       indexed.latestCovenant &&
       indexed.creator &&
       indexed.creatorPubkey &&

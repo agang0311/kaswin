@@ -1,6 +1,6 @@
 # Development Verification Loop
 
-New rounds use `raffle-v15-arbitrary-batched-refund` with `RaffleRoundV12` and `RaffleRefundV3`. The v14 round/refund artifacts remain available for already-created rounds.
+New rounds use `raffle-v16-dynamic-refund-transition` with `RaffleRoundV16` and `RaffleRefundV16`. The bytecode matches the deployed v16 `RaffleRoundV13`/`RaffleRefundV3` artifacts exactly; v14 and v15 rounds are operated with the archived `v0.9.6` release.
 
 ## Automated gate
 

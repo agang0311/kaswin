@@ -156,10 +156,10 @@ try {
     }
   });
   storage.set(storageKey, JSON.stringify(storedRounds));
-  assert(localRounds.loadCachedRaffleHistory("testnet-10").length === 2, "v14 cached rounds remain loadable after the v15 upgrade");
+  assert(localRounds.loadCachedRaffleHistory("testnet-10").length === 2, "archived v14 cached rounds remain visible in history");
   assert(
     metadataModule.parseMetadata(JSON.stringify({ ...metadata, covenant: undefined, contractVersion: "raffle-v14-batch-range" })).contractVersion === "raffle-v14-batch-range",
-    "v14 imported metadata remains supported"
+    "v14 imported metadata retains its protocol version"
   );
   storedRounds.push({
     ...storedRounds[0],
@@ -186,8 +186,8 @@ try {
   const localWallet = fs.readFileSync(path.join(root, "src/kaspa/wallet-local-test.ts"), "utf8");
   const transactions = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
   const history = fs.readFileSync(path.join(root, "src/kaspa/history.ts"), "utf8");
-  const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v12.sil"), "utf8");
-  const refundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_refund_v3.sil"), "utf8");
+  const roundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_round_v16.sil"), "utf8");
+  const refundContract = fs.readFileSync(path.join(root, "src/contracts/raffle_refund_v16.sil"), "utf8");
   const merkle = fs.readFileSync(path.join(root, "src/raffle/merkle.ts"), "utf8");
   const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
@@ -197,6 +197,7 @@ try {
   assert(networks.includes('label: "Testnet 10"') && app.includes("TN10") && !app.includes(`TN${12}`), "the browser labels the live test network as Testnet 10");
   assert(app.includes('useState<RaffleHistoryRound[]>(() => loadCachedRaffleHistory("testnet-10"))'), "browser startup immediately restores participated rounds into history");
   assert(app.includes("selectedHistoryRound.latestCovenant || selectedHistoryRound.localCachedAt"), "locally saved rounds remain loadable after finalization or an API outage");
+  assert(app.includes("archivedReleaseForRaffleContractVersion") && app.includes("legacyRoundRequiresRelease"), "archived protocol rounds point users to their matching browser release");
   assert(app.includes('!registryAddresses.size && !byRoundId.size'), "browser history can load local participated rounds without a registry address");
   assert(app.includes("updateCachedParticipatedRoundFromHistory(networkId, historyRound)"), "refreshed network outcomes are written back to participated-round storage");
   assert(app.includes("if (cachedRound.registryAddress) registryAddresses.add(cachedRound.registryAddress)"), "history refresh follows every registry address saved with participated rounds");

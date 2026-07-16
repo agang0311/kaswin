@@ -3,16 +3,33 @@ import type { RaffleMetadata } from "./types";
 export const RAFFLE_CONTRACT_VERSION = "raffle-v16-dynamic-refund-transition";
 export const PREVIOUS_RAFFLE_CONTRACT_VERSION = "raffle-v15-arbitrary-batched-refund";
 export const LEGACY_RAFFLE_CONTRACT_VERSION = "raffle-v14-batch-range";
-export const SUPPORTED_RAFFLE_CONTRACT_VERSIONS = [
+export const KNOWN_RAFFLE_CONTRACT_VERSIONS = [
   RAFFLE_CONTRACT_VERSION,
   PREVIOUS_RAFFLE_CONTRACT_VERSION,
   LEGACY_RAFFLE_CONTRACT_VERSION
 ] as const;
+export const SUPPORTED_RAFFLE_CONTRACT_VERSIONS = [RAFFLE_CONTRACT_VERSION] as const;
+
+export function isKnownRaffleContractVersion(contractVersion: string): boolean {
+  return KNOWN_RAFFLE_CONTRACT_VERSIONS.includes(
+    contractVersion as (typeof KNOWN_RAFFLE_CONTRACT_VERSIONS)[number]
+  );
+}
 
 export function isSupportedRaffleContractVersion(contractVersion: string): boolean {
   return SUPPORTED_RAFFLE_CONTRACT_VERSIONS.includes(
     contractVersion as (typeof SUPPORTED_RAFFLE_CONTRACT_VERSIONS)[number]
   );
+}
+
+export function archivedReleaseForRaffleContractVersion(contractVersion: string): string | undefined {
+  if (
+    contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION ||
+    contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION
+  ) {
+    return "v0.9.6";
+  }
+  return undefined;
 }
 
 export function raffleContractVersionForNetwork(network: string): string {
@@ -72,7 +89,7 @@ export function parseMetadata(raw: string): RaffleMetadata {
     }
   }
 
-  if (!isSupportedRaffleContractVersion(String(parsed.contractVersion))) {
+  if (!isKnownRaffleContractVersion(String(parsed.contractVersion))) {
     throw new Error(`Unsupported raffle contract version: ${parsed.contractVersion}.`);
   }
 
