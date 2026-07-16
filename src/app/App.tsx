@@ -3065,8 +3065,8 @@ export function App() {
               <span>{verification.ok ? t("localChecksPassed") : t("localChecksIssues")}</span>
             </div>
             <dl className="stat-list dense">
-              <div><dt>{t("contract")}</dt><dd>{covenantStatus.contract}</dd></div>
-              <div><dt>{t("artifact")}</dt><dd>{covenantStatus.status}</dd></div>
+              <div><dt>{t("contractRuntime")}</dt><dd>{covenantStatus.contract}</dd></div>
+              <div><dt>{t("artifactStatus")}</dt><dd>{covenantStatus.status}</dd></div>
               <div><dt>{t("ticketRoot")}</dt><dd className="mono">{metadata.covenant?.ticketRoot || t("pending")}</dd></div>
               <div><dt>{t("createTx")}</dt><dd className="mono">{metadata.createTxId || t("pending")}</dd></div>
             </dl>
