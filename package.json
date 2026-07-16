@@ -1,13 +1,13 @@
 {
   "name": "kaswin",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Kaswin, a single-file Mainnet and Testnet 10 raffle dApp for Kaspa Toccata.",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/inline-spa.mjs",
-    "compile:contract": "node scripts/compile-raffle-contract.mjs raffle_refund_v3 && node scripts/compile-raffle-contract.mjs raffle_round_v12",
+    "compile:contract": "node scripts/compile-raffle-contract.mjs raffle_refund_v3 && node scripts/compile-raffle-contract.mjs raffle_round_v13",
     "verify": "npm run build && node scripts/verify-single-file.mjs && node scripts/verify-covenant-artifact.mjs && node scripts/verify-chain-randomness.mjs && node scripts/verify-web-requirements.mjs && node scripts/verify-mainnet-readiness.mjs && node scripts/verify-batch-refund-contract.mjs && node scripts/verify-million-users.mjs && node scripts/verify-indexer-package.mjs && node scripts/verify-indexer.mjs",
     "verify:artifact": "node scripts/verify-covenant-artifact.mjs",
     "verify:single-file": "node scripts/verify-single-file.mjs",

@@ -4,7 +4,7 @@ Kaswin 是单 HTML 的 Kaspa Toccata covenant 抽奖应用。网页默认通过 
 
 链上 payload 继续使用协议标识 `kaspa-raffle-static`，用于兼容已经创建的轮次；它不是当前产品名。
 
-当前 Mainnet/Testnet 10 共用合约版本：`raffle-v15-arbitrary-batched-refund`；已创建的 `raffle-v14-batch-range` 轮次仍可加载和完成。
+当前 Mainnet/Testnet 10 共用合约版本：`raffle-v16-dynamic-refund-transition`；已创建的 `raffle-v15-arbitrary-batched-refund` 与 `raffle-v14-batch-range` 轮次仍可加载和完成。v15/v14 的固定退款启动费若低于节点当前最低费率，需要一个已连接钱包补充一次救援输入。
 
 旧 metadata 和旧合约不再兼容。
 

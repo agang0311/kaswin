@@ -58,6 +58,7 @@ import {
   DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
   finalizeRaffleCovenantRound,
   getRaffleRegistryConfig,
+  LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI,
   MAX_COVENANT_FINALIZE_FEE_SOMPI,
   MAX_REFUND_PURCHASE_BATCHES_PER_TX,
   MIN_COVENANT_CARRIER_SOMPI,
@@ -78,7 +79,14 @@ import {
   type BrowserTestWallet,
   type WalletAdapterOption
 } from "../kaspa/wallet";
-import { RAFFLE_CONTRACT_VERSION, createEmptyMetadata, parseMetadata, raffleContractVersionForNetwork, stringifyMetadata } from "../raffle/metadata";
+import {
+  createEmptyMetadata,
+  hasFixedRefundTransitionFee,
+  parseMetadata,
+  raffleContractVersionForNetwork,
+  stringifyMetadata,
+  supportsGroupedRefunds
+} from "../raffle/metadata";
 import {
   cacheParticipatedRound,
   hasCachedParticipatedRound,
@@ -723,12 +731,13 @@ export function App() {
     (metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? 1) -
       (metadata.covenant?.refundBatchCursor ?? 0)
   );
-  const estimatedRefundBatchCount = round.contractVersion === RAFFLE_CONTRACT_VERSION
+  const estimatedRefundBatchCount = supportsGroupedRefunds(round.contractVersion)
     ? Math.min(MAX_REFUND_PURCHASE_BATCHES_PER_TX, remainingRefundBatches)
     : 1;
-  const refundCostTooltip = t("cost.refund.current", {
+  const refundCostTooltip = t(hasFixedRefundTransitionFee(round.contractVersion) ? "cost.refund.legacy" : "cost.refund.current", {
     fee: formatKas(covenantRefundFeeSompi(round.contractVersion, estimatedRefundBatchCount)),
     transitionFee: formatKas(REFUND_TRANSITION_FEE_SOMPI),
+    sponsor: formatKas(LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI),
     maxFee: formatKas(covenantRefundMaxFeeSompi(round.contractVersion)),
     batches: estimatedRefundBatchCount
   });
@@ -1830,6 +1839,7 @@ export function App() {
       if (activeCovenant.status !== "Refunding") {
         const transition = await refundRaffleCovenantRound({
           connection: rpcConnectionRef.current,
+          sponsorWallet: wallet ?? undefined,
           round: roundFromCovenant(activeCovenant),
           covenant: activeCovenant,
           tickets,
@@ -1853,7 +1863,7 @@ export function App() {
         const firstBatchIndex = activeCovenant.refundBatchCursor ?? 0;
         let nextTicketId = (activeCovenant.refundCursor ?? 0) + 1;
         const remainingPurchaseBatches = (activeCovenant.soldBatches ?? activeCovenant.ticketOwnerPubkeys.length) - firstBatchIndex;
-        const contractBatchLimit = metadata.contractVersion === RAFFLE_CONTRACT_VERSION
+        const contractBatchLimit = supportsGroupedRefunds(metadata.contractVersion)
           ? MAX_REFUND_PURCHASE_BATCHES_PER_TX
           : 1;
         const targetBatchCount = Math.min(contractBatchLimit, remainingPurchaseBatches);

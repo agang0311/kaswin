@@ -178,7 +178,8 @@ const en: Record<string, string> = {
   "cost.create.retained": "{carrier} carrier reserve + {createFee} create fee + {marker} sent to the default registry + variable registry payment fee. The registry marker remains at the destination. Carrier returns when the round ends.",
   "cost.buy": "{price} ticket price + {fee} covenant fee + funding transaction fee (varies with wallet UTXOs).",
   "cost.payout": "{prize} prize from the pot + about {fee} from the carrier; the exact chain-mass fee is calculated before submission and capped at {maxFee}. Anyone can broadcast; no wallet payment or signature is required.",
-  "cost.refund.current": "First call: {transitionFee} from the carrier to start refunds. Each transaction starts with up to {batches} consecutive purchase batches, then shrinks to the largest standard compute/storage-mass candidate. Its fee is shared across the outputs (up to about {fee}, capped at {maxFee}). Anyone may broadcast after timeout; wallet payment: 0 KAS."
+  "cost.refund.current": "First call: {transitionFee} from the carrier to start refunds. Each transaction starts with up to {batches} consecutive purchase batches, then shrinks to the largest standard compute/storage-mass candidate. Its fee is shared across the outputs (up to about {fee}, capped at {maxFee}). Anyone may broadcast after timeout; wallet payment: 0 KAS.",
+  "cost.refund.legacy": "This older round has a fixed {transitionFee} refund-start fee. Refunds normally cost the caller 0 KAS; if the node requires more, connect a wallet to add a one-time {sponsor} recovery input. Each later refund transaction shares its fee across the outputs (up to about {fee}, capped at {maxFee})."
 };
 
 const zh: Record<string, string> = {
@@ -303,6 +304,7 @@ const zh: Record<string, string> = {
   "indexerRequiredError": "本轮需要 Indexer proof。请配置并检查抽奖索引 API 后重试。{detail}",
   "indexerWrongNetwork": "Indexer 网络为 {actual}，当前需要 {expected}。",
   "cost.refund.current": "首次调用从 carrier 扣除 {transitionFee} 启动退款；之后每笔交易先装入最多 {batches} 个连续购票批次，再按实际 compute/storage mass 缩小到可标准中继的最大批次，费用由这些退款输出均摊（最高约 {fee}，上限 {maxFee}）。超时后任何人都可广播，钱包支付 0 KAS。",
+  "cost.refund.legacy": "旧版轮次的退款启动费固定为 {transitionFee}。通常退款人无需支付；如果节点要求更高费用，请连接钱包补充一次 {sponsor} 的救援输入。后续每笔退款费用仍由退款输出均摊（最高约 {fee}，上限 {maxFee}）。",
   "actionTabs": "购票或派奖",
   "buyTickets": "购买抽奖票",
   "participant": "参与者",

@@ -7,7 +7,7 @@ import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa
 
 const root = process.cwd();
 const refundSource = path.join(root, "src/contracts/raffle_refund_v3.sil");
-const roundSource = path.join(root, "src/contracts/raffle_round_v12.sil");
+const roundSource = path.join(root, "src/contracts/raffle_round_v13.sil");
 const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v3.artifact.json"), "utf8"));
 const debuggerDir = path.join(root, ".tools/silverscript/target/debug");
 const debuggerPath = path.join(debuggerDir, process.platform === "win32" ? "cli-debugger.exe" : "cli-debugger");
@@ -18,7 +18,7 @@ const owner = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 const covenantId = `0x${"11".repeat(32)}`;
 const ticketPrice = 30_000_000;
 const carrier = 57_000_000;
-const transitionFee = 2_400_000;
+const transitionFee = 4_545_400;
 const refundFee = 4_000_000;
 const batches = Array.from({ length: 15 }, (_, index) => ({
   first: (index * (index + 1)) / 2,
@@ -231,7 +231,7 @@ const transitionTests = { tests: [{
 }, {
   name: "timed_out_round_enters_batch_refund_contract",
   function: "startRefund",
-  args: [`0x${refundPrefix.toString("hex")}`, `0x${refundSuffix.toString("hex")}`],
+  args: [transitionFee, `0x${refundPrefix.toString("hex")}`, `0x${refundSuffix.toString("hex")}`],
   expect: "pass",
   tx: {
     version: 1,
@@ -254,5 +254,5 @@ function run(source, name, tests) {
 
 if (!fs.existsSync(debuggerPath)) throw new Error("Build the SilverScript cli-debugger before running refund VM tests.");
 run(refundSource, "raffle_refund_v3", refundTests);
-run(roundSource, "raffle_round_v12_transition", transitionTests);
+run(roundSource, "raffle_round_v13_transition", transitionTests);
 console.log("Arbitrary purchase counts refund in the largest supported consecutive on-chain batch.");

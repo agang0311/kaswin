@@ -1,9 +1,11 @@
 import type { RaffleMetadata } from "./types";
 
-export const RAFFLE_CONTRACT_VERSION = "raffle-v15-arbitrary-batched-refund";
+export const RAFFLE_CONTRACT_VERSION = "raffle-v16-dynamic-refund-transition";
+export const PREVIOUS_RAFFLE_CONTRACT_VERSION = "raffle-v15-arbitrary-batched-refund";
 export const LEGACY_RAFFLE_CONTRACT_VERSION = "raffle-v14-batch-range";
 export const SUPPORTED_RAFFLE_CONTRACT_VERSIONS = [
   RAFFLE_CONTRACT_VERSION,
+  PREVIOUS_RAFFLE_CONTRACT_VERSION,
   LEGACY_RAFFLE_CONTRACT_VERSION
 ] as const;
 
@@ -16,6 +18,14 @@ export function isSupportedRaffleContractVersion(contractVersion: string): boole
 export function raffleContractVersionForNetwork(network: string): string {
   void network;
   return RAFFLE_CONTRACT_VERSION;
+}
+
+export function supportsGroupedRefunds(contractVersion: string): boolean {
+  return contractVersion === RAFFLE_CONTRACT_VERSION || contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION;
+}
+
+export function hasFixedRefundTransitionFee(contractVersion: string): boolean {
+  return contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION || contractVersion === LEGACY_RAFFLE_CONTRACT_VERSION;
 }
 
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
