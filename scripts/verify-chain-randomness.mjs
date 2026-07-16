@@ -35,10 +35,13 @@ for (const name of sources) {
 const client = fs.readFileSync(path.join(root, "src/kaspa/chain-randomness.ts"), "utf8");
 const app = fs.readFileSync(path.join(root, "src/app/App.tsx"), "utf8");
 const raffleTypes = fs.readFileSync(path.join(root, "src/raffle/types.ts"), "utf8");
+const history = fs.readFileSync(path.join(root, "src/kaspa/history.ts"), "utf8");
 assert(client.includes('BigInt(`0x${normalized}`)'), "RPC blue work is always decoded as hexadecimal");
 assert(client.includes("candidate.finalize()"), "node headers are rehashed before building a witness");
 assert(client.includes("target.daaScore >= targetDaa && parent.daaScore < targetDaa"), "client selects the same boundary crossing enforced by the covenant");
 assert(client.includes("target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()"), "client rejects a non-selected parent before submission");
+assert(client.includes("targetResponse.block.verboseData?.isChainBlock !== true") && client.includes("parentResponse.block.verboseData?.isChainBlock !== true"), "candidate blocks are revalidated as selected-chain blocks through Kaspa RPC");
+assert(history.includes("return blockHintHashes(chainBlocks)") && history.includes("return blockHintHashes(forwardChain)"), "history lookup never returns non-chain blocks as randomness candidates");
 assert(client.includes("while (low < high)") && client.includes("Math.floor((low + high) / 2)"), "anchored header lookup uses logarithmic selected-chain search");
 assert(client.includes("BLOCK_LOOKUP_RETRIES = 3") && !client.includes("Promise.all(page.map"), "slow public nodes are retried without an unbounded concurrent block scan");
 assert(client.includes("loadFromCandidates") && client.includes("candidateHashes.slice(0, 32)"), "untrusted blue-score lookup hints are bounded and revalidated through Kaspa RPC");

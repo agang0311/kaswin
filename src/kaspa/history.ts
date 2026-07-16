@@ -118,7 +118,7 @@ export async function loadBlockHashesNearDaa(
       const nearest = atOrAfterTarget.reduce((best, block) => (
         BigInt(block.header?.daaScore ?? "0") < BigInt(best.header?.daaScore ?? "0") ? block : best
       ));
-      if (BigInt(nearest.header?.daaScore ?? "0") === targetDaa) return blockHintHashes(blocks);
+      if (BigInt(nearest.header?.daaScore ?? "0") === targetDaa) return blockHintHashes(chainBlocks);
       probe = BigInt(nearest.header?.blueScore ?? "0") + targetDaa - BigInt(nearest.header?.daaScore ?? "0");
       continue;
     }
@@ -126,7 +126,7 @@ export async function loadBlockHashesNearDaa(
     const nearestBefore = chainBlocks.reduce<RestBlockHint | undefined>((best, block) => (
       !best || BigInt(block.header?.daaScore ?? "0") > BigInt(best.header?.daaScore ?? "0") ? block : best
     ), undefined);
-    if (!nearestBefore) return blockHintHashes(blocks);
+    if (!nearestBefore) return blockHintHashes(chainBlocks);
 
     let cursor = BigInt(nearestBefore.header?.blueScore ?? "0") + 1n;
     let emptyRetries = 0;
@@ -142,7 +142,7 @@ export async function loadBlockHashesNearDaa(
       emptyRetries = 0;
       const forwardChain = forward.filter((block) => block.verboseData?.isChainBlock);
       if (forwardChain.some((block) => BigInt(block.header?.daaScore ?? "0") >= targetDaa)) {
-        return blockHintHashes(forward);
+        return blockHintHashes(forwardChain);
       }
       cursor = forward.reduce((highest, block) => {
         const score = BigInt(block.header?.blueScore ?? "0");

@@ -283,6 +283,12 @@ function normalizeTransactionError(error: unknown): Error {
     );
   }
 
+  if (/block [0-9a-f]{64} not selected/i.test(message)) {
+    return new Error(
+      "The selected-chain witness changed before relay. Retry Draw & pay to rebuild the transaction with the current on-chain randomness block."
+    );
+  }
+
   return new Error(message || "Unable to submit Kaspa transaction.");
 }
 

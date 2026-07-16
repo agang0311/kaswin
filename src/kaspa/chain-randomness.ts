@@ -246,11 +246,14 @@ async function loadFromCandidates(
   for (const hash of candidateHashes.slice(0, 32)) {
     if (!/^[0-9a-f]{64}$/i.test(hash)) continue;
     const targetResponse = await loadBlock(connection, hash);
+    if (targetResponse.block.verboseData?.isChainBlock !== true) continue;
     const target = targetResponse.block.header;
     if (target.daaScore < targetDaa) continue;
     const parentHash = targetResponse.block.verboseData?.selectedParentHash ?? target.parentsByLevel[0]?.[0];
     if (!parentHash) continue;
-    const parent = (await loadBlock(connection, parentHash)).block.header;
+    const parentResponse = await loadBlock(connection, parentHash);
+    if (parentResponse.block.verboseData?.isChainBlock !== true) continue;
+    const parent = parentResponse.block.header;
     if (parent.daaScore >= targetDaa) continue;
     if (target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()) continue;
     return { target, parent };
