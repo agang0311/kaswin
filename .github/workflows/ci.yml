@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check out pinned SilverScript
+        shell: bash
+        run: |
+          git clone https://github.com/kaspanet/silverscript.git .tools/silverscript
+          git -C .tools/silverscript checkout d25bd3427a093c17327ca3d6b9e1aa5f7688c863
+          git -C .tools/silverscript apply ../../patches/silverscript-opblake2b-with-key.patch
+
+      - name: Cache SilverScript build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .tools/silverscript
+
+      - name: Build pinned SilverScript tools
+        shell: bash
+        run: |
+          cargo build --manifest-path .tools/silverscript/Cargo.toml -p silverscript-lang --bin silverc
+          cargo build --manifest-path .tools/silverscript/Cargo.toml -p cli-debugger --bin cli-debugger
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile covenant contracts
+        run: npm run compile:contract
+
+      - name: Verify Kaswin
+        run: npm run verify

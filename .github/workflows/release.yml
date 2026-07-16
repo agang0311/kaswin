@@ -1,0 +1,84 @@
+name: Release Kaswin
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check out pinned SilverScript
+        shell: bash
+        run: |
+          git clone https://github.com/kaspanet/silverscript.git .tools/silverscript
+          git -C .tools/silverscript checkout d25bd3427a093c17327ca3d6b9e1aa5f7688c863
+          git -C .tools/silverscript apply ../../patches/silverscript-opblake2b-with-key.patch
+
+      - name: Cache SilverScript build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .tools/silverscript
+
+      - name: Build pinned SilverScript tools
+        shell: bash
+        run: |
+          cargo build --manifest-path .tools/silverscript/Cargo.toml -p silverscript-lang --bin silverc
+          cargo build --manifest-path .tools/silverscript/Cargo.toml -p cli-debugger --bin cli-debugger
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile covenant contracts
+        run: npm run compile:contract
+
+      - name: Verify Kaswin
+        run: npm run verify
+
+      - name: Verify standalone indexer container
+        run: docker build --tag kaswin-indexer:verify indexer
+
+      - name: Prepare release files
+        shell: bash
+        run: |
+          cp dist/index.html "kaswin-${GITHUB_REF_NAME}.html"
+          tar -czf "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz" \
+            -C indexer package.json package-lock.json raffle-indexer.mjs Dockerfile README.md .dockerignore .github
+          sha256sum "kaswin-${GITHUB_REF_NAME}.html" > "kaswin-${GITHUB_REF_NAME}.html.sha256"
+          sha256sum "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz" > "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz.sha256"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          prerelease_flag=()
+          if [[ "${GITHUB_REF_NAME}" == *"beta"* || "${GITHUB_REF_NAME}" == *"alpha"* || "${GITHUB_REF_NAME}" == *"rc"* ]]; then
+            prerelease_flag=(--prerelease)
+          fi
+
+          gh release create "${GITHUB_REF_NAME}" \
+            "kaswin-${GITHUB_REF_NAME}.html" \
+            "kaswin-${GITHUB_REF_NAME}.html.sha256" \
+            "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz" \
+            "kaswin-indexer-${GITHUB_REF_NAME}.tar.gz.sha256" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Kaswin ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "${prerelease_flag[@]}"
