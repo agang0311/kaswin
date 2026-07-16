@@ -433,6 +433,27 @@ h3 {
   padding: 10px 12px 12px;
 }
 
+.endpoint-mode-toggle {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.endpoint-mode-toggle label {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #cbd2cd;
+  border-radius: 8px;
+  color: #173d36;
+  display: flex;
+  flex: 1;
+  font-size: 0.84rem;
+  font-weight: 800;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
 .setup-primary,
 .wallet-summary {
   align-items: end;
@@ -448,6 +469,34 @@ h3 {
   align-items: center;
   display: flex;
   gap: 9px;
+}
+
+.resolver-node-field {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #cbd2cd;
+  border-radius: 8px;
+  color: #173d36;
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-height: 42px;
+  min-width: 0;
+  padding: 7px 11px;
+}
+
+.resolver-node-field > span,
+.resolver-node-field > small {
+  color: #69756f;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.resolver-node-field > strong,
+.resolver-node-field > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .setup-primary .inline-field > span {

@@ -89,7 +89,7 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
     status: enabled ? "compiled-runtime" : "unavailable",
     message: enabled
       ? "Covenant artifacts are available. Finalize will build a Toccata covenant spend."
-      : "Covenant bytecode is compiled, but the browser transaction builder must be wired and verified on TN12 before enabling automatic contract payout."
+      : "Covenant bytecode is compiled, but the browser transaction builder must be wired and verified on Testnet 10 before enabling automatic contract payout."
   };
 }
 

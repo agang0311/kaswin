@@ -33,6 +33,7 @@ import {
   connectBrowserRpc,
   disconnectBrowserRpc,
   getAddressBalanceSompi,
+  type KaspaRpcEndpoint,
   type KaspaNodeStatus,
   type KaspaRpcConnection
 } from "../kaspa/rpc";
@@ -124,33 +125,61 @@ function initialLanguage(): Language {
   return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-type NetworkEndpoints = Record<SupportedNetworkId, string>;
+type NetworkEndpointMode = KaspaRpcEndpoint["mode"];
+type NetworkEndpointSettings = { mode: NetworkEndpointMode; url: string };
+type NetworkRpcEndpoints = Record<SupportedNetworkId, NetworkEndpointSettings>;
+type NetworkTextEndpoints = Record<SupportedNetworkId, string>;
 
-function defaultNetworkEndpoints(): NetworkEndpoints {
-  return Object.fromEntries(NETWORK_PROFILES.map((profile) => [profile.id, profile.defaultRpcUrl])) as NetworkEndpoints;
+function defaultNetworkEndpoints(): NetworkRpcEndpoints {
+  return Object.fromEntries(NETWORK_PROFILES.map((profile) => [
+    profile.id,
+    { mode: profile.defaultRpcMode, url: profile.suggestedRpcUrl }
+  ])) as NetworkRpcEndpoints;
 }
 
-function loadNetworkEndpoints(): NetworkEndpoints {
+function normalizeNetworkEndpoint(
+  value: unknown,
+  fallback: NetworkEndpointSettings
+): NetworkEndpointSettings {
+  if (typeof value === "string") {
+    return { mode: "custom", url: value.trim() || fallback.url };
+  }
+
+  if (value && typeof value === "object") {
+    const maybeEndpoint = value as Partial<NetworkEndpointSettings>;
+    const mode = maybeEndpoint.mode === "custom" ? "custom" : "resolver";
+    return {
+      mode,
+      url: typeof maybeEndpoint.url === "string" && maybeEndpoint.url.trim()
+        ? maybeEndpoint.url.trim()
+        : fallback.url
+    };
+  }
+
+  return fallback;
+}
+
+function loadNetworkEndpoints(): NetworkRpcEndpoints {
   const defaults = defaultNetworkEndpoints();
 
   try {
-    const saved = JSON.parse(localStorage.getItem(NETWORK_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkEndpoints>;
+    const saved = JSON.parse(localStorage.getItem(NETWORK_ENDPOINTS_STORAGE_KEY) ?? "{}") as Record<string, unknown>;
     return {
-      mainnet: saved.mainnet?.trim() || defaults.mainnet,
-      "testnet-10": saved["testnet-10"]?.trim() || defaults["testnet-10"]
+      mainnet: normalizeNetworkEndpoint(saved.mainnet, defaults.mainnet),
+      "testnet-10": normalizeNetworkEndpoint(saved["testnet-10"], defaults["testnet-10"])
     };
   } catch {
     return defaults;
   }
 }
 
-function loadIndexEndpoints(): NetworkEndpoints {
-  const defaults: NetworkEndpoints = {
+function loadIndexEndpoints(): NetworkTextEndpoints {
+  const defaults: NetworkTextEndpoints = {
     mainnet: DEFAULT_RAFFLE_INDEX_API,
     "testnet-10": DEFAULT_RAFFLE_INDEX_API
   };
   try {
-    const saved = JSON.parse(localStorage.getItem(INDEX_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkEndpoints>;
+    const saved = JSON.parse(localStorage.getItem(INDEX_ENDPOINTS_STORAGE_KEY) ?? "{}") as Partial<NetworkTextEndpoints>;
     return {
       mainnet: saved.mainnet?.trim() || defaults.mainnet,
       "testnet-10": saved["testnet-10"]?.trim() || defaults["testnet-10"]
@@ -168,6 +197,12 @@ function validateRpcUrl(value: string): string {
   }
 
   return normalized;
+}
+
+function rpcTargetFromSettings(endpoint: NetworkEndpointSettings): KaspaRpcEndpoint {
+  return endpoint.mode === "resolver"
+    ? { mode: "resolver" }
+    : { mode: "custom", url: validateRpcUrl(endpoint.url) };
 }
 
 type RefundTimeoutPart = "months" | "days" | "hours" | "minutes" | "seconds";
@@ -341,7 +376,12 @@ function decodeShareMetadata(value: string) {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : String(error || fallback);
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+
+  const message = String(error || "");
+  return message || fallback;
 }
 
 function shouldShrinkRefundBatch(error: unknown): boolean {
@@ -377,12 +417,13 @@ function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "networ
 export function App() {
   const rpcConnectionRef = useRef<KaspaRpcConnection | null>(null);
   const [language, setLanguage] = useState<Language>(() => initialLanguage());
-  const [networkEndpoints, setNetworkEndpoints] = useState<NetworkEndpoints>(() => loadNetworkEndpoints());
-  const [indexEndpoints, setIndexEndpoints] = useState<NetworkEndpoints>(() => loadIndexEndpoints());
+  const [networkEndpoints, setNetworkEndpoints] = useState<NetworkRpcEndpoints>(() => loadNetworkEndpoints());
+  const [indexEndpoints, setIndexEndpoints] = useState<NetworkTextEndpoints>(() => loadIndexEndpoints());
   const [networkId, setNetworkId] = useState<SupportedNetworkId>("testnet-10");
-  const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"]);
+  const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"].url);
   const [isNetworkMenuOpen, setIsNetworkMenuOpen] = useState(false);
   const [networkSettingsId, setNetworkSettingsId] = useState<SupportedNetworkId | null>(null);
+  const [networkEndpointModeDraft, setNetworkEndpointModeDraft] = useState<NetworkEndpointMode>("resolver");
   const [networkEndpointDraft, setNetworkEndpointDraft] = useState("");
   const [nodeStatus, setNodeStatus] = useState<KaspaNodeStatus>({
     connected: false,
@@ -469,10 +510,14 @@ export function App() {
     [language, refundTimeoutParts]
   );
   const selectedNetwork = requireNetworkProfile(networkId);
+  const currentNetworkEndpoint = networkEndpoints[networkId];
   const networkSwitchDisabled = isCreatingRound || isBuying || isFinalizing || isRefundingRound;
   const t = (key: string, values?: TranslationValues) => translate(language, key, values);
   const rt = (value: string) => translateRuntimeText(language, value);
   const networkLabel = (id: SupportedNetworkId) => t(id === "mainnet" ? "network.mainnet" : "network.testnet10");
+  const endpointSummary = (endpoint: NetworkEndpointSettings) => (
+    endpoint.mode === "resolver" ? t("node.resolver") : endpoint.url
+  );
 
   useEffect(() => {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
@@ -756,14 +801,14 @@ export function App() {
     return { ticket, batchIndex, proofHex: proof.proofHex };
   }
 
-  function persistNetworkEndpoints(next: NetworkEndpoints) {
+  function persistNetworkEndpoints(next: NetworkRpcEndpoints) {
     setNetworkEndpoints(next);
     localStorage.setItem(NETWORK_ENDPOINTS_STORAGE_KEY, JSON.stringify(next));
   }
 
   function handleRpcUrlInput(value: string) {
     setRpcUrl(value);
-    persistNetworkEndpoints({ ...networkEndpoints, [networkId]: value });
+    persistNetworkEndpoints({ ...networkEndpoints, [networkId]: { mode: "custom", url: value } });
   }
 
   function handleIndexApiInput(value: string) {
@@ -806,8 +851,10 @@ export function App() {
   }
 
   function openNetworkSettings(profileId: SupportedNetworkId) {
+    const endpoint = networkEndpoints[profileId];
     setNetworkSettingsId(profileId);
-    setNetworkEndpointDraft(networkEndpoints[profileId]);
+    setNetworkEndpointModeDraft(endpoint.mode);
+    setNetworkEndpointDraft(endpoint.url);
     setRpcError("");
   }
 
@@ -817,12 +864,19 @@ export function App() {
     }
 
     try {
-      const endpoint = validateRpcUrl(networkEndpointDraft);
+      const endpoint: NetworkEndpointSettings = networkEndpointModeDraft === "resolver"
+        ? { mode: "resolver", url: networkEndpointDraft.trim() || requireNetworkProfile(networkSettingsId).suggestedRpcUrl }
+        : { mode: "custom", url: validateRpcUrl(networkEndpointDraft) };
       const next = { ...networkEndpoints, [networkSettingsId]: endpoint };
       persistNetworkEndpoints(next);
 
       if (networkSettingsId === networkId) {
-        setRpcUrl(endpoint);
+        setRpcUrl(endpoint.url);
+        if (rpcConnectionRef.current) {
+          void disconnectBrowserRpc(rpcConnectionRef.current).catch(() => undefined);
+          rpcConnectionRef.current = null;
+          setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
+        }
       }
 
       setNetworkSettingsId(null);
@@ -860,7 +914,7 @@ export function App() {
     setVirtualDaaScore(0n);
     setWallet(null);
     setNetworkId(nextNetwork);
-    setRpcUrl(networkEndpoints[nextNetwork]);
+    setRpcUrl(networkEndpoints[nextNetwork].url);
     setHistoryApiBase(nextProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[nextNetwork]);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(defaultRefundTimeoutSeconds(nextNetwork)));
@@ -895,7 +949,10 @@ export function App() {
 
     try {
       await disconnectBrowserRpc(rpcConnectionRef.current);
-      const endpoint = validateRpcUrl(rpcUrl);
+      const endpointSettings = currentNetworkEndpoint.mode === "custom"
+        ? { ...currentNetworkEndpoint, url: rpcUrl }
+        : currentNetworkEndpoint;
+      const endpoint = rpcTargetFromSettings(endpointSettings);
       const connection = await connectBrowserRpc(endpoint, networkId);
       const connectedNetwork = normalizeNetworkId(connection.status.network);
 
@@ -906,7 +963,9 @@ export function App() {
 
       rpcConnectionRef.current = connection;
       setNodeStatus({ ...connection.status, network: connectedNetwork });
-      handleRpcUrlInput(endpoint);
+      if (endpointSettings.mode === "custom") {
+        persistNetworkEndpoints({ ...networkEndpoints, [networkId]: endpointSettings });
+      }
 
       setMetadata((current) => (
         current.createTxId || current.covenant
@@ -1021,7 +1080,7 @@ export function App() {
     setMetadata(normalizedMetadata);
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setNetworkId(profile.id);
-    setRpcUrl(networkEndpoints[profile.id]);
+    setRpcUrl(networkEndpoints[profile.id].url);
     setHistoryApiBase(profile.historyApiBase);
     setIndexApiBase(indexEndpoints[profile.id]);
     setCreateRegistryAddress(normalizedMetadata.registryAddress ?? "");
@@ -2045,7 +2104,7 @@ export function App() {
       };
 
       setNetworkId(loadedNetwork);
-      setRpcUrl(networkEndpoints[loadedNetwork]);
+      setRpcUrl(networkEndpoints[loadedNetwork].url);
       setHistoryApiBase(loadedProfile.historyApiBase);
       setIndexApiBase(indexEndpoints[loadedNetwork]);
       setCreateRegistryAddress(restoredMetadata.registryAddress ?? "");
@@ -2097,7 +2156,7 @@ export function App() {
       : undefined;
 
     setNetworkId(loadedNetwork);
-    setRpcUrl(networkEndpoints[loadedNetwork]);
+    setRpcUrl(networkEndpoints[loadedNetwork].url);
     setHistoryApiBase(loadedProfile.historyApiBase);
     setIndexApiBase(indexEndpoints[loadedNetwork]);
     setCreateRegistryAddress(loadedRegistryAddress);
@@ -2275,8 +2334,8 @@ export function App() {
                     >
                       <span className="network-check" aria-hidden="true">{selected ? <Check size={16} /> : null}</span>
                       <span className="network-option-copy">
-                        <strong>{networkLabel(profile.id)}{profile.id === "testnet-10" ? <small className="network-code">TN12</small> : null}</strong>
-                        <small>{networkEndpoints[profile.id]}</small>
+                        <strong>{networkLabel(profile.id)}{profile.id === "testnet-10" ? <small className="network-code">TN10</small> : null}</strong>
+                        <small>{endpointSummary(networkEndpoints[profile.id])}</small>
                       </span>
                     </button>
                     <button
@@ -2290,11 +2349,32 @@ export function App() {
                     </button>
                     {editing ? (
                       <div className="network-endpoint-editor">
+                        <div className="endpoint-mode-toggle" role="radiogroup" aria-label={t("node.source")}>
+                          <label>
+                            <input
+                              type="radio"
+                              name={`node-source-${profile.id}`}
+                              checked={networkEndpointModeDraft === "resolver"}
+                              onChange={() => setNetworkEndpointModeDraft("resolver")}
+                            />
+                            <span>{t("node.resolver")}</span>
+                          </label>
+                          <label>
+                            <input
+                              type="radio"
+                              name={`node-source-${profile.id}`}
+                              checked={networkEndpointModeDraft === "custom"}
+                              onChange={() => setNetworkEndpointModeDraft("custom")}
+                            />
+                            <span>{t("node.custom")}</span>
+                          </label>
+                        </div>
                         <label className="field">
                           <span>{networkLabel(profile.id)} {t("node")}</span>
                           <input
                             value={networkEndpointDraft}
                             onChange={(event) => setNetworkEndpointDraft(event.target.value)}
+                            disabled={networkEndpointModeDraft === "resolver"}
                             autoFocus
                           />
                         </label>
@@ -2309,10 +2389,18 @@ export function App() {
         </div>
 
         <div className="setup-primary">
-          <label className="field inline-field">
-            <span>{t("node")}</span>
-            <input value={rpcUrl} onChange={(event) => handleRpcUrlInput(event.target.value)} />
-          </label>
+          {currentNetworkEndpoint.mode === "resolver" ? (
+            <div className="resolver-node-field" aria-label={t("node")}>
+              <span>{t("node")}</span>
+              <strong>{t("node.resolver")}</strong>
+              {nodeStatus.connected && nodeStatus.endpointUrl ? <small>{nodeStatus.endpointUrl}</small> : null}
+            </div>
+          ) : (
+            <label className="field inline-field">
+              <span>{t("node")}</span>
+              <input value={rpcUrl} onChange={(event) => handleRpcUrlInput(event.target.value)} />
+            </label>
+          )}
           {nodeStatus.connected ? (
             <button type="button" className="secondary" onClick={handleDisconnect}>{t("disconnect")}</button>
           ) : (

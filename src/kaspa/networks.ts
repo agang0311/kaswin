@@ -4,7 +4,8 @@ export interface NetworkProfile {
   id: SupportedNetworkId;
   label: string;
   shortLabel: string;
-  defaultRpcUrl: string;
+  defaultRpcMode: "resolver" | "custom";
+  suggestedRpcUrl: string;
   historyApiBase: string;
   addressPrefix: "kaspa:" | "kaspatest:";
   toccataActivationDaaScore: string;
@@ -15,16 +16,18 @@ export const NETWORK_PROFILES: readonly NetworkProfile[] = [
     id: "mainnet",
     label: "Mainnet",
     shortLabel: "Mainnet",
-    defaultRpcUrl: "ws://127.0.0.1:18110",
+    defaultRpcMode: "resolver",
+    suggestedRpcUrl: "ws://127.0.0.1:18110",
     historyApiBase: "https://api.kaspa.org",
     addressPrefix: "kaspa:",
     toccataActivationDaaScore: "474165565"
   },
   {
     id: "testnet-10",
-    label: "Testnet 12",
-    shortLabel: "TN12",
-    defaultRpcUrl: "ws://tn12-node.kaspa.com:18210",
+    label: "Testnet 10",
+    shortLabel: "TN10",
+    defaultRpcMode: "resolver",
+    suggestedRpcUrl: "wss://vector-10.kaspa.green/kaspa/testnet-10/wrpc/borsh",
     historyApiBase: "https://api-tn10.kaspa.org",
     addressPrefix: "kaspatest:",
     toccataActivationDaaScore: "467579632"

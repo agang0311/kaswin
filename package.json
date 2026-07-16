@@ -1,7 +1,7 @@
 {
   "name": "kaswin",
-  "version": "0.9.0",
-  "description": "Kaswin, a single-file Mainnet and Testnet 12 raffle dApp for Kaspa Toccata.",
+  "version": "0.9.1",
+  "description": "Kaswin, a single-file Mainnet and Testnet 10 raffle dApp for Kaspa Toccata.",
   "private": true,
   "type": "module",
   "scripts": {

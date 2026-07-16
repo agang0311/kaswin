@@ -1,9 +1,15 @@
-import { Encoding, RpcClient } from "@onekeyfe/kaspa-wasm";
+import { Encoding, Resolver, RpcClient } from "@onekeyfe/kaspa-wasm";
 import { ensureKaspaWasmReady } from "./wasm";
+
+export type KaspaRpcEndpoint =
+  | { mode: "resolver" }
+  | { mode: "custom"; url: string };
 
 export interface KaspaNodeStatus {
   connected: boolean;
   network: string;
+  endpointMode?: KaspaRpcEndpoint["mode"];
+  endpointUrl?: string;
   syncStatus: "synced" | "syncing" | "unknown";
   daaScore?: string;
   latencyMs?: number;
@@ -20,19 +26,25 @@ function encodingForUrl(url: string): Encoding {
   return url.includes(":18110") || url.includes(":18210") ? Encoding.SerdeJson : Encoding.Borsh;
 }
 
-export async function connectBrowserRpc(url: string, network: string): Promise<KaspaRpcConnection> {
-  if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
+export async function connectBrowserRpc(endpoint: KaspaRpcEndpoint, network: string): Promise<KaspaRpcConnection> {
+  if (endpoint.mode === "custom" && !endpoint.url.startsWith("ws://") && !endpoint.url.startsWith("wss://")) {
     throw new Error("Kaspa browser RPC endpoints must use ws:// or wss://.");
   }
 
   await ensureKaspaWasmReady();
 
   const startedAt = performance.now();
-  const client = new RpcClient({
-    url,
-    encoding: encodingForUrl(url),
-    networkId: network
-  });
+  const client = endpoint.mode === "resolver"
+    ? new RpcClient({
+        resolver: new Resolver(),
+        encoding: Encoding.Borsh,
+        networkId: network
+      })
+    : new RpcClient({
+        url: endpoint.url,
+        encoding: encodingForUrl(endpoint.url),
+        networkId: network
+      });
   await client.connect();
 
   const serverInfo = await client.getServerInfo();
@@ -42,6 +54,8 @@ export async function connectBrowserRpc(url: string, network: string): Promise<K
     status: {
       connected: true,
       network: serverInfo.networkId ?? network,
+      endpointMode: endpoint.mode,
+      endpointUrl: client.url ?? (endpoint.mode === "custom" ? endpoint.url : undefined),
       syncStatus: syncStatus.isSynced ? "synced" : "syncing",
       daaScore: serverInfo.virtualDaaScore?.toString(),
       latencyMs: Math.round(performance.now() - startedAt),

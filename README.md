@@ -1,14 +1,14 @@
 # Kaswin
 
-Kaswin 是单 HTML 的 Kaspa Toccata covenant 抽奖应用。网页直接连接用户配置的 Kaspa wRPC 节点；随机数、开奖条件和派奖金额均由链上 covenant 验证，不依赖 oracle、随机数服务或证明服务器。
+Kaswin 是单 HTML 的 Kaspa Toccata covenant 抽奖应用。网页默认通过 Kaspa resolver 选择 wRPC 节点，也允许用户自定义节点；随机数、开奖条件和派奖金额均由链上 covenant 验证，不依赖 oracle、随机数服务或证明服务器。
 
 链上 payload 继续使用协议标识 `kaspa-raffle-static`，用于兼容已经创建的轮次；它不是当前产品名。
 
-当前 Mainnet/TN12 共用合约版本：`raffle-v15-arbitrary-batched-refund`；已创建的 `raffle-v14-batch-range` 轮次仍可加载和完成。
+当前 Mainnet/Testnet 10 共用合约版本：`raffle-v15-arbitrary-batched-refund`；已创建的 `raffle-v14-batch-range` 轮次仍可加载和完成。
 
 旧 metadata 和旧合约不再兼容。
 
-Mainnet Toccata 激活 DAA 为 `474165565`。页面连接节点后会读取实时 virtual DAA，只有达到对应网络的激活点才允许广播 covenant 交易。TN12 当前版本已记录七轮真实流程：两轮开奖派奖、五轮超时退款；其中一轮在第一批退款后刷新页面，并从 History Load 后继续完成剩余退款。当前合约也已在 Mainnet 连续完成三轮 create、buy、draw/pay，其中一轮覆盖刷新后从历史 load。三轮实际开奖费分别为 `0.040733`、`0.04319`、`0.040733 KAS`。
+Mainnet Toccata 激活 DAA 为 `474165565`。页面连接节点后会读取实时 virtual DAA，只有达到对应网络的激活点才允许广播 covenant 交易。Testnet 10 当前版本已记录七轮真实流程：两轮开奖派奖、五轮超时退款；其中一轮在第一批退款后刷新页面，并从 History Load 后继续完成剩余退款。当前合约也已在 Mainnet 连续完成三轮 create、buy、draw/pay，其中一轮覆盖刷新后从历史 load。三轮实际开奖费分别为 `0.040733`、`0.04319`、`0.040733 KAS`。
 
 ## 抽奖机制
 

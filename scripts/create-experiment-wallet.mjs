@@ -6,7 +6,7 @@ import { PrivateKey, initSync } from "../node_modules/@onekeyfe/kaspa-wasm/kaspa
 initSync({ module: fs.readFileSync(path.resolve("node_modules/@onekeyfe/kaspa-wasm/kaspa_bg.wasm.bin")) });
 
 const walletDir = path.resolve("wallets");
-const network = process.argv[2] ?? "testnet-12";
+const network = process.argv[2] ?? "testnet-10";
 const walletPath = path.join(walletDir, `experiment-${network}.json`);
 
 fs.mkdirSync(walletDir, { recursive: true });

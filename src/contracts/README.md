@@ -1,6 +1,6 @@
 # Covenant contracts
 
-- `raffle_round_v12.sil`: current shared Mainnet/TN12 chain-random raffle covenant.
+- `raffle_round_v12.sil`: current shared Mainnet/Testnet 10 chain-random raffle covenant.
 - `raffle_refund_v3.sil`: current resumable grouped-refund covenant.
 - `raffle_round_v11.sil` and `raffle_refund_v2.sil`: retained v14 artifacts for already-created rounds.
 

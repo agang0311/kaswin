@@ -181,6 +181,8 @@ try {
   assert(rejectedLegacyMetadata, "legacy imported metadata is rejected");
 
   const app = fs.readFileSync(path.join(root, "src/app/App.tsx"), "utf8");
+  const rpc = fs.readFileSync(path.join(root, "src/kaspa/rpc.ts"), "utf8");
+  const networks = fs.readFileSync(path.join(root, "src/kaspa/networks.ts"), "utf8");
   const localWallet = fs.readFileSync(path.join(root, "src/kaspa/wallet-local-test.ts"), "utf8");
   const transactions = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
   const history = fs.readFileSync(path.join(root, "src/kaspa/history.ts"), "utf8");
@@ -189,6 +191,9 @@ try {
   const merkle = fs.readFileSync(path.join(root, "src/raffle/merkle.ts"), "utf8");
   const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("<input value={indexApiBase}") && app.includes("localStorage.setItem(INDEX_ENDPOINTS_STORAGE_KEY"), "the web app exposes and persists a configurable indexer URL");
+  assert(networks.includes('defaultRpcMode: "resolver"') && rpc.includes("new Resolver()"), "network connections default to the Kaspa resolver");
+  assert(app.includes('mode: "custom", url: validateRpcUrl(networkEndpointDraft)') && app.includes("endpointSummary(networkEndpoints[profile.id])"), "users can override resolver routing with a custom wRPC node");
+  assert(networks.includes('label: "Testnet 10"') && app.includes("TN10") && !app.includes(`TN${12}`), "the browser labels the live test network as Testnet 10");
   assert(app.includes('useState<RaffleHistoryRound[]>(() => loadCachedRaffleHistory("testnet-10"))'), "browser startup immediately restores participated rounds into history");
   assert(app.includes("selectedHistoryRound.latestCovenant || selectedHistoryRound.localCachedAt"), "locally saved rounds remain loadable after finalization or an API outage");
   assert(app.includes('!registryAddresses.size && !byRoundId.size'), "browser history can load local participated rounds without a registry address");
