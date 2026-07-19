@@ -1,0 +1,19 @@
+{
+  "evidenceKind": "recorded-offline-indexer-benchmark",
+  "command": "npm run benchmark:indexer:1m",
+  "recordedDate": "2026-07-19",
+  "networkOperationsPerformed": false,
+  "fixture": "1,000,000 generated one-ticket range records; local disk state and loopback HTTP; retained v15 batch encoding",
+  "generatedRecords": 1000000,
+  "generationSeconds": 9.3,
+  "coldDiskIndexRebuildSeconds": 507.02,
+  "warmCheckpointRestartSeconds": 0.27,
+  "proofLatencyMilliseconds": {
+    "first": 11.71,
+    "middle": 2.7,
+    "last": 3.25
+  },
+  "ownerLookupMilliseconds": 21.49,
+  "warmIndexerRssBytes": 83603456,
+  "limitations": "Recorded local performance evidence only. It does not demonstrate a live node, Testnet/Mainnet, wallet, browser flow, or vNext network settlement."
+}

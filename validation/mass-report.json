@@ -1,0 +1,48 @@
+{
+  "evidenceKind": "local-transaction-shape-measurement",
+  "networkOperationsPerformed": false,
+  "protocolVersion": "raffle-vnext-liveness-guard-b1000",
+  "configuredPurchaseBatchLimit": 1000,
+  "abiProofBatchLimit": 13,
+  "refundTransitionFeeCapSompi": "20000000",
+  "refundFeeCapSompi": "20000000",
+  "measurements": [
+    {
+      "network": "mainnet",
+      "shape": "successor",
+      "maxBatches": 7,
+      "outputs": 8,
+      "totalMass": "99695",
+      "storageMass": "99695",
+      "minimumFeeSompi": "9969500"
+    },
+    {
+      "network": "mainnet",
+      "shape": "final",
+      "maxBatches": 7,
+      "outputs": 8,
+      "totalMass": "90338",
+      "storageMass": "90338",
+      "minimumFeeSompi": "9033800"
+    },
+    {
+      "network": "testnet-10",
+      "shape": "successor",
+      "maxBatches": 7,
+      "outputs": 8,
+      "totalMass": "99695",
+      "storageMass": "99695",
+      "minimumFeeSompi": "9969500"
+    },
+    {
+      "network": "testnet-10",
+      "shape": "final",
+      "maxBatches": 7,
+      "outputs": 8,
+      "totalMass": "90338",
+      "storageMass": "90338",
+      "minimumFeeSompi": "9033800"
+    }
+  ],
+  "conclusion": "The configured purchase-batch limit is distinct from the measured standard refund-transaction prefix. Measurements are local SDK transaction-shape checks; they do not prove node admission or a live network refund."
+}

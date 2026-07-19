@@ -1,0 +1,5 @@
+protocolVersion=raffle-vnext-liveness-guard-b1000
+roundArtifactSha256=215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d
+refundArtifactSha256=bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2
+roundArtifactManifestMatch=true
+refundArtifactManifestMatch=true

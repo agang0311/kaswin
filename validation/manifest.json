@@ -1,0 +1,40 @@
+{
+  "evidenceSchemaVersion": 1,
+  "evidenceKind": "local-automated-candidate",
+  "verificationCommand": "npm run verify",
+  "networkOperationsPerformed": false,
+  "localVerificationPassed": true,
+  "appVersion": "0.9.13",
+  "protocolVersion": "raffle-vnext-liveness-guard-b1000",
+  "commit": "f7012253b50a7bf123df4634ff5f6d2b13a832d0",
+  "workspaceDirty": true,
+  "roundArtifactSha256": "215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d",
+  "refundArtifactSha256": "bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2",
+  "singleHtmlSha256": "8eb9d0bb90361581d28607938610b88305ca6d6e1cf2455e429c09cf65c3f258",
+  "sameWorkspaceDoubleBuildSha256": [
+    "8eb9d0bb90361581d28607938610b88305ca6d6e1cf2455e429c09cf65c3f258",
+    "8eb9d0bb90361581d28607938610b88305ca6d6e1cf2455e429c09cf65c3f258"
+  ],
+  "sameWorkspaceDoubleBuildMatches": true,
+  "sourceFingerprintBeforeVerify": "7092469f6dbcebda1dee0e3cdbc4464aa6814d8dc4ed4146ac5f11563bd6d523",
+  "sourceFingerprintBeforeRebuild": "7092469f6dbcebda1dee0e3cdbc4464aa6814d8dc4ed4146ac5f11563bd6d523",
+  "sourceFingerprintAfterRebuild": "7092469f6dbcebda1dee0e3cdbc4464aa6814d8dc4ed4146ac5f11563bd6d523",
+  "sourceChangedDuringVerify": false,
+  "sourceStableAcrossBuilds": true,
+  "buildReproducibilityStatus": "same-workspace-match",
+  "cleanEnvironmentRebuildVerified": false,
+  "testnetPassed": false,
+  "testnetEvidenceStatus": "current-exact-hash-network-evidence-pending",
+  "testnetCreateEvidenceTxId": null,
+  "mainnetSmokePassed": false,
+  "criticalOpen": null,
+  "highOpen": null,
+  "criticalHighAssessment": "Not independently assessed; null is intentional and must not be read as zero open defects.",
+  "releaseStatus": "blocked",
+  "releaseBlockers": [
+    "Testnet 10 A-E",
+    "Mainnet below-minimum refund smoke",
+    "wallet and mobile E2E",
+    "independent security audit"
+  ]
+}

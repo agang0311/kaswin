@@ -1,0 +1,9 @@
+{
+  "evidenceKind": "local-deterministic-refund-conservation-property-test",
+  "networkOperationsPerformed": false,
+  "command": "npm run verify:phase1 (within npm run verify)",
+  "cases": 10000,
+  "assertion": "Every generated shape preserves buyer principals and successor conservation; insufficient carrier is rejected.",
+  "logEvidence": "PASS 10,000 deterministic buyer-funded refund cases conserve value, restore transition debt, and preserve carrier",
+  "limitations": "This is deterministic local arithmetic/property coverage, not live signed-transaction or network settlement evidence."
+}
