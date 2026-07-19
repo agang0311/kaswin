@@ -19,6 +19,7 @@ All notable changes to Kaswin are documented here. The repository distinguishes 
 - Kept the Refund artifact SHA-256 at `bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2`.
 - Unified the 1000 bound across the SilverScript contract, protocol manifest, state validation, metadata, Merkle helpers, transaction construction and creator UI.
 - Cached protocol Merkle empty nodes to avoid rebuilding the same 20 levels for every append/proof operation.
+- Made current runtime artifacts reproducible by replacing the wall-clock `generatedAt` field with a deterministic source SHA-256 commitment.
 - Made all RPC submissions strict `allowOrphan = false`; Registry publication selects confirmed wallet UTXOs and marker return waits for marker confirmation.
 - Registry publication now waits for the exact Create covenant output to confirm and excludes every wallet outpoint consumed by Create, even if a stale RPC UTXO view still reports that input as confirmed.
 - Updated page layout and guidance around current-round actions, creation/discovery, network/wallet status, action-local feedback, explorer links and language-consistent signing previews.

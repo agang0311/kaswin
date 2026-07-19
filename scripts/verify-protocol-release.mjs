@@ -28,6 +28,8 @@ for (const value of [manifest.protocolVersion, manifest.roundContract, manifest.
 assert.equal(manifest.artifactStatus, "compiled");
 for (const [file, expected] of [["raffle-round-vnext.artifact.json", manifest.roundArtifactSha256], ["raffle-refund-vnext.artifact.json", manifest.refundArtifactSha256]]) {
   const artifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled", file), "utf8"));
+  assert.match(artifact.sourceSha256 ?? "", /^[0-9a-f]{64}$/, `${file} must commit its source hash`);
+  assert.equal("generatedAt" in artifact, false, `${file} must not contain a wall-clock timestamp`);
   const actual = createHash("sha256").update(Buffer.from(artifact.script, "hex")).digest("hex");
   assert.equal(actual, expected, file + " script hash must match the manifest");
 }

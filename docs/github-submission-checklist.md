@@ -8,13 +8,14 @@ This checklist prepares the current worktree for review and commit. It does not 
 - Protocol: `raffle-vnext-liveness-guard-b1000`
 - Round artifact SHA-256: `215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d`
 - Refund artifact SHA-256: `bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2`
-- Single-file SHA-256: `fd75973bf790ef21dbf54bef1b8ba29f11357d5bd172bf3db8baf8dc8163882c`
+- Single-file SHA-256: `8504bf9798112d82b0c1514a1cf0e193ad079d3dfa891508ed8b1aa12f23f38d`
 
 ## Completed locally
 
 - [x] `npm run verify`
 - [x] `npm run validation:local`
 - [x] Same-workspace double build and stable source fingerprint
+- [x] Recompiling current runtime artifacts twice produces byte-identical artifact JSON (no wall-clock metadata)
 - [x] Contract VM accepts `max_batches = 1000` and rejects 1001
 - [x] Browser-visible 10-minute/60-minute/2-hour recommendation checks
 - [x] Old 0.9.12 protocol quarantined from current spending

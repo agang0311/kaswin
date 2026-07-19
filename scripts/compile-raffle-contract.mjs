@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -136,7 +137,7 @@ const runtimeArtifact = {
   contract: compiled.contract_name,
   compilerVersion: compiled.compiler_version,
   source: `../${sourceName}.sil`,
-  generatedAt: new Date().toISOString(),
+  sourceSha256: createHash("sha256").update(fs.readFileSync(sourcePath)).digest("hex"),
   script: Buffer.from(compiled.script).toString("hex"),
   scriptLength: compiled.script.length,
   withoutSelector: compiled.without_selector,
