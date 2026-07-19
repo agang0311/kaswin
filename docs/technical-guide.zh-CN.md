@@ -1,57 +1,56 @@
-# 技术指南
+# 技术指南（vNext 本地候选）
 
-## 当前架构
+## 状态边界
 
-- 网页：React/Vite 构建后内联为单个 `dist/index.html`，直接连接用户配置的 Kaspa wRPC。
-- 合约：`RaffleRoundV11` 负责购票与开奖，`RaffleRefundV2` 负责超时后可续执行退款。
-- Indexer：`indexer/raffle-indexer.mjs` 是独立只读应用，只保存公开购买区间并生成 Merkle proof，不持有私钥、不签名、不生成随机数。
-- 当前版本：新轮次使用 `raffle-v15-arbitrary-batched-refund`；保留 `raffle-v14-batch-range` artifact 处理已经创建的轮次。
+当前清单 `protocol-manifest.json` 的协议为 `raffle-vnext-liveness-guard-b1000`，合约为 `RaffleRoundVNext` 和 `RaffleRefundVNext`。合约、artifact、交易层、页面与 Indexer 已在本地接通；vNext 尚未完成 Testnet/Mainnet 网络门禁，不能作为已发布网络协议描述。完整状态与证据见 [验证证据矩阵](audit-evidence-matrix.md)。
 
-## 购买区间树
+v16/v15/v14 是历史协议：页面识别其 metadata 并给出对应历史 release，不允许把它们的状态编码或费用规则当作 vNext 使用。兼容映射见 [合约兼容性](contract-compatibility.md)。
 
-深度 20 的 Merkle 树最多保存 1,048,576 个购买批次。每个叶子为：
+## Round、Merkle 与状态机
 
-```text
-SHA256(owner_pubkey || uint64_le(first_ticket_id_zero_based) || uint64_le(ticket_count))
-```
+当前 `max_batches` 默认值为 100、covenant 硬上限为 1000。页面根据售票时长实时计算 `max(1, min(1000, floor(售票秒数 / 6)))` 作为保守建议；超过建议值但不超过 1000 时仍允许创建，同时必须提示单 Round UTXO 串行购票造成的 stale 竞争和退款交易数量风险。合约、metadata、交易层、Indexer 与 UI 必须统一接受 1000、拒绝 1001。
 
-`ticket_count` 可以是任意正整数，但 `sold_tickets + ticket_count` 不能超过本轮上限 1,000,000。每次购买仍只生成一个 Merkle 叶子，所以任意数量不会按票展开链上状态。
+vNext Round 状态的规范顺序为 `round_nonce`、`max_tickets`、`min_tickets`、`max_batches`、`ticket_price`、`creator_pubkey`、`sales_deadline_daa`、`sold_tickets`、`sold_batches`、`ticket_root`、`frontier`、`refund_cursor`、`refund_batch_cursor`。`min_tickets` 和 `max_batches` 是 covenant 字段，不是仅由 UI/metadata 约束。
 
-## 开奖
-
-售罄时，随机边界是最终购票 covenant UTXO 的 DAA 加 30；未售罄时，边界是创建时写入的超时 DAA 加 30。客户端提供首个跨越边界的 selected-chain 区块及父区块，合约重算两个区块哈希并验证：
+深度 20 的购买叶子为：
 
 ```text
-seed = SHA256(ticket_root || target_block_hash || OpChainblockSeqCommit(target_block_hash))
-winner = uint56_le(seed[0..7]) % sold_tickets
+SHA256("KASPA_RAFFLE_BATCH_V2" || round_nonce || owner_pubkey || uint64_le(first_ticket_id) || uint64_le(ticket_count))
 ```
 
-中奖 proof 同时提交购买批次下标、起始票号、数量和 owner。合约检查中奖票位于该区间，并强制输出 0 把全部奖池支付给 owner；剩余 carrier 扣除实际 mass fee 后退给创建者。开奖无需钱包签名。
+一次购买只能追加一个正数量区间，金额精确增加 `ticket_price * ticket_count`。合约在截止、剩余票数和 `max_batches` 上拒绝无效 successor。状态转换互斥：售罄或截止且达到最低票数只能 finalize；截止且 `0 < sold_tickets < min_tickets` 只能 startRefund；到期零售出没有购票款可退，只能由任何人触发 `closeEmpty`，其唯一输出为 `carrier - close_fee` 并严格支付到状态承诺的 creator 公钥。页面状态机在到期后必须禁用 Buy，并把零售票轮次自动切到该关闭入口。
 
-## 退款
+## 随机数与结算
 
-超时后，任何人都可以把 round covenant 转换为 refund covenant。退款状态同时保存：
+售罄使用最终购买 covenant UTXO DAA；未售罄但达到最低票数时使用 `max(销售截止 DAA, 当前 covenant UTXO DAA)`，然后加 30。后一规则覆盖截止时最多一笔在途 successor：若它在截止后确认，随机区块也随之移到未来，攻击者不能针对已经公开的截止区块选择性购票。Round covenant 验证 target/parent 哈希、selected parent、DAA 跨越及 `OpChainblockSeqCommit`，之后计算：
 
-- `refund_cursor`：已经覆盖的票数；
-- `refund_batch_cursor`：已经完成的原始购买批次数。
+```text
+seed = SHA256("KASPA_RAFFLE_DRAW_V2" || round_nonce || ticket_root || target_block_hash || chain_seqcommit)
+winner = bounded_rejection_then_modulo(seed, sold_tickets)
+```
 
-每次 `refundNext` 验证最多 13 个连续原始购买区间 proof，并为每个区间创建独立买家退款输出。调用者可中断；其他人 load 最新 covenant 后按两个链上游标继续。13 批实测 454,618 script units，14 批 498,904，后者无法给 500,000 上限下的交易基础 mass 留出安全空间。浏览器随后用 SDK 试算完整交易的 compute/storage mass；若候选不可标准中继，会逐条移除末尾批次，直到得到当前金额布局下最大的可行前缀。
+中奖 range proof、赢家地址、奖池金额、creator carrier 返回和费用上限都由 covenant 约束。抽样最多重哈希四次，仍未落入无偏区间时使用确定性取模兜底；这会带来可计算但极小的末端偏差，换取任何合法种子都能完成开奖。RPC/History/Indexer 给出的区块仅是候选提示，不能替换最终结果。
 
-## 数据规模
+## 退款与费用
 
-- Registry 扫描发现的轮次始终显示，indexer 不可用不会隐藏大轮次。
-- 本地缓存或链历史包含完整购买批次时，页面直接生成中奖和退款 proof，不受 `maxTickets` 影响。
-- 只有完整购买批次不可用时，页面才从用户配置的 indexer URL 获取缺失 proof。
-- Indexer 记录固定 80 字节：owner 32、交易 id 32、起始票号 uint64、数量 uint64；票号查询通过区间二分定位到购买批次。
+vNext 退款按连续购买批次执行，实际启动费和退款交易费从本次选中批次的购票款中分摊扣除。carrier 不再按潜在买家数量预留退款费。当前合约要求票价至少 1 KAS；在 0.20 KAS 启动费上限与 0.20 KAS 单笔退款费上限同时出现的最坏单票场景，owner 仍得到 0.60 KAS，且真实 compiled script 质量低于标准上限。退款费上限仍超过当前 0.099695 KAS 最坏实测值的两倍，但显著压低公开触发者恶意过付矿工费的损失边界。
 
-目标区块查找先用创建交易的接纳区块校准 `DAA - blueScore` 偏移，再从现有历史 API 读取目标附近的有界候选集合。所有候选都会通过 wRPC 重新读取并验证 selected parent、DAA 跨越与区块哈希；历史 API 只优化查找速度，不进入随机数信任边界。若候选不可用，则回退到 wRPC selected-chain 查找。
+Refund ABI 每笔最多接收 13 个 proof；构造器会根据实际 compute/storage mass 自动缩小批次，直到交易满足标准中继限制。`max_batches` 是整轮购买批次数上限，不是单笔退款承诺。
 
-## 验证
+Create 与 Registry 各自直接选择钱包 UTXO，并在各自唯一一次钱包请求前收敛手续费；因此创建轮次合计预计 2 次钱包请求。Buy 把 covenant 输入、票款输入、successor 与安全找零合并为一笔交易，费用在唯一一次钱包请求前收敛；签名后节点若报告更高最低费，构造器停止并要求重新审阅，不会后台触发第二次签名。Mainnet 与 Testnet 默认 Registry 使用各自网络的同一域标签脚本，临时 marker 为 0.20 KAS，公开返回 0.19 KAS，Registry 净费用固定为 0.01 KAS，钱包网络费另计。质量门禁同时证明直接 0.01 KAS Registry 输出不是标准中继交易形状。
+
+所有提交都严格使用 `allowOrphan = false`。Registry 在唯一一次钱包签名前只选择 `blockDaaScore > 0` 的已确认钱包 UTXO；自动 marker 返回也等待 marker 确认，从源头避免 Resolver 后端的父子传播竞态。若 Registry 发布中断，当前轮次会常驻显示单独的恢复按钮；恢复动作先只读查询 Registry 历史，无法确认是否重复时不会签名。错误归一化继续区分 orphan、stale/double-spend、节点费用下限、selected-chain/reorg、重复/已知交易与未知策略拒绝，并保留本地确定性交易 ID。stale Buy 只触发只读 History 刷新，替代交易必须重新审阅和签名。
+
+## 本地验证与网络门禁
+
+默认 Registry marker 返回也是独立恢复状态。若 Registry marker 已接受但 0.19 KAS 返回中断，页面必须先只读查询 marker 精确 outpoint 的唯一已接受 spender；只有该交易恰有一个 0.19 KAS 输出且收款地址由 Round covenant 承诺的 creator 公钥导出时，才能恢复为已完成。marker 仍未花费时才可重新触发固定收款人的公开返回；History 不可用、重复或输出不符时一律阻断，不能盲目重试。
 
 ```powershell
-npm run compile:contract
+npm run compile:vnext
 npm run verify
 npm run benchmark:indexer:1m
 ```
 
-当前 VM 门禁包含任意 37 张购票、13 个购买批次单交易退款、load 后从下一组批次续退、错误 proof 拒绝和 round-to-refund 模板切换。Mainnet 广播还会检查官方 Toccata 激活 DAA。
+当前协议为 `raffle-vnext-liveness-guard-b1000`：退款网络费从选中的购票款中扣除；`buy` 同时强制 `covenant value - sold principal >= 57,300,000 sompi`，不能因第三方绕过官方 Genesis 页面而让买家进入低 carrier 轮次。由于 Genesis 可由任意工具构造，Buy 还会从 `frontier + sold_batches` 重算 padded root，并拒绝负数、零值不成对、批次数大于票数或 root/frontier 不一致的输入状态，避免下一次真实购票改写已有票权承诺。`topUp(int top_up_amount)` 只在未到期且未达到最低票数时允许 successor covenant 增加声明的金额，强制所有状态字段不变，并在接受补充资金前再次验证 root/frontier 与票数拓扑。达到最低票数后补充会移动开奖 DAA，合约必须拒绝。只有清单中精确匹配的新 artifact 能构造支出；旧 vNext 候选不会被新退款模板或新 ABI 静默解释。该版本尚未网络发布。
+
+本地门禁涵盖 artifact hash、实际 VM 正反例、金额/质量、nonce 域 Merkle、Indexer persistence/reorg、单文件和生产凭据扫描。它不替代 Testnet A–E、Mainnet 小额、钱包与移动端 E2E或独立审计；这些项仍是发布阻断项。

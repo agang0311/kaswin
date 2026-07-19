@@ -3,16 +3,19 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { initSync, payToScriptHashScript } from "../node_modules/@onekeyfe/kaspa-wasm/kaspa.js";
+import { createRequire } from "node:module";
+import { initSync, payToScriptHashScript } from "@onekeyfe/kaspa-wasm/kaspa.js";
 
 const root = process.cwd();
+const requireFromScript = createRequire(import.meta.url);
+const kaspaPackageDirectory = path.dirname(requireFromScript.resolve("@onekeyfe/kaspa-wasm/kaspa.js"));
 const refundSource = path.join(root, "src/contracts/raffle_refund_v16.sil");
 const roundSource = path.join(root, "src/contracts/raffle_round_v16.sil");
 const refundArtifact = JSON.parse(fs.readFileSync(path.join(root, "src/contracts/compiled/raffle-refund-v16.artifact.json"), "utf8"));
 const debuggerDir = path.join(root, ".tools/silverscript/target/debug");
 const debuggerPath = path.join(debuggerDir, process.platform === "win32" ? "cli-debugger.exe" : "cli-debugger");
 
-initSync({ module: fs.readFileSync(path.join(root, "node_modules/@onekeyfe/kaspa-wasm/kaspa_bg.wasm.bin")) });
+initSync({ module: fs.readFileSync(path.join(kaspaPackageDirectory, "kaspa_bg.wasm.bin")) });
 
 const owner = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 const covenantId = `0x${"11".repeat(32)}`;
@@ -179,7 +182,7 @@ function refundOutputs(selectedBatches, hasSuccessor, covenantValue, nextState) 
 
 const refundTests = { tests: [
   {
-    name: "refund_maximum_13_purchase_batches_in_one_transaction",
+    name: "legacy_v16_refund_abi_accepts_maximum_13_purchase_batches_in_one_transaction",
     function: "refundNext",
     args: packedArgs(batches.slice(0, maxBatchCount), 0),
     expect: "pass",

@@ -39,6 +39,9 @@ export interface IndexedRaffleRound {
   ticketPrice?: string;
   maxTickets?: number;
   minTickets?: number;
+  maxBatches?: number;
+  roundNonce?: string;
+  salesDeadlineDaa?: string;
   refundAfterDaaScore?: string;
   createdAtDaaScore?: string;
   refundTimeoutSeconds?: string;
@@ -66,6 +69,7 @@ export interface IndexedRaffleRound {
     ticketFrontier: string;
     refundCursor: number;
     refundBatchCursor: number;
+    refundFeeDebtSompi?: string;
     creatorPubkey: string;
     refundAfterDaaScore: string;
     ticketOwnerPubkeys: string[];

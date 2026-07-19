@@ -1,0 +1,282 @@
+contract RaffleRoundVNext() {
+    struct RefundState {
+        byte[32] round_nonce;
+        int ticket_price;
+        byte[32] creator_pubkey;
+        int sold_tickets;
+        int sold_batches;
+        byte[32] ticket_root;
+        int refund_cursor;
+        int refund_batch_cursor;
+        int refund_fee_debt;
+    }
+
+    // BLAKE2b-256 of RaffleRefundVNext's immutable prefix || suffix.  It is
+    // regenerated whenever the refund artifact changes.
+    byte[32] constant REFUND_TEMPLATE = 0xbfc24ab1e05e1d4ba43c9bf1db409d293013364b310a13c9bad1de3ee411d790;
+    byte[9] constant BLOCK_HASH_KEY = 0x426c6f636b48617368;
+    byte[] constant BATCH_DOMAIN = 0x4b415350415f524146464c455f42415443485f5632;
+    byte[] constant DRAW_DOMAIN = 0x4b415350415f524146464c455f445241575f5632;
+    int constant RANDOM_DELAY_DAA = 30;
+    int constant MAX_FINALIZE_FEE = 20000000;
+    int constant MAX_REFUND_TRANSITION_FEE = 20000000;
+    int constant MAX_REFUND_FEE = 20000000;
+    // A one-ticket purchase must still leave a relay-usable 0.20 KAS owner
+    // output after the maximum transition debt and refund fee are allocated.
+    int constant MIN_REFUNDABLE_TICKET_PRICE = 100000000;
+    // A buyer must never enter a round whose carrier cannot leave both
+    // finalize outputs relay-usable at the maximum covenant fee.  Genesis is
+    // permissionless, so the covenant must enforce this independently of the
+    // official creator UI.
+    int constant MIN_COVENANT_CARRIER = 57300000;
+    // Keep every ticket-price multiplication inside a conservative signed
+    // 64-bit range.  Genesis parameters are otherwise attacker supplied.
+    int constant MAX_ROUND_PRINCIPAL = 4611686018427387904;
+    // The economic capacity is deliberately bounded, but buyers fund the
+    // network fee for their own refund transaction from their ticket payment.
+    int constant MAX_ROUND_BATCHES = 1000;
+    int constant MAX_CLOSE_FEE = 20000000;
+
+    byte[32] round_nonce = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int max_tickets = 0;
+    int min_tickets = 0;
+    int max_batches = 0;
+    int ticket_price = 0;
+    byte[32] creator_pubkey = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    int sales_deadline_daa = 0;
+    int sold_tickets = 0;
+    int sold_batches = 0;
+    byte[32] ticket_root = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[640] frontier = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
+    int refund_cursor = 0;
+    int refund_batch_cursor = 0;
+
+    function blockHash(byte[] before_daa, int daa_score, int blue_score, byte[] encoded_blue_work, byte[32] pruning_point) : byte[32] {
+        require(before_daa.length >= 166);
+        require(encoded_blue_work.length >= 8 && encoded_blue_work.length <= 40);
+        int work_length = OpBin2Num(encoded_blue_work.slice(0, 8));
+        require(work_length >= 0 && work_length + 8 == encoded_blue_work.length);
+        byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);
+        return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));
+    }
+
+    function ticketBatchLeaf(pubkey owner_pubkey, int first_ticket_id, int ticket_count) : byte[32] {
+        return(sha256(BATCH_DOMAIN + byte[](round_nonce) + byte[](owner_pubkey) + byte[](byte[8](first_ticket_id)) + byte[](byte[8](ticket_count))));
+    }
+
+    function merkleRoot(byte[32] leaf, int batch_index, byte[] proof) : byte[32] {
+        require(proof.length == 640);
+        byte[32] node = leaf;
+        int path = batch_index;
+        for(level, 0, 20, 20) {
+            int start = level * 32;
+            byte[32] sibling = byte[32](proof.slice(start, start + 32));
+            if (path % 2 == 0) { node = sha256(byte[](node) + byte[](sibling)); }
+            else { node = sha256(byte[](sibling) + byte[](node)); }
+            path = path / 2;
+        }
+        return(node);
+    }
+
+    // Reconstruct the padded tree root from the append frontier.  Genesis is
+    // permissionless, so Buy must prove the existing root is the one encoded
+    // by the existing frontier before it appends a new owner batch.
+    function rootFromFrontier(int batch_count) : byte[32] {
+        require(batch_count >= 0 && batch_count <= MAX_ROUND_BATCHES);
+        byte[32] node = 0x0000000000000000000000000000000000000000000000000000000000000000;
+        byte[32] empty_node = node;
+        int path = batch_count;
+        for(level, 0, 20, 20) {
+            int start = level * 32;
+            if (path % 2 == 1) {
+                byte[32] subtree = byte[32](frontier.slice(start, start + 32));
+                node = sha256(byte[](subtree) + byte[](node));
+            } else {
+                node = sha256(byte[](node) + byte[](empty_node));
+            }
+            empty_node = sha256(byte[](empty_node) + byte[](empty_node));
+            path = path / 2;
+        }
+        require(path == 0);
+        return(node);
+    }
+
+    function seedNumber(byte[32] seed) : int {
+        int seed_0 = OpBin2Num(seed.slice(0, 1) + 0x00);
+        int seed_1 = OpBin2Num(seed.slice(1, 2) + 0x00);
+        int seed_2 = OpBin2Num(seed.slice(2, 3) + 0x00);
+        int seed_3 = OpBin2Num(seed.slice(3, 4) + 0x00);
+        int seed_4 = OpBin2Num(seed.slice(4, 5) + 0x00);
+        int seed_5 = OpBin2Num(seed.slice(5, 6) + 0x00);
+        int seed_6 = OpBin2Num(seed.slice(6, 7) + 0x00);
+        return(seed_0 + seed_1 * 256 + seed_2 * 65536 + seed_3 * 16777216 + seed_4 * 4294967296 + seed_5 * 1099511627776 + seed_6 * 281474976710656);
+    }
+
+    function winnerFromSeed(byte[32] initial_seed) : int {
+        int sampling_limit = (72057594037927936 / sold_tickets) * sold_tickets;
+        byte[32] candidate = initial_seed;
+        int random_value = seedNumber(candidate);
+        for(counter, 1, 4, 4) {
+            if (random_value >= sampling_limit) {
+                candidate = sha256(byte[](candidate) + byte[](byte[8](counter)));
+                random_value = seedNumber(candidate);
+            }
+        }
+        // Four rehashes make rejection astronomically unlikely. Do not make
+        // settlement depend on an unbounded probabilistic condition: the
+        // final modulo is the deterministic liveness fallback.
+        return(random_value % sold_tickets);
+    }
+
+    entrypoint function buy(pubkey owner_pubkey, int ticket_count) {
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
+        require(max_tickets > 0 && max_tickets <= 1000000);
+        require(min_tickets > 0 && min_tickets <= max_tickets);
+        require(max_batches > 0 && max_batches <= MAX_ROUND_BATCHES);
+        require(ticket_price >= MIN_REFUNDABLE_TICKET_PRICE && ticket_price <= MAX_ROUND_PRINCIPAL / max_tickets);
+        require(ticket_count > 0);
+        require(sold_tickets >= 0 && sold_tickets <= max_tickets);
+        require(sold_batches >= 0 && sold_batches <= max_batches && sold_batches <= sold_tickets);
+        if (sold_tickets == 0) { require(sold_batches == 0); }
+        else { require(sold_batches > 0); }
+        require(rootFromFrontier(sold_batches) == ticket_root);
+        // Consensus has no upper timelock. Checking the spent UTXO's DAA
+        // bounds the unavoidable deadline race to one successor: once a buy
+        // is accepted at/after the deadline, that successor cannot buy again.
+        require(tx.locktime < sales_deadline_daa && OpTxInputDaaScore(this.activeInputIndex) < sales_deadline_daa);
+        require(ticket_count <= max_tickets - sold_tickets);
+        require(sold_batches + 1 <= max_batches);
+        require(refund_cursor == 0 && refund_batch_cursor == 0);
+
+        byte[32] node = ticketBatchLeaf(owner_pubkey, sold_tickets, ticket_count);
+        byte[] next_frontier = byte[](frontier);
+        int path = sold_batches;
+        bool carrying = true;
+        byte[32] empty_node = 0x0000000000000000000000000000000000000000000000000000000000000000;
+        for(level, 0, 20, 20) {
+            int start = level * 32;
+            byte[32] sibling = empty_node;
+            if (path % 2 == 0) {
+                if (carrying) { next_frontier = next_frontier.slice(0, start) + byte[](node) + next_frontier.slice(start + 32, 640); carrying = false; }
+                node = sha256(byte[](node) + byte[](sibling));
+            } else {
+                sibling = byte[32](frontier.slice(start, start + 32));
+                node = sha256(byte[](sibling) + byte[](node));
+            }
+            empty_node = sha256(byte[](empty_node) + byte[](empty_node));
+            path = path / 2;
+        }
+        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + ticket_price * ticket_count);
+        // Ticket buyers add principal only.  Do not let an untrusted creator
+        // advertise a manually-built, under-carried Genesis: once the minimum
+        // is met, top-up is intentionally frozen to protect the draw boundary.
+        // Refund transaction fees still come from the selected purchases.
+        require(tx.outputs[cov_out_idx].value >= ticket_price * (sold_tickets + ticket_count) + MIN_COVENANT_CARRIER);
+        validateOutputState(cov_out_idx, {
+            round_nonce: round_nonce, max_tickets: max_tickets, min_tickets: min_tickets, max_batches: max_batches,
+            ticket_price: ticket_price, creator_pubkey: creator_pubkey, sales_deadline_daa: sales_deadline_daa,
+            sold_tickets: sold_tickets + ticket_count, sold_batches: sold_batches + 1, ticket_root: node,
+            frontier: byte[640](next_frontier), refund_cursor: 0, refund_batch_cursor: 0,
+        });
+    }
+
+    entrypoint function finalize(
+        byte[] target_before_daa, int target_daa, int target_blue_score, byte[] target_blue_work, byte[32] target_pruning_point,
+        byte[32] parent_hash, byte[] parent_before_daa, int parent_daa, int parent_blue_score, byte[] parent_blue_work, byte[32] parent_pruning_point,
+        int finalize_fee, int winner_ticket_id, int winner_batch_index, int winner_batch_start, int winner_batch_count, pubkey winner_pubkey, byte[] winner_proof
+    ) {
+        require(OpAuthOutputCount(this.activeInputIndex) == 0);
+        require(tx.inputs.length == 1);
+        require(max_tickets > 0 && max_tickets <= 1000000 && min_tickets > 0 && min_tickets <= max_tickets);
+        require(max_batches > 0 && max_batches <= MAX_ROUND_BATCHES && ticket_price >= MIN_REFUNDABLE_TICKET_PRICE && ticket_price <= MAX_ROUND_PRINCIPAL / max_tickets);
+        require(sold_tickets > 0 && sold_batches > 0);
+        require(sold_tickets <= max_tickets && sold_batches <= max_batches && sold_batches <= sold_tickets);
+        require(refund_cursor == 0 && refund_batch_cursor == 0);
+        require(sold_tickets == max_tickets || (tx.locktime >= sales_deadline_daa && sold_tickets >= min_tickets));
+        require(finalize_fee > 0 && finalize_fee <= MAX_FINALIZE_FEE);
+        int target_base = sales_deadline_daa;
+        // Sold-out rounds draw after the final ticket. If one pre-deadline
+        // covenant is spent in the unavoidable deadline race, its confirmed
+        // successor DAA also moves the beacon into the future, so the late
+        // buyer cannot choose tickets against an already-known block.
+        if (sold_tickets == max_tickets || OpTxInputDaaScore(this.activeInputIndex) >= sales_deadline_daa) {
+            target_base = OpTxInputDaaScore(this.activeInputIndex);
+        }
+        int target_boundary = target_base + RANDOM_DELAY_DAA;
+        require(parent_daa < target_boundary && target_daa >= target_boundary && parent_daa < target_daa);
+        require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);
+        require(blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point) == parent_hash);
+        byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);
+        byte[32] seqcommit = byte[32](OpChainblockSeqCommit(target_hash));
+        byte[32] seed = sha256(DRAW_DOMAIN + byte[](round_nonce) + byte[](ticket_root) + byte[](target_hash) + byte[](seqcommit));
+        require(winner_ticket_id == winnerFromSeed(seed));
+        require(winner_batch_index >= 0 && winner_batch_index < sold_batches);
+        require(winner_batch_start >= 0 && winner_batch_start <= winner_ticket_id && winner_batch_start < sold_tickets);
+        require(winner_batch_count > 0 && winner_batch_count <= sold_tickets - winner_batch_start);
+        require(winner_ticket_id - winner_batch_start < winner_batch_count);
+        require(merkleRoot(ticketBatchLeaf(winner_pubkey, winner_batch_start, winner_batch_count), winner_batch_index, winner_proof) == ticket_root);
+        int prize = ticket_price * sold_tickets;
+        int creator_carrier = tx.inputs[this.activeInputIndex].value - prize - finalize_fee;
+        require(creator_carrier >= 0);
+        require(tx.outputs.length == 2);
+        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(winner_pubkey)) && tx.outputs[0].value == prize);
+        require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))) && tx.outputs[1].value == creator_carrier);
+    }
+
+    entrypoint function startRefund(int refund_transition_fee, byte[] refund_prefix, byte[] refund_suffix) {
+        require(tx.inputs.length == 1);
+        require(tx.locktime >= sales_deadline_daa);
+        require(max_tickets > 0 && max_tickets <= 1000000 && min_tickets > 0 && min_tickets <= max_tickets);
+        require(max_batches > 0 && max_batches <= MAX_ROUND_BATCHES && ticket_price >= MIN_REFUNDABLE_TICKET_PRICE && ticket_price <= MAX_ROUND_PRINCIPAL / max_tickets);
+        require(sold_tickets > 0 && sold_batches > 0 && sold_tickets < min_tickets);
+        require(sold_tickets <= max_tickets && sold_batches <= max_batches && sold_batches <= sold_tickets);
+        require(refund_cursor == 0 && refund_batch_cursor == 0);
+        require(OpAuthOutputCount(this.activeInputIndex) == 1 && OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
+        require(tx.outputs.length == 1);
+        require(refund_transition_fee > 0 && refund_transition_fee <= MAX_REFUND_TRANSITION_FEE);
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - refund_transition_fee);
+        // The transition fee is restored from the first selected buyer batch,
+        // so the successor must retain every ticket's principal.
+        require(tx.outputs[0].value >= ticket_price * sold_tickets);
+        RefundState next_refund = { round_nonce: round_nonce, ticket_price: ticket_price, creator_pubkey: creator_pubkey, sold_tickets: sold_tickets, sold_batches: sold_batches, ticket_root: ticket_root, refund_cursor: 0, refund_batch_cursor: 0, refund_fee_debt: refund_transition_fee };
+        validateOutputStateWithTemplate(0, next_refund, refund_prefix, refund_suffix, REFUND_TEMPLATE);
+    }
+
+    entrypoint function closeEmpty(int close_fee) {
+        require(tx.locktime >= sales_deadline_daa && sold_tickets == 0 && sold_batches == 0);
+        require(OpAuthOutputCount(this.activeInputIndex) == 0 && tx.inputs.length == 1);
+        require(close_fee > 0 && close_fee <= MAX_CLOSE_FEE);
+        require(tx.outputs.length == 1);
+        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(creator_pubkey))));
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value - close_fee);
+    }
+
+    // Anyone may add carrier without changing ticket ownership, counters, the
+    // draw commitment, or the refund deadline. The funding input authorizes
+    // its own KAS; the covenant only accepts the exact declared increase.
+    entrypoint function topUp(int top_up_amount) {
+        require(top_up_amount > 0);
+        require(max_tickets > 0 && max_tickets <= 1000000 && min_tickets > 0 && min_tickets <= max_tickets);
+        require(max_batches > 0 && max_batches <= MAX_ROUND_BATCHES && ticket_price >= MIN_REFUNDABLE_TICKET_PRICE && ticket_price <= MAX_ROUND_PRINCIPAL / max_tickets);
+        require(sold_tickets >= 0 && sold_tickets <= max_tickets);
+        require(sold_batches >= 0 && sold_batches <= max_batches && sold_batches <= sold_tickets);
+        if (sold_tickets == 0) { require(sold_batches == 0); }
+        else { require(sold_batches > 0); }
+        require(rootFromFrontier(sold_batches) == ticket_root);
+        // Once the minimum is met, this covenant's DAA is part of the draw
+        // boundary. A later top-up would let a funder move that boundary.
+        // The input-DAA check also bounds an after-deadline top-up race to one.
+        require(sold_tickets < min_tickets && OpTxInputDaaScore(this.activeInputIndex) < sales_deadline_daa);
+        require(refund_cursor == 0 && refund_batch_cursor == 0);
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        int cov_out_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
+        require(tx.outputs[cov_out_idx].value == tx.inputs[this.activeInputIndex].value + top_up_amount);
+        validateOutputState(cov_out_idx, {
+            round_nonce: round_nonce, max_tickets: max_tickets, min_tickets: min_tickets, max_batches: max_batches,
+            ticket_price: ticket_price, creator_pubkey: creator_pubkey, sales_deadline_daa: sales_deadline_daa,
+            sold_tickets: sold_tickets, sold_batches: sold_batches, ticket_root: ticket_root,
+            frontier: frontier, refund_cursor: refund_cursor, refund_batch_cursor: refund_batch_cursor,
+        });
+    }
+}

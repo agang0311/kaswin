@@ -2,13 +2,20 @@ import {
   buildRaffleRedeemScriptForContractVersion,
   bytesToHex,
   isSupportedRaffleCovenantVersion,
-  raffleCovenantStateFromRound
+  raffleCovenantStateFromRound,
+  roundIdToBytes32
 } from "./covenant";
-import { isKnownRaffleContractVersion } from "../raffle/metadata";
+import { isKnownRaffleContractVersion, isVNextRaffleContractVersion } from "../raffle/metadata";
 import { appendTicketBatch, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
+import { appendBatch as appendVNextBatch } from "../protocol/merkle";
 import type { RaffleCovenantCursor, RoundState, RoundStatus } from "../raffle/types";
 import { ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
 import { loadIndexedRaffleRounds, requiresRaffleIndexer } from "./indexer";
+
+const HISTORY_REQUEST_TIMEOUT_MS = 10_000;
+// Candidate block hints only speed up the RPC proof path. They must never hold a
+// draw hostage when a public history endpoint is slow or temporarily incomplete.
+const RANDOMNESS_HINT_LOOKUP_TIMEOUT_MS = 7_500;
 
 export interface RaffleHistoryTicket {
   txId: string;
@@ -32,6 +39,7 @@ export interface RaffleHistoryRound {
   roundId: string;
   localCachedAt?: number;
   registryTxId?: string;
+  registryRefundTxId?: string;
   registryAddress?: string;
   createTxId?: string;
   refundTxId?: string;
@@ -45,9 +53,13 @@ export interface RaffleHistoryRound {
   refundAfterDaaScore?: string;
   chainSearchHintHash?: string;
   refundTimeoutDaa?: string;
+  refundFeeDebtSompi?: string;
   ticketPrice?: bigint;
   maxTickets?: number;
   minTickets?: number;
+  maxBatches?: number;
+  roundNonce?: string;
+  salesDeadlineDaa?: string;
   version?: string;
   contractVersion?: string;
   refundCursor?: number;
@@ -63,16 +75,32 @@ interface RestTransaction {
   transaction_id?: string;
   block_hash?: string[];
   accepting_block_hash?: string;
+  is_accepted?: boolean;
   payload?: string;
   block_time?: number;
   accepting_block_time?: number;
+  inputs?: RestTransactionInput[];
   outputs?: RestTransactionOutput[];
+}
+
+interface RestTransactionInput {
+  previous_outpoint_hash?: string;
+  previous_outpoint_index?: number | string;
+}
+
+export interface AcceptedOutpointSpend {
+  transactionId: string;
+  outputs: Array<{
+    index: number;
+    amount: bigint;
+    address?: string;
+  }>;
 }
 
 export async function loadTransactionChainAnchor(apiBaseUrl: string, transactionId: string): Promise<string> {
   if (!/^[0-9a-f]{64}$/i.test(transactionId)) throw new Error("A valid transaction id is required to recover its chain anchor.");
   const apiBase = apiBaseUrl.replace(/\/+$/, "");
-  const response = await fetch(`${apiBase}/transactions/${transactionId}`);
+  const response = await fetchHistory(`${apiBase}/transactions/${transactionId}`);
   if (!response.ok) throw new Error(`History API returned ${response.status} while recovering the round anchor.`);
   const transaction = await response.json() as RestTransaction;
   const anchor = transaction.accepting_block_hash ?? transaction.block_hash?.[0];
@@ -87,9 +115,31 @@ interface RestBlockHint {
   verboseData?: { hash?: string; isChainBlock?: boolean };
 }
 
-async function loadBlocksByBlueScore(apiBaseUrl: string, query: string): Promise<RestBlockHint[]> {
+async function fetchHistory(url: string, timeoutMs = HISTORY_REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`History API request timed out after ${Math.max(1, Math.ceil(timeoutMs / 1_000))} seconds.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function loadBlocksByBlueScore(apiBaseUrl: string, query: string, deadlineAt?: number): Promise<RestBlockHint[]> {
   const apiBase = apiBaseUrl.replace(/\/+$/, "");
-  const response = await fetch(`${apiBase}/blocks-from-bluescore?${query}&includeTransactions=false`);
+  const remainingMs = deadlineAt === undefined
+    ? HISTORY_REQUEST_TIMEOUT_MS
+    : deadlineAt - Date.now();
+  if (remainingMs <= 0) throw new Error("Random-block hint lookup timed out.");
+  const response = await fetchHistory(
+    `${apiBase}/blocks-from-bluescore?${query}&includeTransactions=false`,
+    Math.min(HISTORY_REQUEST_TIMEOUT_MS, remainingMs)
+  );
   if (!response.ok) throw new Error(`History API returned ${response.status} while locating the random block.`);
   const blocks = await response.json() as RestBlockHint[];
   return Array.isArray(blocks) ? blocks : [];
@@ -109,9 +159,10 @@ export async function loadBlockHashesNearDaa(
 ): Promise<string[]> {
   if (estimatedBlueScore < 0n || targetDaa < 0n) return [];
   let probe = estimatedBlueScore;
+  const deadlineAt = Date.now() + RANDOMNESS_HINT_LOOKUP_TIMEOUT_MS;
 
   for (let correction = 0; correction < 4; correction += 1) {
-    const blocks = await loadBlocksByBlueScore(apiBaseUrl, `blueScoreLt=${probe + 1n}`);
+    const blocks = await loadBlocksByBlueScore(apiBaseUrl, `blueScoreLt=${probe + 1n}`, deadlineAt);
     const chainBlocks = blocks.filter((block) => block.verboseData?.isChainBlock);
     const atOrAfterTarget = chainBlocks.filter((block) => BigInt(block.header?.daaScore ?? "0") >= targetDaa);
     if (atOrAfterTarget.length) {
@@ -131,11 +182,13 @@ export async function loadBlockHashesNearDaa(
     let cursor = BigInt(nearestBefore.header?.blueScore ?? "0") + 1n;
     let emptyRetries = 0;
     for (let step = 0; step < 64; step += 1) {
-      const forward = await loadBlocksByBlueScore(apiBaseUrl, `blueScoreGte=${cursor}`);
+      const forward = await loadBlocksByBlueScore(apiBaseUrl, `blueScoreGte=${cursor}`, deadlineAt);
       if (!forward.length) {
         if (emptyRetries >= 5) return [];
         emptyRetries += 1;
-        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        const remainingMs = deadlineAt - Date.now();
+        if (remainingMs <= 0) throw new Error("Random-block hint lookup timed out.");
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, remainingMs)));
         step -= 1;
         continue;
       }
@@ -188,10 +241,14 @@ interface RafflePayload {
   ticketPrice?: string;
   maxTickets?: number;
   minTickets?: number;
+  maxBatches?: number;
+  roundNonce?: string;
+  salesDeadlineDaa?: string;
   createTxId?: string;
   contractVersion?: string;
   refundCursor?: number;
   refundBatchCursor?: number;
+  refundFeeDebtSompi?: string;
   batchCount?: number;
 }
 
@@ -230,13 +287,64 @@ function compareByTimeAsc(left?: number, right?: number) {
 async function loadAddressTransactions(apiBaseUrl: string, address: string, limit: number): Promise<RestTransaction[]> {
   const apiBase = apiBaseUrl.replace(/\/+$/, "");
   const url = `${apiBase}/addresses/${encodeURIComponent(address)}/full-transactions?limit=${limit}&offset=0`;
-  const response = await fetch(url);
+  const response = await fetchHistory(url);
 
   if (!response.ok) {
     throw new Error(`History API returned ${response.status}.`);
   }
 
   return (await response.json()) as RestTransaction[];
+}
+
+/**
+ * Find the accepted transaction which spent an address-indexed outpoint.
+ *
+ * Registry marker recovery uses this before constructing another spend. It
+ * distinguishes a lost RPC response from a genuinely unspent marker without
+ * trusting browser cache or asking a wallet to sign anything.
+ */
+export async function loadAcceptedOutpointSpend(
+  apiBaseUrl: string,
+  address: string,
+  transactionId: string,
+  outputIndex: number,
+  limit = 100
+): Promise<AcceptedOutpointSpend | undefined> {
+  if (!/^[0-9a-f]{64}$/i.test(transactionId)) {
+    throw new Error("A valid transaction id is required to recover an outpoint spend.");
+  }
+  if (!Number.isSafeInteger(outputIndex) || outputIndex < 0) {
+    throw new Error("A valid output index is required to recover an outpoint spend.");
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    throw new Error("Outpoint-spend recovery limit must be from 1 to 1000.");
+  }
+
+  const normalizedTransactionId = transactionId.toLowerCase();
+  const transactions = await loadAddressTransactions(apiBaseUrl, address, limit);
+  const matches = transactions.filter((transaction) => (
+    transaction.is_accepted !== false &&
+    Boolean(transaction.transaction_id) &&
+    (transaction.inputs ?? []).some((input) => (
+      input.previous_outpoint_hash?.toLowerCase() === normalizedTransactionId &&
+      Number(input.previous_outpoint_index) === outputIndex
+    ))
+  ));
+
+  if (matches.length > 1) {
+    throw new Error("History returned more than one accepted spend for the same outpoint.");
+  }
+
+  const match = matches[0];
+  if (!match?.transaction_id) return undefined;
+  return {
+    transactionId: match.transaction_id.toLowerCase(),
+    outputs: (match.outputs ?? []).map((output) => ({
+      index: output.index ?? 0,
+      amount: BigInt(output.amount ?? 0),
+      address: output.script_public_key_address
+    }))
+  };
 }
 
 function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, transactions: RestTransaction[]): void {
@@ -279,6 +387,9 @@ function applyHistoryTransactions(rounds: Map<string, RaffleHistoryRound>, trans
       round.ticketPrice = payload.ticketPrice ? toBigInt(payload.ticketPrice) : round.ticketPrice;
       round.maxTickets = payload.maxTickets ?? round.maxTickets;
       round.minTickets = payload.minTickets ?? round.minTickets;
+      round.maxBatches = payload.maxBatches ?? round.maxBatches;
+      round.roundNonce = payload.roundNonce ?? round.roundNonce;
+      round.salesDeadlineDaa = payload.salesDeadlineDaa ?? round.salesDeadlineDaa;
       round.version = payload.version ?? round.version;
       round.contractVersion = payload.contractVersion ?? round.contractVersion;
     }
@@ -346,7 +457,14 @@ async function replayTicketTree(round: RaffleHistoryRound): Promise<{ root: stri
       throw new Error(`Round ${round.roundId} is missing canonical ticket #${nextTicketId}.`);
     }
     const count = ticketRangeCount(ticket);
-    const appended = await appendTicketBatch(frontier, batchIndex, ticket.buyerPubkey, nextTicketId - 1, count);
+    const appended = isVNextRaffleContractVersion(round.contractVersion ?? "")
+      ? await appendVNextBatch(frontier, batchIndex, {
+          roundNonceHex: bytesToHex(await roundIdToBytes32(round.roundNonce || round.roundId)),
+          ownerPubkeyHex: ticket.buyerPubkey,
+          firstTicketId: nextTicketId - 1,
+          ticketCount: count
+        })
+      : await appendTicketBatch(frontier, batchIndex, ticket.buyerPubkey, nextTicketId - 1, count);
     frontier = appended.frontierHex;
     root = appended.rootHex;
     nextTicketId += count;
@@ -395,6 +513,9 @@ async function buildLatestCovenantCursor(
       ? Math.max(0, Number(txPayload.refundBatchCursor || 0) + Number(txPayload.batchCount || 1))
       : 0
     : 0;
+  const refundFeeDebtSompi = status === "Refunding" && txPayload?.type === "round-refund-start"
+    ? String(txPayload.refundFeeDebtSompi ?? "0")
+    : "0";
   const stateRound: RoundState = {
     appId: "KASPA_RAFFLE_ROUND_V1",
     contractVersion: round.contractVersion || "",
@@ -403,6 +524,9 @@ async function buildLatestCovenantCursor(
     ticketPrice: round.ticketPrice,
     maxTickets: round.maxTickets,
     minTickets: round.minTickets,
+    maxBatches: round.maxBatches,
+    roundNonce: round.roundNonce,
+    salesDeadlineDaa: round.salesDeadlineDaa,
     soldTickets,
     potAmount: round.ticketPrice * BigInt(Math.max(0, soldTickets - refundCursor)),
     feeBps: 0,
@@ -414,6 +538,7 @@ async function buildLatestCovenantCursor(
     ticketFrontier: ticketTree.frontier,
     refundCursor,
     refundBatchCursor,
+    refundFeeDebtSompi,
     soldBatches: orderedTickets.length,
     ticketBatchEnds: orderedTickets.map(ticketRangeEnd),
     ticketOwnerPubkeys: orderedTickets.map((ticket) => ticket.buyerPubkey!)
@@ -435,6 +560,7 @@ async function buildLatestCovenantCursor(
     chainSearchHintHash: round.chainSearchHintHash,
     refundCursor,
     refundBatchCursor,
+    refundFeeDebtSompi,
     creatorPubkey: stateRound.creatorPubkey,
     refundAfterDaaScore: stateRound.refundAfterDaaScore,
     soldBatches: stateRound.soldBatches,
@@ -478,7 +604,7 @@ async function traceRoundCovenantHistory(
           tx.transaction_id &&
           tx.transaction_id !== previousTxId &&
           !visitedTransactions.has(tx.transaction_id) &&
-          (payload.type === "ticket" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch")
+          (payload.type === "ticket" || payload.type === "round-carrier-topup" || payload.type === "round-finalize" || payload.type === "round-refund" || payload.type === "round-refund-start" || payload.type === "round-refund-batch")
         );
       })
       .sort((left, right) => compareByTimeAsc(eventTime(left), eventTime(right)))[0];
@@ -572,6 +698,9 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         ticketPrice,
         maxTickets: indexed.maxTickets,
         minTickets: indexed.minTickets,
+        maxBatches: indexed.maxBatches,
+        roundNonce: indexed.roundNonce,
+        salesDeadlineDaa: indexed.salesDeadlineDaa,
         soldTickets: indexed.soldTickets,
         potAmount: BigInt(indexed.latestCovenant.potAmount),
         feeBps: 0,
@@ -583,6 +712,7 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         ticketFrontier: indexed.ticketFrontier,
         refundCursor: indexed.refundCursor,
         refundBatchCursor: indexed.refundBatchCursor,
+        refundFeeDebtSompi: indexed.latestCovenant.refundFeeDebtSompi ?? "0",
         soldBatches: indexed.soldBatches,
         ticketBatchEnds: [],
         ticketOwnerPubkeys: []
@@ -595,6 +725,7 @@ export async function loadIndexedRaffleHistory(apiBaseUrl: string): Promise<Raff
         creatorPubkey: indexed.creatorPubkey,
         refundAfterDaaScore: indexed.refundAfterDaaScore || "0",
         refundBatchCursor: indexed.refundBatchCursor,
+        refundFeeDebtSompi: indexed.latestCovenant.refundFeeDebtSompi ?? "0",
         soldBatches: indexed.soldBatches,
         ticketOwnerPubkeys: []
       };

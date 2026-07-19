@@ -1,12 +1,22 @@
 # Covenant contracts
 
-- `raffle_round_v16.sil`: current `raffle-v16-dynamic-refund-transition` chain-random raffle covenant.
-- `raffle_refund_v16.sil`: current v16 resumable grouped-refund covenant.
-- `raffle_round_v13.sil` and `raffle_refund_v3.sil`: bytecode-identical deployed v16 artifacts retained for verification.
-- `raffle_round_v12.sil`, `raffle_round_v11.sil`, and `raffle_refund_v2.sil`: archived historical sources.
+## vNext local candidate
 
-The current protocol and compiled implementation are both v16: `raffle-v16-dynamic-refund-transition`, `RaffleRoundV16`, and `RaffleRefundV16`. v15 and v14 rounds are operated with the archived `v0.9.6` release. v16 measures and commits the refund-transition fee instead of fixing it at 2,400,000 sompi.
+Protocol: `raffle-vnext-liveness-guard-b1000` (Kaswin 0.9.13).
 
-The round covenant stores a depth-20 Merkle root/frontier for up to one million purchase batches. Each leaf commits the owner, first zero-based ticket id, and any positive whole-number count that fits the round remainder. `finalize` fixes randomness to the first selected-chain block crossing the final-ticket UTXO DAA plus 30 when sold out, or the fixed sales-timeout DAA plus 30 otherwise. It verifies both block hashes and `OpChainblockSeqCommit`, then validates that the winner belongs to the proven purchase range before paying the prize.
+- `raffle_round_vnext.sil`: `RaffleRoundVNext`，含 `round_nonce`、`min_tickets`、`max_batches` 与互斥 finalize/refund 状态机。
+- `raffle_refund_vnext.sil`: `RaffleRefundVNext`，从选中的购票款中扣除实际退款网络费。
+- `raffle_round_vnext.sil` 的 `topUp` 入口允许任何资金输入增加 carrier，但强制 successor covenant 的全部状态保持不变。
+- `compiled/raffle-*-vnext.*.json`: 由 `npm run compile:vnext` 生成；redeem-script SHA-256 必须与 `protocol-manifest.json` 匹配。
 
-There is no close transition, oracle state, drand proof, or external randomness service. Timed-out rounds transition to the resumable refund covenant; any user can continue from the on-chain ticket and batch cursors. One v15 refund transaction repays up to 13 consecutive original purchase batches. VM measurements are 454,618 script units for 13 and 498,904 for 14, so 13 is the largest count that leaves room below Kaspa's 500,000 compute-mass ceiling.
+这些 artifact 已经本地编译和集成，但不是已部署或获准广播的合约。它们仍需通过真实 Testnet、Mainnet 小额、钱包 E2E 与独立审计门禁，详见 [../../docs/audit-evidence-matrix.md](../../docs/audit-evidence-matrix.md)。
+
+vNext Refund 的 ABI proof 上限为 13，但实测标准中继最大前缀为 2；创建者不得把 13 当作 vNext 的可执行购买批次数。
+
+## Historical contracts
+
+- `raffle_round_v16.sil` 与 `raffle_refund_v16.sil`: 已部署的 `raffle-v16-dynamic-refund-transition` 历史协议。
+- `raffle_round_v13.sil` 与 `raffle_refund_v3.sil`: 与已部署 v16 bytecode 相同的历史命名 artifact。
+- `raffle_round_v12.sil`、`raffle_round_v11.sil`、`raffle_refund_v2.sil`: 更早的归档来源。
+
+历史合约只用于识别、验证和指向匹配 release；禁止用 vNext state layout 或金额规则解释它们。

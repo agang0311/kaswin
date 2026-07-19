@@ -1,12 +1,50 @@
 {
-  "supported": [
+  "candidate": {
+    "protocol": "raffle-vnext-liveness-guard-b1000",
+    "roundContract": "RaffleRoundVNext",
+    "refundContract": "RaffleRefundVNext",
+    "release": "v0.9.13",
+    "status": "pre-release-integration-candidate",
+    "roundArtifactSha256": "215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d",
+    "refundArtifactSha256": "bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2",
+    "releaseBlockedBy": [
+      "Testnet 10 A-E",
+      "Mainnet below-minimum refund smoke",
+      "wallet and mobile E2E",
+      "independent security audit"
+    ]
+  },
+  "legacy": [
+    {
+      "protocol": "raffle-vnext-liveness-guard",
+      "roundContract": "RaffleRoundVNext",
+      "refundContract": "RaffleRefundVNext",
+      "release": null,
+      "status": "quarantined",
+      "note": "Previous 0.9.12 exact-hash Testnet candidate. Read-only in this worktree because its Round artifact enforces the former 100-batch covenant limit."
+    },
+    {
+      "protocol": "raffle-vnext-carrier-topup",
+      "roundContract": "RaffleRoundVNext",
+      "refundContract": "RaffleRefundVNext",
+      "release": null,
+      "status": "quarantined",
+      "note": "Never published as a repository release. Do not create or spend from the current page: its round artifact commits a stale refund template hash, so below-minimum rounds cannot start refunds."
+    },
+    {
+      "protocol": "raffle-vnext-buyer-funded-refund",
+      "roundContract": "RaffleRoundVNext",
+      "refundContract": "RaffleRefundVNext",
+      "release": null,
+      "status": "quarantined",
+      "note": "Never published as a repository release. Retained for identification only and not interpreted as the current liveness-guard protocol."
+    },
     {
       "protocol": "raffle-v16-dynamic-refund-transition",
       "roundContract": "RaffleRoundV16",
-      "refundContract": "RaffleRefundV16"
-    }
-  ],
-  "archived": [
+      "refundContract": "RaffleRefundV16",
+      "release": "v0.9.7"
+    },
     {
       "protocol": "raffle-v15-arbitrary-batched-refund",
       "release": "v0.9.6"

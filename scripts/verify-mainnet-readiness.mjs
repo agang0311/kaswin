@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import initKaspaWasm, {
   Transaction,
   TransactionOutput,
@@ -13,6 +12,9 @@ import initKaspaWasm, {
 import { createServer } from "vite";
 
 const root = process.cwd();
+const requireFromScript = createRequire(import.meta.url);
+const kaspaModulePath = requireFromScript.resolve("@onekeyfe/kaspa-wasm/kaspa.js");
+const kaspaPackageDirectory = path.dirname(kaspaModulePath);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -81,8 +83,8 @@ try {
   const redeemScript = covenant.buildRaffleRedeemScriptForContractVersion(state, contractVersion, "Open");
   assert(redeemScript.length === artifact.scriptLength, "Mainnet round state builds the compiled covenant script");
 
-  const wasmBytes = fs.readFileSync(path.join(root, "node_modules", "@onekeyfe", "kaspa-wasm", "kaspa_bg.wasm.bin"));
-  globalThis.require = createRequire(pathToFileURL(path.join(root, "node_modules", "@onekeyfe", "kaspa-wasm", "kaspa.js")));
+  const wasmBytes = fs.readFileSync(path.join(kaspaPackageDirectory, "kaspa_bg.wasm.bin"));
+  globalThis.require = createRequire(kaspaModulePath);
   await initKaspaWasm({ module_or_path: wasmBytes });
   const scriptPublicKey = payToScriptHashScript(redeemScript);
   const mainnetAddress = addressFromScriptPublicKey(scriptPublicKey, "mainnet")?.toString() ?? "";
@@ -160,7 +162,7 @@ try {
         storageMass: 0n
       });
       const requiredFee = calculateTransactionFee("mainnet", groupedRefund, 0);
-      if (requiredFee === undefined || requiredFee > 60_000_000n) break;
+      if (requiredFee === undefined || requiredFee > 20_000_000n) break;
       if (requiredFee <= refundFee) {
         converged = true;
         break;

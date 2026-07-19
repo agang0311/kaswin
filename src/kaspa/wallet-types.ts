@@ -1,4 +1,4 @@
-import { Transaction, type PendingTransaction } from "@onekeyfe/kaspa-wasm";
+import type { PendingTransaction, Transaction } from "@onekeyfe/kaspa-wasm";
 import { pubkeyHexFromAddress } from "./covenant";
 import { requireNetworkProfile } from "./networks";
 
@@ -66,11 +66,61 @@ function underlyingTransaction(transaction: WalletSignableTransaction): Transact
 }
 
 export function serializeWalletTransaction(transaction: WalletSignableTransaction): string {
-  return transaction.serializeToSafeJSON();
+  return normalizeWalletTransactionJson(transaction.serializeToSafeJSON());
+}
+
+export function normalizeWalletTransactionJson(serialized: string): string {
+  const value = JSON.parse(serialized) as {
+    inputs?: Array<Record<string, unknown> & { utxo?: Record<string, unknown> }>;
+    outputs?: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+
+  return JSON.stringify({
+    ...value,
+    inputs: (value.inputs ?? []).map((input) => {
+      if (!input.utxo || typeof input.utxo !== "object" || typeof input.utxo.covenantId === "string") return input;
+      const { covenantId: _covenantId, ...utxo } = input.utxo;
+      void _covenantId;
+      return { ...input, utxo };
+    }),
+    outputs: (value.outputs ?? []).map((output) => {
+      if (output.covenant && typeof output.covenant === "object") return output;
+      const { covenant: _covenant, ...plainOutput } = output;
+      void _covenant;
+      return plainOutput;
+    })
+  });
 }
 
 export function walletTransactionInputCount(transaction: WalletSignableTransaction): number {
   return underlyingTransaction(transaction).inputs.length;
+}
+
+export function walletSignatureScriptsFromJson(
+  signedTransactionJson: string,
+  expectedInputCount: number,
+  inputIndexes?: number[]
+): Array<{ index: number; signatureScript: string }> {
+  let value: { inputs?: Array<{ signatureScript?: unknown }> };
+  try {
+    value = JSON.parse(signedTransactionJson) as { inputs?: Array<{ signatureScript?: unknown }> };
+  } catch {
+    throw new Error("The wallet returned invalid signed transaction JSON.");
+  }
+
+  if (!Array.isArray(value.inputs) || value.inputs.length !== expectedInputCount) {
+    throw new Error("The wallet returned a transaction with a different input count.");
+  }
+
+  const indexes = inputIndexes ?? Array.from({ length: expectedInputCount }, (_, index) => index);
+  return indexes.map((index) => {
+    const signatureScript = value.inputs?.[index]?.signatureScript;
+    if (typeof signatureScript !== "string" || !/^(?:[0-9a-fA-F]{2})+$/.test(signatureScript)) {
+      throw new Error(`The wallet did not sign transaction input ${index + 1}.`);
+    }
+    return { index, signatureScript };
+  });
 }
 
 export function fillSignedTransaction(
@@ -78,28 +128,14 @@ export function fillSignedTransaction(
   signedTransactionJson: string,
   inputIndexes?: number[]
 ): void {
-  const signed = Transaction.deserializeFromSafeJSON(signedTransactionJson);
   const target = underlyingTransaction(transaction);
   const inputCount = target.inputs.length;
-
-  if (signed.inputs.length !== inputCount) {
-    throw new Error("The wallet returned a transaction with a different input count.");
-  }
-
-  const indexes = inputIndexes ?? Array.from({ length: inputCount }, (_, index) => index);
-
-  indexes.forEach((index) => {
-    const input = signed.inputs[index];
-    const signatureScript = input.signatureScript;
-
-    if (!signatureScript?.length) {
-      throw new Error(`The wallet did not sign transaction input ${index + 1}.`);
-    }
-
+  const signatures = walletSignatureScriptsFromJson(signedTransactionJson, inputCount, inputIndexes);
+  signatures.forEach(({ index, signatureScript }) => {
     if ("fillInput" in transaction) {
       transaction.fillInput(index, signatureScript);
     } else {
-      transaction.inputs[index].signatureScript = signatureScript;
+      target.inputs[index].signatureScript = signatureScript;
     }
   });
 }

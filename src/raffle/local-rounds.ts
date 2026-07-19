@@ -1,6 +1,7 @@
 import type { FinalizeState, RaffleMetadata, TicketState } from "./types";
 import type { RaffleHistoryRound } from "../kaspa/history";
 import { isKnownRaffleContractVersion } from "./metadata";
+import { preferMoreCompleteRaffleHistoryTickets } from "./history-merge";
 
 const STORAGE_KEY = "kaspa-raffle-participated-rounds-v12";
 const MAX_CACHED_ROUNDS = 100;
@@ -34,11 +35,13 @@ function readStore(): StoredRound[] {
   }
 }
 
-function writeStore(rounds: StoredRound[]): void {
+function writeStore(rounds: StoredRound[]): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rounds.slice(0, MAX_CACHED_ROUNDS)));
+    return true;
   } catch {
     // The on-chain state remains authoritative when browser storage is unavailable.
+    return false;
   }
 }
 
@@ -46,8 +49,8 @@ export function cacheParticipatedRound(
   metadata: RaffleMetadata,
   tickets: TicketState[],
   finalized?: FinalizeState
-): void {
-  if (!metadata.roundId || !metadata.covenant && !finalized) return;
+): boolean {
+  if (!metadata.roundId || !metadata.covenant && !finalized) return false;
 
   const rounds = readStore();
   const previous = rounds.find((round) => (
@@ -80,7 +83,7 @@ export function cacheParticipatedRound(
   const remaining = rounds.filter((round) => !(
     round.metadata.network === metadata.network && round.metadata.roundId === metadata.roundId
   ));
-  writeStore([stored, ...remaining]);
+  return writeStore([stored, ...remaining]);
 }
 
 export function loadCachedRound(network: string, roundId: string): {
@@ -142,10 +145,22 @@ export function updateCachedParticipatedRoundFromHistory(network: string, histor
     ticketPrice: historyRound.ticketPrice?.toString() ?? previous.metadata.ticketPrice,
     maxTickets: historyRound.maxTickets ?? previous.metadata.maxTickets,
     minTickets: historyRound.minTickets ?? previous.metadata.minTickets,
+    maxBatches: historyRound.maxBatches ?? previous.metadata.maxBatches,
+    roundNonce: historyRound.roundNonce ?? previous.metadata.roundNonce,
+    salesDeadlineDaa: historyRound.salesDeadlineDaa ?? previous.metadata.salesDeadlineDaa,
     covenant: nextOutcome ? undefined : historyRound.latestCovenant ?? previous.metadata.covenant
   };
-  const nextTickets = historyRound.tickets.length
-    ? historyRound.tickets.map((ticket) => ({
+  const previousHistoryTickets = previous.tickets.map((ticket) => ({
+    txId: ticket.ticketTxId,
+    ticketId: ticket.ticketId,
+    ticketCount: ticket.ticketCount,
+    buyer: ticket.owner,
+    buyerPubkey: ticket.ownerPubkey,
+    paidAmount: BigInt(ticket.paidAmount)
+  }));
+  const preferredTickets = preferMoreCompleteRaffleHistoryTickets(previousHistoryTickets, historyRound.tickets);
+  const nextTickets = preferredTickets.length
+    ? preferredTickets.map((ticket) => ({
         appId: "KASPA_RAFFLE_TICKET_V1" as const,
         roundId: historyRound.roundId,
         ticketId: ticket.ticketId,
@@ -180,6 +195,8 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
       return {
         roundId: round.metadata.roundId,
         localCachedAt: round.updatedAt,
+        registryTxId: round.metadata.registryTxId,
+        registryRefundTxId: round.metadata.registryRefundTxId,
         registryAddress: round.metadata.registryAddress,
         createTxId: round.metadata.createTxId,
         treasuryAddress: round.metadata.treasuryAddress,
@@ -195,6 +212,9 @@ export function loadCachedRaffleHistory(network: string): RaffleHistoryRound[] {
         ticketPrice,
         maxTickets: round.metadata.maxTickets,
         minTickets: round.metadata.minTickets,
+        maxBatches: round.metadata.maxBatches,
+        roundNonce: round.metadata.roundNonce,
+        salesDeadlineDaa: round.metadata.salesDeadlineDaa,
         version: round.metadata.version,
         contractVersion: round.metadata.contractVersion,
         tickets: round.tickets.map((ticket) => ({

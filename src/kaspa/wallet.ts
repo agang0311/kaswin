@@ -5,8 +5,22 @@ import type { BrowserTestWallet, KaspaWalletAdapter, WalletAdapterOption } from 
 const adapters: KaspaWalletAdapter[] = [kasWareWalletAdapter, kastleWalletAdapter];
 
 if (import.meta.env.DEV) {
-  const { localOutsiderWalletAdapter, localTestWalletAdapter } = await import("./wallet-local-test");
-  adapters.push(localTestWalletAdapter, localOutsiderWalletAdapter);
+  const {
+    localOutsiderWalletAdapter,
+    localTestWalletAdapter,
+    localValidationCreatorWalletAdapter,
+    localValidationBuyerAWalletAdapter,
+    localValidationBuyerBWalletAdapter,
+    localValidationBuyerCWalletAdapter
+  } = await import("./wallet-local-test");
+  adapters.push(
+    localTestWalletAdapter,
+    localOutsiderWalletAdapter,
+    localValidationCreatorWalletAdapter,
+    localValidationBuyerAWalletAdapter,
+    localValidationBuyerBWalletAdapter,
+    localValidationBuyerCWalletAdapter
+  );
 }
 
 function adapterById(adapterId: string): KaspaWalletAdapter {

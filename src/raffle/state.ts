@@ -28,16 +28,24 @@ export function verifyRaffleState(state: Pick<RaffleState, "round" | "tickets" |
     expectedTicketId = ticket.ticketId + ticketRangeCount(ticket);
   });
 
-  if (round.potAmount !== BigInt(round.soldTickets) * round.ticketPrice) {
+  const refundCursor = round.refundCursor ?? 0;
+  if (!Number.isSafeInteger(refundCursor) || refundCursor < 0 || refundCursor > round.soldTickets) {
+    errors.push("Refund cursor must be between zero and soldTickets.");
+  }
+
+  const refundedTickets = round.status === "Refunding" || round.status === "Refunded"
+    ? Math.min(Math.max(refundCursor, 0), round.soldTickets)
+    : 0;
+  if (round.status === "Refunded" && refundCursor !== round.soldTickets) {
+    errors.push("Refunded round must have refunded every sold ticket.");
+  }
+
+  if (round.potAmount !== BigInt(round.soldTickets - refundedTickets) * round.ticketPrice) {
     errors.push("Pot amount does not equal soldTickets * ticketPrice.");
   }
 
   if (finalized && round.status !== "Finalized") {
     warnings.push("A finalized marker exists while the round status is not Finalized.");
-  }
-
-  if (round.status === "Closed" && round.soldTickets < round.minTickets) {
-    warnings.push("Closed round has fewer tickets than the minimum and should allow refunds.");
   }
 
   return {

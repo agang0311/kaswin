@@ -45,8 +45,11 @@ assert(
   JSON.stringify(refundNext?.inputs.map((input) => input.name)) === JSON.stringify(["refund_fee", "batch_count", "owner_pubkeys", "ticket_counts", "batch_proofs"]),
   `${refund.contract} accepts packed consecutive purchase batches`
 );
-assert(/COVENANT_CREATE_FEE_SOMPI = 300_000n/.test(transactionSource), "create fee covers the observed relay floor");
-assert(/REGISTRY_PAYMENT_FEE_SOMPI = 350_000n/.test(transactionSource), "registry marker fee covers the observed relay floor");
+assert(/COVENANT_CREATE_FEE_SOMPI = 6_000_000n/.test(transactionSource), "create fee covers the measured maximum-payload Genesis mass");
+assert(/REGISTRY_PAYMENT_FEE_SOMPI = 500_000n/.test(transactionSource), "registry marker fee covers the measured maximum-payload mass");
+assert(/DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI = 20_000_000n/.test(transactionSource), "registry marker avoids a non-standard low-value output");
+assert(/REGISTRY_MARKER_REFUND_FEE_SOMPI = 1_000_000n/.test(transactionSource), "registry settlement leaves the intended 0.01 KAS net cost");
+assert(/return \{ address: lowCostFundingAddress\(network\), autoRefund: true \}/.test(transactionSource), "Mainnet and Testnet share the network-specific auto-settling Registry policy");
 assert(/toccataActivationDaaScore: "474165565"/.test(networkSource), "Mainnet broadcasts are gated by the official Toccata activation DAA");
 
 console.log("Current grouped-refund covenant artifact checks passed.");

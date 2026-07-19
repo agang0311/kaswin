@@ -1,10 +1,20 @@
 import type { RaffleMetadata } from "./types";
 
-export const RAFFLE_CONTRACT_VERSION = "raffle-v16-dynamic-refund-transition";
+export const RAFFLE_CONTRACT_VERSION = "raffle-vnext-liveness-guard-b1000";
+export const PREVIOUS_LIVENESS_GUARD_CONTRACT_VERSION = "raffle-vnext-liveness-guard";
+export const CARRIER_TOP_UP_CONTRACT_VERSION = "raffle-vnext-carrier-topup";
+export const BUYER_FUNDED_REFUND_CONTRACT_VERSION = "raffle-vnext-buyer-funded-refund";
+export const MIN_REFUNDABLE_TICKET_PRICE_SOMPI = 100_000_000n;
+export const MAX_ROUND_PRINCIPAL_SOMPI = 4_611_686_018_427_387_904n;
 export const PREVIOUS_RAFFLE_CONTRACT_VERSION = "raffle-v15-arbitrary-batched-refund";
 export const LEGACY_RAFFLE_CONTRACT_VERSION = "raffle-v14-batch-range";
 export const KNOWN_RAFFLE_CONTRACT_VERSIONS = [
   RAFFLE_CONTRACT_VERSION,
+  PREVIOUS_LIVENESS_GUARD_CONTRACT_VERSION,
+  CARRIER_TOP_UP_CONTRACT_VERSION,
+  BUYER_FUNDED_REFUND_CONTRACT_VERSION,
+  "raffle-vnext-deterministic-settlement",
+  "raffle-v16-dynamic-refund-transition",
   PREVIOUS_RAFFLE_CONTRACT_VERSION,
   LEGACY_RAFFLE_CONTRACT_VERSION
 ] as const;
@@ -22,6 +32,10 @@ export function isSupportedRaffleContractVersion(contractVersion: string): boole
   );
 }
 
+export function isVNextRaffleContractVersion(contractVersion: string): boolean {
+  return contractVersion === RAFFLE_CONTRACT_VERSION || contractVersion === PREVIOUS_LIVENESS_GUARD_CONTRACT_VERSION || contractVersion === CARRIER_TOP_UP_CONTRACT_VERSION || contractVersion === BUYER_FUNDED_REFUND_CONTRACT_VERSION;
+}
+
 export function archivedReleaseForRaffleContractVersion(contractVersion: string): string | undefined {
   if (
     contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION ||
@@ -32,13 +46,17 @@ export function archivedReleaseForRaffleContractVersion(contractVersion: string)
   return undefined;
 }
 
+export function isQuarantinedRaffleContractVersion(contractVersion: string): boolean {
+  return contractVersion === PREVIOUS_LIVENESS_GUARD_CONTRACT_VERSION || contractVersion === CARRIER_TOP_UP_CONTRACT_VERSION || contractVersion === BUYER_FUNDED_REFUND_CONTRACT_VERSION;
+}
+
 export function raffleContractVersionForNetwork(network: string): string {
   void network;
   return RAFFLE_CONTRACT_VERSION;
 }
 
 export function supportsGroupedRefunds(contractVersion: string): boolean {
-  return contractVersion === RAFFLE_CONTRACT_VERSION || contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION;
+  return contractVersion === RAFFLE_CONTRACT_VERSION || contractVersion === BUYER_FUNDED_REFUND_CONTRACT_VERSION || contractVersion === PREVIOUS_RAFFLE_CONTRACT_VERSION;
 }
 
 export function hasFixedRefundTransitionFee(contractVersion: string): boolean {
@@ -48,13 +66,14 @@ export function hasFixedRefundTransitionFee(contractVersion: string): boolean {
 export function createEmptyMetadata(network = "testnet-10"): RaffleMetadata {
   return {
     app: "kaspa-raffle-static",
-    version: "0.9.0",
+    version: "1.0.0",
     network,
     roundId: "",
     createTxId: "",
-    ticketPrice: "30000000",
+    ticketPrice: "100000000",
     maxTickets: 10,
     minTickets: 1,
+    maxBatches: 100,
     creatorAddress: "",
     creatorPubkey: "",
     refundTimeoutSeconds: "600",
@@ -93,8 +112,10 @@ export function parseMetadata(raw: string): RaffleMetadata {
     throw new Error(`Unsupported raffle contract version: ${parsed.contractVersion}.`);
   }
 
-  if (Number(parsed.ticketPrice) <= 0) {
-    throw new Error("Metadata ticketPrice must be greater than zero.");
+  const ticketPriceText = String(parsed.ticketPrice);
+  if (!/^[1-9]\d*$/.test(ticketPriceText)) throw new Error("Metadata ticketPrice must be a positive decimal sompi value.");
+  if (String(parsed.contractVersion) === RAFFLE_CONTRACT_VERSION && BigInt(ticketPriceText) < MIN_REFUNDABLE_TICKET_PRICE_SOMPI) {
+    throw new Error(`Current-protocol ticketPrice must be at least ${MIN_REFUNDABLE_TICKET_PRICE_SOMPI} sompi so every purchase batch can pay its worst-case refund fees.`);
   }
 
   const maxTickets = parsed.maxTickets;
@@ -114,6 +135,18 @@ export function parseMetadata(raw: string): RaffleMetadata {
 
   if (minTickets > maxTickets) {
     throw new Error("Metadata minTickets cannot exceed maxTickets.");
+  }
+
+  if (
+    String(parsed.contractVersion) === RAFFLE_CONTRACT_VERSION &&
+    BigInt(ticketPriceText) * BigInt(maxTickets) > MAX_ROUND_PRINCIPAL_SOMPI
+  ) {
+    throw new Error(`Current-protocol ticketPrice * maxTickets cannot exceed ${MAX_ROUND_PRINCIPAL_SOMPI} sompi.`);
+  }
+
+  const maxBatches = parsed.maxBatches ?? 100;
+  if (typeof maxBatches !== "number" || !Number.isInteger(maxBatches) || maxBatches < 1 || maxBatches > 1_000) {
+    throw new Error("Metadata maxBatches must be an integer from 1 to 1000.");
   }
 
   return parsed as RaffleMetadata;

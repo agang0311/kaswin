@@ -7,7 +7,13 @@ initSync({ module: fs.readFileSync(path.resolve("node_modules/@onekeyfe/kaspa-wa
 
 const walletDir = path.resolve("wallets");
 const network = process.argv[2] ?? "testnet-10";
-const walletPath = path.join(walletDir, `experiment-${network}.json`);
+const walletName = process.argv[3] ?? "experiment";
+
+if (!/^[a-z0-9-]+$/i.test(walletName)) {
+  throw new Error("Wallet name must contain only letters, numbers, and hyphens.");
+}
+
+const walletPath = path.join(walletDir, `${walletName}-${network}.json`);
 
 fs.mkdirSync(walletDir, { recursive: true });
 

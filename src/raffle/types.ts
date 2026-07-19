@@ -9,6 +9,12 @@ export interface RoundState {
   ticketPrice: bigint;
   maxTickets: number;
   minTickets: number;
+  /** vNext economic limit for distinct purchase batches. */
+  maxBatches?: number;
+  /** vNext public nonce; absent legacy rounds derive it from roundId. */
+  roundNonce?: string;
+  /** vNext on-chain sales cutoff. */
+  salesDeadlineDaa?: string;
   soldTickets: number;
   potAmount: bigint;
   feeBps: number;
@@ -21,6 +27,8 @@ export interface RoundState {
   chainSearchHintHash?: string;
   refundCursor?: number;
   refundBatchCursor?: number;
+  /** vNext's first refund batch repays the exact startRefund network fee. */
+  refundFeeDebtSompi?: string;
   soldBatches: number;
   ticketBatchEnds: number[];
   ticketOwnerPubkeys: string[];
@@ -63,6 +71,8 @@ export interface RaffleCovenantCursor {
   chainSearchHintHash?: string;
   refundCursor?: number;
   refundBatchCursor?: number;
+  /** vNext's first refund batch repays the exact startRefund network fee. */
+  refundFeeDebtSompi?: string;
   creatorPubkey: string;
   refundAfterDaaScore: string;
   soldBatches?: number;
@@ -83,11 +93,18 @@ export interface RaffleMetadata {
   ticketPrice: string;
   maxTickets: number;
   minTickets: number;
+  maxBatches?: number;
+  roundNonce?: string;
+  salesDeadlineDaa?: string;
   creatorAddress?: string;
   creatorPubkey?: string;
   refundAfterDaaScore?: string;
   treasuryAddress?: string;
   registryAddress?: string;
+  /** Accepted Registry publication transaction, persisted for safe recovery. */
+  registryTxId?: string;
+  /** Accepted automatic marker-return transaction, when applicable. */
+  registryRefundTxId?: string;
   covenant?: RaffleCovenantCursor;
   contractVersion: string;
 }

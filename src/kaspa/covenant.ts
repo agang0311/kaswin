@@ -5,13 +5,16 @@ import {
   ScriptBuilder,
   type ScriptPublicKey
 } from "@onekeyfe/kaspa-wasm";
-import raffleRoundV16Artifact from "../contracts/compiled/raffle-round-v16.artifact.json";
-import raffleRefundV16Artifact from "../contracts/compiled/raffle-refund-v16.artifact.json";
+import raffleRoundVNextArtifact from "../contracts/compiled/raffle-round-vnext.artifact.json";
+import raffleRoundBuyerFundedArtifact from "../contracts/compiled/raffle-round-vnext-buyer-funded-refund.artifact.json";
+import raffleRefundVNextArtifact from "../contracts/compiled/raffle-refund-vnext.artifact.json";
 import { hexToBytes, sha256Hex } from "../raffle/randomness";
 import { TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX, TICKET_MERKLE_PROOF_BYTES } from "../raffle/merkle";
 import type { RoundState } from "../raffle/types";
 import type { ChainRandomnessWitness } from "./chain-randomness";
-import { RAFFLE_CONTRACT_VERSION, isSupportedRaffleContractVersion } from "../raffle/metadata";
+import { BUYER_FUNDED_REFUND_CONTRACT_VERSION, RAFFLE_CONTRACT_VERSION, isSupportedRaffleContractVersion } from "../raffle/metadata";
+import { PROTOCOL_MANIFEST } from "../protocol/manifest";
+import { winnerFromSeed as vNextWinnerFromSeed } from "../protocol/randomness";
 import { ensureKaspaWasmReady } from "./wasm";
 
 export interface CovenantArtifactStatus {
@@ -52,12 +55,13 @@ export interface RaffleRoundRuntimeArtifact {
   stateFields: RuntimeStateField[];
 }
 
-export type RaffleCovenantEntrypoint = "buy" | "finalize" | "refund_next" | "start_refund";
+export type RaffleCovenantEntrypoint = "buy" | "finalize" | "refund_next" | "start_refund" | "close_empty" | "top_up";
 export type RaffleCovenantStateValue = bigint | Uint8Array;
 export type RaffleCovenantStateValues = Record<string, RaffleCovenantStateValue>;
 
-const raffleArtifact = raffleRoundV16Artifact as RaffleRoundRuntimeArtifact;
-const refundArtifact = raffleRefundV16Artifact as RaffleRoundRuntimeArtifact;
+const raffleArtifact = raffleRoundVNextArtifact as RaffleRoundRuntimeArtifact;
+const buyerFundedRaffleArtifact = raffleRoundBuyerFundedArtifact as RaffleRoundRuntimeArtifact;
+const refundArtifact = raffleRefundVNextArtifact as RaffleRoundRuntimeArtifact;
 export const CURRENT_RAFFLE_CONTRACT_VERSION = RAFFLE_CONTRACT_VERSION;
 const INT_STATE_FIELD_SIZE = 8;
 const ZERO32_HEX = "00".repeat(32);
@@ -66,12 +70,14 @@ const entrypointNames: Record<RaffleCovenantEntrypoint, string> = {
   buy: "buy",
   finalize: "finalize",
   refund_next: "refundNext",
-  start_refund: "startRefund"
+  start_refund: "startRefund",
+  close_empty: "closeEmpty",
+  top_up: "topUp"
 };
 
 export function getRaffleCovenantStatus(): CovenantArtifactStatus {
-  const enabled = raffleArtifact.contract === "RaffleRoundV16" &&
-    refundArtifact.contract === "RaffleRefundV16" &&
+  const enabled = raffleArtifact.contract === PROTOCOL_MANIFEST.roundContract &&
+    refundArtifact.contract === PROTOCOL_MANIFEST.refundContract &&
     [raffleArtifact, refundArtifact].every((candidate) => Boolean(candidate.script) && candidate.abi.length > 0);
 
   return {
@@ -80,7 +86,7 @@ export function getRaffleCovenantStatus(): CovenantArtifactStatus {
     network: "toccata-v1",
     status: enabled ? "compiled-runtime" : "unavailable",
     message: enabled
-      ? "Covenant artifacts are available. Finalize will build a Toccata covenant spend."
+      ? "vNext covenant artifacts are available. Transaction builders bind the compiled V2 state."
       : "Covenant bytecode is compiled, but the browser transaction builder must be wired and verified on Testnet 10 before enabling automatic contract payout."
   };
 }
@@ -171,9 +177,13 @@ async function raffleCovenantStateFromRoundWithArtifact(
     : hexToBytes(TICKET_EMPTY_ROOT_HEX);
 
   state.max_tickets = BigInt(round.maxTickets);
+  if ("min_tickets" in state) state.min_tickets = BigInt(round.minTickets);
+  if ("max_batches" in state) state.max_batches = BigInt(round.maxBatches ?? PROTOCOL_MANIFEST.defaultMaxBatches);
   state.ticket_price = round.ticketPrice;
+  if ("round_nonce" in state) state.round_nonce = await roundIdToBytes32(round.roundNonce || round.roundId);
   state.creator_pubkey = creatorPublicKey;
-  state.refund_after_daa = BigInt(round.refundAfterDaaScore || "0");
+  if ("sales_deadline_daa" in state) state.sales_deadline_daa = BigInt(round.salesDeadlineDaa || round.refundAfterDaaScore || "0");
+  if ("refund_after_daa" in state) state.refund_after_daa = BigInt(round.refundAfterDaaScore || "0");
   state.sold_tickets = BigInt(round.soldTickets);
   if ("sold_batches" in state) state.sold_batches = BigInt(round.soldBatches);
   state.ticket_root = ticketRoot;
@@ -188,6 +198,9 @@ async function raffleCovenantStateFromRoundWithArtifact(
   }
   if ("refund_batch_cursor" in state) {
     state.refund_batch_cursor = BigInt(round.refundBatchCursor ?? 0);
+  }
+  if ("refund_fee_debt" in state) {
+    state.refund_fee_debt = BigInt(round.refundFeeDebtSompi ?? "0");
   }
 
   for (let index = 0; index < 20 && `owner_${String(index + 1).padStart(2, "0")}` in state; index += 1) {
@@ -252,8 +265,16 @@ export async function assertRaffleRedeemScriptMatchesRound(
 ): Promise<void> {
   const redeemScript = hexToBytes(redeemScriptHex);
   const runtimeArtifact = raffleArtifactForRedeemScript(redeemScript);
-  const state = await raffleCovenantStateFromRoundWithArtifact(round, runtimeArtifact);
-  const expected = bytesToHex(buildRaffleRedeemScript(state, runtimeArtifact));
+  const expectedArtifact = round.status === "Refunding"
+    ? refundArtifactForContractVersion(round.contractVersion)
+    : raffleArtifactForContractVersion(round.contractVersion);
+
+  if (runtimeArtifact !== expectedArtifact) {
+    throw new Error(`${label} covenant artifact does not match its declared protocol version and state.`);
+  }
+
+  const state = await raffleCovenantStateFromRoundWithArtifact(round, expectedArtifact);
+  const expected = bytesToHex(buildRaffleRedeemScript(state, expectedArtifact));
 
   if (expected !== redeemScriptHex.toLowerCase()) {
     throw new Error(
@@ -300,6 +321,13 @@ export function buildRaffleBuySignatureScript(
   return buildRaffleP2shSignatureScript("buy", currentRedeemScript, (builder) => {
     builder.addData(ownerPubkey);
     builder.addI64(BigInt(ticketCount));
+  });
+}
+
+export function buildRaffleTopUpSignatureScript(currentRedeemScript: Uint8Array, topUpAmountSompi: bigint): string {
+  if (topUpAmountSompi <= 0n) throw new Error("Carrier top-up amount must be positive.");
+  return buildRaffleP2shSignatureScript("top_up", currentRedeemScript, (builder) => {
+    builder.addI64(topUpAmountSompi);
   });
 }
 
@@ -408,16 +436,25 @@ export function buildRaffleStartRefundSignatureScript(
   });
 }
 
-export function raffleWinnerIndexFromSeed(seedHex: string, soldTickets: number): number {
+export function buildRaffleCloseEmptySignatureScript(
+  currentRedeemScript: Uint8Array,
+  closeFeeSompi: bigint
+): string {
+  if (closeFeeSompi <= 0n) {
+    throw new Error("closeEmpty requires a positive covenant fee.");
+  }
+  return buildRaffleP2shSignatureScript("close_empty", currentRedeemScript, (builder) => {
+    builder.addI64(closeFeeSompi);
+  });
+}
+
+export async function raffleWinnerIndexFromSeed(seedHex: string, soldTickets: number): Promise<number> {
   if (soldTickets <= 0) {
     throw new Error("Cannot select a winner without tickets.");
   }
-
-  const seed = bytes32FromHex(seedHex, "random seed");
-  let value = 0n;
-  for (let index = 0; index < 7; index += 1) value |= BigInt(seed[index]) << BigInt(index * 8);
-
-  return Number(value % BigInt(soldTickets));
+  // This mirrors RaffleRoundVNext.winnerFromSeed: it rejects the tiny modulo
+  // bias region before applying %. Do not replace this with a direct modulo.
+  return (await vNextWinnerFromSeed(bytes32FromHex(seedHex, "random seed"), soldTickets)).winnerTicketId;
 }
 
 function buildRaffleP2shSignatureScript(
@@ -445,7 +482,7 @@ function buildRaffleP2shSignatureScript(
 }
 
 function raffleArtifactForRedeemScript(redeemScript: Uint8Array): RaffleRoundRuntimeArtifact {
-  const candidates = [raffleArtifact, refundArtifact];
+  const candidates = [raffleArtifact, buyerFundedRaffleArtifact, refundArtifact];
 
   for (const candidate of candidates) {
     const template = hexToBytes(candidate.script);
@@ -502,6 +539,7 @@ function encodeStateField(field: RuntimeStateField, value: RaffleCovenantStateVa
 
 function raffleArtifactForContractVersion(contractVersion?: string): RaffleRoundRuntimeArtifact {
   if (contractVersion === RAFFLE_CONTRACT_VERSION) return raffleArtifact;
+  if (contractVersion === BUYER_FUNDED_REFUND_CONTRACT_VERSION) return buyerFundedRaffleArtifact;
   throw new Error(`Unsupported raffle contract version: ${contractVersion || "missing"}.`);
 }
 
@@ -511,7 +549,7 @@ function refundArtifactForContractVersion(contractVersion?: string): RaffleRound
 }
 
 function refundArtifactForRoundArtifact(roundArtifact: RaffleRoundRuntimeArtifact): RaffleRoundRuntimeArtifact {
-  if (roundArtifact.contract === raffleArtifact.contract) return refundArtifact;
+  if (roundArtifact === raffleArtifact) return refundArtifact;
   throw new Error(`Contract ${roundArtifact.contract} cannot start a refund transition.`);
 }
 

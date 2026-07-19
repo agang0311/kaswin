@@ -18,6 +18,16 @@ const DEPTH = 20;
 const CAPACITY = 1 << DEPTH;
 const RECORD_BYTES = 80;
 const ZERO32 = Buffer.alloc(32);
+const VNEXT_CONTRACT_VERSION = "raffle-vnext-liveness-guard-b1000";
+const PREVIOUS_VNEXT_CONTRACT_VERSIONS = new Set([
+  "raffle-vnext-liveness-guard",
+  "raffle-vnext-buyer-funded-refund"
+]);
+const VNEXT_BATCH_DOMAIN = Buffer.from("KASPA_RAFFLE_BATCH_V2", "ascii");
+const LEGACY_TREE_ENCODING = "legacy-batch-v1";
+const VNEXT_TREE_ENCODING = "vnext-batch-v2";
+// The covenant ABI accepts up to 13 proofs; relay mass may require a smaller vNext prefix.
+const MAX_REFUND_BATCHES_PER_TRANSACTION = 13;
 const appRoot = import.meta.dirname;
 const dataDir = path.resolve(process.env.RAFFLE_INDEX_DATA || path.join(appRoot, ".index-data"));
 const statePath = path.join(dataDir, "state.json");
@@ -105,9 +115,24 @@ function storageStem(roundId) {
   return encodeURIComponent(String(roundId));
 }
 
+function isVNextContractVersion(value) {
+  return value === VNEXT_CONTRACT_VERSION || PREVIOUS_VNEXT_CONTRACT_VERSIONS.has(value);
+}
+
+function treeEncodingForRound(summary = {}) {
+  if (!isVNextContractVersion(summary.contractVersion)) {
+    return { name: LEGACY_TREE_ENCODING, roundNonce: undefined, metadataSchema: undefined };
+  }
+  const roundNonce = fixedHex(summary.roundNonce ?? summary.round_nonce, 32, "vNext round nonce");
+  const metadataSchema = Number(summary.metadataSchema ?? summary.metadata_version ?? 2);
+  if (metadataSchema !== 2) throw new Error("vNext index records require metadata schema 2.");
+  return { name: VNEXT_TREE_ENCODING, roundNonce, metadataSchema };
+}
+
 class TicketTree {
   constructor(roundId, summary = {}) {
     this.roundId = roundId;
+    this.encoding = treeEncodingForRound(summary);
     this.count = 0;
     this.ticketCount = 0;
     this.frontier = Buffer.alloc(DEPTH * 32);
@@ -134,6 +159,9 @@ class TicketTree {
       checkpoint?.count === expectedCount &&
       checkpoint?.ticketCount === Number(summary.soldTickets || 0) &&
       checkpoint.rootHex === summary.ticketRoot &&
+      checkpoint.treeEncoding === this.encoding.name &&
+      checkpoint.roundNonce === this.encoding.roundNonce &&
+      checkpoint.metadataSchema === this.encoding.metadataSchema &&
       /^[0-9a-f]{1280}$/.test(checkpoint.frontierHex || "")
     ) {
       this.count = expectedCount;
@@ -180,11 +208,14 @@ class TicketTree {
     fs.mkdirSync(this.treeDir, { recursive: true });
     const temporary = `${this.checkpointFile}.tmp`;
     fs.writeFileSync(temporary, `${JSON.stringify({
-      version: 2,
+      version: 3,
       count: this.count,
       ticketCount: this.ticketCount,
       rootHex: this.rootHex,
-      frontierHex: this.frontierHex
+      frontierHex: this.frontierHex,
+      treeEncoding: this.encoding.name,
+      roundNonce: this.encoding.roundNonce,
+      metadataSchema: this.encoding.metadataSchema
     })}\n`);
     replaceFileSync(temporary, this.checkpointFile);
   }
@@ -276,7 +307,9 @@ class TicketTree {
     const encodedRange = Buffer.alloc(16);
     encodedRange.writeBigUInt64LE(BigInt(firstTicketId), 0);
     encodedRange.writeBigUInt64LE(BigInt(ticketCount), 8);
-    let node = sha256(Buffer.concat([owner, encodedRange]));
+    let node = this.encoding.name === VNEXT_TREE_ENCODING
+      ? sha256(Buffer.concat([VNEXT_BATCH_DOMAIN, Buffer.from(this.encoding.roundNonce, "hex"), owner, encodedRange]))
+      : sha256(Buffer.concat([owner, encodedRange]));
     this.writeNode(0, batchIndex, node);
     let pathIndex = batchIndex;
     let carrying = true;
@@ -389,7 +422,7 @@ function readState() {
 const saved = readState();
 
 function supportedContractVersion(value) {
-  return value === "raffle-v15-arbitrary-batched-refund" || value === "raffle-v14-batch-range";
+  return isVNextContractVersion(value) || value === "raffle-v15-arbitrary-batched-refund" || value === "raffle-v14-batch-range";
 }
 
 function ticketIndexNames(directory = dataDir) {
@@ -461,10 +494,13 @@ function roundForPayload(payload) {
     round = {
       roundId: payload.roundId,
       contractVersion: payload.contractVersion || "",
+      roundNonce: payload.roundNonce ?? payload.round_nonce,
+      metadataSchema: payload.metadataSchema ?? payload.metadata_version,
       status: "Open",
       refundCursor: 0,
       refundBatchCursor: 0,
-      tree: new TicketTree(payload.roundId)
+      refundFeeDebtSompi: "0",
+      tree: new TicketTree(payload.roundId, payload)
     };
     rounds.set(payload.roundId, round);
   }
@@ -488,8 +524,22 @@ function applyEvent(event) {
   if (!supportedContractVersion(round.contractVersion)) return;
 
   if (payload.type === "round-create" || payload.type === "round-register") {
+    const nextEncoding = treeEncodingForRound({
+      contractVersion: payload.contractVersion || round.contractVersion,
+      roundNonce: payload.roundNonce ?? payload.round_nonce ?? round.roundNonce,
+      metadataSchema: payload.metadataSchema ?? payload.metadata_version ?? round.metadataSchema
+    });
+    if (
+      nextEncoding.name !== round.tree.encoding.name ||
+      nextEncoding.roundNonce !== round.tree.encoding.roundNonce ||
+      nextEncoding.metadataSchema !== round.tree.encoding.metadataSchema
+    ) {
+      throw new Error(`Round metadata would change immutable ticket-tree encoding for ${round.roundId}.`);
+    }
     Object.assign(round, {
       contractVersion: payload.contractVersion || round.contractVersion,
+      roundNonce: payload.roundNonce ?? payload.round_nonce ?? round.roundNonce,
+      metadataSchema: payload.metadataSchema ?? payload.metadata_version ?? round.metadataSchema,
       version: payload.version || round.version,
       creator: payload.creator || round.creator,
       creatorPubkey: payload.creatorPubkey || round.creatorPubkey,
@@ -525,6 +575,12 @@ function applyEvent(event) {
     return;
   }
 
+  if (payload.type === "round-carrier-topup") {
+    if (round.status !== "Open") throw new Error(`Carrier top-up ${transactionId} targets non-open round ${round.roundId}.`);
+    round.latest = { txId: transactionId, ...event.output };
+    return;
+  }
+
   if (payload.type === "round-finalize") {
     round.status = "Finalized";
     round.finalized = {
@@ -540,6 +596,7 @@ function applyEvent(event) {
   if (payload.type === "round-refund-start") {
     if (round.refundCursor !== 0 || round.refundBatchCursor !== 0) throw new Error(`Refund already started for ${round.roundId}.`);
     round.status = "Refunding";
+    round.refundFeeDebtSompi = String(payload.refundFeeDebtSompi ?? "0");
     round.latest = { txId: transactionId, ...event.output };
     return;
   }
@@ -551,7 +608,7 @@ function applyEvent(event) {
     const ticketCount = Number(payload.ticketCount || 0);
     let expectedTicketCount = 0;
     let expectedCursor = round.refundCursor;
-    let validBatchRange = Number.isSafeInteger(batchCount) && batchCount > 0 && batchCount <= 13;
+    let validBatchRange = Number.isSafeInteger(batchCount) && batchCount > 0 && batchCount <= MAX_REFUND_BATCHES_PER_TRANSACTION;
     for (let offset = 0; validBatchRange && offset < batchCount; offset += 1) {
       const batch = round.tree.batch(round.refundBatchCursor + offset);
       if (!batch || batch.firstTicketId !== expectedCursor) {
@@ -569,6 +626,7 @@ function applyEvent(event) {
     }
     round.refundCursor += ticketCount;
     round.refundBatchCursor += batchCount;
+    round.refundFeeDebtSompi = "0";
     const successor = event.output;
     if (successor?.covenantId || (successor?.address && round.refundBatchCursor < round.tree.count)) {
       round.status = "Refunding";
@@ -775,6 +833,7 @@ function publicRound(round) {
       ticketFrontier: round.tree.frontierHex,
       refundCursor: round.refundCursor,
       refundBatchCursor: round.refundBatchCursor,
+      refundFeeDebtSompi: round.refundFeeDebtSompi ?? "0",
       creatorPubkey: round.creatorPubkey,
       refundAfterDaaScore: round.refundAfterDaaScore,
       ticketOwnerPubkeys: []

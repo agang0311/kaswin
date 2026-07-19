@@ -114,6 +114,6 @@ if (!mixed.every((batch, index) => verify(mixedTree.root, batch, index, proof(mi
 if (CAPACITY < 1_000_000) throw new Error("Depth-20 tree cannot hold one million one-ticket purchase batches.");
 
 console.log(`One million tickets fit in 10 x 100,000-ticket purchase batches; root ${tree.root.toString("hex")}.`);
-console.log("The 13-batch chain limit refunds those 10 purchase batches in one transaction.");
-console.log(`The compute-only lower bound for one million separate purchasers is ${Math.ceil(1_000_000 / MAX_REFUND_BATCHES_PER_TX).toLocaleString()} transactions; runtime storage-mass sizing may reduce each prefix.`);
+console.log("The legacy/v16 covenant ABI's 13-proof cap can cover those 10 purchase batches in one transaction.");
+console.log(`At that ABI cap, the compute-only lower bound for one million separate purchasers is ${Math.ceil(1_000_000 / MAX_REFUND_BATCHES_PER_TX).toLocaleString()} transactions; runtime storage-mass sizing (including vNext's measured two-batch prefix) may reduce each prefix.`);
 console.log("Verified arbitrary purchase-count leaves and depth-20 worst-case batch capacity.");

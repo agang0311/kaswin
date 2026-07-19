@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import { createServer } from "vite";
+
+const vite = await createServer({ root: process.cwd(), configFile: "vite.config.ts", logLevel: "silent", appType: "custom", server: { middlewareMode: true } });
+try {
+  const manifest = await vite.ssrLoadModule("/src/protocol/manifest.ts");
+  const state = await vite.ssrLoadModule("/src/protocol/state.ts");
+  const merkle = await vite.ssrLoadModule("/src/protocol/merkle.ts");
+  const fees = await vite.ssrLoadModule("/src/protocol/fees.ts");
+  const randomness = await vite.ssrLoadModule("/src/protocol/randomness.ts");
+  assert.equal(manifest.PROTOCOL_MANIFEST.defaultMaxBatches, 100);
+  assert.equal(manifest.PROTOCOL_MANIFEST.maxRelaySafePurchaseBatches, 1_000);
+  const nonce = "11".repeat(32), alice = "22".repeat(32), bob = "33".repeat(32), carol = "44".repeat(32);
+  let frontier = "00".repeat(640);
+  assert.equal(await merkle.rootFromFrontier(frontier, 0), "cddba7b592e3133393c16194fac7431abf2f5485ed711db282183c819e08ebaa");
+  const first = { roundNonceHex: nonce, ownerPubkeyHex: alice, firstTicketId: 0, ticketCount: 3 };
+  const a = await merkle.appendBatch(frontier, 0, first); frontier = a.frontierHex;
+  const second = { roundNonceHex: nonce, ownerPubkeyHex: bob, firstTicketId: 3, ticketCount: 2 };
+  const b = await merkle.appendBatch(frontier, 1, second);
+  const third = { roundNonceHex: nonce, ownerPubkeyHex: carol, firstTicketId: 5, ticketCount: 5 };
+  const c = await merkle.appendBatch(b.frontierHex, 2, third);
+  assert.equal(await merkle.rootFromFrontier(a.frontierHex, 1), a.rootHex);
+  assert.equal(await merkle.rootFromFrontier(b.frontierHex, 2), b.rootHex);
+  assert.equal(await merkle.rootFromFrontier(c.frontierHex, 3), c.rootHex);
+  assert.equal(state.allowedRoundAction({ maxTickets: 10, minTickets: 6, maxBatches: 100, soldTickets: 5, soldBatches: 2, salesDeadlineDaa: 100n, refundCursor: 0, refundBatchCursor: 0 }, 100n, "startRefund"), true);
+  assert.equal(state.allowedRoundAction({ maxTickets: 10, minTickets: 6, maxBatches: 100, soldTickets: 10, soldBatches: 3, salesDeadlineDaa: 99n, refundCursor: 0, refundBatchCursor: 0 }, 99n, "buy", 1), false);
+  const proof = await merkle.buildBatchProof([first, second], 1);
+  assert.equal(await merkle.verifyBatchProof(b.rootHex, second, 1, proof.proofHex), true);
+  assert.equal(await merkle.verifyBatchProof(b.rootHex, { ...second, roundNonceHex: "55".repeat(32) }, 1, proof.proofHex), false);
+  assert.equal(c.rootHex.length, 64);
+  const principal = [fees.buyerRefundPrincipal(100_000_000n, 3), fees.buyerRefundPrincipal(100_000_000n, 2)];
+  const feeCap = 20_000_000n, transitionCap = 20_000_000n;
+  const carrier = 57_300_000n;
+  const postTransitionValue = principal[0] + principal[1] + carrier - transitionCap;
+  assert.equal(fees.vNextMandatoryRefundReserve(2, feeCap), 0n);
+  assert.deepEqual(fees.vNextRefundOwnerValues([principal[0]], feeCap, transitionCap, 20_000_000n), [principal[0] - feeCap - transitionCap]);
+  assert.equal(fees.vNextSuccessorRefundValue(postTransitionValue, [principal[0]], transitionCap, principal[1]), principal[1] + carrier);
+  assert.throws(() => fees.vNextSuccessorRefundValue(principal[0] + principal[1] - transitionCap - 1n, [principal[0]], transitionCap, principal[1]));
+  assert.equal((await randomness.winnerFromSeed(new Uint8Array(32), 5)).winnerTicketId, 0);
+  console.log("PASS vNext integration: nonce-bound create/buy proofs, three independent buyers, buyer-funded refund liveness, and bounded draw selection.");
+} finally { await vite.close(); }

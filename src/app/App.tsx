@@ -6,11 +6,12 @@ import {
   ChevronDown,
   Languages,
   Link2,
-  Plug,
   RefreshCw,
+  RefreshCcw,
   Settings,
   ShieldCheck,
   Ticket,
+  Trophy,
   Upload,
   WalletCards
 } from "lucide-react";
@@ -18,10 +19,11 @@ import {
   assertRaffleCovenantReady,
   getRaffleCovenantStatus,
   pubkeyHexFromAddress,
-  raffleWinnerIndexFromSeed
+  raffleWinnerIndexFromSeed,
+  roundIdToBytes32
 } from "../kaspa/covenant";
 import { CHAIN_RANDOM_DELAY_DAA, loadChainRandomnessWitness } from "../kaspa/chain-randomness";
-import { loadBlockHashesNearDaa, loadIndexedRaffleHistory, loadRaffleHistory, loadTransactionChainAnchor, type RaffleHistoryRound } from "../kaspa/history";
+import { loadAcceptedOutpointSpend, loadBlockHashesNearDaa, loadIndexedRaffleHistory, loadRaffleHistory, loadTransactionChainAnchor, type RaffleHistoryRound } from "../kaspa/history";
 import {
   DEFAULT_RAFFLE_INDEX_API,
   checkRaffleIndexer,
@@ -49,6 +51,8 @@ import {
   assertValidKaspaAddress,
   buyRaffleCovenantTicket,
   COVENANT_CREATE_FEE_SOMPI,
+  COVENANT_TOP_UP_FEE_SOMPI,
+  closeEmptyRaffleCovenantRound,
   covenantBuyFeeSompi,
   covenantFinalizeFeeSompi,
   covenantRefundMaxFeeSompi,
@@ -59,15 +63,20 @@ import {
   finalizeRaffleCovenantRound,
   getRaffleRegistryConfig,
   LEGACY_REFUND_TRANSITION_SPONSOR_SOMPI,
+  MAX_COVENANT_CLOSE_FEE_SOMPI,
   MAX_COVENANT_FINALIZE_FEE_SOMPI,
   MAX_REFUND_PURCHASE_BATCHES_PER_TX,
   MIN_COVENANT_CARRIER_SOMPI,
+  MIN_COVENANT_TOP_UP_SOMPI,
   REGISTRY_MARKER_REFUND_FEE_SOMPI,
+  REGISTRY_PAYMENT_FEE_SOMPI,
   currentRaffleCovenantDaaScore,
   REFUND_TRANSITION_FEE_SOMPI,
   refundRaffleCovenantRound,
   refundRaffleRegistryMarker,
-  sendKaspaPayment
+  sendKaspaPayment,
+  transactionRejectionRequiresStateRefresh,
+  topUpRaffleCovenantCarrier
 } from "../kaspa/transactions";
 import {
   connectBrowserWallet,
@@ -84,7 +93,12 @@ import {
   archivedReleaseForRaffleContractVersion,
   hasFixedRefundTransitionFee,
   isSupportedRaffleContractVersion,
+  isQuarantinedRaffleContractVersion,
+  isVNextRaffleContractVersion,
+  MAX_ROUND_PRINCIPAL_SOMPI,
+  MIN_REFUNDABLE_TICKET_PRICE_SOMPI,
   parseMetadata,
+  RAFFLE_CONTRACT_VERSION,
   raffleContractVersionForNetwork,
   stringifyMetadata,
   supportsGroupedRefunds
@@ -99,9 +113,22 @@ import {
 import { randomHex } from "../raffle/randomness";
 import { verifyRaffleState } from "../raffle/state";
 import { buildTicketBatchProof, TICKET_EMPTY_FRONTIER_HEX, TICKET_EMPTY_ROOT_HEX } from "../raffle/merkle";
+import { buildBatchProof as buildVNextBatchProof } from "../protocol/merkle";
+import { bytesToHex } from "../protocol/encoding";
+import { deriveDrawSeed, drawRandomnessBaseDaaScore } from "../protocol/randomness";
+import { PROTOCOL_MANIFEST } from "../protocol/manifest";
 import { findTicketRange, hasCompleteTicketBatchHistory, ticketRangeCount, ticketRangeEnd, totalTicketCount } from "../raffle/tickets";
+import { preferAdvancedRaffleCovenant, preferMoreCompleteRaffleHistoryTickets } from "../raffle/history-merge";
 import type { FinalizeState, RaffleMetadata, RoundState, TicketState } from "../raffle/types";
 import { translate, translateRuntimeText, type Language, type TranslationValues } from "./i18n";
+import { CreateRoundPanel } from "./components/CreateRoundPanel";
+import { ActionWorkspace } from "./components/ActionWorkspace";
+import { SourceWorkspace } from "./components/SourceWorkspace";
+import { AdvancedSettingsPanel } from "./components/AdvancedSettingsPanel";
+import { SigningConfirmationDialog } from "./components/SigningConfirmationDialog";
+import { ExplorerLink, ExplorerText } from "./components/ExplorerLink";
+import { derivePageEligibility, type RoundActionTab, type RoundSourceTab } from "./state-machine";
+import { buildSigningPreview, buySnapshot, cancelSigningConfirmation, carrierTopUpSnapshot, decideSigningConfirmation, idleSigningConfirmationState, openSigningConfirmation, registrySnapshot, type SigningConfirmationState } from "./signing-preview";
 import packageJson from "../../package.json";
 
 const emptyMetadata = createEmptyMetadata();
@@ -115,6 +142,7 @@ const MAINNET_REFUND_TIMEOUT_SECONDS = SECONDS_PER_DAY;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
+type ChainFeedbackTarget = "create" | "buy" | "draw" | "refund" | "carrier" | "close";
 
 function historyRoundNeedsIndexer(historyRound: RaffleHistoryRound): boolean {
   const soldTickets = historyRound.soldTickets ?? totalTicketCount(historyRound.tickets);
@@ -237,6 +265,12 @@ function formatKas(value: bigint) {
   const whole = value / 100_000_000n;
   const fraction = (value % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
   return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} KAS`;
+}
+
+function formatKasCompact(value: bigint) {
+  const whole = value / 100_000_000n;
+  const fraction = (value % 100_000_000n).toString().padStart(8, "0").slice(0, 3);
+  return `${whole.toLocaleString()}.${fraction} KAS`;
 }
 function parsePositiveSompi(value: string, fieldName: string) {
   try {
@@ -367,6 +401,38 @@ function encodePayload(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value));
 }
 
+function encodeRegistryPayload(metadata: RaffleMetadata) {
+  const covenant = metadata.covenant;
+  if (!metadata.roundId || !metadata.createTxId || !metadata.registryAddress || !covenant) {
+    throw new Error("The current round is missing data required to publish its Registry record.");
+  }
+  return encodePayload({
+    app: "kaspa-raffle-static",
+    type: "round-register",
+    version: metadata.version,
+    roundId: metadata.roundId,
+    createTxId: metadata.createTxId,
+    treasuryAddress: covenant.address,
+    covenantId: covenant.covenantId,
+    creator: metadata.creatorAddress,
+    ticketPrice: metadata.ticketPrice,
+    maxTickets: metadata.maxTickets,
+    minTickets: metadata.minTickets,
+    maxBatches: metadata.maxBatches ?? 100,
+    roundNonce: metadata.roundNonce ?? metadata.roundId,
+    salesDeadlineDaa: metadata.salesDeadlineDaa ?? covenant.refundAfterDaaScore,
+    creatorPubkey: metadata.creatorPubkey ?? covenant.creatorPubkey,
+    createdAtDaaScore: metadata.createdAtDaaScore,
+    refundAfterDaaScore: metadata.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
+    chainSearchHintHash: covenant.chainSearchHintHash ?? metadata.startBlockHash,
+    refundTimeoutSeconds: metadata.refundTimeoutSeconds,
+    refundTimeoutDaa: metadata.refundTimeoutDaa,
+    registryAddress: metadata.registryAddress,
+    contractVersion: metadata.contractVersion,
+    registeredAt: new Date().toISOString()
+  });
+}
+
 function encodeShareMetadata(metadata: RaffleMetadata) {
   const bytes = new TextEncoder().encode(JSON.stringify(metadata));
   let binary = "";
@@ -395,13 +461,37 @@ function errorMessage(error: unknown, fallback: string) {
   return message || fallback;
 }
 
+async function withWalletConnectionTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timeoutId: number | undefined;
+
+  return Promise.race([
+    operation,
+    new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(
+        () => reject(new Error("Wallet connection timed out after 20 seconds. Unlock the wallet extension, approve the connection, then try again.")),
+        20_000
+      );
+    })
+  ]).finally(() => {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  });
+}
+
 function shouldShrinkRefundBatch(error: unknown): boolean {
   const message = errorMessage(error, "");
   return /refund batch candidate|standard mass limit|storage[- ]mass(?: minimum)?|compute mass .*larger than|max allowed size|covenant fee cap/i.test(message);
 }
 
 async function currentVirtualDaaScore(connection: KaspaRpcConnection): Promise<bigint> {
-  const serverInfo = await connection.client.getServerInfo();
+  let timeoutId: number | undefined;
+  const serverInfo = await Promise.race([
+    connection.client.getServerInfo(),
+    new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error("Current DAA lookup timed out after 30 seconds.")), 30_000);
+    })
+  ]).finally(() => {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  });
   return BigInt(serverInfo.virtualDaaScore?.toString() ?? connection.status.daaScore ?? "0");
 }
 
@@ -427,6 +517,8 @@ function refundTimeoutSecondsFromMetadata(metadata: Pick<RaffleMetadata, "networ
 
 export function App() {
   const rpcConnectionRef = useRef<KaspaRpcConnection | null>(null);
+  const networkPickerRef = useRef<HTMLDivElement | null>(null);
+  const walletPickerRef = useRef<HTMLDivElement | null>(null);
   const [language, setLanguage] = useState<Language>(() => initialLanguage());
   const [networkEndpoints, setNetworkEndpoints] = useState<NetworkRpcEndpoints>(() => loadNetworkEndpoints());
   const [indexEndpoints, setIndexEndpoints] = useState<NetworkTextEndpoints>(() => loadIndexEndpoints());
@@ -441,6 +533,7 @@ export function App() {
     network: "unknown",
     syncStatus: "unknown"
   });
+  const [isConnectingNode, setIsConnectingNode] = useState(false);
   const [virtualDaaScore, setVirtualDaaScore] = useState(0n);
   const [virtualDaaObservedAt, setVirtualDaaObservedAt] = useState(() => Date.now());
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
@@ -451,20 +544,37 @@ export function App() {
   const [isWalletMenuOpen, setIsWalletMenuOpen] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletAdapterOption[]>(() => listWalletAdapters());
   const [metadata, setMetadata] = useState<RaffleMetadata>(emptyMetadata);
+  const [createParameters, setCreateParameters] = useState<Pick<RaffleMetadata, "ticketPrice" | "maxTickets" | "minTickets" | "maxBatches">>(() => ({
+    ticketPrice: emptyMetadata.ticketPrice,
+    maxTickets: emptyMetadata.maxTickets,
+    minTickets: emptyMetadata.minTickets,
+    maxBatches: emptyMetadata.maxBatches
+  }));
   const [metadataText, setMetadataText] = useState(stringifyMetadata(emptyMetadata));
   const [metadataError, setMetadataError] = useState("");
   const [metadataMessage, setMetadataMessage] = useState("");
   const [ticketQuantity, setTicketQuantity] = useState("1");
   const [tickets, setTickets] = useState<TicketState[]>([]);
   const [finalized, setFinalized] = useState<FinalizeState | undefined>();
+  const [terminalRoundStatus, setTerminalRoundStatus] = useState<"Refunded" | "Finalized" | "Closed" | undefined>();
   const [chainMessage, setChainMessage] = useState("");
   const [chainError, setChainError] = useState("");
+  const [chainFeedbackTarget, setChainFeedbackTarget] = useState<ChainFeedbackTarget>("buy");
   const [isCreatingRound, setIsCreatingRound] = useState(false);
+  const [isPublishingRegistry, setIsPublishingRegistry] = useState(false);
+  const [isRecoveringRegistryMarker, setIsRecoveringRegistryMarker] = useState(false);
+  const [registryRecoveryMessage, setRegistryRecoveryMessage] = useState("");
+  const [registryRecoveryError, setRegistryRecoveryError] = useState("");
   const [isBuying, setIsBuying] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isClosingEmptyRound, setIsClosingEmptyRound] = useState(false);
   const [isRefundingRound, setIsRefundingRound] = useState(false);
+  const [isToppingUpCarrier, setIsToppingUpCarrier] = useState(false);
   const [refundProgress, setRefundProgress] = useState<{ cursor: number; total: number } | null>(null);
+  const [signingConfirmation, setSigningConfirmation] = useState<SigningConfirmationState>(idleSigningConfirmationState);
+  const [isConfirmingSigning, setIsConfirmingSigning] = useState(false);
   const [covenantCarrierSompi, setCovenantCarrierSompi] = useState(DEFAULT_COVENANT_CARRIER_SOMPI.toString());
+  const [topUpCarrierKas, setTopUpCarrierKas] = useState("0.19");
   const [refundTimeoutParts, setRefundTimeoutParts] = useState<RefundTimeoutParts>(DEFAULT_REFUND_TIMEOUT_PARTS);
   const [historyApiBase, setHistoryApiBase] = useState(requireNetworkProfile("testnet-10").historyApiBase);
   const [indexApiBase, setIndexApiBase] = useState(() => loadIndexEndpoints()["testnet-10"]);
@@ -482,23 +592,40 @@ export function App() {
   const [isCheckingIndexer, setIsCheckingIndexer] = useState(false);
   const [indexerCheckState, setIndexerCheckState] = useState<"idle" | "ready" | "error">("idle");
   const [indexerCheckMessage, setIndexerCheckMessage] = useState("");
-  const [roundSourceTab, setRoundSourceTab] = useState<"create" | "history">("create");
-  const [roundActionTab, setRoundActionTab] = useState<"buy" | "payout">("buy");
+  const [roundSourceTab, setRoundSourceTab] = useState<RoundSourceTab>("history");
+  const [isRoundSourceOpen, setIsRoundSourceOpen] = useState(false);
+  const [roundActionTab, setRoundActionTab] = useState<RoundActionTab>("buy");
   const isCreatingRoundRef = useRef(false);
+  const isPublishingRegistryRef = useRef(false);
+  const isRecoveringRegistryMarkerRef = useRef(false);
   const isBuyingRef = useRef(false);
   const isFinalizingRef = useRef(false);
+  const isClosingEmptyRoundRef = useRef(false);
   const isRefundingRoundRef = useRef(false);
+  const isToppingUpCarrierRef = useRef(false);
+  const isConnectingNodeRef = useRef(false);
   const covenantStatus = useMemo(() => getRaffleCovenantStatus(), []);
-  const canStartNewRound =
-    !metadata.covenant ||
-    Boolean(finalized) ||
-    metadata.covenant.status === "Finalized" ||
-    metadata.covenant.status === "Refunded";
-  const selectedHistoryRound = useMemo(
-    () => historyRounds.find((historyRound) => historyRound.roundId === selectedHistoryRoundId) ?? historyRounds[0],
-    [historyRounds, selectedHistoryRoundId]
+  const orderedHistoryRounds = useMemo(
+    () => [...historyRounds].sort((left, right) => Number(historyRoundIsPlayable(right)) - Number(historyRoundIsPlayable(left))),
+    [historyRounds, virtualDaaScore]
   );
+  const selectedHistoryRound = useMemo(
+    () => orderedHistoryRounds.find((historyRound) => historyRound.roundId === selectedHistoryRoundId) ?? orderedHistoryRounds[0],
+    [orderedHistoryRounds, selectedHistoryRoundId]
+  );
+  const selectedHistoryRoundPlayable = Boolean(selectedHistoryRound && historyRoundIsPlayable(selectedHistoryRound));
+  const playableHistoryRoundCount = orderedHistoryRounds.filter(historyRoundIsPlayable).length;
   const activeSoldBatches = metadata.covenant?.soldBatches ?? metadata.covenant?.ticketOwnerPubkeys.length ?? tickets.length;
+  const registryPublicationPending = Boolean(
+    metadata.covenant && metadata.createTxId && metadata.registryAddress && !metadata.registryTxId
+  );
+  const registryMarkerRefundPending = Boolean(
+    metadata.registryTxId &&
+    !metadata.registryRefundTxId &&
+    metadata.registryAddress &&
+    metadata.registryAddress === registryAddress &&
+    registryAutoRefund
+  );
   const activeLocalHistoryComplete = metadata.covenant
     ? hasCompleteTicketBatchHistory(tickets, metadata.covenant.soldTickets, activeSoldBatches)
     : true;
@@ -513,6 +640,9 @@ export function App() {
   const selectedHistoryRoundArchivedRelease = selectedHistoryRound
     ? archivedReleaseForRaffleContractVersion(selectedHistoryRound.contractVersion ?? "")
     : undefined;
+  const selectedHistoryRoundQuarantined = Boolean(
+    selectedHistoryRound && isQuarantinedRaffleContractVersion(selectedHistoryRound.contractVersion ?? "")
+  );
   const refundTimeoutSeconds = useMemo(() => {
     try {
       return refundTimeoutSecondsFromParts(refundTimeoutParts);
@@ -521,13 +651,22 @@ export function App() {
     }
   }, [refundTimeoutParts]);
   const refundTimeoutDaa = useMemo(() => refundTimeoutSeconds * KASPA_DAA_PER_SECOND, [refundTimeoutSeconds]);
+  const recommendedMaxBatches = useMemo(() => {
+    const interval = BigInt(PROTOCOL_MANIFEST.recommendedSecondsPerPurchaseBatch);
+    const rawRecommendation = interval > 0n ? refundTimeoutSeconds / interval : 0n;
+    const clamped = rawRecommendation < 1n
+      ? 1n
+      : rawRecommendation > BigInt(PROTOCOL_MANIFEST.maxRelaySafePurchaseBatches)
+        ? BigInt(PROTOCOL_MANIFEST.maxRelaySafePurchaseBatches)
+        : rawRecommendation;
+    return Number(clamped);
+  }, [refundTimeoutSeconds]);
   const refundTimeoutDisplay = useMemo(
     () => formatRefundTimeoutParts(refundTimeoutParts, language),
     [language, refundTimeoutParts]
   );
   const selectedNetwork = requireNetworkProfile(networkId);
   const currentNetworkEndpoint = networkEndpoints[networkId];
-  const networkSwitchDisabled = isCreatingRound || isBuying || isFinalizing || isRefundingRound;
   const t = (key: string, values?: TranslationValues) => translate(language, key, values);
   const rt = (value: string) => translateRuntimeText(language, value);
   const networkLabel = (id: SupportedNetworkId) => t(id === "mainnet" ? "network.mainnet" : "network.testnet10");
@@ -539,6 +678,43 @@ export function App() {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  useEffect(() => {
+    if (!isNetworkMenuOpen && !isWalletMenuOpen) {
+      return;
+    }
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (isNetworkMenuOpen && !networkPickerRef.current?.contains(target)) {
+        setIsNetworkMenuOpen(false);
+        setNetworkSettingsId(null);
+      }
+      if (isWalletMenuOpen && !walletPickerRef.current?.contains(target)) {
+        setIsWalletMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsNetworkMenuOpen(false);
+      setNetworkSettingsId(null);
+      setIsWalletMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isNetworkMenuOpen, isWalletMenuOpen]);
 
   useEffect(() => {
     setMetadataText(stringifyMetadata(metadata));
@@ -658,15 +834,20 @@ export function App() {
     const covenant = metadata.covenant;
     const covenantStatus = covenant?.status;
     const localSoldTickets = totalTicketCount(tickets);
-    const status: RoundState["status"] = finalized
+    const soldTickets = Math.max(localSoldTickets, covenant?.soldTickets ?? 0);
+    const status: RoundState["status"] = terminalRoundStatus ?? (finalized
       ? "Finalized"
       : covenantStatus === "Refunding" || covenantStatus === "Refunded"
         ? covenantStatus
       : covenantStatus === "Closed" || localSoldTickets >= metadata.maxTickets
         ? "Closed"
-        : "Open";
-    const soldTickets = Math.max(localSoldTickets, covenant?.soldTickets ?? 0);
-    const potAmount = covenant ? BigInt(covenant.potAmount) : BigInt(localSoldTickets) * ticketPrice;
+        : "Open");
+    const refundedTickets = terminalRoundStatus === "Refunded"
+      ? soldTickets
+      : covenant?.status === "Refunding" || covenant?.status === "Refunded"
+      ? covenant.refundCursor ?? 0
+      : 0;
+    const potAmount = ticketPrice * BigInt(Math.max(0, soldTickets - refundedTickets));
 
     return {
       appId: "KASPA_RAFFLE_ROUND_V1",
@@ -676,6 +857,9 @@ export function App() {
       ticketPrice,
       maxTickets: metadata.maxTickets,
       minTickets: metadata.minTickets,
+      maxBatches: metadata.maxBatches,
+      roundNonce: metadata.roundNonce,
+      salesDeadlineDaa: metadata.salesDeadlineDaa,
       soldTickets,
       potAmount,
       feeBps: 0,
@@ -691,8 +875,9 @@ export function App() {
       ticketBatchEnds: covenant?.ticketBatchEnds ?? tickets.map(ticketRangeEnd),
       ticketOwnerPubkeys: covenant?.ticketOwnerPubkeys ?? tickets.map((ticket) => ticket.ownerPubkey).filter(Boolean) as string[]
     };
-  }, [finalized, metadata, tickets, wallet]);
+  }, [finalized, metadata, terminalRoundStatus, tickets, wallet]);
 
+  const hasCurrentRound = Boolean(metadata.roundId || metadata.covenant);
   const remainingTickets = Math.max(0, metadata.maxTickets - round.soldTickets);
   const parsedTicketQuantity = Number(ticketQuantity);
   const ticketQuantityIsAvailable = Number.isInteger(parsedTicketQuantity) &&
@@ -717,19 +902,28 @@ export function App() {
         carrier: formatKas(createCarrierAmount),
         createFee: formatKas(COVENANT_CREATE_FEE_SOMPI),
         marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI),
+        registryNet: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI),
+        registryFee: formatKas(REGISTRY_PAYMENT_FEE_SOMPI),
         refund: formatKas(registryMarkerRefundAmount),
         refundFee: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)
       })
     : t(usesDefaultRegistry ? "cost.create.retained" : "cost.create.custom", {
         carrier: formatKas(createCarrierAmount),
         createFee: formatKas(COVENANT_CREATE_FEE_SOMPI),
-        marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)
+        marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI),
+        registryFee: formatKas(REGISTRY_PAYMENT_FEE_SOMPI)
       });
   const buyCostTooltip = t("cost.buy", { price: formatKas(purchaseTotal), fee: formatKas(covenantBuyFeeSompi(round.contractVersion, parsedTicketQuantity)) });
   const payoutCostTooltip = t("cost.payout", {
     prize: formatKas(round.potAmount),
     fee: formatKas(covenantFinalizeFeeSompi(round.contractVersion)),
     maxFee: formatKas(MAX_COVENANT_FINALIZE_FEE_SOMPI)
+  });
+  const emptyCloseCostTooltip = t("cost.closeEmpty", {
+    carrier: formatKas(metadata.covenant
+      ? BigInt(metadata.covenant.amountSompi) - BigInt(metadata.covenant.soldTickets) * BigInt(metadata.ticketPrice)
+      : 0n),
+    maxFee: formatKas(MAX_COVENANT_CLOSE_FEE_SOMPI)
   });
   const remainingRefundBatches = Math.max(
     1,
@@ -748,6 +942,11 @@ export function App() {
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
+  useEffect(() => {
+    if (metadata.covenant && !finalized && (metadata.covenant.soldTickets >= metadata.maxTickets || refundAvailable)) {
+      setRoundActionTab("payout");
+    }
+  }, [finalized, metadata.covenant, metadata.maxTickets, refundAvailable]);
   const refundCountdownParts = useMemo(() => {
     if (!metadata.covenant || refundAfterDaaScore <= 0n || virtualDaaScore <= 0n) {
       return null;
@@ -761,6 +960,104 @@ export function App() {
     return refundTimeoutPartsFromSeconds(remainingSeconds);
   }, [countdownNow, metadata.covenant, refundAfterDaaScore, virtualDaaObservedAt, virtualDaaScore]);
   const drawTimeReached = round.soldTickets >= round.maxTickets || refundAvailable;
+  const pageEligibility = derivePageEligibility({
+    covenant: metadata.covenant ? {
+      status: metadata.covenant.status,
+      soldTickets: metadata.covenant.soldTickets,
+      minTickets: metadata.minTickets,
+      creatorPubkey: metadata.covenant.creatorPubkey
+    } : undefined,
+    finalized: Boolean(finalized || terminalRoundStatus),
+    ticketQuantityIsAvailable,
+    refundAvailable,
+    drawTimeReached,
+    covenantEnabled: covenantStatus.enabled && isSupportedRaffleContractVersion(metadata.contractVersion),
+    walletPublicKey: wallet?.publicKey,
+    isCreating: isCreatingRound,
+    isBuying,
+    isFinalizing,
+    isClosingEmpty: isClosingEmptyRound,
+    isRefunding: isRefundingRound
+  });
+  const {
+    canStartNewRound,
+    canBuy: eligibleCanBuy,
+    canDraw: eligibleCanDraw,
+    canRefund: eligibleCanRefund,
+    canCloseEmpty: eligibleCanCloseEmpty
+  } = pageEligibility;
+  const finalizeCarrierSompi = metadata.covenant
+    ? BigInt(metadata.covenant.amountSompi) - BigInt(metadata.covenant.soldTickets) * BigInt(metadata.ticketPrice)
+    : 0n;
+  const supportsCarrierTopUp = metadata.contractVersion === RAFFLE_CONTRACT_VERSION &&
+    (!metadata.covenant || (metadata.covenant.soldTickets < metadata.minTickets && !refundAvailable));
+  const carrierTopUpNeededSompi = finalizeCarrierSompi < MIN_COVENANT_CARRIER_SOMPI
+    ? MIN_COVENANT_CARRIER_SOMPI - finalizeCarrierSompi
+    : 0n;
+  const drawBlockedReason = metadata.covenant && refundAvailable && metadata.covenant.soldTickets < metadata.minTickets
+    ? t("finalizeBlocked.minimum", {
+        sold: metadata.covenant.soldTickets.toLocaleString(),
+        min: metadata.minTickets.toLocaleString()
+      })
+    : metadata.covenant && finalizeCarrierSompi < MIN_COVENANT_CARRIER_SOMPI
+      ? t(supportsCarrierTopUp
+        ? "finalizeBlocked.carrier.topUp"
+        : metadata.contractVersion === RAFFLE_CONTRACT_VERSION
+          ? "finalizeBlocked.carrier.locked"
+          : "finalizeBlocked.carrier.legacy", {
+        carrier: formatKas(finalizeCarrierSompi),
+        minimum: formatKas(MIN_COVENANT_CARRIER_SOMPI),
+        needed: formatKas(carrierTopUpNeededSompi)
+        })
+      : "";
+  const buyBlockedReason = metadata.covenant && finalizeCarrierSompi < MIN_COVENANT_CARRIER_SOMPI
+    ? t(supportsCarrierTopUp ? "buyBlocked.carrier.topUp" : "buyBlocked.carrier.locked", {
+        carrier: formatKas(finalizeCarrierSompi),
+        minimum: formatKas(MIN_COVENANT_CARRIER_SOMPI),
+        needed: formatKas(carrierTopUpNeededSompi)
+      })
+    : "";
+  const canBuy = eligibleCanBuy && !buyBlockedReason && !isToppingUpCarrier;
+  const canDraw = eligibleCanDraw && !drawBlockedReason && !isToppingUpCarrier;
+  const canRefund = eligibleCanRefund && !isToppingUpCarrier;
+  const canCloseEmpty = eligibleCanCloseEmpty && !isToppingUpCarrier;
+  const parsedTopUpCarrierSompi = BigInt(kasInputToSompi(topUpCarrierKas));
+  const canTopUpCarrier = Boolean(
+    metadata.covenant &&
+    wallet &&
+    nodeStatus.connected &&
+    supportsCarrierTopUp &&
+    !finalized &&
+    (metadata.covenant.status === "Open" || metadata.covenant.status === "Closed") &&
+    parsedTopUpCarrierSompi >= MIN_COVENANT_TOP_UP_SOMPI &&
+    !isCreatingRound && !isBuying && !isFinalizing && !isClosingEmptyRound && !isRefundingRound && !isToppingUpCarrier
+  );
+  const refundBlockedReason = !metadata.covenant || eligibleCanRefund
+    ? ""
+    : !nodeStatus.connected
+      ? t("refundBlocked.node")
+      : !covenantStatus.enabled
+        ? t("refundBlocked.contract")
+        : !refundAvailable
+          ? t("refundBlocked.wait")
+          : metadata.covenant.soldTickets >= metadata.minTickets
+            ? t("refundBlocked.minimum", { sold: metadata.covenant.soldTickets.toLocaleString(), min: metadata.minTickets.toLocaleString() })
+            : "";
+  // ActionWorkspace uses canBuy; its equivalent UI policy is
+  // disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}.
+  const networkSwitchDisabled = !pageEligibility.canSwitchNetwork || isToppingUpCarrier;
+
+  useEffect(() => {
+    const covenant = metadata.covenant;
+    if (!covenant || metadata.contractVersion !== RAFFLE_CONTRACT_VERSION) return;
+    const carrier = BigInt(covenant.amountSompi) - BigInt(covenant.soldTickets) * BigInt(metadata.ticketPrice);
+    const needed = carrier < MIN_COVENANT_CARRIER_SOMPI
+      ? MIN_COVENANT_CARRIER_SOMPI - carrier
+      : 0n;
+    const suggested = needed > MIN_COVENANT_TOP_UP_SOMPI ? needed : MIN_COVENANT_TOP_UP_SOMPI;
+    setTopUpCarrierKas(sompiToKasInput(suggested.toString()));
+  }, [metadata.contractVersion, metadata.covenant?.txId, metadata.ticketPrice]);
+
   const soldPercent = metadata.maxTickets > 0
     ? Math.min(100, (round.soldTickets / metadata.maxTickets) * 100)
     : 0;
@@ -831,7 +1128,20 @@ export function App() {
     const batchIndex = orderedBatches.findIndex((ticket) => ticketId >= ticket.ticketId && ticketId <= ticketRangeEnd(ticket));
     const ticket = orderedBatches[batchIndex];
     if (!ticket) throw new Error(`Ticket #${ticketId} is missing from local history.`);
-    const proof = await buildTicketBatchProof(orderedBatches, batchIndex);
+    const vNextRoundNonceHex = isVNextRaffleContractVersion(metadata.contractVersion)
+      ? bytesToHex(await roundIdToBytes32(metadata.roundNonce || metadata.roundId))
+      : "";
+    const proof = isVNextRaffleContractVersion(metadata.contractVersion)
+      ? await buildVNextBatchProof(
+          orderedBatches.map((batch) => ({
+            roundNonceHex: vNextRoundNonceHex,
+            ownerPubkeyHex: batch.ownerPubkey || pubkeyHexFromAddress(batch.owner),
+            firstTicketId: batch.ticketId - 1,
+            ticketCount: ticketRangeCount(batch)
+          })),
+          batchIndex
+        )
+      : await buildTicketBatchProof(orderedBatches, batchIndex);
     if (proof.rootHex !== covenant.ticketRoot) throw new Error("Local ticket history does not match the covenant root.");
     return { ticket, batchIndex, proofHex: proof.proofHex };
   }
@@ -904,6 +1214,7 @@ export function App() {
         : { mode: "custom", url: validateRpcUrl(networkEndpointDraft) };
       const next = { ...networkEndpoints, [networkSettingsId]: endpoint };
       persistNetworkEndpoints(next);
+      setNetworkEndpoints(next);
 
       if (networkSettingsId === networkId) {
         setRpcUrl(endpoint.url);
@@ -912,6 +1223,7 @@ export function App() {
           rpcConnectionRef.current = null;
           setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
         }
+        void handleConnect(endpoint);
       }
 
       setNetworkSettingsId(null);
@@ -963,6 +1275,7 @@ export function App() {
     setMetadata(createEmptyMetadata(nextNetwork));
     setTickets([]);
     setFinalized(undefined);
+    setTerminalRoundStatus(undefined);
     setChainError("");
     setChainMessage("");
     setRpcError("");
@@ -973,20 +1286,28 @@ export function App() {
     setHistoryMessage("");
     setIndexerCheckState("idle");
     setIndexerCheckMessage("");
-    setRoundSourceTab("create");
+    setRoundSourceTab("history");
+    setIsRoundSourceOpen(false);
     setRoundActionTab("buy");
     setNetworkSettingsId(null);
     setIsNetworkMenuOpen(false);
   }
 
-  async function handleConnect() {
+  async function handleConnect(endpointOverride?: NetworkEndpointSettings) {
+    if (isConnectingNodeRef.current) {
+      return;
+    }
+
+    isConnectingNodeRef.current = true;
+    setIsConnectingNode(true);
     setRpcError("");
 
     try {
       await disconnectBrowserRpc(rpcConnectionRef.current);
-      const endpointSettings = currentNetworkEndpoint.mode === "custom"
-        ? { ...currentNetworkEndpoint, url: rpcUrl }
-        : currentNetworkEndpoint;
+      const selectedEndpoint = endpointOverride ?? currentNetworkEndpoint;
+      const endpointSettings = selectedEndpoint.mode === "custom"
+        ? { ...selectedEndpoint, url: endpointOverride?.url ?? rpcUrl }
+        : selectedEndpoint;
       const endpoint = rpcTargetFromSettings(endpointSettings);
       const connection = await connectBrowserRpc(endpoint, networkId);
       const connectedNetwork = normalizeNetworkId(connection.status.network);
@@ -1015,14 +1336,24 @@ export function App() {
     } catch (error) {
       setRpcError(error instanceof Error ? error.message : "Unable to connect to node.");
       setNodeStatus((current) => ({ ...current, connected: false }));
+    } finally {
+      isConnectingNodeRef.current = false;
+      setIsConnectingNode(false);
     }
   }
 
-  async function handleDisconnect() {
-    await disconnectBrowserRpc(rpcConnectionRef.current);
-    rpcConnectionRef.current = null;
-    setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
-  }
+  useEffect(() => {
+    if (nodeStatus.connected || rpcConnectionRef.current || isConnectingNodeRef.current || isConnectingNode) {
+      return;
+    }
+
+    // Connect on first load, after changing networks, and after applying a
+    // node endpoint. A short retry keeps timeout-based actions usable when a
+    // resolver or custom endpoint is briefly unavailable.
+    const reconnectDelay = rpcError ? 5_000 : 0;
+    const timer = window.setTimeout(() => void handleConnect(), reconnectDelay);
+    return () => window.clearTimeout(timer);
+  }, [currentNetworkEndpoint.mode, currentNetworkEndpoint.url, isConnectingNode, networkId, nodeStatus.connected, rpcError]);
 
   function handleToggleWalletMenu() {
     setWalletOptions(listWalletAdapters());
@@ -1037,7 +1368,7 @@ export function App() {
 
     try {
       const walletNetwork = rpcConnectionRef.current?.status.network ?? networkId;
-      let connectedWallet = await connectBrowserWallet(adapterId, walletNetwork);
+      let connectedWallet = await withWalletConnectionTimeout(connectBrowserWallet(adapterId, walletNetwork));
 
       if (rpcConnectionRef.current) {
         let balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
@@ -1092,18 +1423,6 @@ export function App() {
 
   function prepareRoundForCreate(forceNew = false) {
     const roundId = forceNew || !metadata.roundId ? `round-${randomHex(8)}` : metadata.roundId;
-    if (forceNew || !metadata.roundId) {
-      setTickets([]);
-      setFinalized(undefined);
-      setMetadata((current) => ({
-        ...current,
-        roundId,
-        createTxId: "",
-        contractVersion: raffleContractVersionForNetwork(networkId),
-        treasuryAddress: "",
-        covenant: undefined
-      }));
-    }
     return roundId;
   }
 
@@ -1113,6 +1432,13 @@ export function App() {
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromMetadata(normalizedMetadata);
 
     setMetadata(normalizedMetadata);
+    setTerminalRoundStatus(
+      normalizedMetadata.covenant?.status === "Refunded"
+        ? "Refunded"
+        : normalizedMetadata.covenant?.status === "Finalized"
+          ? "Finalized"
+          : undefined
+    );
     setRefundTimeoutParts(refundTimeoutPartsFromSeconds(loadedRefundTimeoutSeconds));
     setNetworkId(profile.id);
     setRpcUrl(networkEndpoints[profile.id].url);
@@ -1124,6 +1450,8 @@ export function App() {
     setFinalized(undefined);
     setChainError("");
     setChainMessage("");
+    setRegistryRecoveryError("");
+    setRegistryRecoveryMessage("");
     setMetadataError("");
     setMetadataMessage(message);
   }
@@ -1166,9 +1494,53 @@ export function App() {
     }
   }
 
-  async function handleCreateCovenantRound() {
+  function requestCreateSigningConfirmation() {
+    setChainFeedbackTarget("create");
     setChainError("");
     setChainMessage("");
+    if (!wallet) {
+      setChainError("Connect a funded creator wallet first.");
+      return;
+    }
+    if (!/^\d+$/.test(createParameters.ticketPrice) || BigInt(createParameters.ticketPrice) < MIN_REFUNDABLE_TICKET_PRICE_SOMPI) {
+      setChainError(`Ticket price must be at least ${formatKas(MIN_REFUNDABLE_TICKET_PRICE_SOMPI)} so even a one-ticket purchase remains refundable at the covenant fee caps.`);
+      return;
+    }
+    if (BigInt(createParameters.ticketPrice) * BigInt(createParameters.maxTickets) > MAX_ROUND_PRINCIPAL_SOMPI) {
+      setChainError(`Ticket price multiplied by max tickets must not exceed ${formatKas(MAX_ROUND_PRINCIPAL_SOMPI)}.`);
+      return;
+    }
+    if (!Number.isSafeInteger(createParameters.minTickets) || createParameters.minTickets < 1 || createParameters.minTickets > createParameters.maxTickets) {
+      setChainError("Minimum draw tickets must be a whole number from 1 to the total ticket count.");
+      return;
+    }
+    setSigningConfirmation(openSigningConfirmation(buildSigningPreview({
+      operation: "create",
+      network: networkLabel(networkId),
+      address: wallet.address,
+      inputCount: t("signing.input.create"),
+      payment: t("signing.payment.create", {
+        carrier: formatKas(createCarrierAmount),
+        marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI),
+        refund: formatKas(registryMarkerRefundAmount),
+        registryNet: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)
+      }),
+      fee: t("signing.fee.create", { fee: formatKas(COVENANT_CREATE_FEE_SOMPI), registryFee: formatKas(REGISTRY_PAYMENT_FEE_SOMPI) }),
+      carrier: formatKas(createCarrierAmount),
+      change: wallet.address,
+      covenant: t("signing.covenant.derived"),
+      registry: activeCreateRegistryAddress || t("signing.notConfigured"),
+      ticketRange: t("signing.ticketRange.none")
+    })));
+  }
+
+  async function executeCreateCovenantRound() {
+    setChainFeedbackTarget("create");
+    setChainError("");
+    setChainMessage("");
+    setRegistryRecoveryError("");
+    setRegistryRecoveryMessage("");
+    let createdRecoveryNotice = "";
 
     if (isCreatingRoundRef.current) {
       return;
@@ -1192,7 +1564,7 @@ export function App() {
         throw new Error("This round already has a covenant UTXO.");
       }
 
-      if (metadata.maxTickets > 1_000_000) {
+      if (createParameters.maxTickets > 1_000_000) {
         throw new Error("This covenant supports at most 1000000 tickets per round.");
       }
 
@@ -1235,12 +1607,20 @@ export function App() {
         roundId,
         creator: wallet.address,
         creatorPubkey,
+        ticketPrice: BigInt(createParameters.ticketPrice),
+        maxTickets: createParameters.maxTickets,
+        minTickets: createParameters.minTickets,
         soldTickets: 0,
         potAmount: 0n,
         status: "Open",
         ticketRoot: TICKET_EMPTY_ROOT_HEX,
         ticketFrontier: TICKET_EMPTY_FRONTIER_HEX,
         chainSearchHintHash,
+        // vNext commits these values in the Round covenant. roundId is a
+        // public 32-byte nonce as well as the shareable identifier.
+        roundNonce: roundId,
+        maxBatches: createParameters.maxBatches ?? 100,
+        salesDeadlineDaa: refundAfterDaaScore.toString(),
         refundCursor: 0,
         refundBatchCursor: 0,
         soldBatches: 0,
@@ -1254,9 +1634,12 @@ export function App() {
         version: metadata.version,
         roundId,
         creator: wallet.address,
-        ticketPrice: metadata.ticketPrice,
-        maxTickets: metadata.maxTickets,
-        minTickets: metadata.minTickets,
+        ticketPrice: createParameters.ticketPrice,
+        maxTickets: createParameters.maxTickets,
+        minTickets: createParameters.minTickets,
+        maxBatches: createParameters.maxBatches ?? 100,
+        roundNonce: roundId,
+        salesDeadlineDaa: refundAfterDaaScore.toString(),
         creatorPubkey,
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
@@ -1279,44 +1662,69 @@ export function App() {
         throw new Error("Covenant round was created without a cursor.");
       }
 
+      // Persist the authoritative covenant cursor before Registry publication,
+      // marker refund, delays, or balance refresh. Any of those secondary
+      // operations may fail after the carrier is already on chain.
+      const createdMetadata: RaffleMetadata = {
+        ...metadata,
+        ...createParameters,
+        roundId,
+        roundNonce: roundId,
+        contractVersion,
+        createTxId: result.txId,
+        creatorAddress: wallet.address,
+        creatorPubkey,
+        createdAtDaaScore: createdAtDaaScore.toString(),
+        startBlockHash: chainSearchHintHash,
+        refundTimeoutSeconds: refundDelaySeconds.toString(),
+        refundTimeoutDaa: refundDelayDaa.toString(),
+        salesDeadlineDaa: refundAfterDaaScore.toString(),
+        refundAfterDaaScore: refundAfterDaaScore.toString(),
+        treasuryAddress: result.covenant.address,
+        registryAddress: targetRegistryAddress,
+        covenant: result.covenant
+      };
+      const createdCacheSaved = cacheParticipatedRound(createdMetadata, []);
+      setMetadata(createdMetadata);
+      setTickets([]);
+      setFinalized(undefined);
+      setTerminalRoundStatus(undefined);
+      setRoundActionTab("buy");
+      createdRecoveryNotice = createdCacheSaved
+        ? ` Covenant creation succeeded and was saved locally. Round ID ${roundId}; create transaction ${result.txId}.`
+        : ` Covenant creation succeeded, but browser storage was unavailable. Keep this page open and copy Round ID ${roundId} and create transaction ${result.txId}.`;
+
       let registryTxIds: string[] = [];
       let registryRefundTxId = "";
       let registryPaymentFeeSompi = 0n;
       let registryWarning = "";
 
       try {
+        setChainMessage(
+          `Covenant round created: ${result.txId}. Waiting for confirmed wallet inputs before the separate Registry signing request.`
+        );
         const registryResult = await sendKaspaPayment({
           connection: rpcConnectionRef.current,
           wallet,
           toAddress: targetRegistryAddress,
           amountSompi: DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
-          payload: encodePayload({
-            app: "kaspa-raffle-static",
-            type: "round-register",
-            version: metadata.version,
-            roundId,
-            createTxId: result.txId,
-            treasuryAddress: result.covenant.address,
-            covenantId: result.covenant.covenantId,
-            creator: wallet.address,
-            ticketPrice: metadata.ticketPrice,
-            maxTickets: metadata.maxTickets,
-            minTickets: metadata.minTickets,
-            creatorPubkey,
-            createdAtDaaScore: createdAtDaaScore.toString(),
-            refundAfterDaaScore: refundAfterDaaScore.toString(),
-            chainSearchHintHash,
-            refundTimeoutSeconds: refundDelaySeconds.toString(),
-            refundTimeoutDaa: refundDelayDaa.toString(),
-            registryAddress: targetRegistryAddress,
-            contractVersion,
-            registeredAt: new Date().toISOString()
-          })
+          payload: encodeRegistryPayload(createdMetadata),
+          confirmedParentOutpoint: {
+            address: result.covenant.address,
+            transactionId: result.txId,
+            index: result.covenant.outputIndex
+          },
+          excludedOutpoints: result.spentWalletOutpoints
         });
         registryTxIds = registryResult.txIds;
         registryPaymentFeeSompi = registryResult.feeSompi;
 
         const markerTxId = registryTxIds[registryTxIds.length - 1];
+        if (markerTxId) {
+          const publishedMetadata = { ...createdMetadata, registryTxId: markerTxId };
+          setMetadata(publishedMetadata);
+          cacheParticipatedRound(publishedMetadata, []);
+        }
 
         if (markerTxId && autoRefundRegistryMarker) {
           try {
@@ -1326,6 +1734,9 @@ export function App() {
               markerTxId,
               refundAddress: wallet.address
             });
+            const settledMetadata = { ...createdMetadata, registryTxId: markerTxId, registryRefundTxId };
+            setMetadata(settledMetadata);
+            cacheParticipatedRound(settledMetadata, []);
           } catch (error) {
             registryWarning = `Registry marker refund failed: ${errorMessage(error, "Unable to refund registry marker.")}`;
           }
@@ -1341,6 +1752,7 @@ export function App() {
       setMetadata((current) => ({
         ...current,
         roundId,
+        roundNonce: roundId,
         contractVersion,
         createTxId: result.txId,
         creatorAddress: wallet.address,
@@ -1348,6 +1760,8 @@ export function App() {
         createdAtDaaScore: createdAtDaaScore.toString(),
         startBlockHash: chainSearchHintHash,
         refundTimeoutSeconds: refundDelaySeconds.toString(),
+        refundTimeoutDaa: refundDelayDaa.toString(),
+        salesDeadlineDaa: refundAfterDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         treasuryAddress: result.covenant?.address ?? current.treasuryAddress,
         registryAddress: targetRegistryAddress,
@@ -1360,6 +1774,7 @@ export function App() {
       setHistoryRounds((current) => [{
         roundId,
         registryTxId: registryTxIds.at(-1),
+        registryRefundTxId: registryRefundTxId || undefined,
         registryAddress: targetRegistryAddress,
         createTxId: result.txId,
         treasuryAddress: result.covenant!.address,
@@ -1369,12 +1784,15 @@ export function App() {
         creatorPubkey,
         createdAtDaaScore: createdAtDaaScore.toString(),
         refundTimeoutSeconds: refundDelaySeconds.toString(),
+        maxBatches: createParameters.maxBatches ?? 100,
+        roundNonce: roundId,
+        salesDeadlineDaa: refundAfterDaaScore.toString(),
         refundAfterDaaScore: refundAfterDaaScore.toString(),
         chainSearchHintHash,
         refundTimeoutDaa: refundDelayDaa.toString(),
-        ticketPrice: BigInt(metadata.ticketPrice),
-        maxTickets: metadata.maxTickets,
-        minTickets: metadata.minTickets,
+        ticketPrice: BigInt(createParameters.ticketPrice),
+        maxTickets: createParameters.maxTickets,
+        minTickets: createParameters.minTickets,
         version: metadata.version,
         contractVersion,
         tickets: [],
@@ -1386,20 +1804,306 @@ export function App() {
       setSelectedHistoryRoundId(roundId);
       const registryResultMessage = registryTxIds.length
         ? autoRefundRegistryMarker
-          ? `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. ${registryRefundTxId ? `${formatKas(registryMarkerRefundAmount)} returned after the ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} refund fee: ${registryRefundTxId}.` : "Automatic marker refund is pending or failed."}`
+          ? `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; wallet network fee ${formatKas(registryPaymentFeeSompi)}. ${registryRefundTxId ? `${formatKas(registryMarkerRefundAmount)} returned; non-refundable Registry cost ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)}: ${registryRefundTxId}.` : "Automatic marker return is pending or failed."}`
           : `Registry marker sent ${formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)} to ${targetRegistryAddress}; payment fee ${formatKas(registryPaymentFeeSompi)}. ${usesDefaultRegistry ? "The default registry marker remains at its address for public indexing." : "Custom registry markers are not automatically refunded."}`
         : "Registry marker was not submitted.";
-      setChainMessage(`Covenant round created: ${result.txId}. ${registryResultMessage}`);
+      setChainMessage(
+        `Covenant round created: ${result.txId} (single create-transaction network fee ${formatKas(result.feeSompi ?? COVENANT_CREATE_FEE_SOMPI)}${result.fundingFeeSompi ? `; fallback funding fee ${formatKas(result.fundingFeeSompi)}` : "; no preliminary funding transaction"}). ${registryResultMessage}`
+      );
       setChainError(registryWarning);
+      setRegistryRecoveryError(registryWarning);
+      setRegistryRecoveryMessage(registryTxIds.length ? registryResultMessage : "");
     } catch (error) {
-      setChainError(errorMessage(error, "Unable to create covenant round."));
+      if (!createdRecoveryNotice && !metadata.covenant) {
+        setMetadata((current) => current.covenant ? current : {
+          ...current,
+          roundId: "",
+          createTxId: "",
+          treasuryAddress: ""
+        });
+      }
+      setChainError(`${errorMessage(error, "Unable to create covenant round.")}${createdRecoveryNotice}`);
     } finally {
       isCreatingRoundRef.current = false;
       setIsCreatingRound(false);
     }
   }
 
-  async function handleBuyTicket() {
+  function requestRegistrySigningConfirmation() {
+    setRegistryRecoveryError("");
+    setRegistryRecoveryMessage("");
+    const covenant = metadata.covenant;
+    const targetRegistryAddress = metadata.registryAddress?.trim();
+    if (!wallet) {
+      setRegistryRecoveryError("Connect a funded wallet before publishing the Registry record.");
+      return;
+    }
+    if (!covenant || !metadata.roundId || !metadata.createTxId || !targetRegistryAddress) {
+      setRegistryRecoveryError("The current round is missing data required to publish its Registry record.");
+      return;
+    }
+    if (metadata.registryTxId) {
+      setRegistryRecoveryMessage(`Registry record already published: ${metadata.registryTxId}`);
+      return;
+    }
+    setSigningConfirmation(openSigningConfirmation(buildSigningPreview({
+      operation: "publish-registry",
+      network: networkLabel(networkId),
+      address: wallet.address,
+      inputCount: t("signing.input.registry"),
+      payment: t("signing.payment.registry", {
+        marker: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI),
+        refund: formatKas(registryMarkerRefundAmount),
+        registryNet: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)
+      }),
+      fee: t("signing.fee.registry", { fee: formatKas(REGISTRY_PAYMENT_FEE_SOMPI) }),
+      carrier: formatKas(BigInt(covenant.amountSompi)),
+      change: wallet.address,
+      covenant: covenant.address,
+      registry: targetRegistryAddress,
+      ticketRange: t("signing.ticketRange.none"),
+      snapshot: registrySnapshot({ roundId: metadata.roundId, createTxId: metadata.createTxId, registryAddress: targetRegistryAddress })
+    })));
+  }
+
+  async function executeRegistryPublication() {
+    if (isPublishingRegistryRef.current) return;
+    isPublishingRegistryRef.current = true;
+    setIsPublishingRegistry(true);
+    setRegistryRecoveryError("");
+    setRegistryRecoveryMessage("");
+
+    try {
+      if (!wallet) throw new Error("Connect a funded wallet before publishing the Registry record.");
+      if (!rpcConnectionRef.current) throw new Error("Connect to a Kaspa wRPC node first.");
+      const covenant = metadata.covenant;
+      const targetRegistryAddress = metadata.registryAddress?.trim();
+      if (!covenant || !metadata.roundId || !metadata.createTxId || !targetRegistryAddress) {
+        throw new Error("The current round is missing data required to publish its Registry record.");
+      }
+      if (metadata.registryTxId) {
+        setRegistryRecoveryMessage(`Registry record already published: ${metadata.registryTxId}`);
+        return;
+      }
+
+      // Avoid charging for a duplicate marker after a lost RPC response. A
+      // recovery publish is allowed only after the read-only Registry history
+      // confirms that this exact round/create pair is still absent.
+      let existingRound: RaffleHistoryRound | undefined;
+      try {
+        existingRound = (await loadRaffleHistory(historyApiBase, targetRegistryAddress)).find((candidate) => (
+          candidate.roundId === metadata.roundId &&
+          (!candidate.createTxId || candidate.createTxId === metadata.createTxId) &&
+          Boolean(candidate.registryTxId)
+        ));
+      } catch {
+        throw new Error("Registry history could not be checked, so no duplicate publication or wallet signing request was attempted. Restore the History service and retry.");
+      }
+      if (existingRound?.registryTxId) {
+        const recoveredMetadata = { ...metadata, registryTxId: existingRound.registryTxId };
+        setMetadata(recoveredMetadata);
+        cacheParticipatedRound(recoveredMetadata, tickets, finalized);
+        setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+          ? { ...historyRound, registryTxId: existingRound!.registryTxId }
+          : historyRound));
+        setRegistryRecoveryMessage(`Registry record was already accepted and has been recovered: ${existingRound.registryTxId}`);
+        return;
+      }
+
+      setRegistryRecoveryMessage("Waiting for confirmed wallet inputs before the Registry signing request…");
+      const registryResult = await sendKaspaPayment({
+        connection: rpcConnectionRef.current,
+        wallet,
+        toAddress: targetRegistryAddress,
+        amountSompi: DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI,
+        payload: encodeRegistryPayload(metadata),
+        confirmedParentOutpoint: {
+          address: covenant.address,
+          transactionId: metadata.createTxId,
+          index: 0
+        }
+      });
+      const markerTxId = registryResult.txIds.at(-1);
+      if (!markerTxId) throw new Error("Registry publication returned no transaction id.");
+
+      let nextMetadata = { ...metadata, registryTxId: markerTxId };
+      setMetadata(nextMetadata);
+      cacheParticipatedRound(nextMetadata, tickets, finalized);
+      setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+        ? { ...historyRound, registryTxId: markerTxId }
+        : historyRound));
+
+      let refundTxId = "";
+      if (targetRegistryAddress === registryAddress && registryAutoRefund) {
+        refundTxId = await refundRaffleRegistryMarker({
+          connection: rpcConnectionRef.current,
+          registryAddress: targetRegistryAddress,
+          markerTxId,
+          refundAddress: wallet.address
+        });
+        nextMetadata = { ...nextMetadata, registryRefundTxId: refundTxId };
+        setMetadata(nextMetadata);
+        cacheParticipatedRound(nextMetadata, tickets, finalized);
+      }
+      setRegistryRecoveryMessage(
+        `Registry record published: ${markerTxId} (wallet network fee ${formatKas(registryResult.feeSompi)}). ` +
+        (refundTxId
+          ? `${formatKas(registryMarkerRefundAmount)} returned in ${refundTxId}; non-refundable Registry cost ${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)}.`
+          : "The marker remains at the configured Registry address.")
+      );
+    } catch (error) {
+      setRegistryRecoveryError(errorMessage(error, "Unable to publish the Registry record."));
+    } finally {
+      isPublishingRegistryRef.current = false;
+      setIsPublishingRegistry(false);
+    }
+  }
+
+  async function executeRegistryMarkerRecovery() {
+    if (isRecoveringRegistryMarkerRef.current) return;
+    isRecoveringRegistryMarkerRef.current = true;
+    setIsRecoveringRegistryMarker(true);
+    setRegistryRecoveryError("");
+    setRegistryRecoveryMessage("");
+
+    try {
+      const markerTxId = metadata.registryTxId;
+      const targetRegistryAddress = metadata.registryAddress?.trim();
+      const refundAddress = metadata.creatorAddress?.trim();
+      const committedCreatorPubkey = metadata.covenant?.creatorPubkey || metadata.creatorPubkey;
+      if (!markerTxId || !targetRegistryAddress || !refundAddress || !committedCreatorPubkey) {
+        throw new Error("The current round is missing data required to recover its Registry marker return.");
+      }
+      if (pubkeyHexFromAddress(refundAddress).toLowerCase() !== committedCreatorPubkey.toLowerCase()) {
+        throw new Error("The Registry marker return address does not match the creator public key committed by the covenant.");
+      }
+      if (metadata.registryRefundTxId) {
+        setRegistryRecoveryMessage(`Registry marker return already recorded: ${metadata.registryRefundTxId}`);
+        return;
+      }
+      if (targetRegistryAddress !== registryAddress || !registryAutoRefund) {
+        throw new Error("This Registry address does not use the automatic Kaswin marker-return policy.");
+      }
+
+      // A lost RPC response must not make the page blindly submit the same
+      // outpoint again. The public History service is only used to discover an
+      // accepted spender; the expected refund address and amount are checked
+      // locally before that transaction id is trusted.
+      let acceptedSpend: Awaited<ReturnType<typeof loadAcceptedOutpointSpend>>;
+      try {
+        acceptedSpend = await loadAcceptedOutpointSpend(
+          historyApiBase,
+          targetRegistryAddress,
+          markerTxId,
+          0,
+          500
+        );
+      } catch {
+        throw new Error("Registry marker history could not be checked, so no recovery transaction was attempted. Restore the History service and retry.");
+      }
+
+      if (acceptedSpend) {
+        const expectedOutputs = acceptedSpend.outputs.filter((output) => (
+          output.address === refundAddress && output.amount === registryMarkerRefundAmount
+        ));
+        if (acceptedSpend.outputs.length !== 1 || expectedOutputs.length !== 1) {
+          throw new Error(
+            `Registry marker ${markerTxId} was already spent by ${acceptedSpend.transactionId}, but it did not return the exact ${formatKas(registryMarkerRefundAmount)} to the committed creator address. No retry was attempted.`
+          );
+        }
+        const recoveredMetadata = { ...metadata, registryRefundTxId: acceptedSpend.transactionId };
+        setMetadata(recoveredMetadata);
+        cacheParticipatedRound(recoveredMetadata, tickets, finalized);
+        setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+          ? { ...historyRound, registryRefundTxId: acceptedSpend!.transactionId }
+          : historyRound));
+        setRegistryRecoveryMessage(`Registry marker return was already accepted and has been recovered: ${acceptedSpend.transactionId}`);
+        return;
+      }
+
+      if (!rpcConnectionRef.current) throw new Error("Connect to a Kaspa wRPC node before recovering the Registry marker return.");
+      setRegistryRecoveryMessage("Waiting for the Registry marker to be confirmed before its public return…");
+      const refundTxId = await refundRaffleRegistryMarker({
+        connection: rpcConnectionRef.current,
+        registryAddress: targetRegistryAddress,
+        markerTxId,
+        refundAddress
+      });
+      const recoveredMetadata = { ...metadata, registryRefundTxId: refundTxId };
+      setMetadata(recoveredMetadata);
+      cacheParticipatedRound(recoveredMetadata, tickets, finalized);
+      setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+        ? { ...historyRound, registryRefundTxId: refundTxId }
+        : historyRound));
+      setRegistryRecoveryMessage(
+        `${formatKas(registryMarkerRefundAmount)} Registry marker return submitted to the creator: ${refundTxId}. ` +
+        `${formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI)} remains the non-refundable Registry cost.`
+      );
+    } catch (error) {
+      setRegistryRecoveryError(errorMessage(error, "Unable to recover the Registry marker return."));
+    } finally {
+      isRecoveringRegistryMarkerRef.current = false;
+      setIsRecoveringRegistryMarker(false);
+    }
+  }
+
+  function ticketSalesClosedMessage(covenant: NonNullable<RaffleMetadata["covenant"]>) {
+    const values = { daa: covenant.refundAfterDaaScore || metadata.refundAfterDaaScore || "0" };
+    if (covenant.soldTickets === 0) return t("salesClosed.empty", values);
+    if (covenant.soldTickets < metadata.minTickets) return t("salesClosed.refund", values);
+    return t("salesClosed.draw", values);
+  }
+
+  function settlementFeedbackTarget(covenant: NonNullable<RaffleMetadata["covenant"]>): ChainFeedbackTarget {
+    if (covenant.soldTickets === 0) return "close";
+    if (covenant.soldTickets < metadata.minTickets) return "refund";
+    return "draw";
+  }
+
+  function requestBuySigningConfirmation() {
+    setChainFeedbackTarget("buy");
+    setChainError("");
+    setChainMessage("");
+    const covenant = metadata.covenant;
+    if (!covenant || !metadata.roundId) {
+      setChainError("Create or load a raffle round before buying tickets.");
+      return;
+    }
+    const salesDeadline = BigInt(covenant.refundAfterDaaScore || "0");
+    if (salesDeadline > 0n && virtualDaaScore >= salesDeadline) {
+      setRoundActionTab("payout");
+      setChainFeedbackTarget(settlementFeedbackTarget(covenant));
+      setChainError(ticketSalesClosedMessage(covenant));
+      return;
+    }
+    if (!wallet) {
+      setChainError("Connect a funded buyer wallet first.");
+      return;
+    }
+    const quantity = Number(ticketQuantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > metadata.maxTickets - covenant.soldTickets) {
+      setChainError("Ticket quantity must be a positive whole number within the remaining ticket range.");
+      return;
+    }
+    const payment = BigInt(metadata.ticketPrice || "0") * BigInt(quantity);
+    setSigningConfirmation(openSigningConfirmation(buildSigningPreview({
+      operation: "buy",
+      network: networkLabel(networkId),
+      address: wallet.address,
+      inputCount: t("signing.input.buy"),
+      payment: formatKas(payment),
+      fee: t("signing.fee.buy", { fee: formatKas(covenantBuyFeeSompi(round.contractVersion, quantity)) }),
+      carrier: `${formatKas(BigInt(covenant.amountSompi))} → ${formatKas(BigInt(covenant.amountSompi) + payment)}`,
+      change: wallet.address,
+      covenant: covenant.address,
+      registry: metadata.registryAddress || registryAddress || t("signing.notApplicable"),
+      ticketRange: quantity === 1 ? `#${covenant.soldTickets + 1}` : `#${covenant.soldTickets + 1}-#${covenant.soldTickets + quantity}`,
+      snapshot: buySnapshot({ roundId: metadata.roundId, covenantTxId: covenant.txId, soldTickets: covenant.soldTickets, ticketCount: quantity, ticketPriceSompi: metadata.ticketPrice, refundAfterDaaScore: covenant.refundAfterDaaScore })
+    })));
+  }
+
+  async function executeBuyTicket() {
+    setChainFeedbackTarget("buy");
     setChainError("");
     setChainMessage("");
 
@@ -1419,7 +2123,8 @@ export function App() {
         throw new Error("Connect to a Kaspa wRPC node first.");
       }
 
-      assertToccataActive(networkId, await currentVirtualDaaScore(rpcConnectionRef.current));
+      const currentDaaScore = await currentVirtualDaaScore(rpcConnectionRef.current);
+      assertToccataActive(networkId, currentDaaScore);
 
       if (!metadata.roundId || !metadata.covenant) {
         throw new Error("Create or load a raffle round before buying tickets.");
@@ -1439,7 +2144,16 @@ export function App() {
         throw new Error("This covenant round is not open for tickets.");
       }
 
+      const refundAfterDaaScore = BigInt(covenant.refundAfterDaaScore || "0");
+      if (currentDaaScore >= refundAfterDaaScore) {
+        setRoundActionTab("payout");
+        setChainFeedbackTarget(settlementFeedbackTarget(covenant));
+        throw new Error(ticketSalesClosedMessage(covenant));
+      }
+
       if (covenant.soldTickets >= metadata.maxTickets) {
+        setRoundActionTab("payout");
+        setChainFeedbackTarget("draw");
         throw new Error("This round has reached its max ticket count.");
       }
 
@@ -1473,9 +2187,7 @@ export function App() {
         ticketTxId: ""
       };
       const currentChainHash = (await rpcConnectionRef.current.client.getBlockDagInfo()).sink;
-      const chainSearchHintHash = covenant.soldTickets + quantity === metadata.maxTickets
-        ? currentChainHash
-        : covenant.chainSearchHintHash ?? currentChainHash;
+      const chainSearchHintHash = currentChainHash;
       const payload = {
         app: "kaspa-raffle-static",
         type: "ticket",
@@ -1551,11 +2263,17 @@ export function App() {
       setTicketQuantity("1");
       setChainMessage(
         quantity === 1
-          ? `Ticket #${ticketId} submitted: ${txId}`
-          : `Tickets #${ticketId}-${ticketId + quantity - 1} submitted: ${txId}`
+          ? `Ticket #${ticketId} submitted: ${txId} (single-transaction network fee ${formatKas(payment.feeSompi ?? 0n)}; one wallet approval).`
+          : `Tickets #${ticketId}-${ticketId + quantity - 1} submitted: ${txId} (single-transaction network fee ${formatKas(payment.feeSompi ?? 0n)}; one wallet approval).`
       );
     } catch (error) {
-      setChainError(errorMessage(error, "Unable to buy ticket."));
+      const message = errorMessage(error, "Unable to buy ticket.");
+      if (transactionRejectionRequiresStateRefresh(error)) {
+        setChainError(`${message} The round list is being refreshed now; inspect and reload the newest covenant before opening another wallet request.`);
+        void handleLoadHistory();
+      } else {
+        setChainError(message);
+      }
     } finally {
       isBuyingRef.current = false;
       setIsBuying(false);
@@ -1563,6 +2281,7 @@ export function App() {
   }
 
   async function handleFinalizeLocal() {
+    setChainFeedbackTarget("draw");
     setChainError("");
     setChainMessage("");
 
@@ -1642,14 +2361,29 @@ export function App() {
       const requiresIndexerProof = requiresRaffleIndexerProof(metadata.maxTickets, hasCompleteLocalHistory);
       if (requiresIndexerProof) await requireReadyIndexer();
 
-      const randomnessBaseDaaScore = activeCovenant.soldTickets === metadata.maxTickets
-        ? await currentRaffleCovenantDaaScore(rpcConnectionRef.current, activeCovenant)
-        : BigInt(activeCovenant.refundAfterDaaScore || "0");
-      const randomnessAnchorHash = metadata.startBlockHash || (
-        metadata.createTxId
-          ? await loadTransactionChainAnchor(historyApiBase, metadata.createTxId).catch(() => activeCovenant.chainSearchHintHash)
-          : activeCovenant.chainSearchHintHash
-      );
+      const covenantDaaScore = await currentRaffleCovenantDaaScore(rpcConnectionRef.current, activeCovenant);
+      const salesDeadlineDaaScore = BigInt(activeCovenant.refundAfterDaaScore || "0");
+      const randomnessBaseDaaScore = drawRandomnessBaseDaaScore({
+        covenantDaaScore,
+        salesDeadlineDaaScore,
+        soldTickets: activeCovenant.soldTickets,
+        maxTickets: metadata.maxTickets
+      });
+      // A ticket is necessarily accepted before its draw boundary. Prefer the newest
+      // ticket's accepted-chain block over the much older creation anchor, especially
+      // when restoring a timed-out round from browser storage.
+      const latestTicketTxId = [...tickets]
+        .sort((left, right) => right.ticketId - left.ticketId)
+        .find((ticket) => /^[0-9a-f]{64}$/i.test(ticket.ticketTxId))?.ticketTxId;
+      const randomnessAnchorHash = (
+        latestTicketTxId
+          ? await loadTransactionChainAnchor(historyApiBase, latestTicketTxId).catch(() => undefined)
+          : undefined
+      ) ?? activeCovenant.chainSearchHintHash
+        ?? metadata.startBlockHash
+        ?? (metadata.createTxId
+          ? await loadTransactionChainAnchor(historyApiBase, metadata.createTxId).catch(() => undefined)
+          : undefined);
       let randomnessCandidateHashes: string[] = [];
       if (randomnessAnchorHash) {
         try {
@@ -1672,10 +2406,18 @@ export function App() {
         randomnessBaseDaaScore,
         activeRound.ticketRoot,
         randomnessAnchorHash,
-        randomnessCandidateHashes
+        randomnessCandidateHashes,
+        historyApiBase
       );
-      const randomSeed = randomnessWitness.randomSeedHex;
-      const winnerIndex = raffleWinnerIndexFromSeed(randomSeed, activeCovenant.soldTickets);
+      const randomSeed = isVNextRaffleContractVersion(metadata.contractVersion)
+        ? bytesToHex(await deriveDrawSeed(
+            bytesToHex(await roundIdToBytes32(metadata.roundNonce || metadata.roundId)),
+            activeRound.ticketRoot,
+            randomnessWitness.target.hash,
+            randomnessWitness.target.seqcommit
+          ))
+        : randomnessWitness.randomSeedHex;
+      const winnerIndex = await raffleWinnerIndexFromSeed(randomSeed, activeCovenant.soldTickets);
       const winnerRange = findTicketRange(tickets, winnerIndex + 1);
       let winner = winnerRange;
       let winnerBatchIndex = winnerRange
@@ -1786,7 +2528,146 @@ export function App() {
     }
   }
 
-  async function handleRefundTimedOutRound() {
+  function requestCarrierTopUpSigningConfirmation() {
+    setChainFeedbackTarget("carrier");
+    setChainError("");
+    setChainMessage("");
+    const covenant = metadata.covenant;
+    const amountSompi = BigInt(kasInputToSompi(topUpCarrierKas));
+    if (!wallet) {
+      setChainError("Connect a funded wallet before adding carrier.");
+      return;
+    }
+    if (!covenant || !metadata.roundId) {
+      setChainError("Create or load an active raffle round before adding carrier.");
+      return;
+    }
+    if (metadata.contractVersion !== RAFFLE_CONTRACT_VERSION) {
+      setChainError("This already-deployed covenant version does not support carrier top-ups.");
+      return;
+    }
+    if (amountSompi < MIN_COVENANT_TOP_UP_SOMPI) {
+      setChainError(`Carrier top-up amount must be at least ${formatKas(MIN_COVENANT_TOP_UP_SOMPI)}.`);
+      return;
+    }
+    const before = BigInt(covenant.amountSompi);
+    setSigningConfirmation(openSigningConfirmation(buildSigningPreview({
+      operation: "top-up-carrier",
+      network: networkLabel(networkId),
+      address: wallet.address,
+      inputCount: t("signing.input.topUpCarrier"),
+      payment: formatKas(amountSompi),
+      fee: t("signing.fee.topUpCarrier", { fee: formatKas(COVENANT_TOP_UP_FEE_SOMPI) }),
+      carrier: t("signing.carrier.transition", { before: formatKas(before), after: formatKas(before + amountSompi) }),
+      change: wallet.address,
+      covenant: covenant.address,
+      registry: metadata.registryAddress || registryAddress || t("signing.notApplicable"),
+      ticketRange: t("signing.notApplicable"),
+      snapshot: carrierTopUpSnapshot({ roundId: metadata.roundId, covenantTxId: covenant.txId, amountSompi: amountSompi.toString() })
+    })));
+  }
+
+  async function executeCarrierTopUp() {
+    setChainFeedbackTarget("carrier");
+    setChainError("");
+    setChainMessage("");
+    if (isToppingUpCarrierRef.current) return;
+    isToppingUpCarrierRef.current = true;
+    setIsToppingUpCarrier(true);
+
+    try {
+      if (!wallet) throw new Error("Connect a funded wallet before adding carrier.");
+      if (!rpcConnectionRef.current) throw new Error("Connect to a Kaspa wRPC node first.");
+      const covenant = metadata.covenant;
+      if (!covenant || !metadata.roundId) throw new Error("Create or load an active raffle round before adding carrier.");
+      const amountSompi = BigInt(kasInputToSompi(topUpCarrierKas));
+      if (amountSompi < MIN_COVENANT_TOP_UP_SOMPI) throw new Error(`Carrier top-up amount must be at least ${formatKas(MIN_COVENANT_TOP_UP_SOMPI)}.`);
+
+      const result = await topUpRaffleCovenantCarrier({
+        connection: rpcConnectionRef.current,
+        wallet,
+        round: {
+          ...round,
+          soldTickets: covenant.soldTickets,
+          potAmount: BigInt(covenant.potAmount),
+          status: covenant.status,
+          ticketRoot: covenant.ticketRoot,
+          ticketFrontier: covenant.ticketFrontier,
+          refundCursor: covenant.refundCursor ?? 0,
+          refundBatchCursor: covenant.refundBatchCursor ?? 0,
+          refundFeeDebtSompi: covenant.refundFeeDebtSompi ?? "0",
+          creatorPubkey: covenant.creatorPubkey,
+          refundAfterDaaScore: covenant.refundAfterDaaScore,
+          soldBatches: covenant.soldBatches ?? covenant.ticketOwnerPubkeys.length,
+          ticketBatchEnds: covenant.ticketBatchEnds ?? covenant.ticketOwnerPubkeys.map((_, index) => index + 1),
+          ticketOwnerPubkeys: covenant.ticketOwnerPubkeys
+        },
+        covenant,
+        amountSompi,
+        payload: encodePayload({
+          app: "kaspa-raffle-static",
+          type: "round-carrier-topup",
+          version: metadata.version,
+          contractVersion: metadata.contractVersion,
+          roundId: metadata.roundId,
+          covenantId: covenant.covenantId,
+          previousCovenantTxId: covenant.txId,
+          amountSompi: amountSompi.toString(),
+          topUpBy: wallet.address,
+          createdAt: new Date().toISOString()
+        })
+      });
+      if (!result.covenant) throw new Error("Carrier top-up did not return the next covenant cursor.");
+
+      setMetadata((current) => ({
+        ...current,
+        covenant: result.covenant,
+        treasuryAddress: result.covenant?.address ?? current.treasuryAddress
+      }));
+      setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+        ? { ...historyRound, latestCovenant: result.covenant }
+        : historyRound));
+      await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+      const balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, wallet.address);
+      setWallet(withWalletBalance(wallet, balanceSompi));
+      setChainMessage(`Added ${formatKas(amountSompi)} of carrier: ${result.txId} (covenant fee ${formatKas(result.feeSompi ?? 0n)}; wallet funding fee ${formatKas(result.fundingFeeSompi ?? 0n)}).`);
+    } catch (error) {
+      setChainError(errorMessage(error, "Unable to add covenant carrier."));
+    } finally {
+      isToppingUpCarrierRef.current = false;
+      setIsToppingUpCarrier(false);
+    }
+  }
+
+  function requestRefundSigningConfirmation() {
+    setChainFeedbackTarget("refund");
+    setChainError("");
+    setChainMessage("");
+    const covenant = metadata.covenant;
+    if (!covenant) {
+      setChainError("Create or import a covenant round first.");
+      return;
+    }
+    const firstTicket = (covenant.refundCursor ?? 0) + 1;
+    const finalTicket = covenant.soldTickets;
+    const sponsor = wallet?.address ?? t("signing.sponsor.none");
+    setSigningConfirmation(openSigningConfirmation(buildSigningPreview({
+      operation: "sponsor-refund",
+      network: networkLabel(networkId),
+      address: sponsor,
+      inputCount: wallet ? t("signing.input.refund.wallet") : t("signing.input.refund.none"),
+      payment: t("signing.payment.refund", { range: firstTicket <= finalTicket ? `#${firstTicket}-#${finalTicket}` : t("signing.ticketRange.none") }),
+      fee: t("signing.fee.refund", { fee: formatKas(covenantRefundMaxFeeSompi(round.contractVersion)) }),
+      carrier: formatKas(BigInt(covenant.amountSompi)),
+      change: wallet?.address ?? t("signing.change.refund"),
+      covenant: covenant.address,
+      registry: metadata.registryAddress || registryAddress || t("signing.notApplicable"),
+      ticketRange: firstTicket <= finalTicket ? `#${firstTicket}-#${finalTicket}` : t("signing.ticketRange.none")
+    })));
+  }
+
+  async function executeRefundTimedOutRound() {
+    setChainFeedbackTarget("refund");
     setChainError("");
     setChainMessage("");
     if (isRefundingRoundRef.current) return;
@@ -1813,6 +2694,9 @@ export function App() {
         throw new Error(
           `Refund opens in about ${formatDurationSeconds(remainingSeconds, language)} at DAA ${refundAfterDaaScore}. Current DAA is ${currentDaaScore}.`
         );
+      }
+      if (covenant.soldTickets >= metadata.minTickets) {
+        throw new Error("This round met its minimum ticket requirement and must be finalized instead of refunded.");
       }
 
       const hasCompleteLocalHistory = hasCompleteTicketBatchHistory(
@@ -1841,6 +2725,7 @@ export function App() {
 
       let activeCovenant = covenant;
       let lastTxId = "";
+      let broadcastFeeSompi = 0n;
       if (activeCovenant.status !== "Refunding") {
         const transition = await refundRaffleCovenantRound({
           connection: rpcConnectionRef.current,
@@ -1854,9 +2739,18 @@ export function App() {
             roundId: metadata.roundId,
             refundCursor: 0,
             refundBatchCursor: 0
+          }),
+          refundStartPayload: (refundFeeDebtSompi) => encodePayload({
+            app: "kaspa-raffle-static",
+            type: "round-refund-start",
+            roundId: metadata.roundId,
+            refundCursor: 0,
+            refundBatchCursor: 0,
+            refundFeeDebtSompi: refundFeeDebtSompi.toString()
           })
         });
         lastTxId = transition.txId;
+        broadcastFeeSompi += transition.feeSompi ?? 0n;
         if (!transition.covenant) throw new Error("Refund transition did not create its successor covenant.");
         activeCovenant = transition.covenant;
         setMetadata((current) => ({ ...current, covenant: activeCovenant }));
@@ -1934,6 +2828,7 @@ export function App() {
           }
         }
         lastTxId = step.txId;
+        broadcastFeeSompi += step.feeSompi ?? 0n;
         activeCovenant = step.covenant!;
         const cursor = activeCovenant?.refundCursor ?? covenant.soldTickets;
         setRefundProgress({ cursor, total: covenant.soldTickets });
@@ -1952,11 +2847,104 @@ export function App() {
       setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
         ? { ...historyRound, latestCovenant: undefined, refundTxId: lastTxId }
         : historyRound));
+      setChainMessage(`Timed-out round refunded: ${lastTxId} (exact network fees broadcast in this run ${formatKas(broadcastFeeSompi)}, deducted from refunded purchase payments; caller wallet 0 KAS).`);
     } catch (error) {
       setChainError(errorMessage(error, "Unable to refund timed-out round."));
     } finally {
       isRefundingRoundRef.current = false;
       setIsRefundingRound(false);
+    }
+  }
+
+  async function confirmSigningPreview() {
+    const preview = signingConfirmation.preview;
+    if (!preview || isConfirmingSigning) return;
+
+    // A Buy confirmation is bound to the exact covenant cursor and quantity the
+    // user reviewed. Never open a replacement wallet request after a stale
+    // cursor; the user must inspect a newly generated preview instead.
+    const covenant = metadata.covenant;
+    const quantity = Number(ticketQuantity);
+    const currentSnapshot = covenant && metadata.roundId
+      ? preview.operation === "top-up-carrier"
+        ? carrierTopUpSnapshot({ roundId: metadata.roundId, covenantTxId: covenant.txId, amountSompi: kasInputToSompi(topUpCarrierKas) })
+        : preview.operation === "publish-registry"
+          ? registrySnapshot({ roundId: metadata.roundId, createTxId: metadata.createTxId, registryAddress: metadata.registryAddress ?? "" })
+        : buySnapshot({ roundId: metadata.roundId, covenantTxId: covenant.txId, soldTickets: covenant.soldTickets, ticketCount: quantity, ticketPriceSompi: metadata.ticketPrice, refundAfterDaaScore: covenant.refundAfterDaaScore })
+      : undefined;
+    const decision = decideSigningConfirmation(signingConfirmation, currentSnapshot);
+    if (decision.kind === "stale") {
+      setSigningConfirmation(decision.state);
+      setChainError("The covenant state or amount changed after this preview. No wallet request was made; review the updated action before signing.");
+      return;
+    }
+    if (decision.kind !== "execute") return;
+
+    setIsConfirmingSigning(true);
+    try {
+      if (decision.operation === "create") await executeCreateCovenantRound();
+      if (decision.operation === "publish-registry") await executeRegistryPublication();
+      if (decision.operation === "buy") await executeBuyTicket();
+      if (decision.operation === "top-up-carrier") await executeCarrierTopUp();
+      if (decision.operation === "sponsor-refund") await executeRefundTimedOutRound();
+    } finally {
+      setIsConfirmingSigning(false);
+      setSigningConfirmation(cancelSigningConfirmation());
+    }
+  }
+
+  async function handleCloseEmptyRound() {
+    setChainFeedbackTarget("close");
+    setChainError("");
+    setChainMessage("");
+    if (isClosingEmptyRoundRef.current) return;
+    isClosingEmptyRoundRef.current = true;
+    setIsClosingEmptyRound(true);
+
+    try {
+      assertRaffleCovenantReady();
+      if (!rpcConnectionRef.current) throw new Error("Connect to a Kaspa wRPC node first.");
+      const covenant = metadata.covenant;
+      if (!covenant) throw new Error("Create or import a covenant round first.");
+      if (covenant.soldTickets !== 0 || (covenant.soldBatches ?? covenant.ticketOwnerPubkeys.length) !== 0) {
+        throw new Error("Only an empty round can use the close action.");
+      }
+      const currentDaaScore = await currentVirtualDaaScore(rpcConnectionRef.current);
+      const closeAfterDaa = BigInt(covenant.refundAfterDaaScore || "0");
+      if (currentDaaScore < closeAfterDaa) {
+        throw new Error(`Empty-round close opens at DAA ${closeAfterDaa}; current DAA is ${currentDaaScore}.`);
+      }
+      const result = await closeEmptyRaffleCovenantRound({
+        connection: rpcConnectionRef.current,
+        round: {
+          ...round,
+          soldTickets: 0,
+          soldBatches: 0,
+          potAmount: 0n,
+          status: "Open",
+          ticketRoot: covenant.ticketRoot,
+          ticketFrontier: covenant.ticketFrontier,
+          refundCursor: covenant.refundCursor ?? 0,
+          refundBatchCursor: covenant.refundBatchCursor ?? 0,
+          creatorPubkey: covenant.creatorPubkey,
+          refundAfterDaaScore: covenant.refundAfterDaaScore,
+          ticketBatchEnds: [],
+          ticketOwnerPubkeys: []
+        },
+        covenant,
+        payload: encodePayload({ app: "kaspa-raffle-static", type: "round-close-empty", roundId: metadata.roundId })
+      });
+      setMetadata((current) => ({ ...current, covenant: undefined }));
+      setTerminalRoundStatus("Closed");
+      setHistoryRounds((current) => current.map((historyRound) => historyRound.roundId === metadata.roundId
+        ? { ...historyRound, latestCovenant: undefined }
+        : historyRound));
+      setChainMessage(`Empty round closed and carrier returned to the creator: ${result.txId} (fee ${formatKas(result.feeSompi ?? 0n)}).`);
+    } catch (error) {
+      setChainError(errorMessage(error, "Unable to close the empty covenant round."));
+    } finally {
+      isClosingEmptyRoundRef.current = false;
+      setIsClosingEmptyRound(false);
     }
   }
 
@@ -1993,21 +2981,32 @@ export function App() {
           const cachedRound = byRoundId.get(historyRound.roundId);
           const incomingHasFinalState = Boolean(historyRound.refundTxId || historyRound.payouts.length);
           const cachedHasFinalState = Boolean(cachedRound?.refundTxId || cachedRound?.payouts.length);
-          const incomingHasLiveState = Boolean(historyRound.latestCovenant);
+          const mergedTickets = cachedRound
+            ? preferMoreCompleteRaffleHistoryTickets(cachedRound.tickets, historyRound.tickets)
+            : historyRound.tickets;
+          const mergedCovenant = incomingHasFinalState || cachedHasFinalState
+            ? undefined
+            : preferAdvancedRaffleCovenant(cachedRound?.latestCovenant, historyRound.latestCovenant);
+          const mergedSoldTickets = Math.max(
+            cachedRound?.soldTickets ?? totalTicketCount(cachedRound?.tickets ?? []),
+            historyRound.soldTickets ?? totalTicketCount(historyRound.tickets),
+            totalTicketCount(mergedTickets),
+            mergedCovenant?.soldTickets ?? 0
+          );
           byRoundId.set(historyRound.roundId, cachedRound ? {
             ...cachedRound,
             ...historyRound,
-            latestCovenant: incomingHasFinalState || cachedHasFinalState
-              ? undefined
-              : historyRound.latestCovenant ?? cachedRound.latestCovenant,
-            tickets: historyRound.tickets.length ? historyRound.tickets : cachedRound.tickets,
+            latestCovenant: mergedCovenant,
+            tickets: mergedTickets,
             payouts: historyRound.payouts.length ? historyRound.payouts : cachedRound.payouts,
-            soldTickets: incomingHasLiveState || incomingHasFinalState
-              ? historyRound.soldTickets
-              : cachedRound.soldTickets ?? historyRound.soldTickets,
-            potAmount: incomingHasLiveState || incomingHasFinalState
+            soldTickets: mergedSoldTickets,
+            refundCursor: Math.max(cachedRound.refundCursor ?? 0, historyRound.refundCursor ?? 0),
+            refundBatchCursor: Math.max(cachedRound.refundBatchCursor ?? 0, historyRound.refundBatchCursor ?? 0),
+            potAmount: incomingHasFinalState
               ? historyRound.potAmount
-              : cachedRound.potAmount,
+              : mergedCovenant
+                ? BigInt(mergedCovenant.potAmount)
+                : cachedRound.potAmount,
             chainSearchHintHash: historyRound.chainSearchHintHash ?? cachedRound.chainSearchHintHash
           } : historyRound);
         }
@@ -2020,12 +3019,35 @@ export function App() {
       if (indexResult?.status === "fulfilled") {
         for (const indexedRound of indexResult.value) {
           const restRound = byRoundId.get(indexedRound.roundId);
+          const incomingHasFinalState = Boolean(indexedRound.refundTxId || indexedRound.payouts.length);
+          const cachedHasFinalState = Boolean(restRound?.refundTxId || restRound?.payouts.length);
+          const mergedTickets = restRound
+            ? preferMoreCompleteRaffleHistoryTickets(restRound.tickets, indexedRound.tickets)
+            : indexedRound.tickets;
+          const mergedCovenant = incomingHasFinalState || cachedHasFinalState
+            ? undefined
+            : preferAdvancedRaffleCovenant(restRound?.latestCovenant, indexedRound.latestCovenant);
           byRoundId.set(indexedRound.roundId, restRound ? {
             ...restRound,
             ...indexedRound,
             registryTxId: restRound.registryTxId,
-            tickets: indexedRound.tickets.length ? indexedRound.tickets : restRound.tickets,
-            payouts: indexedRound.payouts.length ? indexedRound.payouts : restRound.payouts
+            registryRefundTxId: restRound.registryRefundTxId,
+            latestCovenant: mergedCovenant,
+            tickets: mergedTickets,
+            payouts: indexedRound.payouts.length ? indexedRound.payouts : restRound.payouts,
+            soldTickets: Math.max(
+              restRound.soldTickets ?? totalTicketCount(restRound.tickets),
+              indexedRound.soldTickets ?? totalTicketCount(indexedRound.tickets),
+              totalTicketCount(mergedTickets),
+              mergedCovenant?.soldTickets ?? 0
+            ),
+            refundCursor: Math.max(restRound.refundCursor ?? 0, indexedRound.refundCursor ?? 0),
+            refundBatchCursor: Math.max(restRound.refundBatchCursor ?? 0, indexedRound.refundBatchCursor ?? 0),
+            potAmount: incomingHasFinalState
+              ? indexedRound.potAmount
+              : mergedCovenant
+                ? BigInt(mergedCovenant.potAmount)
+                : restRound.potAmount
           } : indexedRound);
         }
       }
@@ -2049,7 +3071,7 @@ export function App() {
 
       if (targetAddress) setHistoryAddress(targetAddress);
       setHistoryRounds(rounds);
-      setSelectedHistoryRoundId(rounds[0]?.roundId ?? "");
+      setSelectedHistoryRoundId(rounds.find(historyRoundIsPlayable)?.roundId ?? rounds[0]?.roundId ?? "");
       setHistoryMessage(
         `Loaded ${rounds.length} raffle round${rounds.length === 1 ? "" : "s"}. ` +
         (!registryAddresses.size
@@ -2082,7 +3104,17 @@ export function App() {
                 (historyRound.maxTickets ?? 0) > 0 && (historyRound.soldTickets ?? 0) >= (historyRound.maxTickets ?? 0)
               )
                 ? "Closed"
-                : "Open";
+              : "Open";
+  }
+
+  function historyRoundIsPlayable(historyRound: RaffleHistoryRound) {
+    const covenant = historyRound.latestCovenant;
+    if (!covenant || covenant.status !== "Open") return false;
+    if (archivedReleaseForRaffleContractVersion(historyRound.contractVersion ?? "") || isQuarantinedRaffleContractVersion(historyRound.contractVersion ?? "")) return false;
+    const soldTickets = historyRound.soldTickets ?? covenant.soldTickets;
+    if ((historyRound.maxTickets ?? 0) <= soldTickets) return false;
+    const deadline = BigInt(covenant.refundAfterDaaScore || historyRound.refundAfterDaaScore || "0");
+    return deadline > 0n && (virtualDaaScore <= 0n || virtualDaaScore < deadline);
   }
 
   function networkFromKaspaAddress(address: string) {
@@ -2106,6 +3138,8 @@ export function App() {
     setHistoryMessage("");
     setChainError("");
     setChainMessage("");
+    setRegistryRecoveryError("");
+    setRegistryRecoveryMessage("");
 
     if (!selectedHistoryRound) {
       setHistoryError("Select a round first.");
@@ -2114,10 +3148,12 @@ export function App() {
 
     const archivedRelease = archivedReleaseForRaffleContractVersion(selectedHistoryRound.contractVersion ?? "");
     if (!isSupportedRaffleContractVersion(selectedHistoryRound.contractVersion ?? "")) {
-      setHistoryError(t("legacyRoundRequiresRelease", {
-        version: selectedHistoryRound.contractVersion || t("unknown"),
-        release: archivedRelease ?? "an archived Kaswin release"
-      }));
+      setHistoryError(isQuarantinedRaffleContractVersion(selectedHistoryRound.contractVersion ?? "")
+        ? t("quarantinedRound", { version: selectedHistoryRound.contractVersion || t("unknown") })
+        : t("legacyRoundRequiresRelease", {
+            version: selectedHistoryRound.contractVersion || t("unknown"),
+            release: archivedRelease ?? "an archived Kaswin release"
+          }));
       return;
     }
 
@@ -2125,10 +3161,40 @@ export function App() {
     if (cachedRound) {
       const loadedProfile = requireNetworkProfile(normalizeNetworkId(cachedRound.metadata.network));
       const loadedNetwork = loadedProfile.id;
-      const hasFinalChainState = Boolean(selectedHistoryRound.refundTxId || selectedHistoryRound.payouts.length);
-      const restoredCovenant = hasFinalChainState
-        ? undefined
-        : selectedHistoryRound.latestCovenant ?? cachedRound.metadata.covenant;
+      const selectedPayout = selectedHistoryRound.payouts[0];
+      const selectedRefunded = Boolean(
+        selectedHistoryRound.refundTxId || selectedHistoryRound.latestCovenant?.status === "Refunded"
+      );
+      const selectedFinalized = Boolean(selectedPayout || selectedHistoryRound.latestCovenant?.status === "Finalized");
+      const observedCovenant = selectedHistoryRound.latestCovenant ?? cachedRound.metadata.covenant;
+      const restoredCovenant = selectedRefunded && observedCovenant
+        ? {
+            ...observedCovenant,
+            txId: selectedHistoryRound.refundTxId ?? observedCovenant.txId,
+            amountSompi: "0",
+            potAmount: "0",
+            status: "Refunded" as const,
+            refundCursor: selectedHistoryRound.soldTickets ?? observedCovenant.soldTickets,
+            refundBatchCursor: observedCovenant.soldBatches ?? observedCovenant.ticketOwnerPubkeys.length,
+            refundFeeDebtSompi: "0"
+          }
+        : selectedFinalized
+          ? undefined
+          : observedCovenant;
+      const restoredFinalized = selectedPayout
+        ? cachedRound.finalized ?? {
+            appId: "KASPA_RAFFLE_FINAL_V1" as const,
+            roundId: selectedHistoryRound.roundId,
+            randomSeed: "history-result",
+            targetBlockHash: "",
+            targetDaaScore: "0",
+            winnerTicketId: selectedPayout.winnerTicketId,
+            winnerAddress: selectedPayout.winnerAddress,
+            payoutTxId: selectedPayout.txId
+          }
+        : selectedFinalized
+          ? cachedRound.finalized
+          : undefined;
       const restoredTickets = selectedHistoryRound.tickets.length
         ? selectedHistoryRound.tickets.map((ticket) => ({
             appId: "KASPA_RAFFLE_TICKET_V1" as const,
@@ -2145,7 +3211,9 @@ export function App() {
         ...cachedRound.metadata,
         covenant: restoredCovenant,
         treasuryAddress: restoredCovenant?.address ?? cachedRound.metadata.treasuryAddress,
-        registryAddress: selectedHistoryRound.registryAddress ?? cachedRound.metadata.registryAddress
+        registryAddress: selectedHistoryRound.registryAddress ?? cachedRound.metadata.registryAddress,
+        registryTxId: selectedHistoryRound.registryTxId ?? cachedRound.metadata.registryTxId,
+        registryRefundTxId: selectedHistoryRound.registryRefundTxId ?? cachedRound.metadata.registryRefundTxId
       };
 
       setNetworkId(loadedNetwork);
@@ -2157,8 +3225,10 @@ export function App() {
       setRefundTimeoutParts(refundTimeoutPartsFromSeconds(refundTimeoutSecondsFromMetadata(restoredMetadata)));
       setMetadata(restoredMetadata);
       setTickets(restoredTickets);
-      setFinalized(cachedRound.finalized);
+      setFinalized(restoredFinalized);
+      setTerminalRoundStatus(selectedRefunded ? "Refunded" : selectedFinalized ? "Finalized" : undefined);
       setRoundActionTab(restoredCovenant?.status === "Open" ? "buy" : "payout");
+      setIsRoundSourceOpen(false);
       setMetadataMessage("Round restored from browser storage.");
       setHistoryMessage(`Restored ${selectedHistoryRound.roundId} from this browser.`);
       return;
@@ -2168,13 +3238,6 @@ export function App() {
 
     if (!covenant || (covenant.status !== "Open" && covenant.status !== "Closed" && covenant.status !== "Refunding")) {
       setHistoryError("Selected round has no active covenant to load.");
-      return;
-    }
-
-    if (BigInt(covenant.amountSompi) < MIN_COVENANT_CARRIER_SOMPI) {
-      setHistoryError(
-        `Selected round carrier is below the current minimum. Use at least ${formatKas(MIN_COVENANT_CARRIER_SOMPI)}.`
-      );
       return;
     }
 
@@ -2190,10 +3253,13 @@ export function App() {
 
     const loadedNetwork = networkFromKaspaAddress(covenant.address);
     const loadedProfile = requireNetworkProfile(loadedNetwork);
-    if (selectedHistoryRound.contractVersion !== raffleContractVersionForNetwork(loadedNetwork)) {
+    if (!isSupportedRaffleContractVersion(selectedHistoryRound.contractVersion)) {
       setHistoryError("Selected round uses a contract that is not supported on this network.");
       return;
     }
+    const loadedCarrierSompi = BigInt(covenant.amountSompi) -
+      selectedHistoryRound.ticketPrice * BigInt(covenant.soldTickets);
+    const loadedCarrierWarning = loadedCarrierSompi < MIN_COVENANT_CARRIER_SOMPI;
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromHistoryRound(selectedHistoryRound, loadedNetwork);
     const loadedRegistryAddress = selectedHistoryRound.registryAddress ?? (historyAddress || registryAddress);
     const startBlockHash = selectedHistoryRound.createTxId
@@ -2219,11 +3285,16 @@ export function App() {
       ticketPrice: selectedHistoryRound.ticketPrice.toString(),
       maxTickets: selectedHistoryRound.maxTickets,
       minTickets: selectedHistoryRound.minTickets,
+      maxBatches: selectedHistoryRound.maxBatches,
+      roundNonce: selectedHistoryRound.roundNonce,
+      salesDeadlineDaa: selectedHistoryRound.salesDeadlineDaa,
       creatorAddress: selectedHistoryRound.creator ?? "",
       creatorPubkey: selectedHistoryRound.creatorPubkey ?? covenant.creatorPubkey,
       refundAfterDaaScore: selectedHistoryRound.refundAfterDaaScore ?? covenant.refundAfterDaaScore,
       treasuryAddress: covenant.address,
       registryAddress: loadedRegistryAddress,
+      registryTxId: selectedHistoryRound.registryTxId,
+      registryRefundTxId: selectedHistoryRound.registryRefundTxId,
       covenant,
       contractVersion: selectedHistoryRound.contractVersion ?? emptyMetadata.contractVersion
     });
@@ -2240,13 +3311,21 @@ export function App() {
       }))
     );
     setFinalized(undefined);
+    setTerminalRoundStatus(undefined);
     setRoundActionTab(covenant.status === "Open" ? "buy" : "payout");
+    setIsRoundSourceOpen(false);
     setMetadataMessage("Round loaded from history.");
-    setHistoryMessage(`Loaded ${selectedHistoryRound.roundId}. You can buy if open, or finalize/refund when eligible.`);
+    setHistoryMessage(
+      loadedCarrierWarning
+        ? selectedHistoryRound.contractVersion === RAFFLE_CONTRACT_VERSION && covenant.soldTickets < selectedHistoryRound.minTickets
+          ? `Loaded ${selectedHistoryRound.roundId}. Its ${formatKas(loadedCarrierSompi)} carrier is below the ${formatKas(MIN_COVENANT_CARRIER_SOMPI)} settlement minimum. Buying is blocked; top up carrier before anyone buys.`
+          : `Loaded ${selectedHistoryRound.roundId}. Its ${formatKas(loadedCarrierSompi)} carrier is below the ${formatKas(MIN_COVENANT_CARRIER_SOMPI)} settlement minimum and cannot be safely settled; keep it in recovery review.`
+        : `Loaded ${selectedHistoryRound.roundId}. You can buy if open, or finalize/refund when eligible.`
+    );
   }
 
-  function updateMetadata<K extends keyof RaffleMetadata>(key: K, value: RaffleMetadata[K]) {
-    setMetadata((current) => ({
+  function updateCreateParameters<K extends keyof typeof createParameters>(key: K, value: (typeof createParameters)[K]) {
+    setCreateParameters((current) => ({
       ...current,
       [key]: value
     }));
@@ -2257,6 +3336,14 @@ export function App() {
       ...current,
       [key]: normalizeDurationInput(value)
     }));
+  }
+
+  function openRoundWorkspace(tab: RoundSourceTab) {
+    setRoundSourceTab(tab);
+    setIsRoundSourceOpen(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("round-source-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function renderIndexerRequirement(input: {
@@ -2301,15 +3388,49 @@ export function App() {
     );
   }
 
+  const chainFeedback = chainError || chainMessage ? <>
+    {chainError ? <p className="error-text action-message"><ExplorerText network={networkId} text={rt(chainError)} /></p> : null}
+    {chainMessage ? <p className="success-text action-message"><ExplorerText network={networkId} text={rt(chainMessage)} /></p> : null}
+  </> : undefined;
+
+  const gameplayGuide = (
+    <section className="gameplay-guide" aria-labelledby="gameplay-title">
+      <div className="gameplay-heading">
+        <div>
+          <p className="eyebrow">{t("gameplay.eyebrow")}</p>
+          <h2 id="gameplay-title">{t("gameplay.title")}</h2>
+          <p>{t("gameplay.description")}</p>
+        </div>
+        <span className="gameplay-protocol-badge"><ShieldCheck size={17} />{t("gameplay.badge")}</span>
+      </div>
+      <div className="gameplay-flow">
+        <article><span className="gameplay-step">01</span><Ticket size={22} aria-hidden="true" /><div><h3>{t("gameplay.step.buy.title")}</h3><p>{t("gameplay.step.buy.detail")}</p></div></article>
+        <article><span className="gameplay-step">02</span><RefreshCcw size={22} aria-hidden="true" /><div><h3>{t("gameplay.step.wait.title")}</h3><p>{t("gameplay.step.wait.detail")}</p></div></article>
+        <article><span className="gameplay-step">03</span><Trophy size={22} aria-hidden="true" /><div><h3>{t("gameplay.step.settle.title")}</h3><p>{t("gameplay.step.settle.detail")}</p></div></article>
+      </div>
+      <div className="gameplay-trust-strip" aria-label={t("gameplay.advantages")}>
+        <span><ShieldCheck size={16} />{t("gameplay.trust.prize")}</span><span><RefreshCcw size={16} />{t("gameplay.trust.public")}</span><span><Trophy size={16} />{t("gameplay.trust.random")}</span><span><Link2 size={16} />{t("gameplay.trust.transparent")}</span>
+      </div>
+      <p className="gameplay-fee-note">{t("gameplay.feeNote")}</p>
+    </section>
+  );
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="brand-block">
           <p className="kicker">Kaspa Toccata · {networkLabel(selectedNetwork.id)}</p>
-          <h1 className="brand-heading">
-            {t("app.title")}
-            <span className="app-version">v{packageJson.version}</span>
-          </h1>
+          <div className="brand-lockup">
+            <h1 className="brand-heading">
+              {t("app.title")}
+              <span className="app-version">v{packageJson.version}</span>
+            </h1>
+            <div className="kaspa-brand-mark" aria-hidden="true">
+              <span className="kaspa-symbol">K</span>
+              <span className="kaspa-wordmark">KASPA</span>
+              <span className="kaspa-network-tag">{selectedNetwork.id === "testnet-10" ? "TN10" : "MAINNET"}</span>
+            </div>
+          </div>
         </div>
         <div className="header-tools">
           <label className="language-picker">
@@ -2324,13 +3445,6 @@ export function App() {
               <option value="en">{t("language.english")}</option>
             </select>
           </label>
-          <div className="header-status">
-            <span className={nodeStatus.connected ? "status-pill connected" : "status-pill"}>
-              {nodeStatus.connected ? <CheckCircle2 size={17} /> : <Plug size={17} />}
-              {nodeStatus.connected ? t("node.ready") : t("node.offline")}
-            </span>
-            <span className="balance-pill">{wallet ? formatKas(wallet.balanceSompi) : t("wallet.notLoaded")}</span>
-          </div>
         </div>
       </header>
 
@@ -2343,8 +3457,11 @@ export function App() {
         </p>
       </section>
 
-      <section className="setup-strip" aria-label={t("connection.aria")}>
-        <div className="network-picker">
+      {gameplayGuide}
+
+      <section className="setup-strip header-connectivity" aria-label={t("connection.aria")}>
+        <div className="setup-group setup-network-group">
+          <div className="network-picker" ref={networkPickerRef}>
           <button
             type="button"
             className="network-trigger secondary"
@@ -2360,6 +3477,9 @@ export function App() {
             <span>
               <small>{t("network")}</small>
               <strong>{networkLabel(selectedNetwork.id)}</strong>
+              <small className={`network-connection-state${nodeStatus.connected ? " connected" : isConnectingNode ? " connecting" : rpcError ? " failed" : ""}`}>
+                {nodeStatus.connected ? t("node.ready") : isConnectingNode ? t("connecting") : rpcError ? t("node.failed") : t("node.offline")}
+              </small>
             </span>
             <ChevronDown size={17} />
           </button>
@@ -2367,6 +3487,12 @@ export function App() {
           {isNetworkMenuOpen ? (
             <div className="network-menu" role="menu" aria-label={t("network.switch")}>
               <div className="network-menu-title">{t("network.switch")}</div>
+              <div className="network-menu-connection">
+                <span>
+                  <small>{t("node")}</small>
+                  <strong>{nodeStatus.connected ? t("node.ready") : isConnectingNode ? t("connecting") : rpcError ? t("node.failed") : t("node.offline")}</strong>
+                </span>
+              </div>
               {NETWORK_PROFILES.map((profile) => {
                 const selected = profile.id === networkId;
                 const editing = profile.id === networkSettingsId;
@@ -2390,7 +3516,6 @@ export function App() {
                       type="button"
                       className="network-settings-button"
                       onClick={() => openNetworkSettings(profile.id)}
-                      title={t("network.configure", { network: networkLabel(profile.id) })}
                       aria-label={t("network.configure", { network: networkLabel(profile.id) })}
                     >
                       <Settings size={18} />
@@ -2434,98 +3559,120 @@ export function App() {
               })}
             </div>
           ) : null}
-        </div>
-
-        <div className="setup-primary">
-          {currentNetworkEndpoint.mode === "resolver" ? (
-            <div className="resolver-node-field" aria-label={t("node")}>
-              <span>{t("node")}</span>
-              <strong>{t("node.resolver")}</strong>
-              {nodeStatus.connected && nodeStatus.endpointUrl ? <small>{nodeStatus.endpointUrl}</small> : null}
-            </div>
-          ) : (
-            <label className="field inline-field">
-              <span>{t("node")}</span>
-              <input value={rpcUrl} onChange={(event) => handleRpcUrlInput(event.target.value)} />
-            </label>
-          )}
-          {nodeStatus.connected ? (
-            <button type="button" className="secondary" onClick={handleDisconnect}>{t("disconnect")}</button>
-          ) : (
-            <button type="button" onClick={handleConnect}>{t("connect")}</button>
-          )}
-        </div>
-
-        <div className="wallet-summary">
-          <div>
-            <span className="summary-label">{t("wallet")}</span>
-            <strong className="mono">{wallet ? shortValue(wallet.address, 10) : t("notLoaded")}</strong>
           </div>
-          <div>
-            <span className="summary-label">{t("balance")}</span>
-            <strong>{wallet ? formatKas(wallet.balanceSompi) : t("unknown")}</strong>
-          </div>
-          <button type="button" className="icon-button secondary" onClick={handleRefreshBalance} title={t("refreshBalance")} aria-label={t("refreshBalance")}>
-            <RefreshCw size={17} />
-          </button>
+
         </div>
 
-        <div className="wallet-actions">
-          {wallet ? (
-            <button type="button" className="secondary" onClick={handleDisconnectWallet}>{t("disconnectWallet", { wallet: wallet.providerName })}</button>
-          ) : (
-            <div className="wallet-picker">
-              <button
-                type="button"
-                onClick={handleToggleWalletMenu}
-                disabled={isConnectingWallet}
-                aria-haspopup="menu"
-                aria-expanded={isWalletMenuOpen}
-              >
-                <WalletCards size={17} />
-                {isConnectingWallet ? t("connecting") : t("connectWallet")}
-              </button>
-              {isWalletMenuOpen ? (
-                <div className="wallet-menu" role="menu" aria-label={t("chooseWallet")}>
-                  {walletOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      role="menuitem"
-                      className="wallet-menu-item"
-                      disabled={!option.installed}
-                      onClick={() => handleConnectWallet(option.id)}
-                    >
-                      <span>{option.name}</span>
-                      <small>{option.installed ? t("detected") : t("notInstalled")}</small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+        <div className="setup-group setup-wallet-group">
+          <div className="wallet-summary">
+            <div className="wallet-balance" tabIndex={wallet ? 0 : undefined} aria-label={wallet ? `${t("balance")}: ${formatKas(wallet.balanceSompi)}` : undefined}>
+              <span className="summary-label">{t("balance")}</span>
+              <strong>{wallet ? formatKasCompact(wallet.balanceSompi) : t("unknown")}</strong>
+              {wallet ? <span className="wallet-balance-full" role="tooltip">{formatKas(wallet.balanceSompi)}</span> : null}
             </div>
-          )}
+            <button type="button" className="icon-button secondary" onClick={handleRefreshBalance} aria-label={t("refreshBalance")}>
+              <RefreshCw size={17} />
+            </button>
+          </div>
+
+          <div className="wallet-actions">
+            {wallet ? (
+              <button type="button" className="secondary" onClick={handleDisconnectWallet}>{t("disconnectWallet", { wallet: wallet.providerName })}</button>
+            ) : (
+              <div className="wallet-picker" ref={walletPickerRef}>
+                <button
+                  type="button"
+                  onClick={handleToggleWalletMenu}
+                  disabled={isConnectingWallet}
+                  aria-haspopup="menu"
+                  aria-expanded={isWalletMenuOpen}
+                >
+                  <WalletCards size={17} />
+                  {isConnectingWallet ? t("connecting") : t("connectWallet")}
+                </button>
+                {isWalletMenuOpen ? (
+                  <div className="wallet-menu" role="menu" aria-label={t("chooseWallet")}>
+                    {walletOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        role="menuitem"
+                        className="wallet-menu-item"
+                        disabled={!option.installed}
+                        onClick={() => handleConnectWallet(option.id)}
+                      >
+                        <span>{option.name}</span>
+                        <small>{option.installed ? t("detected") : t("notInstalled")}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
 
         {rpcError ? <p className="error-text strip-message">{rt(rpcError)}</p> : null}
         {walletError ? <p className="error-text strip-message">{rt(walletError)}</p> : null}
       </section>
 
-      <section className="round-overview">
+      <div className="round-primary-workspace">
+      <section className={`round-overview${hasCurrentRound ? "" : " empty"}`}>
         <div className="section-heading-row">
           <div>
             <p className="eyebrow">{t("currentRound")}</p>
-            <h2>{metadata.roundId ? shortValue(metadata.roundId, 12) : t("noRound")}</h2>
+            <h2>{metadata.roundId ? shortValue(metadata.roundId, 12) : t("currentRound.empty")}</h2>
           </div>
           <div className="heading-actions">
-            <span className={`round-status status-${round.status.toLowerCase()}`}>{t(`status.${round.status}`)}</span>
+            {hasCurrentRound ? <span className={`round-status status-${round.status.toLowerCase()}`}>{t(`status.${round.status}`)}</span> : null}
             {metadata.roundId ? (
-              <button type="button" className="icon-button secondary" onClick={handleCopyRoundLink} title={t("copyRoundLink")} aria-label={t("copyRoundLink")}>
+              <button type="button" className="icon-button secondary" onClick={handleCopyRoundLink} aria-label={t("copyRoundLink")}>
                 <Link2 size={17} />
               </button>
             ) : null}
+            <button
+              type="button"
+              className={`round-source-menu-button${isRoundSourceOpen ? " active" : ""}`}
+              aria-expanded={isRoundSourceOpen}
+              aria-controls="round-source-content"
+              onClick={() => setIsRoundSourceOpen((current) => !current)}
+            >
+              {t("roundManager.menu")}
+              <ChevronDown size={16} aria-hidden="true" />
+            </button>
           </div>
         </div>
 
+        {registryPublicationPending || registryMarkerRefundPending || registryRecoveryMessage || registryRecoveryError ? (
+          <section className="registry-recovery-panel" aria-live="polite">
+            <div>
+              <strong>{registryPublicationPending
+                ? t("registry.publishPending")
+                : registryMarkerRefundPending
+                  ? t("registry.refundPending")
+                  : t("registryTx")}</strong>
+              <p>{registryPublicationPending
+                ? t("registry.publishPendingDetail")
+                : registryMarkerRefundPending
+                  ? t("registry.refundPendingDetail")
+                  : null}</p>
+            </div>
+            {registryPublicationPending ? (
+              <button type="button" className="secondary" onClick={requestRegistrySigningConfirmation} disabled={isPublishingRegistry || !wallet || !nodeStatus.connected}>
+                {isPublishingRegistry ? t("registry.publishing") : t("registry.publishButton")}
+              </button>
+            ) : null}
+            {registryMarkerRefundPending ? (
+              <button type="button" className="secondary" onClick={executeRegistryMarkerRecovery} disabled={isRecoveringRegistryMarker || !nodeStatus.connected}>
+                {isRecoveringRegistryMarker ? t("registry.refunding") : t("registry.refundButton")}
+              </button>
+            ) : null}
+            {registryRecoveryError ? <p className="error-text registry-recovery-feedback">{rt(registryRecoveryError)}</p> : null}
+            {registryRecoveryMessage ? <p className="success-text registry-recovery-feedback">{rt(registryRecoveryMessage)}</p> : null}
+          </section>
+        ) : null}
+
+        {hasCurrentRound ? <>
         <div className="key-metrics">
           <div>
             <span>{t("ticketsSold")}</span>
@@ -2566,157 +3713,107 @@ export function App() {
             <div className="batch-list">
               {ticketBatches.map((batch) => (
                 <div className="batch-row" key={batch.txId || `${batch.start}-${batch.end}`}>
-                  <strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>
+                  <ExplorerLink kind="transaction" network={networkId} value={batch.txId} label={<strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>} />
                   <span>{t(batch.count === 1 ? "ticketCount.one" : "ticketCount", { count: batch.count.toLocaleString() })}</span>
-                  <span className="mono">{shortValue(batch.owner, 9)}</span>
+                  <ExplorerLink className="mono" kind="address" network={networkId} value={batch.owner} />
                   <span>{formatKas(batch.amount)}</span>
                 </div>
               ))}
             </div>
           </details>
         ) : null}
+        </> : <div className="round-overview-empty">
+          <p>{t("currentRound.emptyHint")}</p>
+        </div>}
       </section>
 
-      <section className="tabbed-workspace source-workspace">
-        <div className="workspace-tabs" role="tablist" aria-label={t("roundSourceTabs")}>
-          <button
-            type="button"
-            id="round-create-tab"
-            className={`workspace-tab ${roundSourceTab === "create" ? "active" : ""}`}
-            role="tab"
-            aria-selected={roundSourceTab === "create"}
-            aria-controls="round-create-panel"
-            onClick={() => setRoundSourceTab("create")}
-          >
-            {t("createRound")}
-          </button>
-          <button
-            type="button"
-            id="round-history-tab"
-            className={`workspace-tab ${roundSourceTab === "history" ? "active" : ""}`}
-            role="tab"
-            aria-selected={roundSourceTab === "history"}
-            aria-controls="round-history-panel"
-            onClick={() => setRoundSourceTab("history")}
-          >
-            {t("loadHistory")}
-          </button>
-        </div>
+      <ActionWorkspace
+          activeIndexerRequirement={activeRoundNeedsIndexer && metadata.covenant ? renderIndexerRequirement({ maxTickets: metadata.maxTickets, soldTickets: metadata.covenant.soldTickets, soldBatches: activeSoldBatches, knownTickets: totalTicketCount(tickets), knownBatches: tickets.length }) : null}
+          actionTab={roundActionTab}
+          buyBlockedReason={buyBlockedReason}
+          buyCostTooltip={buyCostTooltip}
+          canBuy={canBuy}
+          canCloseEmpty={canCloseEmpty}
+          canDraw={canDraw}
+          canRefund={canRefund}
+          canTopUpCarrier={canTopUpCarrier}
+          drawBlockedReason={drawBlockedReason}
+          emptyCloseCostTooltip={emptyCloseCostTooltip}
+          feedback={chainFeedback}
+          feedbackTarget={chainFeedbackTarget}
+          finalized={finalized}
+          formatKas={formatKas}
+          isBuying={isBuying}
+          isClosingEmpty={isClosingEmptyRound}
+          isFinalizing={isFinalizing}
+          isRefunding={isRefundingRound}
+          isToppingUpCarrier={isToppingUpCarrier}
+          metadata={metadata}
+          network={networkId}
+          onBuy={requestBuySigningConfirmation}
+          onCloseEmpty={handleCloseEmptyRound}
+          onDraw={handleFinalizeLocal}
+          onRefund={requestRefundSigningConfirmation}
+          onTopUpCarrier={requestCarrierTopUpSigningConfirmation}
+          onSelectTab={setRoundActionTab}
+          parsedTicketQuantity={parsedTicketQuantity}
+          payoutCostTooltip={payoutCostTooltip}
+          purchaseTotal={purchaseTotal}
+          refundAvailable={refundAvailable}
+          refundBlockedReason={refundBlockedReason}
+          refundCostTooltip={refundCostTooltip}
+          refundProgress={refundProgress}
+          remainingTickets={remainingTickets}
+          round={round}
+          setTicketQuantity={setTicketQuantity}
+          setTopUpCarrierKas={setTopUpCarrierKas}
+          shortValue={shortValue}
+          t={t}
+          ticketQuantity={ticketQuantity}
+          topUpCarrierKas={topUpCarrierKas}
+          supportsCarrierTopUp={supportsCarrierTopUp}
+        />
 
-        {roundSourceTab === "create" ? (
-          <section id="round-create-panel" className="workspace-panel" role="tabpanel" aria-labelledby="round-create-tab">
-            {canStartNewRound ? (
-              <>
-<div className="pane-heading">
-                <p className="eyebrow">{t("organizer")}</p>
-                <h2>{finalized ? t("createNextRound") : t("createARound")}</h2>
-              </div>
-              <div className="form-grid">
-                <label className="field">
-                  <span>{t("ticketPriceKas")}</span>
-                  <input
-                    inputMode="decimal"
-                    value={sompiToKasInput(metadata.ticketPrice)}
-                    onChange={(event) => updateMetadata("ticketPrice", kasInputToSompi(event.target.value))}
-                  />
-                </label>
-                <label className="field">
-                  <span>{t("totalTickets")}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={1_000_000}
-                    value={metadata.maxTickets}
-                    onChange={(event) => updateMetadata("maxTickets", Number(event.target.value))}
-                  />
-                </label>
-              </div>
-
-              <section className="registry-config" aria-labelledby="registry-config-title">
-                <div className="registry-field-row">
-                  <label className="field">
-                    <span id="registry-config-title">{t("registryAddress")}</span>
-                    <input
-                      value={createRegistryAddress}
-                      onChange={(event) => setCreateRegistryAddress(event.target.value.trim())}
-                      placeholder={networkId === "mainnet" ? "kaspa:..." : "kaspatest:..."}
-                      aria-describedby="registry-cost-details"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="icon-button secondary"
-                    onClick={() => setCreateRegistryAddress(registryAddress)}
-                    disabled={!registryAddress || usesDefaultRegistry}
-                    title={t("useDefaultRegistry")}
-                    aria-label={t("useDefaultRegistry")}
-                  >
-                    <RefreshCw size={17} />
-                  </button>
-                </div>
-                <dl id="registry-cost-details" className="registry-cost-details">
-                  <div>
-                    <dt>{t("sentToRegistry")}</dt>
-                    <dd>{formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("registryPaymentFee")}</dt>
-                    <dd>{t("registryPaymentFeeDetail")}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("automaticMarkerRefund")}</dt>
-                    <dd>
-                      {usesAutoRefundRegistry
-                        ? t("registryRefundDefault", { refund: formatKas(registryMarkerRefundAmount), fee: formatKas(REGISTRY_MARKER_REFUND_FEE_SOMPI) })
-                        : t(usesDefaultRegistry ? "registryRefundRetained" : "registryRefundCustom", { amount: formatKas(DEFAULT_RAFFLE_REGISTRY_MARKER_SOMPI) })}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="registry-note">
-                  {usesDefaultRegistry
-                    ? t(usesAutoRefundRegistry ? "registryDefaultNote" : "registryRetainedNote")
-                    : t("registryCustomNote")}
-                </p>
-              </section>
-
-              <details className="disclosure compact-disclosure">
-                <summary>{t("drawRefundTimeout", { duration: refundTimeoutDisplay })}</summary>
-                <div className="duration-grid disclosure-body">
-                  {REFUND_TIMEOUT_FIELDS.map((field) => (
-                    <label className="field compact-field" key={field.key}>
-                      <span>{t(field.labelKey)}</span>
-                      <input
-                        inputMode="numeric"
-                        min={0}
-                        type="number"
-                        value={refundTimeoutParts[field.key]}
-                        onChange={(event) => updateRefundTimeoutPart(field.key, event.target.value)}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </details>
-
-              <button
-                type="button"
-                className="wide kas-cost-button"
-                data-cost={createCostTooltip}
-                onClick={handleCreateCovenantRound}
-                disabled={isCreatingRound || !canStartNewRound}
-              >
-                {isCreatingRound ? t("creatingRound") : finalized ? t("createNextRound") : t("createRound")}
-              </button>
-              </>
-            ) : (
-              <div className="workspace-empty">
-                <p className="eyebrow">{t("organizer")}</p>
-                <h2>{t("roundInProgress")}</h2>
-                <p>{t("roundInProgressDetail")}</p>
-              </div>
-            )}
-          </section>
-        ) : (
-      <section id="round-history-panel" className="history-section history-tab-panel" role="tabpanel" aria-labelledby="round-history-tab raffle-history-title">
+      <div id="round-source-workspace" className="round-source-anchor embedded">
+        <SourceWorkspace
+        embedded
+        expanded={isRoundSourceOpen}
+        sourceTab={roundSourceTab}
+        onExpandedChange={setIsRoundSourceOpen}
+        onSelectTab={setRoundSourceTab}
+        t={t}
+        createPanel={<CreateRoundPanel
+            canStartNewRound={canStartNewRound}
+            createCostTooltip={createCostTooltip}
+            createRegistryAddress={createRegistryAddress}
+            covenantCarrierSompi={covenantCarrierSompi}
+            finalized={Boolean(finalized)}
+            feedback={chainFeedbackTarget === "create" ? chainFeedback : undefined}
+            formatKas={formatKas}
+            isCreatingRound={isCreatingRound}
+            metadata={createParameters}
+            maxPurchaseBatches={PROTOCOL_MANIFEST.maxRelaySafePurchaseBatches}
+            recommendedMaxBatches={recommendedMaxBatches}
+            minimumTicketPrice={formatKas(MIN_REFUNDABLE_TICKET_PRICE_SOMPI)}
+            networkId={networkId}
+            onCreate={requestCreateSigningConfirmation}
+            onRegistryAddressChange={setCreateRegistryAddress}
+            onResetRegistry={() => setCreateRegistryAddress(registryAddress)}
+            onTimeoutChange={updateRefundTimeoutPart}
+            onUpdateMetadata={updateCreateParameters}
+            refundTimeoutDisplay={refundTimeoutDisplay}
+            refundTimeoutFields={REFUND_TIMEOUT_FIELDS}
+            refundTimeoutParts={refundTimeoutParts}
+            registryAddress={registryAddress}
+            registryMarkerRefundAmount={registryMarkerRefundAmount}
+            setCarrierSompi={setCovenantCarrierSompi}
+            sompiToKasInput={sompiToKasInput}
+            kasInputToSompi={kasInputToSompi}
+            t={t}
+            usesAutoRefundRegistry={usesAutoRefundRegistry}
+            usesDefaultRegistry={usesDefaultRegistry}
+          />}
+        historyPanel={<section id="round-history-panel" className="history-section history-tab-panel" role="tabpanel" aria-labelledby="round-history-tab raffle-history-title">
         <div className="section-heading-row">
           <div className="history-title-block">
             <p className="eyebrow">{t("onChainActivity")}</p>
@@ -2724,6 +3821,7 @@ export function App() {
             <p className="history-summary" aria-live="polite">
               {historyRounds.length
                 ? t("historySummary", {
+                    playable: playableHistoryRoundCount.toLocaleString(),
                     rounds: historyRounds.length.toLocaleString(),
                     local: historyRounds.filter((historyRound) => historyRound.localCachedAt).length.toLocaleString(),
                     paid: historyRounds.filter((historyRound) => historyRoundStatus(historyRound) === "Paid").length.toLocaleString(),
@@ -2745,19 +3843,35 @@ export function App() {
 
         {historyRounds.length ? (
           <>
-            <label className="field history-select">
-              <span>{t("round")}</span>
-              <select
-                value={selectedHistoryRound?.roundId ?? ""}
-                onChange={(event) => setSelectedHistoryRoundId(event.target.value)}
-              >
-                {historyRounds.map((historyRound) => (
-                  <option key={historyRound.roundId} value={historyRound.roundId}>
-                    {historyRound.localCachedAt ? `${t("savedLocally")} - ` : ""}{historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t((historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)) === 1 ? "ticketCount.one" : "ticketCount", { count: (historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)).toLocaleString() })}{historyRoundNeedsIndexer(historyRound) ? ` - ${t("indexerRequiredShort")}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="history-round-picker">
+              <label className="field history-select">
+                <span>{t("round")}</span>
+                <select
+                  value={selectedHistoryRound?.roundId ?? ""}
+                  onChange={(event) => setSelectedHistoryRoundId(event.target.value)}
+                >
+                  {orderedHistoryRounds.map((historyRound) => (
+                    <option key={historyRound.roundId} value={historyRound.roundId}>
+                      {historyRoundIsPlayable(historyRound) ? `${t("openToJoin")} - ` : ""}{historyRound.localCachedAt ? `${t("savedLocally")} - ` : ""}{historyRound.roundId} - {t(`status.${historyRoundStatus(historyRound)}`)} - {t((historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)) === 1 ? "ticketCount.one" : "ticketCount", { count: (historyRound.soldTickets ?? totalTicketCount(historyRound.tickets)).toLocaleString() })}{historyRoundNeedsIndexer(historyRound) ? ` - ${t("indexerRequiredShort")}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedHistoryRound && (selectedHistoryRound.latestCovenant || selectedHistoryRound.localCachedAt) ? (
+                <button
+                  type="button"
+                  className={selectedHistoryRoundPlayable ? "join-round-button" : "secondary"}
+                  onClick={handleJoinSelectedHistoryRound}
+                  disabled={Boolean(
+                    (selectedHistoryRound.latestCovenant?.status === "Refunded" && !selectedHistoryRound.localCachedAt) ||
+                    selectedHistoryRoundArchivedRelease || selectedHistoryRoundQuarantined
+                  )}
+                >
+                  {t(selectedHistoryRoundPlayable ? "joinThisRound" : "loadThisRound")}
+                </button>
+              ) : null}
+            </div>
 
             {selectedHistoryRound ? (
               <div className="history-detail">
@@ -2787,6 +3901,12 @@ export function App() {
                   </p>
                 ) : null}
 
+                {selectedHistoryRoundQuarantined ? (
+                  <p className="error-text">
+                    {t("quarantinedRound", { version: selectedHistoryRound.contractVersion ?? t("unknown") })}
+                  </p>
+                ) : null}
+
                 {selectedHistoryRoundRequiresIndexer ? renderIndexerRequirement({
                   maxTickets: selectedHistoryRound.maxTickets ?? 0,
                   soldTickets: selectedHistoryRound.soldTickets ?? totalTicketCount(selectedHistoryRound.tickets),
@@ -2795,32 +3915,14 @@ export function App() {
                   knownBatches: selectedHistoryRound.tickets.length
                 }) : null}
 
-                {selectedHistoryRound.latestCovenant || selectedHistoryRound.localCachedAt ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={handleJoinSelectedHistoryRound}
-                    disabled={Boolean(
-                      (selectedHistoryRound.latestCovenant?.status === "Refunded" && !selectedHistoryRound.localCachedAt) ||
-                      selectedHistoryRoundArchivedRelease
-                    )}
-                    title={selectedHistoryRoundArchivedRelease ? t("legacyRoundRequiresRelease", {
-                      version: selectedHistoryRound.contractVersion ?? t("unknown"),
-                      release: selectedHistoryRoundArchivedRelease
-                    }) : undefined}
-                  >
-                    {t("loadThisRound")}
-                  </button>
-                ) : null}
-
                 <details className="disclosure compact-disclosure">
                   <summary>{t(selectedHistoryBatches.length === 1 ? "purchaseBatch.one" : "purchaseBatch", { count: selectedHistoryBatches.length.toLocaleString() })}</summary>
                   <div className="batch-list">
                     {selectedHistoryBatches.map((batch) => (
                       <div className="batch-row" key={batch.txId}>
-                        <strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>
+                        <ExplorerLink kind="transaction" network={networkId} value={batch.txId} label={<strong>#{batch.start}{batch.end > batch.start ? `-${batch.end}` : ""}</strong>} />
                         <span>{t(batch.count === 1 ? "ticketCount.one" : "ticketCount", { count: batch.count.toLocaleString() })}</span>
-                        <span className="mono">{shortValue(batch.owner, 9)}</span>
+                        <ExplorerLink className="mono" kind="address" network={networkId} value={batch.owner} />
                         <span>{formatKas(batch.amount)}</span>
                       </div>
                     ))}
@@ -2831,13 +3933,13 @@ export function App() {
                   <summary>{t("transactionsTiming")}</summary>
                   <dl className="stat-list dense disclosure-body">
                     <div><dt>{t("contractVersion")}</dt><dd>{selectedHistoryRound.contractVersion || t("unknown")}</dd></div>
-                    <div><dt>{t("registryTx")}</dt><dd className="mono">{selectedHistoryRound.registryTxId ?? t("unknown")}</dd></div>
-                    <div><dt>{t("covenant")}</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.address ?? selectedHistoryRound.treasuryAddress ?? t("unknown")}</dd></div>
-                    <div><dt>{t("refundTx")}</dt><dd className="mono">{selectedHistoryRound.refundTxId ?? t("pending")}</dd></div>
+                    <div><dt>{t("registryTx")}</dt><dd className="mono"><ExplorerLink compact={false} kind="transaction" network={networkId} value={selectedHistoryRound.registryTxId} />{!selectedHistoryRound.registryTxId ? t("unknown") : null}</dd></div>
+                    <div><dt>{t("covenant")}</dt><dd className="mono"><ExplorerLink compact={false} kind="address" network={networkId} value={selectedHistoryRound.latestCovenant?.address ?? selectedHistoryRound.treasuryAddress} />{!selectedHistoryRound.latestCovenant?.address && !selectedHistoryRound.treasuryAddress ? t("unknown") : null}</dd></div>
+                    <div><dt>{t("refundTx")}</dt><dd className="mono"><ExplorerLink compact={false} kind="transaction" network={networkId} value={selectedHistoryRound.refundTxId} />{!selectedHistoryRound.refundTxId ? t("pending") : null}</dd></div>
                     <div><dt>{t("refundAfterDaa")}</dt><dd className="mono">{selectedHistoryRound.latestCovenant?.refundAfterDaaScore ?? selectedHistoryRound.refundAfterDaaScore ?? t("unknown")}</dd></div>
                     <div><dt>{t("lastSeen")}</dt><dd>{formatDate(selectedHistoryRound.lastBlockTime, language)}</dd></div>
                     {selectedHistoryRound.payouts[0] ? (
-                      <div><dt>{t("payoutTx")}</dt><dd className="mono">{selectedHistoryRound.payouts[0].txId}</dd></div>
+                      <div><dt>{t("payoutTx")}</dt><dd className="mono"><ExplorerLink compact={false} kind="transaction" network={networkId} value={selectedHistoryRound.payouts[0].txId} /></dd></div>
                     ) : null}
                   </dl>
                 </details>
@@ -2870,179 +3972,30 @@ export function App() {
             </label>
           </div>
         </details>
-      </section>
-        )}
-      </section>
+      </section>}
+        />
+      </div>
+      </div>
 
-      <section className="tabbed-workspace action-workspace">
-        <div className="workspace-tabs" role="tablist" aria-label={t("actionTabs")}>
-          <button
-            type="button"
-            id="round-buy-tab"
-            className={`workspace-tab ${roundActionTab === "buy" ? "active" : ""}`}
-            role="tab"
-            aria-selected={roundActionTab === "buy"}
-            aria-controls="round-buy-panel"
-            onClick={() => setRoundActionTab("buy")}
-          >
-            {t("buyTickets")}
-          </button>
-          <button
-            type="button"
-            id="round-payout-tab"
-            className={`workspace-tab ${roundActionTab === "payout" ? "active" : ""}`}
-            role="tab"
-            aria-selected={roundActionTab === "payout"}
-            aria-controls="round-payout-panel"
-            onClick={() => setRoundActionTab("payout")}
-          >
-            {t("drawPay")}
-          </button>
-        </div>
-
-        {roundActionTab === "buy" ? (
-          <section id="round-buy-panel" className="workspace-panel action-pane" role="tabpanel" aria-labelledby="round-buy-tab">
-            {metadata.covenant && !finalized ? (
-              <>
-<div className="pane-heading">
-                <p className="eyebrow">{t("participant")}</p>
-                <h2>{t("buyTickets")}</h2>
-              </div>
-              <div className="purchase-form">
-                <label className="field quantity-field">
-                  <span>{t("quantity")}</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="1"
-                    max={remainingTickets}
-                    step="1"
-                    value={ticketQuantity}
-                    onChange={(event) => setTicketQuantity(event.target.value)}
-                  />
-                </label>
-                </div>
-              <dl className="purchase-summary">
-                <div><dt>{t("total")}</dt><dd>{formatKas(purchaseTotal)}</dd></div>
-                <div><dt>{t("remaining")}</dt><dd>{remainingTickets.toLocaleString()}</dd></div>
-              </dl>
-              <button
-                type="button"
-                className="wide kas-cost-button"
-                data-cost={buyCostTooltip}
-                onClick={handleBuyTicket}
-                disabled={isBuying || Boolean(finalized) || !ticketQuantityIsAvailable}
-              >
-                {isBuying
-                  ? t("buyingTickets")
-                  : t(parsedTicketQuantity === 1 ? "buyTicketButton.one" : "buyTicketButton", {
-                      count: Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity > 0 ? parsedTicketQuantity.toLocaleString() : ""
-                    })}
-              </button>
-              </>
-            ) : (
-              <div className="workspace-empty">
-                <p className="eyebrow">{t("participant")}</p>
-                <h2>{t("buyTickets")}</h2>
-                <p>{t("buyRoundFirst")}</p>
-              </div>
-            )}
-          </section>
-        ) : (
-<section id="round-payout-panel" className="workspace-panel action-pane" role="tabpanel" aria-labelledby="round-payout-tab">
-          <div className="pane-heading">
-            <p className="eyebrow">{t("covenantAction")}</p>
-            <h2>{t("drawPayout")}</h2>
+      {!metadata.roundId && !metadata.covenant ? (
+        <section className="getting-started" aria-labelledby="getting-started-title">
+          <div className="getting-started-heading">
+            <div><p className="eyebrow">{t("gettingStarted.eyebrow")}</p><h2 id="getting-started-title">{t("gettingStarted.title")}</h2></div>
+            <span className="onboarding-progress">{t("gettingStarted.progress", { complete: Number(nodeStatus.connected) + Number(Boolean(wallet)) })}</span>
+            <p>{t("gettingStarted.description")}</p>
           </div>
-
-          {finalized ? (
-            <div className="winner-block">
-              <span>{t("winner")}</span>
-              <strong>{t("winnerTicket", { ticket: finalized.winnerTicketId })}</strong>
-              <p className="mono">{finalized.winnerAddress}</p>
-              <p>{t("paidInTransaction", { tx: shortValue(finalized.payoutTxId, 10) })}</p>
-            </div>
-          ) : (
-            <>
-              {activeRoundNeedsIndexer && metadata.covenant ? renderIndexerRequirement({
-                maxTickets: metadata.maxTickets,
-                soldTickets: metadata.covenant.soldTickets,
-                soldBatches: activeSoldBatches,
-                knownTickets: totalTicketCount(tickets),
-                knownBatches: tickets.length
-              }) : null}
-              <p className="pane-copy">
-                {round.soldTickets >= round.maxTickets
-                  ? t("soldOutCanDraw")
-                  : round.soldTickets > 0
-                    ? refundAvailable
-                      ? t("timeoutCanDrawOrRefund")
-                      : t("ticketsRemain", { count: remainingTickets.toLocaleString() })
-                    : t("buyBeforeDraw")}
-              </p>
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="kas-cost-button"
-                  data-cost={payoutCostTooltip}
-                  onClick={handleFinalizeLocal}
-                  disabled={
-                    !covenantStatus.enabled ||
-                    isFinalizing ||
-                    !metadata.covenant ||
-                    !drawTimeReached ||
-                    (metadata.covenant.status !== "Open" && metadata.covenant.status !== "Closed") ||
-                    metadata.covenant.soldTickets <= 0
-                  }
-                >
-                  {isFinalizing ? t("drawingPaying") : t("drawPay")}
-                </button>
-                <button
-                  type="button"
-                  className="secondary kas-cost-button"
-                  data-cost={refundCostTooltip}
-                  onClick={handleRefundTimedOutRound}
-                  disabled={
-                    !covenantStatus.enabled ||
-                    isRefundingRound ||
-                    !metadata.covenant ||
-                    metadata.covenant.status === "Finalized" ||
-                    metadata.covenant.status === "Refunded" ||
-                    metadata.covenant.soldTickets <= 0 ||
-                    !refundAvailable
-                  }
-                >
-                  {isRefundingRound && refundProgress
-                    ? t("refundingProgress", { cursor: refundProgress.cursor.toLocaleString(), total: refundProgress.total.toLocaleString() })
-                    : isRefundingRound ? t("refunding") : t("refundAfterTimeout")}
-                </button>
-              </div>
-            </>
-          )}
-
+          <ol className="getting-started-steps">
+            <li className={nodeStatus.connected ? "complete" : ""}><span className="step-number">1</span><div><strong>{t("gettingStarted.node.title")}</strong><p>{nodeStatus.connected ? t("gettingStarted.node.ready") : t("gettingStarted.node.detail")}</p></div>{nodeStatus.connected ? <CheckCircle2 size={20} aria-label={t("gettingStarted.complete")} /> : <span className="onboarding-node-state">{isConnectingNode ? t("connecting") : t("node.offline")}</span>}</li>
+            <li className={wallet ? "complete" : ""}><span className="step-number">2</span><div><strong>{t("gettingStarted.wallet.title")}</strong><p>{wallet ? t("gettingStarted.wallet.ready", { wallet: shortValue(wallet.address, 8) }) : t("gettingStarted.wallet.detail")}</p></div>{!wallet ? <button type="button" className="secondary" onClick={handleToggleWalletMenu}>{t("connectWallet")}</button> : <CheckCircle2 size={20} aria-label={t("gettingStarted.complete")} />}</li>
+            <li><span className="step-number">3</span><div><strong>{t("gettingStarted.round.title")}</strong><p>{t("gettingStarted.round.detail")}</p></div><div className="getting-started-actions"><button type="button" onClick={() => openRoundWorkspace("history")}>{t("gettingStarted.load")}</button><button type="button" className="secondary" onClick={() => openRoundWorkspace("create")}>{t("gettingStarted.create")}</button></div></li>
+          </ol>
         </section>
-        )}
-      </section>
+      ) : null}
 
-      {chainError ? <p className="error-text action-message">{rt(chainError)}</p> : null}
-      {chainMessage ? <p className="success-text action-message">{rt(chainMessage)}</p> : null}
-
-      <details className="technical-section disclosure">
-        <summary>{t("advanced")}</summary>
-        <div className="technical-grid disclosure-body">
+      <AdvancedSettingsPanel title={t("advanced")}>
           <section>
             <h3>{t("roundSettings")}</h3>
             <div className="form-grid">
-              <label className="field">
-                <span>{t("minimumTickets")}</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={metadata.maxTickets}
-                  value={metadata.minTickets}
-                  onChange={(event) => updateMetadata("minTickets", Number(event.target.value))}
-                />
-              </label>
               <label className="field">
                 <span>{t("carrierReserveKas")}</span>
                 <input
@@ -3055,7 +4008,7 @@ export function App() {
             <dl className="stat-list dense">
               <div><dt>{t("network")}</dt><dd>{networkLabel(networkId)}</dd></div>
               <div><dt>{t("roundId")}</dt><dd className="mono">{metadata.roundId || t("pending")}</dd></div>
-              <div><dt>{t("covenant")}</dt><dd className="mono">{metadata.treasuryAddress || t("pending")}</dd></div>
+              <div><dt>{t("covenant")}</dt><dd className="mono"><ExplorerLink compact={false} kind="address" network={networkId} value={metadata.treasuryAddress} />{!metadata.treasuryAddress ? t("pending") : null}</dd></div>
               <div><dt>{t("refundAfterDaa")}</dt><dd className="mono">{metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || t("pending")}</dd></div>
               <div><dt>{t("contractVersion")}</dt><dd>{metadata.contractVersion}</dd></div>
             </dl>
@@ -3103,7 +4056,7 @@ export function App() {
               <div><dt>{t("contractRuntime")}</dt><dd>{covenantStatus.contract}</dd></div>
               <div><dt>{t("artifactStatus")}</dt><dd>{covenantStatus.status}</dd></div>
               <div><dt>{t("ticketRoot")}</dt><dd className="mono">{metadata.covenant?.ticketRoot || t("pending")}</dd></div>
-              <div><dt>{t("createTx")}</dt><dd className="mono">{metadata.createTxId || t("pending")}</dd></div>
+              <div><dt>{t("createTx")}</dt><dd className="mono"><ExplorerLink compact={false} kind="transaction" network={networkId} value={metadata.createTxId} />{!metadata.createTxId ? t("pending") : null}</dd></div>
             </dl>
             {[...verification.errors, ...verification.warnings].length ? (
               <ul className="message-list">
@@ -3111,8 +4064,14 @@ export function App() {
               </ul>
             ) : null}
           </section>
-        </div>
-      </details>
+      </AdvancedSettingsPanel>
+      <SigningConfirmationDialog
+        language={language}
+        preview={signingConfirmation.preview}
+        confirming={isConfirmingSigning}
+        onCancel={() => setSigningConfirmation(cancelSigningConfirmation())}
+        onConfirm={confirmSigningPreview}
+      />
     </main>
   );
 }

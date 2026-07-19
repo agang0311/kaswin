@@ -1,74 +1,111 @@
 # Kaswin
 
-Kaswin 是单 HTML 的 Kaspa Toccata covenant 抽奖应用。网页默认通过 Kaspa resolver 选择 wRPC 节点，也允许用户自定义节点；随机数、开奖条件和派奖金额均由链上 covenant 验证，不依赖 oracle、随机数服务或证明服务器。
+[中文](README.md) · [English](README.en.md)
 
-链上 payload 继续使用协议标识 `kaspa-raffle-static`，用于兼容已经创建的轮次；它不是当前产品名。
+Kaswin 是一个直接运行在浏览器中的 Kaspa Toccata covenant 抽奖系统。票款进入由合约约束的 Round UTXO，不经过平台托管账户；浏览器直接连接 Kaspa wRPC，创建、购票、开奖和退款均可在链上核验。
 
-当前 Mainnet/Testnet 10 共用合约版本：`raffle-v16-dynamic-refund-transition`；已创建的 `raffle-v15-arbitrary-batched-refund` 与 `raffle-v14-batch-range` 轮次仍可加载和完成。v15/v14 的固定退款启动费若低于节点当前最低费率，需要一个已连接钱包补充一次救援输入。
+当前仓库版本为 **Kaswin 0.9.13**，适用且只允许新建/操作以下当前合约版本：
 
-旧 metadata 和旧合约不再兼容。
+| 项目 | 当前值 |
+| --- | --- |
+| 协议版本 | `raffle-vnext-liveness-guard-b1000` |
+| Round 合约 | `RaffleRoundVNext` |
+| Refund 合约 | `RaffleRefundVNext` |
+| Round artifact SHA-256 | `215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d` |
+| Refund artifact SHA-256 | `bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2` |
+| 支持网络 | Kaspa Mainnet、Testnet 10 |
 
-Mainnet Toccata 激活 DAA 为 `474165565`。页面连接节点后会读取实时 virtual DAA，只有达到对应网络的激活点才允许广播 covenant 交易。Testnet 10 当前版本已记录七轮真实流程：两轮开奖派奖、五轮超时退款；其中一轮在第一批退款后刷新页面，并从 History Load 后继续完成剩余退款。当前合约也已在 Mainnet 连续完成三轮 create、buy、draw/pay，其中一轮覆盖刷新后从历史 load。三轮实际开奖费分别为 `0.040733`、`0.04319`、`0.040733 KAS`。
+> v0.9.13 以预发布集成候选提供。当前 artifact 已完成本地自动门禁和一轮 Mainnet 创建、Registry、购票、售罄开奖闭环，但完整 Testnet A–E、Mainnet 退款闭环、KasWare/Kastle 与移动端 E2E、静态 HTTPS、干净环境复现和独立安全审计仍未全部完成。不要把预发布版本视为已审计的生产系统。
 
-## 抽奖机制
+## 核心机制
 
-每次购票都会更新同一个奖池 covenant UTXO 和深度 20 的购买区间 Merkle 树。用户可输入不超过本轮剩余票数的任意正整数；无论买多少张，都只追加一个承诺买家、起始票号和数量的叶子。售罄后，或达到可配置的超时时间后，任何人都可以直接执行一笔无需钱包签名的 `Draw & Pay`：
+- **非托管奖池**：票款直接增加 covenant UTXO，平台没有可以转走奖池的私钥。
+- **两种安全结局**：达到最低票数后只能开奖；截止时未达到最低票数只能退款。零售票轮次可由任何人关闭，但 carrier 只能退回创建者。
+- **买家承担退款网络费**：退款启动费和退款交易费从本次退款的购票款中扣除，触发者无需垫付 KAS。
+- **链上随机性**：中奖票由预先确定的 Kaspa selected-chain 目标区块、ticket root、round nonce 和 chain sequence commitment 共同决定。
+- **可恢复 Registry**：默认 Mainnet/Testnet Registry 净费用均为 0.01 KAS。页面发送中继安全的临时 0.20 KAS marker，确认后自动返回 0.19 KAS；钱包网络费另计。
+- **单次签名清晰**：Create 与 Registry 各一笔钱包交易；Buy 将票款和 covenant successor 合并为一笔交易。每次签名前均展示网络、金额、地址、carrier 和预计费用。
+- **公开可继续结算**：开奖、退款和空轮关闭不依赖创建者在线；进行中的低票数轮次可补充 carrier，但不能改变票数、截止时间或收款人。
 
-```text
-boundary_daa = sold_out ? current_covenant_utxo_daa + 30 : refund_after_daa + 30
-random_block = selected chain 中首个 daa_score >= boundary_daa 的区块
-seed = SHA256(ticket_root || random_block_hash || chain_seqcommit)
-winner = uint56_le(seed[0..7]) % sold_tickets
-```
+## 容量与费用边界
 
-Covenant 在交易中重新计算目标区块及其选中父区块的 keyed BLAKE2b 哈希，验证 DAA 跨越关系，并通过 `OpChainblockSeqCommit` 确认目标区块属于当前选中链。售罄轮在最后一张票确认后才取未来区块；未售罄轮固定取销售截止后的未来区块，因此参与者无法在看到随机区块后追加购票重抽。
+一个 Round UTXO 会串行处理全部购买，因此“最多 1,000,000 张票”并不等于一百万个钱包可以同时下单。
 
-超时后购票入口会拒绝继续延长票链。触发者只提交链上区块 witness 和中奖票 Merkle proof；合约自行重算并强制唯一的中奖地址与金额。
+- 每轮最多 `1,000,000` 张票。
+- 每轮购买批次默认 `100`，covenant 硬上限 `1,000`。
+- 页面建议值为 `max(1, min(1000, floor(售票秒数 / 6)))`。
+- 当前最低票价为 `1 KAS`，确保单张票在退款费用上限下仍能形成可中继输出。
+- 默认可退 carrier 为 `0.573 KAS`；开奖和合约执行网络费从 carrier 扣除。
+- 默认 Registry 净费用为 `0.01 KAS`，Registry 钱包交易网络费另计并在提交后显示精确值。
 
-### 安全边界
+购买批次越高，stale UTXO 冲突、排队时间和退款交易数量越大。大规模场景应使用足够长的售票窗口、合并购票，并部署可验证 proof 的 Indexer。
 
-目标区块由售罄交易的 covenant UTXO DAA，或预先写入合约的销售截止 DAA 唯一确定。执行 `Draw & Pay` 不需要连接钱包，触发者只能广播公开 witness；合约会重新计算区块哈希、验证选中父区块和 DAA 跨越、读取链上 sequencing commitment、重算中奖票，并强制奖池输出地址和金额。因此创建者、买家、indexer、RPC 节点和开奖触发者都不能选择随机种子、替换中奖票或重抽；恶意服务最多拒绝提供数据，任何人都可以换节点或 indexer 后继续。
+## 协议兼容性
 
-与所有仅使用 PoW 区块哈希的随机方案一样，拥有目标区块出块权的矿工理论上可以放弃发布自己挖到的区块，并承担丢失区块奖励和重新挖矿的成本。没有独立随机源、可信硬件或多方提交揭示时，无法从确定性区块链中数学消除这种 withholding 能力。当前模式选择“不增加服务器”，安全性因此建立在 Kaspa PoW 共识和目标区块不被单一攻击者经济性控制的假设上。
+合约版本是链上状态的一部分，不能用新的 artifact 猜测或花费旧 covenant：
 
-## 数据模式
+- `raffle-vnext-liveness-guard-b1000`：v0.9.13 当前版本，可创建和操作。
+- `raffle-vnext-liveness-guard`：0.9.12 历史候选，当前页面只读隔离。
+- `raffle-v16-dynamic-refund-transition`：使用相匹配的 v0.9.7 历史 Release。
+- `raffle-v15-arbitrary-batched-refund`、`raffle-v14-batch-range`：使用相匹配的 v0.9.6 历史 Release。
 
-- Registry 发现的所有轮次都会显示；indexer 不可用时，大轮次也不会从历史列表消失。
-- 浏览器拥有完整购买批次时，无论轮次上限是 1000、10000 还是 1000000，都直接在本地生成中奖或退款 proof。
-- 只有本地购买批次不完整时，才从独立 `indexer/raffle-indexer.mjs` 取得缺失 proof。
-- 浏览器会在本地缓存参与过的轮次，刷新后可以从“加载历史”恢复。
+完整映射见 [合约兼容性](docs/contract-compatibility.md)。GitHub Release 说明和附件必须同时写明适用协议、Round/Refund 合约名及 artifact SHA-256。
 
-退款严格按原始购买区间执行，但每笔链上交易会从当前游标尝试合并最多 13 个连续购买批次，并为每个买家创建独立退款输出。13 批实测为 454,618 script units；14 批为 498,904，已没有足够的交易基础 mass 余量。页面还会按当前票价和输出金额实际计算 storage mass，从 13 向下缩小到本轮可中继的最大前缀；例如 `0.3 KAS` 的单票退款实测每笔可合并 2 个小输出。
+## 当前网络证据
 
-Indexer 只索引公开交易和生成 Merkle proof，不参与随机数选择。
+2026-07-20，当前 v0.9.13 Round artifact 在 Mainnet 完成了小额售罄闭环：
 
-开奖时，历史 API 可按 blue score 提供少量候选区块哈希以加速定位；候选只作为提示，区块头、父块关系、DAA 边界和 selected-chain commitment 均由所连接的 Kaspa wRPC 与 covenant 重新验证。候选服务无法改变中奖结果，失败时页面回退到纯 wRPC 查找。
+- Round：`round-66b8de553189543b`
+- [Create](https://kaspa.stream/transactions/2f60ad3a3e7365b6f05ef574f06fe7a96c77501358a74260ac27dcd90e10c208)
+- [Registry](https://kaspa.stream/transactions/941f12832684ab0474587e0a2c1ece4a9afe55af3764cef49d503c50ae94a617)
+- [0.19 KAS marker 返回](https://kaspa.stream/transactions/f96d71580ee6b9fe84e0e6943564367996f01ebfef921aad056a73580d9cb578)
+- [购买票 #1](https://kaspa.stream/transactions/e3fd0d3b23c78ceba685f80dac6ed30e1b3a4a9d9df3cb7f25ea39030049a762)
+- [开奖并派奖](https://kaspa.stream/transactions/605df135a7adf9095ffabeafa8717c3768b44702b36e89bac4544b0118be39f9)
 
-## 费用
+这证明当前 artifact 的 Mainnet 创建、索引、购买和开奖路径可以被网络接受，但不能替代尚未完成的 Mainnet 退款轮次、完整 Testnet 矩阵和独立审计。详见 [Mainnet 验证记录](docs/mainnet-validation-log.md) 与 [验证证据矩阵](docs/audit-evidence-matrix.md)。
 
-- 创建 covenant：`0.003 KAS`
-- 买票 covenant：`0.0175 KAS`
-- 开奖并派奖 covenant：按完整链上区块头见证的实际 mass 计算（通常约 `0.05-0.06 KAS`，合约上限 `0.2 KAS`）
-- Registry marker：默认 `0.05 KAS`；是否退回取决于所选 Registry 配置，Mainnet 默认公开 Registry 会保留 marker 用于索引
-- Carrier 是可退还预留，不是手续费；派奖或完整退款时返还剩余部分
+## 本地运行
 
-## 开发
+要求 Node.js 20+。建议使用锁定依赖：
 
 ```powershell
-npm install
-npm run compile:contract
+npm ci
+npm run compile:vnext
 npm run verify
+npm run validation:local
 npm run dev
 ```
 
-`npm run build` 生成可直接发布的单文件 `dist/index.html`。Kaspa WASM 会以 gzip 形式内嵌并由现代浏览器原生解压，发布文件约 6.5 MB。
+生产构建：
 
-启动大规模轮次 indexer：
+```powershell
+npm run build
+```
+
+输出的 `dist/index.html` 是包含 Kaspa WASM 的单文件页面。本地测试钱包私钥只从被 Git 忽略的 `wallets/` 或开发机环境变量读取，不会写入生产 HTML；不要将本地 Vite 开发服务暴露到公网。
+
+可选 Indexer：
 
 ```powershell
 $env:KASPA_RPC_URL="ws://127.0.0.1:18110"
-$env:KASPA_NETWORK="mainnet"
+$env:KASPA_NETWORK="testnet-10"
 npm run start:indexer
 ```
 
-`indexer/` 也是一个可独立安装和容器部署的应用，详见 [`indexer/README.md`](indexer/README.md)。网页和 indexer 的节点、Registry、历史 API 及 indexer 地址均可独立配置。
+Indexer 只索引公开交易并提供可验证 proof，不决定中奖者或资金去向。Registry、History API、Indexer、本地缓存和静态托管都不在结算信任边界内。
+
+## 文档
+
+- [用户指南](docs/user-guide.zh-CN.md)
+- [技术指南](docs/technical-guide.zh-CN.md)
+- [vNext 协议](docs/protocol-vnext.md)
+- [验证要求](docs/validation-requirements.zh-CN.md)
+- [验证证据矩阵](docs/audit-evidence-matrix.md)
+- [Mainnet 验证记录](docs/mainnet-validation-log.md)
+- [Testnet 验证记录](docs/testnet-validation-log.md)
+- [Changelog](CHANGELOG.md)
+- [GitHub 提交检查表](docs/github-submission-checklist.md)
+
+## 安全提示
+
+这是处理真实资产的 covenant 软件。正式使用前请自行核对 Release 的协议版本、artifact 哈希和 HTML SHA-256，并使用专用钱包和小额资金。发现安全问题时不要公开披露可利用细节，应先私下联系维护者。

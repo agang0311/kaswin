@@ -1,11 +1,13 @@
 import {
   createInputSignature,
   PrivateKey,
+  Transaction,
   type PendingTransaction
 } from "@onekeyfe/kaspa-wasm";
 import { ensureKaspaWasmReady } from "./wasm";
 import {
   createConnectedWallet,
+  serializeWalletTransaction,
   type BrowserTestWallet,
   type KaspaWalletAdapter,
   type WalletSignableTransaction
@@ -33,10 +35,34 @@ function signLocalTransaction(
 
   const privateKey = new PrivateKey(privateKeyHex);
   const inputIndex = inputIndexes?.[0] ?? 0;
-  transaction.inputs[inputIndex].signatureScript = createInputSignature(transaction, inputIndex, privateKey);
+  // The bundled WASM converter rejects a null covenant on a plain output when
+  // the same transaction also has a bound successor. Sign an equivalent twin
+  // whose absent optional bindings are omitted, then copy only the signature.
+  let normalizedJson: string;
+  try {
+    normalizedJson = serializeWalletTransaction(transaction);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Local validation wallet could not normalize the mixed-output transaction before signing: ${message}`);
+  }
+
+  let signingTwin: Transaction;
+  try {
+    signingTwin = Transaction.deserializeFromSafeJSON(normalizedJson);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Local validation wallet could not deserialize the normalized mixed-output transaction: ${message}`);
+  }
+
+  try {
+    transaction.inputs[inputIndex].signatureScript = createInputSignature(signingTwin, inputIndex, privateKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Local validation wallet could not sign the normalized mixed-output transaction: ${message}`);
+  }
 }
 
-function createLocalTestWalletAdapter(input: { id: string; name: string; wallet: "participant" | "outsider" }): KaspaWalletAdapter {
+function createLocalTestWalletAdapter(input: { id: string; name: string; wallet: string }): KaspaWalletAdapter {
   let connectedWallet: BrowserTestWallet | null = null;
   let connectedPrivateKey = "";
 
@@ -97,4 +123,28 @@ export const localOutsiderWalletAdapter = createLocalTestWalletAdapter({
   id: "local-outsider-key",
   name: "Local outsider key",
   wallet: "outsider"
+});
+
+export const localValidationCreatorWalletAdapter = createLocalTestWalletAdapter({
+  id: "local-validation-creator-key",
+  name: "Local validation creator",
+  wallet: "validation-creator"
+});
+
+export const localValidationBuyerAWalletAdapter = createLocalTestWalletAdapter({
+  id: "local-validation-buyer-a-key",
+  name: "Local validation buyer A",
+  wallet: "validation-buyer-a"
+});
+
+export const localValidationBuyerBWalletAdapter = createLocalTestWalletAdapter({
+  id: "local-validation-buyer-b-key",
+  name: "Local validation buyer B",
+  wallet: "validation-buyer-b"
+});
+
+export const localValidationBuyerCWalletAdapter = createLocalTestWalletAdapter({
+  id: "local-validation-buyer-c-key",
+  name: "Local validation buyer C",
+  wallet: "validation-buyer-c"
 });
