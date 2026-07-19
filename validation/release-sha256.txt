@@ -1,8 +1,8 @@
-SHA256 (dist/index.html from npm run verify) = 8eb9d0bb90361581d28607938610b88305ca6d6e1cf2455e429c09cf65c3f258
-SHA256 (same-workspace rebuild dist/index.html) = 8eb9d0bb90361581d28607938610b88305ca6d6e1cf2455e429c09cf65c3f258
-Source fingerprint before verify preparation = 7092469f6dbcebda1dee0e3cdbc4464aa6814d8dc4ed4146ac5f11563bd6d523
-Source fingerprint before rebuild = 7092469f6dbcebda1dee0e3cdbc4464aa6814d8dc4ed4146ac5f11563bd6d523
-Source fingerprint after rebuild = 7092469f6dbcebda1dee0e3cdbc4464aa6814d8dc4ed4146ac5f11563bd6d523
+SHA256 (dist/index.html from npm run verify) = 8504bf9798112d82b0c1514a1cf0e193ad079d3dfa891508ed8b1aa12f23f38d
+SHA256 (same-workspace rebuild dist/index.html) = 8504bf9798112d82b0c1514a1cf0e193ad079d3dfa891508ed8b1aa12f23f38d
+Source fingerprint before verify preparation = 88dea1a60a0acd9bae9599e21568da2b1a719d10f7209e8107e05ea379195e52
+Source fingerprint before rebuild = 88dea1a60a0acd9bae9599e21568da2b1a719d10f7209e8107e05ea379195e52
+Source fingerprint after rebuild = 88dea1a60a0acd9bae9599e21568da2b1a719d10f7209e8107e05ea379195e52
 Same-workspace comparison status = same-workspace-match
 Scope: stable-workspace hashes match.
 A clean-environment build comparison remains required before a release reproducibility claim.
