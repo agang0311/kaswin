@@ -50,7 +50,7 @@ export function validateProtocolManifest(value: unknown): ProtocolManifest {
   const compiled = manifest.artifactStatus === "compiled";
   if (manifest.artifactStatus !== "pending-phase-2" && !compiled) throw new Error("Unknown artifact status.");
   if (compiled !== (isSha256(manifest.roundArtifactSha256) && isSha256(manifest.refundArtifactSha256))) throw new Error("Artifact hashes and artifact status disagree.");
-  if (typeof manifest.appVersion !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.appVersion)) throw new Error("Invalid app version.");
+  if (typeof manifest.appVersion !== "string" || !/^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?$/.test(manifest.appVersion)) throw new Error("Invalid app version.");
   return manifest as unknown as ProtocolManifest;
 }
 

@@ -142,6 +142,7 @@ const MAINNET_REFUND_TIMEOUT_SECONDS = SECONDS_PER_DAY;
 const NETWORK_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-network-endpoints-v1";
 const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
+const INTRO_GUIDES_STORAGE_KEY = "kaspa-raffle-intro-guides-seen-v1";
 type ChainFeedbackTarget = "create" | "buy" | "draw" | "refund" | "carrier" | "close";
 
 function historyRoundNeedsIndexer(historyRound: RaffleHistoryRound): boolean {
@@ -162,6 +163,14 @@ function initialLanguage(): Language {
   }
 
   return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+function initialIntroGuidesSeen(): boolean {
+  try {
+    return localStorage.getItem(INTRO_GUIDES_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 type NetworkEndpointMode = KaspaRpcEndpoint["mode"];
@@ -261,16 +270,16 @@ const REFUND_TIMEOUT_FIELDS: Array<{ key: RefundTimeoutPart; labelKey: string }>
   { key: "seconds", labelKey: "duration.seconds" }
 ];
 
-function formatKas(value: bigint) {
+function formatKasAmount(value: bigint, unit = "KAS") {
   const whole = value / 100_000_000n;
   const fraction = (value % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
-  return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} KAS`;
+  return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} ${unit}`;
 }
 
-function formatKasCompact(value: bigint) {
+function formatKasCompactAmount(value: bigint, unit = "KAS") {
   const whole = value / 100_000_000n;
   const fraction = (value % 100_000_000n).toString().padStart(8, "0").slice(0, 3);
-  return `${whole.toLocaleString()}.${fraction} KAS`;
+  return `${whole.toLocaleString()}.${fraction} ${unit}`;
 }
 function parsePositiveSompi(value: string, fieldName: string) {
   try {
@@ -294,7 +303,7 @@ function parseMinimumSompi(value: string, fieldName: string, minimum: bigint) {
   const parsed = parsePositiveSompi(value, fieldName);
 
   if (parsed < minimum) {
-    throw new Error(`${fieldName} must be at least ${formatKas(minimum)} for the current Toccata storage-mass floor.`);
+    throw new Error(`${fieldName} must be at least ${formatKasAmount(minimum)} for the current Toccata storage-mass floor.`);
   }
 
   return parsed;
@@ -523,6 +532,7 @@ export function App() {
   const [networkEndpoints, setNetworkEndpoints] = useState<NetworkRpcEndpoints>(() => loadNetworkEndpoints());
   const [indexEndpoints, setIndexEndpoints] = useState<NetworkTextEndpoints>(() => loadIndexEndpoints());
   const [networkId, setNetworkId] = useState<SupportedNetworkId>("testnet-10");
+  const [introGuidesSeen] = useState(initialIntroGuidesSeen);
   const [rpcUrl, setRpcUrl] = useState(() => loadNetworkEndpoints()["testnet-10"].url);
   const [isNetworkMenuOpen, setIsNetworkMenuOpen] = useState(false);
   const [networkSettingsId, setNetworkSettingsId] = useState<SupportedNetworkId | null>(null);
@@ -667,8 +677,14 @@ export function App() {
   );
   const selectedNetwork = requireNetworkProfile(networkId);
   const currentNetworkEndpoint = networkEndpoints[networkId];
-  const t = (key: string, values?: TranslationValues) => translate(language, key, values);
-  const rt = (value: string) => translateRuntimeText(language, value);
+  const currencyUnit = networkId === "testnet-10" ? "TKAS" : "KAS";
+  const localizeCurrencyUnit = (value: string) => currencyUnit === "KAS"
+    ? value
+    : value.replace(/\bKAS\b/g, currencyUnit);
+  const formatKas = (value: bigint) => formatKasAmount(value, currencyUnit);
+  const formatKasCompact = (value: bigint) => formatKasCompactAmount(value, currencyUnit);
+  const t = (key: string, values?: TranslationValues) => localizeCurrencyUnit(translate(language, key, values));
+  const rt = (value: string) => localizeCurrencyUnit(translateRuntimeText(language, value.replace(/\bTKAS\b/g, "KAS")));
   const networkLabel = (id: SupportedNetworkId) => t(id === "mainnet" ? "network.mainnet" : "network.testnet10");
   const endpointSummary = (endpoint: NetworkEndpointSettings) => (
     endpoint.mode === "resolver" ? t("node.resolver") : endpoint.url
@@ -678,6 +694,18 @@ export function App() {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  useEffect(() => {
+    if (introGuidesSeen) {
+      return;
+    }
+
+    try {
+      localStorage.setItem(INTRO_GUIDES_STORAGE_KEY, "1");
+    } catch {
+      // Keep guides visible if the browser does not allow local storage.
+    }
+  }, [introGuidesSeen]);
 
   useEffect(() => {
     if (!isNetworkMenuOpen && !isWalletMenuOpen) {
@@ -3393,7 +3421,8 @@ export function App() {
     {chainMessage ? <p className="success-text action-message"><ExplorerText network={networkId} text={rt(chainMessage)} /></p> : null}
   </> : undefined;
 
-  const gameplayGuide = (
+  const showIntroGuides = !introGuidesSeen;
+  const gameplayGuide = showIntroGuides ? (
     <section className="gameplay-guide" aria-labelledby="gameplay-title">
       <div className="gameplay-heading">
         <div>
@@ -3413,7 +3442,7 @@ export function App() {
       </div>
       <p className="gameplay-fee-note">{t("gameplay.feeNote")}</p>
     </section>
-  );
+  ) : null;
 
   return (
     <main className="app-shell">
@@ -3977,7 +4006,7 @@ export function App() {
       </div>
       </div>
 
-      {!metadata.roundId && !metadata.covenant ? (
+      {showIntroGuides && !metadata.roundId && !metadata.covenant ? (
         <section className="getting-started" aria-labelledby="getting-started-title">
           <div className="getting-started-heading">
             <div><p className="eyebrow">{t("gettingStarted.eyebrow")}</p><h2 id="getting-started-title">{t("gettingStarted.title")}</h2></div>

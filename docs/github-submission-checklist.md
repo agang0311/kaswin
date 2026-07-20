@@ -1,10 +1,10 @@
-# GitHub submission checklist for 0.9.13
+# GitHub submission checklist for 0.9.13.1
 
 This checklist prepares the current worktree for review and commit. It does not authorize a network release.
 
 ## Identity to review
 
-- App version: `0.9.13`
+- App version: `0.9.13.1`
 - Protocol: `raffle-vnext-liveness-guard-b1000`
 - Round artifact SHA-256: `215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d`
 - Refund artifact SHA-256: `bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2`
@@ -40,7 +40,7 @@ This checklist prepares the current worktree for review and commit. It does not 
 2. Confirm `validation/manifest.json` still reports `sourceChangedDuringVerify: false`, `testnetPassed: false` and `mainnetSmokePassed: false`.
 3. Commit source, contract, UI and tests together because they share one protocol identity.
 4. Commit documentation, compatibility mapping, changelog and validation evidence either in the same atomic protocol commit or an immediately following evidence commit.
-5. If v0.9.13 is published before every external blocker is closed, mark it as a GitHub **pre-release integration candidate** and keep every blocker visible in the Release notes. Do not describe it as production-ready.
+5. If v0.9.13.1 is published before every external blocker is closed, mark it as a GitHub **pre-release integration candidate** and keep every blocker visible in the Release notes. Do not describe it as production-ready.
 
 Suggested commit title:
 

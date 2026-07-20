@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.9.13",
+  "appVersion": "0.9.13.1",
   "protocolId": "kaspa-raffle-static",
   "protocolVersion": "raffle-vnext-liveness-guard-b1000",
   "roundContract": "RaffleRoundVNext",

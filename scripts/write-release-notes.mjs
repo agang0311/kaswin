@@ -13,10 +13,11 @@ const legacy = compatibility.legacy.map((entry) => entry.release
 );
 
 const notes = [
-  "# Kaswin v0.9.13",
+  `# Kaswin ${candidate.release}`,
   "",
   "## Highlights",
   "",
+  "- Patch release over v0.9.13: Testnet UI amounts display as TKAS, and the gameplay/onboarding guide panels are shown only once per browser user.",
   "- Buyer-funded refund network fees with a 1 KAS minimum ticket-price liveness floor.",
   "- Public sold-out draw, below-minimum refund, empty-round close, and state-preserving carrier top-up paths.",
   "- Purchase-batch hard limit raised to 1,000 with a sales-duration recommendation and one-million-ticket range support.",
@@ -26,7 +27,7 @@ const notes = [
   "",
   "## Network evidence and release status",
   "",
-  "The exact current artifact completed a Mainnet Create → Registry → Buy → sold-out Draw loop on 2026-07-20. See [the transaction log](https://github.com/agang0311/kaswin/blob/v0.9.13/docs/mainnet-validation-log.md). The below-minimum Mainnet refund loop and the other blockers listed below are still pending, so this GitHub Release is intentionally marked as a **pre-release integration candidate**, not an audited production release.",
+  `The exact current artifact completed a Mainnet Create → Registry → Buy → sold-out Draw loop on 2026-07-20. See [the transaction log](https://github.com/agang0311/kaswin/blob/${candidate.release}/docs/mainnet-validation-log.md). The below-minimum Mainnet refund loop and the other blockers listed below are still pending, so this GitHub Release is intentionally marked as a **pre-release integration candidate**, not an audited production release.`,
   "",
   "## Applicable covenant version",
   "",

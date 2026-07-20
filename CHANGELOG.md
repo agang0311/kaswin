@@ -2,6 +2,17 @@
 
 All notable changes to Kaswin are documented here. The repository distinguishes a locally verified candidate from a network-released protocol; a green local build is never a Mainnet authorization.
 
+## [0.9.13.1] - 2026-07-20
+
+### Fixed
+
+- Display Testnet 10 values as `TKAS` in the page, wallet balance, signing previews, action feedback and fee labels while keeping Mainnet values as `KAS`.
+- Show the Kaswin玩法/gameplay guide and first-use onboarding only once per browser user.
+
+### Compatibility and validation
+
+- This is a page-display patch over v0.9.13. The applicable covenant remains `raffle-vnext-liveness-guard-b1000` with the same Round and Refund artifact SHA-256 values.
+
 ## [0.9.13] - 2026-07-20
 
 ### Added

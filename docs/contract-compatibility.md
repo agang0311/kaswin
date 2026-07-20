@@ -4,7 +4,7 @@ Protocol version in metadata controls decoding and operation. A current state la
 
 | Protocol | Contracts | Status in this worktree | Operation guidance |
 | --- | --- | --- | --- |
-| `raffle-vnext-liveness-guard-b1000` | `RaffleRoundVNext` / `RaffleRefundVNext` | Current 0.9.13 local-integrated candidate; artifact hashes are committed | Only version the current worktree may create or spend; no public release until the external gates pass |
+| `raffle-vnext-liveness-guard-b1000` | `RaffleRoundVNext` / `RaffleRefundVNext` | Current 0.9.13.1 local-integrated candidate; same covenant artifact hashes as 0.9.13 are committed | Only version the current worktree may create or spend; no public release until the external gates pass |
 | `raffle-vnext-liveness-guard` | `RaffleRoundVNext` / `RaffleRefundVNext` | Quarantined 0.9.12 exact-hash Testnet candidate with a 100-batch covenant limit | Read-only in this worktree; never spend it with the b1000 Round artifact |
 | `raffle-vnext-carrier-topup` | `RaffleRoundVNext` / `RaffleRefundVNext` | Quarantined unpublished candidate; its Round bytecode commits a stale Refund template hash | Do not create or spend it with the current worktree. Below-minimum rounds cannot start refund with that immutable bytecode; no repository release exists and recoverability must not be claimed |
 | `raffle-vnext-buyer-funded-refund` | `RaffleRoundVNext` / `RaffleRefundVNext` | Quarantined unpublished candidate bytecode retained for identification | Read-only in the current worktree; no repository release exists; never map it to the current Refund artifact or ABI |

@@ -4,7 +4,7 @@
 
 Kaswin is a browser-native raffle system built on Kaspa Toccata covenants. Ticket payments go directly into a contract-constrained Round UTXO rather than a custodial platform account. The browser connects to Kaspa wRPC and every create, buy, draw, or refund transition can be independently inspected on chain.
 
-The current repository version is **Kaswin 0.9.13**. It creates and spends only the following current covenant version:
+The current repository version is **Kaswin 0.9.13.1**. It creates and spends only the following current covenant version:
 
 | Item | Current value |
 | --- | --- |
@@ -15,7 +15,7 @@ The current repository version is **Kaswin 0.9.13**. It creates and spends only 
 | Refund artifact SHA-256 | `bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2` |
 | Supported networks | Kaspa Mainnet and Testnet 10 |
 
-> v0.9.13 is distributed as a pre-release integration candidate. The exact current artifact has passed the local automated gates and one Mainnet create/Registry/buy/sold-out-draw loop. The complete Testnet A–E matrix, a Mainnet refund loop, KasWare/Kastle and mobile E2E, static HTTPS deployment, clean-environment reproduction, and an independent security audit are not all complete. Do not treat this pre-release as an audited production system.
+> v0.9.13.1 is a display-only patch over v0.9.13 and keeps the same covenant protocol and artifact hashes. It is distributed as a pre-release integration candidate. The exact current artifact has passed the local automated gates and one Mainnet create/Registry/buy/sold-out-draw loop. The complete Testnet A–E matrix, a Mainnet refund loop, KasWare/Kastle and mobile E2E, static HTTPS deployment, clean-environment reproduction, and an independent security audit are not all complete. Do not treat this pre-release as an audited production system.
 
 ## How it works
 
@@ -44,7 +44,7 @@ Higher batch counts increase stale-UTXO contention, queue time, and the number o
 
 The covenant version is part of on-chain state. A new artifact must never guess or spend an older covenant:
 
-- `raffle-vnext-liveness-guard-b1000`: current v0.9.13 protocol; create and spend are enabled.
+- `raffle-vnext-liveness-guard-b1000`: current v0.9.13.1 protocol package; same covenant artifact as v0.9.13; create and spend are enabled.
 - `raffle-vnext-liveness-guard`: historical 0.9.12 candidate; quarantined read-only in the current page.
 - `raffle-v16-dynamic-refund-transition`: use the matching v0.9.7 historical Release.
 - `raffle-v15-arbitrary-batched-refund` and `raffle-v14-batch-range`: use the matching v0.9.6 historical Release.
@@ -53,7 +53,7 @@ See [contract compatibility](docs/contract-compatibility.md). Every GitHub Relea
 
 ## Current network evidence
 
-On 2026-07-20, the exact v0.9.13 Round artifact completed a small-value sold-out loop on Mainnet:
+On 2026-07-20, the exact v0.9.13/v0.9.13.1 Round artifact completed a small-value sold-out loop on Mainnet:
 
 - Round: `round-66b8de553189543b`
 - [Create](https://kaspa.stream/transactions/2f60ad3a3e7365b6f05ef574f06fe7a96c77501358a74260ac27dcd90e10c208)

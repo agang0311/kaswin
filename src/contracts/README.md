@@ -2,7 +2,7 @@
 
 ## vNext local candidate
 
-Protocol: `raffle-vnext-liveness-guard-b1000` (Kaswin 0.9.13).
+Protocol: `raffle-vnext-liveness-guard-b1000` (Kaswin 0.9.13.1; same covenant artifact as 0.9.13).
 
 - `raffle_round_vnext.sil`: `RaffleRoundVNext`，含 `round_nonce`、`min_tickets`、`max_batches` 与互斥 finalize/refund 状态机。
 - `raffle_refund_vnext.sil`: `RaffleRefundVNext`，从选中的购票款中扣除实际退款网络费。

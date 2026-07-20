@@ -439,6 +439,20 @@ try {
   const styles = fs.readFileSync(path.join(root, "src/styles.css"), "utf8");
   const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
   assert(app.includes("getting-started") && app.includes("openRoundWorkspace(\"history\")"), "new visitors receive a direct participant-first onboarding flow");
+  assert(
+    app.includes('INTRO_GUIDES_STORAGE_KEY = "kaspa-raffle-intro-guides-seen-v1"') &&
+      app.includes("localStorage.setItem(INTRO_GUIDES_STORAGE_KEY, \"1\")") &&
+      app.includes("const showIntroGuides = !introGuidesSeen") &&
+      app.includes("{showIntroGuides && !metadata.roundId && !metadata.covenant ?"),
+    "gameplay and onboarding guide panels are shown only once per browser user"
+  );
+  assert(
+    app.includes('networkId === "testnet-10" ? "TKAS" : "KAS"') &&
+      app.includes("formatKasAmount(value, currencyUnit)") &&
+      app.includes("formatKasCompactAmount(value, currencyUnit)") &&
+      app.includes('value.replace(/\\bTKAS\\b/g, "KAS")'),
+    "testnet UI amounts use TKAS while runtime translation can still match KAS-based templates"
+  );
   assert(styles.includes(".getting-started") && styles.includes(".getting-started-steps") && styles.includes(".onboarding-progress"), "onboarding is styled for desktop and mobile layouts");
   assert(
     app.includes('className="kaspa-brand-mark"') && !app.includes("lottery-ball") &&
