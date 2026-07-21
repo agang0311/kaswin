@@ -1,6 +1,6 @@
 {
   "name": "kaswin",
-  "version": "0.9.13.1",
+  "version": "0.9.13.2",
   "description": "Kaswin vNext local-integration candidate for a single-file Kaspa Toccata raffle; network release remains gated.",
   "private": true,
   "type": "module",

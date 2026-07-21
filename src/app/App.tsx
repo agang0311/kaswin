@@ -16,6 +16,7 @@ import {
   WalletCards
 } from "lucide-react";
 import {
+  addressFromPubkeyHex,
   assertRaffleCovenantReady,
   getRaffleCovenantStatus,
   pubkeyHexFromAddress,
@@ -144,6 +145,41 @@ const INDEX_ENDPOINTS_STORAGE_KEY = "kaspa-raffle-index-endpoints-v1";
 const LANGUAGE_STORAGE_KEY = "kaspa-raffle-language-v1";
 const INTRO_GUIDES_STORAGE_KEY = "kaspa-raffle-intro-guides-seen-v1";
 type ChainFeedbackTarget = "create" | "buy" | "draw" | "refund" | "carrier" | "close";
+
+function recoverTicketStatesFromCovenantBatches(input: {
+  roundId: string;
+  ticketPrice: bigint;
+  covenant?: RaffleMetadata["covenant"];
+  network: SupportedNetworkId;
+}): TicketState[] {
+  const covenant = input.covenant;
+  if (!covenant || covenant.soldTickets <= 0) return [];
+  const ownerPubkeys = covenant.ticketOwnerPubkeys ?? [];
+  const ends = covenant.ticketBatchEnds ?? ownerPubkeys.map((_, index) => index + 1);
+  if (!ownerPubkeys.length || ownerPubkeys.length !== ends.length) return [];
+  if (ends[ends.length - 1] !== covenant.soldTickets) return [];
+
+  const tickets: TicketState[] = [];
+  let firstTicketId = 1;
+  for (let index = 0; index < ownerPubkeys.length; index += 1) {
+    const end = ends[index];
+    if (!Number.isSafeInteger(end) || end < firstTicketId) return [];
+    const ownerPubkey = ownerPubkeys[index];
+    if (!/^[0-9a-f]{64}$/i.test(ownerPubkey)) return [];
+    tickets.push({
+      appId: "KASPA_RAFFLE_TICKET_V1",
+      roundId: input.roundId,
+      ticketId: firstTicketId,
+      ticketCount: end - firstTicketId + 1,
+      owner: addressFromPubkeyHex(ownerPubkey, input.network),
+      ownerPubkey,
+      paidAmount: input.ticketPrice,
+      ticketTxId: covenant.txId
+    });
+    firstTicketId = end + 1;
+  }
+  return firstTicketId - 1 === covenant.soldTickets ? tickets : [];
+}
 
 function historyRoundNeedsIndexer(historyRound: RaffleHistoryRound): boolean {
   const soldTickets = historyRound.soldTickets ?? totalTicketCount(historyRound.tickets);
@@ -814,20 +850,32 @@ export function App() {
     }
 
     const syncConnectedAccount = () => {
-      void readConnectedBrowserWallet(wallet, rpcConnectionRef.current?.status.network ?? networkId)
+      let walletNetwork: SupportedNetworkId;
+      try {
+        walletNetwork = requireConnectedPageNetworkForWallet();
+      } catch (error) {
+        setWallet(null);
+        setWalletError(error instanceof Error ? error.message : "Unable to update the connected wallet.");
+        return;
+      }
+
+      void readConnectedBrowserWallet(wallet, walletNetwork)
         .then(async (nextWallet) => {
           if (!nextWallet) {
             setWallet(null);
             return;
           }
 
-          const balanceSompi = rpcConnectionRef.current
-            ? await getAddressBalanceSompi(rpcConnectionRef.current, nextWallet.address)
-            : 0n;
+          const connection = rpcConnectionRef.current;
+          if (!connection) throw new Error("Connect a Kaspa node before updating the wallet account.");
+          const balanceSompi = await getAddressBalanceSompi(connection, nextWallet.address);
           setWallet(withWalletBalance(nextWallet, balanceSompi));
           setWalletError("");
         })
-        .catch((error) => setWalletError(error instanceof Error ? error.message : "Unable to update the connected wallet."));
+        .catch((error) => {
+          setWallet(null);
+          setWalletError(error instanceof Error ? error.message : "Unable to update the connected wallet.");
+        });
     };
     const unsubscribe = subscribeBrowserWallet(wallet, syncConnectedAccount);
 
@@ -970,11 +1018,28 @@ export function App() {
   });
   const refundAfterDaaScore = BigInt(metadata.covenant?.refundAfterDaaScore || metadata.refundAfterDaaScore || "0");
   const refundAvailable = Boolean(metadata.covenant) && refundAfterDaaScore > 0n && virtualDaaScore >= refundAfterDaaScore;
+  const rescueBuyCandidate = Boolean(
+    metadata.covenant &&
+    metadata.covenant.status === "Open" &&
+    refundAvailable &&
+    metadata.covenant.soldTickets >= metadata.minTickets &&
+    metadata.covenant.soldTickets < metadata.maxTickets &&
+    !finalized &&
+    !terminalRoundStatus
+  );
+  const rescueBuyQuantityOk = Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity === 1;
+  const rescueBuyAvailable = rescueBuyCandidate && rescueBuyQuantityOk && ticketQuantityIsAvailable;
+  const rescueBuyNotice = rescueBuyCandidate
+    ? t("rescueBuy.notice", { total: formatKas(BigInt(metadata.ticketPrice || "0")) })
+    : "";
   useEffect(() => {
     if (metadata.covenant && !finalized && (metadata.covenant.soldTickets >= metadata.maxTickets || refundAvailable)) {
       setRoundActionTab("payout");
     }
   }, [finalized, metadata.covenant, metadata.maxTickets, refundAvailable]);
+  useEffect(() => {
+    if (rescueBuyAvailable) setRoundActionTab("buy");
+  }, [rescueBuyAvailable]);
   const refundCountdownParts = useMemo(() => {
     if (!metadata.covenant || refundAfterDaaScore <= 0n || virtualDaaScore <= 0n) {
       return null;
@@ -1045,7 +1110,7 @@ export function App() {
         needed: formatKas(carrierTopUpNeededSompi)
       })
     : "";
-  const canBuy = eligibleCanBuy && !buyBlockedReason && !isToppingUpCarrier;
+  const canBuy = (eligibleCanBuy || rescueBuyAvailable) && !buyBlockedReason && !isToppingUpCarrier;
   const canDraw = eligibleCanDraw && !drawBlockedReason && !isToppingUpCarrier;
   const canRefund = eligibleCanRefund && !isToppingUpCarrier;
   const canCloseEmpty = eligibleCanCloseEmpty && !isToppingUpCarrier;
@@ -1358,8 +1423,19 @@ export function App() {
       ));
 
       if (wallet) {
-        const balanceSompi = await getAddressBalanceSompi(connection, wallet.address);
-        setWallet(withWalletBalance({ ...wallet, network: connectedNetwork }, balanceSompi));
+        try {
+          const nextWallet = await readConnectedBrowserWallet(wallet, connectedNetwork);
+          if (!nextWallet) {
+            setWallet(null);
+          } else {
+            const balanceSompi = await getAddressBalanceSompi(connection, nextWallet.address);
+            setWallet(withWalletBalance(nextWallet, balanceSompi));
+            setWalletError("");
+          }
+        } catch (error) {
+          setWallet(null);
+          setWalletError(error instanceof Error ? error.message : "Unable to update the connected wallet.");
+        }
       }
     } catch (error) {
       setRpcError(error instanceof Error ? error.message : "Unable to connect to node.");
@@ -1389,23 +1465,36 @@ export function App() {
     setWalletError("");
   }
 
+  function requireConnectedPageNetworkForWallet(): SupportedNetworkId {
+    const connection = rpcConnectionRef.current;
+
+    if (!connection || !nodeStatus.connected) {
+      throw new Error("Connect a Kaspa node before connecting a wallet.");
+    }
+
+    const connectedNetwork = normalizeNetworkId(connection.status.network);
+    if (connectedNetwork !== networkId) {
+      throw new Error(`The connected node reports ${connection.status.network || "unknown"}, but ${networkLabel(networkId)} is selected.`);
+    }
+
+    return connectedNetwork as SupportedNetworkId;
+  }
+
   async function handleConnectWallet(adapterId: string) {
     setWalletError("");
     setIsConnectingWallet(true);
     setIsWalletMenuOpen(false);
 
     try {
-      const walletNetwork = rpcConnectionRef.current?.status.network ?? networkId;
+      const walletNetwork = requireConnectedPageNetworkForWallet();
       let connectedWallet = await withWalletConnectionTimeout(connectBrowserWallet(adapterId, walletNetwork));
 
-      if (rpcConnectionRef.current) {
-        let balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
-        if (balanceSompi === 0n) {
-          await new Promise((resolve) => window.setTimeout(resolve, 750));
-          balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current, connectedWallet.address);
-        }
-        connectedWallet = withWalletBalance(connectedWallet, balanceSompi);
+      let balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current!, connectedWallet.address);
+      if (balanceSompi === 0n) {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        balanceSompi = await getAddressBalanceSompi(rpcConnectionRef.current!, connectedWallet.address);
       }
+      connectedWallet = withWalletBalance(connectedWallet, balanceSompi);
 
       setWallet(connectedWallet);
     } catch (error) {
@@ -1458,6 +1547,19 @@ export function App() {
     const profile = requireNetworkProfile(nextMetadata.network);
     const normalizedMetadata = { ...nextMetadata, network: profile.id };
     const loadedRefundTimeoutSeconds = refundTimeoutSecondsFromMetadata(normalizedMetadata);
+    const networkChanged = profile.id !== networkId || rpcConnectionRef.current?.status.network !== profile.id;
+
+    if (networkChanged) {
+      void disconnectBrowserRpc(rpcConnectionRef.current).catch(() => undefined);
+      rpcConnectionRef.current = null;
+      setNodeStatus({ connected: false, network: "unknown", syncStatus: "unknown" });
+      setVirtualDaaScore(0n);
+      if (wallet) {
+        void disconnectBrowserWallet(wallet).catch(() => undefined);
+        setWallet(null);
+        setWalletError("");
+      }
+    }
 
     setMetadata(normalizedMetadata);
     setTerminalRoundStatus(
@@ -1474,7 +1576,12 @@ export function App() {
     setIndexApiBase(indexEndpoints[profile.id]);
     setCreateRegistryAddress(normalizedMetadata.registryAddress ?? "");
     setHistoryAddress(normalizedMetadata.registryAddress ?? "");
-    setTickets([]);
+    setTickets(recoverTicketStatesFromCovenantBatches({
+      roundId: normalizedMetadata.roundId,
+      ticketPrice: BigInt(normalizedMetadata.ticketPrice || "0"),
+      covenant: normalizedMetadata.covenant,
+      network: profile.id
+    }));
     setFinalized(undefined);
     setChainError("");
     setChainMessage("");
@@ -1508,7 +1615,8 @@ export function App() {
   }
 
   function loadSharedRoundFromUrl() {
-    const sharedRound = new URLSearchParams(window.location.search).get("round");
+    const params = new URLSearchParams(window.location.search);
+    const sharedRound = params.get("round");
 
     if (!sharedRound) {
       return;
@@ -2098,7 +2206,11 @@ export function App() {
       return;
     }
     const salesDeadline = BigInt(covenant.refundAfterDaaScore || "0");
-    if (salesDeadline > 0n && virtualDaaScore >= salesDeadline) {
+    if (salesDeadline > 0n && virtualDaaScore >= salesDeadline && !rescueBuyAvailable) {
+      if (rescueBuyCandidate && !rescueBuyQuantityOk) {
+        setChainError(t("rescueBuy.oneTicketOnly"));
+        return;
+      }
       setRoundActionTab("payout");
       setChainFeedbackTarget(settlementFeedbackTarget(covenant));
       setChainError(ticketSalesClosedMessage(covenant));
@@ -2173,7 +2285,10 @@ export function App() {
       }
 
       const refundAfterDaaScore = BigInt(covenant.refundAfterDaaScore || "0");
-      if (currentDaaScore >= refundAfterDaaScore) {
+      if (currentDaaScore >= refundAfterDaaScore && !rescueBuyAvailable) {
+        if (rescueBuyCandidate && !rescueBuyQuantityOk) {
+          throw new Error(t("rescueBuy.oneTicketOnly"));
+        }
         setRoundActionTab("payout");
         setChainFeedbackTarget(settlementFeedbackTarget(covenant));
         throw new Error(ticketSalesClosedMessage(covenant));
@@ -2251,6 +2366,7 @@ export function App() {
         ticket: nextTicket,
         ticketCount: quantity,
         chainSearchHintHash,
+        allowDeadlineRescueBuy: rescueBuyAvailable,
         payload: encodePayload(payload)
       });
 
@@ -2549,7 +2665,13 @@ export function App() {
         : historyRound));
       setChainMessage(`Winner #${winnerIndex + 1} was paid: ${result.txId} (finalize fee ${formatKas(result.feeSompi ?? 0n)}).`);
     } catch (error) {
-      setChainError(errorMessage(error, "Unable to finalize covenant round."));
+      const message = errorMessage(error, "Unable to finalize covenant round.");
+      if (transactionRejectionRequiresStateRefresh(error)) {
+        setChainError(`${message} The round list is being refreshed now; inspect and reload the newest covenant before opening another wallet request.`);
+        void handleLoadHistory();
+      } else {
+        setChainError(message);
+      }
     } finally {
       isFinalizingRef.current = false;
       setIsFinalizing(false);
@@ -3099,7 +3221,9 @@ export function App() {
 
       if (targetAddress) setHistoryAddress(targetAddress);
       setHistoryRounds(rounds);
-      setSelectedHistoryRoundId(rounds.find(historyRoundIsPlayable)?.roundId ?? rounds[0]?.roundId ?? "");
+      setSelectedHistoryRoundId((current) => current && rounds.some((historyRound) => historyRound.roundId === current)
+        ? current
+        : rounds.find(historyRoundIsPlayable)?.roundId ?? rounds[0]?.roundId ?? "");
       setHistoryMessage(
         `Loaded ${rounds.length} raffle round${rounds.length === 1 ? "" : "s"}. ` +
         (!registryAddresses.size
@@ -3223,18 +3347,26 @@ export function App() {
         : selectedFinalized
           ? cachedRound.finalized
           : undefined;
-      const restoredTickets = selectedHistoryRound.tickets.length
-        ? selectedHistoryRound.tickets.map((ticket) => ({
-            appId: "KASPA_RAFFLE_TICKET_V1" as const,
+      const selectedHistoryTickets = selectedHistoryRound.tickets.map((ticket) => ({
+        appId: "KASPA_RAFFLE_TICKET_V1" as const,
+        roundId: selectedHistoryRound.roundId,
+        ticketId: ticket.ticketId,
+        ticketCount: ticket.ticketCount,
+        owner: ticket.buyer,
+        ownerPubkey: ticket.buyerPubkey,
+        paidAmount: ticket.paidAmount,
+        ticketTxId: ticket.txId
+      }));
+      const restoredTickets = selectedHistoryTickets.length
+        ? selectedHistoryTickets
+        : cachedRound.tickets.length
+          ? cachedRound.tickets
+        : recoverTicketStatesFromCovenantBatches({
             roundId: selectedHistoryRound.roundId,
-            ticketId: ticket.ticketId,
-            ticketCount: ticket.ticketCount,
-            owner: ticket.buyer,
-            ownerPubkey: ticket.buyerPubkey,
-            paidAmount: ticket.paidAmount,
-            ticketTxId: ticket.txId
-          }))
-        : cachedRound.tickets;
+            ticketPrice: BigInt(cachedRound.metadata.ticketPrice || selectedHistoryRound.ticketPrice || 0),
+            covenant: restoredCovenant,
+            network: loadedNetwork
+          });
       const restoredMetadata = {
         ...cachedRound.metadata,
         covenant: restoredCovenant,
@@ -3293,6 +3425,23 @@ export function App() {
     const startBlockHash = selectedHistoryRound.createTxId
       ? await loadTransactionChainAnchor(loadedProfile.historyApiBase, selectedHistoryRound.createTxId).catch(() => undefined)
       : undefined;
+    const loadedTickets = selectedHistoryRound.tickets.length
+        ? selectedHistoryRound.tickets.map((ticket) => ({
+            appId: "KASPA_RAFFLE_TICKET_V1" as const,
+            roundId: selectedHistoryRound.roundId,
+            ticketId: ticket.ticketId,
+            ticketCount: ticket.ticketCount,
+            owner: ticket.buyer,
+            ownerPubkey: ticket.buyerPubkey,
+            paidAmount: ticket.paidAmount,
+            ticketTxId: ticket.txId
+          }))
+        : recoverTicketStatesFromCovenantBatches({
+            roundId: selectedHistoryRound.roundId,
+            ticketPrice: selectedHistoryRound.ticketPrice,
+            covenant,
+            network: loadedNetwork
+          });
 
     setNetworkId(loadedNetwork);
     setRpcUrl(networkEndpoints[loadedNetwork].url);
@@ -3326,18 +3475,7 @@ export function App() {
       covenant,
       contractVersion: selectedHistoryRound.contractVersion ?? emptyMetadata.contractVersion
     });
-    setTickets(
-      selectedHistoryRound.tickets.map((ticket) => ({
-        appId: "KASPA_RAFFLE_TICKET_V1",
-        roundId: selectedHistoryRound.roundId,
-        ticketId: ticket.ticketId,
-        ticketCount: ticket.ticketCount,
-        owner: ticket.buyer,
-        ownerPubkey: ticket.buyerPubkey,
-        paidAmount: ticket.paidAmount,
-        ticketTxId: ticket.txId
-      }))
-    );
+    setTickets(loadedTickets);
     setFinalized(undefined);
     setTerminalRoundStatus(undefined);
     setRoundActionTab(covenant.status === "Open" ? "buy" : "payout");
@@ -3760,6 +3898,7 @@ export function App() {
           activeIndexerRequirement={activeRoundNeedsIndexer && metadata.covenant ? renderIndexerRequirement({ maxTickets: metadata.maxTickets, soldTickets: metadata.covenant.soldTickets, soldBatches: activeSoldBatches, knownTickets: totalTicketCount(tickets), knownBatches: tickets.length }) : null}
           actionTab={roundActionTab}
           buyBlockedReason={buyBlockedReason}
+          buyNotice={rescueBuyNotice}
           buyCostTooltip={buyCostTooltip}
           canBuy={canBuy}
           canCloseEmpty={canCloseEmpty}

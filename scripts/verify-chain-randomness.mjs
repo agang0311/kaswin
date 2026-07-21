@@ -47,6 +47,7 @@ assert(client.includes("BLOCK_LOOKUP_RETRIES = 3") && !client.includes("Promise.
 assert(client.includes("WITNESS_LOOKUP_TIMEOUT_MS = 45_000") && client.includes("Randomness witness lookup"), "randomness lookup has a bounded end-to-end timeout");
 assert(client.includes("ANCHOR_BLOCK_TIMEOUT_MS = 5_000") && client.includes("ANCHORED_HEADERS_TIMEOUT_MS = 8_000") && client.includes("VIRTUAL_CHAIN_TIMEOUT_MS = 12_000"), "a slow anchor RPC probe cannot consume the full randomness deadline");
 assert(client.includes("CANDIDATE_LOOKUP_BUDGET_MS = 12_000") && client.includes("CANDIDATE_BLOCK_TIMEOUT_MS, 1"), "candidate header hints have a bounded no-retry fallback budget");
+assert(client.includes("retention root"), "public-node retention-root header lookup failures fall through to alternate randomness lookup paths");
 assert(client.includes("includeVirtualChain = true") && client.includes("loadFromAnchor(connection, anchorHash, targetBoundaryDaa, false)") && client.indexOf("pair = await loadFromCandidates") < client.lastIndexOf("pair = await loadFromAnchor(connection, anchorHash, targetBoundaryDaa)"), "candidate hints run before the slower virtual-chain anchor fallback");
 assert(client.includes("SINK_HEADERS_TIMEOUT_MS = 6_000") && client.includes("SINK_HEADERS_LOOKUP_BUDGET_MS = 10_000") && client.includes("Date.now() < deadline"), "sink header fallback has a bounded per-request and total budget");
 assert(client.includes('withRpcTimeout(connection.client.getBlockDagInfo(), "DAG information lookup")') && client.includes('"Selected-chain header lookup"'), "DAG and header RPC lookups cannot leave the draw UI waiting forever");
@@ -54,7 +55,10 @@ assert(client.includes('isAscending: true') && client.includes('"Anchored select
 assert(client.includes("loadFromCandidates") && client.includes("candidateHashes.slice(0, 32)"), "untrusted blue-score lookup hints are bounded and revalidated through Kaspa RPC");
 assert(client.indexOf("pair = await loadFromAnchor") < client.indexOf("pair = await loadFromCandidates"), "confirmed round anchors are tried before optional history hints");
 assert(client.includes("loadFromRestHistory") && client.includes("const target = headerWitness(pair.target)") && client.includes("const parent = headerWitness(pair.parent)"), "a REST transport fallback still rehashes both candidate headers before submission");
-assert(client.includes("parent.daaScore < targetDaa") && client.includes("candidate.parentsByLevel[0]?.[0]?.toLowerCase() === parent.hash.toLowerCase()"), "REST candidates must cross the selected-chain DAA boundary with the expected parent");
+assert(client.includes("parent.daaScore < targetDaa") && client.includes("target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()"), "REST candidates must cross the selected-chain DAA boundary with the expected parent");
+assert(client.includes("walkRestSelectedParents") && client.includes("REST_SELECTED_PARENT_WALK_LIMIT = 256"), "REST fallback can walk selected parents when the first history candidate is after the random DAA boundary");
+assert(client.includes("blueScoreLt=${probeBlue + 1n}") && client.includes("candidate.blueScore - (candidate.daaScore - targetDaa)"), "REST fallback corrects backwards when blue-score estimation lands after the target DAA");
+assert(client.includes("loadRestSelectedChainChildren") && client.includes("childrenHashes") && client.includes("child.verboseData?.isChainBlock !== true"), "REST fallback can recover when the blue-score probe lands on a non-chain block with selected-chain children");
 assert(!/buyerCommitment|creatorCommitment|buyerSecret/.test(`${app}\n${raffleTypes}`), "client has no legacy commit-reveal state");
 
 console.log("Chain-only randomness checks passed.");

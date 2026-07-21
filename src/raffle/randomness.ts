@@ -1,3 +1,5 @@
+import { sha256 } from "../protocol/encoding";
+
 const HEX_ALPHABET = "0123456789abcdef";
 
 export function randomHex(bytes = 32): string {
@@ -16,8 +18,8 @@ export async function sha256BytesHex(data: Uint8Array): Promise<string> {
   const copy = new ArrayBuffer(data.byteLength);
   new Uint8Array(copy).set(data);
 
-  const hash = await crypto.subtle.digest("SHA-256", copy);
-  return Array.from(new Uint8Array(hash), (byte) => {
+  const hash = await sha256(new Uint8Array(copy));
+  return Array.from(hash, (byte) => {
     return HEX_ALPHABET[byte >> 4] + HEX_ALPHABET[byte & 15];
   }).join("");
 }

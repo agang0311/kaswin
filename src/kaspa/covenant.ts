@@ -3,7 +3,7 @@ import {
   payToScriptHashScript,
   payToAddressScript,
   ScriptBuilder,
-  type ScriptPublicKey
+  ScriptPublicKey
 } from "@onekeyfe/kaspa-wasm";
 import raffleRoundVNextArtifact from "../contracts/compiled/raffle-round-vnext.artifact.json";
 import raffleRoundBuyerFundedArtifact from "../contracts/compiled/raffle-round-vnext-buyer-funded-refund.artifact.json";
@@ -309,6 +309,16 @@ export async function buildRaffleAddress(
 
 export function pubkeyHexFromAddress(address: string): string {
   return bytesToHex(pubkeyFromP2pkScriptPublicKey(payToAddressScript(address)));
+}
+
+export function addressFromPubkeyHex(pubkeyHex: string, network: string): string {
+  const normalized = pubkeyHex.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error("Ticket owner public key must be 32 bytes.");
+  }
+  const address = addressFromScriptPublicKey(new ScriptPublicKey(0, `20${normalized}ac`), network);
+  if (!address) throw new Error("Unable to derive ticket owner address.");
+  return address.toString();
 }
 
 export function buildRaffleBuySignatureScript(

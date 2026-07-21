@@ -20,6 +20,7 @@ const SINK_HEADERS_LOOKUP_BUDGET_MS = 10_000;
 const BLOCK_LOOKUP_RETRIES = 3;
 const REST_HEADER_TIMEOUT_MS = 8_000;
 const REST_CHAIN_PROBES = 12;
+const REST_SELECTED_PARENT_WALK_LIMIT = 256;
 
 export interface ChainHeaderWitness {
   hash: string;
@@ -52,7 +53,7 @@ interface RestHeaderBlock {
     pruningPoint?: string;
     parents?: Array<{ parentHashes?: string[] }>;
   };
-  verboseData?: { hash?: string; isChainBlock?: boolean; selectedParentHash?: string };
+  verboseData?: { hash?: string; isChainBlock?: boolean; selectedParentHash?: string; childrenHashes?: string[] };
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -191,6 +192,59 @@ async function fetchRestBlock(apiBase: string, path: string): Promise<RestHeader
   }
 }
 
+async function fetchRestBlocks(apiBase: string, path: string): Promise<RestHeaderBlock[]> {
+  const loaded = await fetchRestBlock(apiBase, path) as RestHeaderBlock | RestHeaderBlock[];
+  return Array.isArray(loaded) ? loaded : [loaded];
+}
+
+async function walkRestSelectedParents(
+  apiBase: string,
+  candidateBlock: RestHeaderBlock,
+  targetDaa: bigint
+): Promise<{ target: IHeader; parent: IHeader } | undefined> {
+  const candidate = restHeaderToRpcHeader(candidateBlock);
+  if (candidate.daaScore < targetDaa) return undefined;
+
+  let target = candidate;
+  let selectedParentHash = candidateBlock.verboseData?.selectedParentHash ?? target.parentsByLevel[0]?.[0];
+  for (let step = 0; step < REST_SELECTED_PARENT_WALK_LIMIT; step += 1) {
+    if (!selectedParentHash) return undefined;
+
+    const parentBlock = await fetchRestBlock(apiBase, `/blocks/${selectedParentHash}`);
+    const parent = restHeaderToRpcHeader(parentBlock);
+    if (parent.daaScore < targetDaa) {
+      if (target.parentsByLevel[0]?.[0]?.toLowerCase() !== parent.hash.toLowerCase()) return undefined;
+      return { target, parent };
+    }
+    if (parent.daaScore >= target.daaScore) return undefined;
+    target = parent;
+    selectedParentHash = parentBlock.verboseData?.selectedParentHash ?? target.parentsByLevel[0]?.[0];
+  }
+
+  return undefined;
+}
+
+async function loadRestSelectedChainChildren(
+  apiBase: string,
+  block: RestHeaderBlock,
+  targetDaa: bigint
+): Promise<RestHeaderBlock[]> {
+  const children = block.verboseData?.childrenHashes ?? [];
+  const chainChildren: RestHeaderBlock[] = [];
+  for (const hash of children.slice(0, 32)) {
+    if (!/^[0-9a-f]{64}$/i.test(hash)) continue;
+    const child = await fetchRestBlock(apiBase, `/blocks/${hash}`);
+    if (child.verboseData?.isChainBlock !== true) continue;
+    const header = restHeaderToRpcHeader(child);
+    if (header.daaScore >= targetDaa) chainChildren.push(child);
+  }
+  return chainChildren.sort((left, right) => {
+    const leftDaa = BigInt(left.header?.daaScore ?? "0");
+    const rightDaa = BigInt(right.header?.daaScore ?? "0");
+    return leftDaa === rightDaa ? 0 : leftDaa < rightDaa ? -1 : 1;
+  });
+}
+
 // The REST response is not trusted for settlement: the covenant rehashes both
 // headers, checks the selected parent and chain sequence commitment, and rejects
 // any candidate that does not cross the immutable DAA boundary. It is only a
@@ -222,24 +276,27 @@ async function loadFromRestHistory(
   if (probeBlue < 0n) return undefined;
 
   for (let attempt = 0; attempt < REST_CHAIN_PROBES; attempt += 1) {
-    const listed = await fetchRestBlock(
+    const listed = await fetchRestBlocks(
       apiBase,
-      `/blocks-from-bluescore?blueScoreGte=${probeBlue}&includeTransactions=false`
-    ) as unknown as RestHeaderBlock[];
-    const candidateBlock = listed[0];
+      `/blocks-from-bluescore?blueScoreLt=${probeBlue + 1n}&includeTransactions=false`
+    );
+    const candidateBlock = listed.find((block) => block.verboseData?.isChainBlock) ?? listed[0];
     if (!candidateBlock) return undefined;
     const candidate = restHeaderToRpcHeader(candidateBlock);
-    if (candidateBlock.verboseData?.isChainBlock && candidate.daaScore >= targetDaa) {
-      const parentHash = candidateBlock.verboseData.selectedParentHash ?? candidate.parentsByLevel[0]?.[0];
-      if (!parentHash) return undefined;
-      const parent = restHeaderToRpcHeader(await fetchRestBlock(apiBase, `/blocks/${parentHash}`));
-      if (candidate.parentsByLevel[0]?.[0]?.toLowerCase() === parent.hash.toLowerCase() && parent.daaScore < targetDaa) {
-        return { target: candidate, parent };
-      }
+    const chainBlocks = candidateBlock.verboseData?.isChainBlock
+      ? [candidateBlock]
+      : await loadRestSelectedChainChildren(apiBase, candidateBlock, targetDaa);
+    for (const chainBlock of chainBlocks) {
+      const pair = await walkRestSelectedParents(apiBase, chainBlock, targetDaa);
+      if (pair) return pair;
     }
-    probeBlue = candidate.daaScore < targetDaa
-      ? candidate.blueScore + targetDaa - candidate.daaScore
-      : candidate.blueScore + 1n;
+    probeBlue = candidate.daaScore <= targetDaa
+      ? candidate.blueScore + targetDaa - candidate.daaScore + 1n
+      : candidate.blueScore > candidate.daaScore - targetDaa
+        ? candidate.blueScore - (candidate.daaScore - targetDaa)
+        : candidate.blueScore > 0n
+          ? candidate.blueScore - 1n
+          : 0n;
   }
   return undefined;
 }
@@ -304,7 +361,7 @@ async function loadBlock(
 }
 
 function isRecoverableHeaderLookupError(error: unknown): boolean {
-  return /not implemented|timed out|unexpected selected parent/i.test(String(error));
+  return /not implemented|timed out|unexpected selected parent|retention root/i.test(String(error));
 }
 
 async function loadForwardHeadersFromAnchor(
@@ -554,7 +611,11 @@ async function loadChainRandomnessWitnessFromRpc(
   // nodes. Retain the latter only as a fallback when paging is unavailable.
   const sinkDistance = info.virtualDaaScore - targetBoundaryDaa;
   if (!pair && sinkDistance >= 0n && sinkDistance <= BigInt(MAX_BLOCK_WALK)) {
-    pair = await walkSelectedChain(connection, info.sink, targetBoundaryDaa);
+    try {
+      pair = await walkSelectedChain(connection, info.sink, targetBoundaryDaa);
+    } catch (error) {
+      if (!isRecoverableHeaderLookupError(error)) throw error;
+    }
   }
 
   if (pair) {

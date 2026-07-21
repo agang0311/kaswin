@@ -9,6 +9,7 @@ interface ActionWorkspaceProps {
   actionTab: RoundActionTab;
   buyCostTooltip: string;
   buyBlockedReason?: string;
+  buyNotice?: string;
   canBuy: boolean;
   canCloseEmpty: boolean;
   canDraw: boolean;
@@ -72,6 +73,7 @@ export function ActionWorkspace(props: ActionWorkspaceProps) {
             <div className="purchase-form"><label className="field quantity-field"><span>{t("quantity")}</span><input type="number" inputMode="numeric" min="1" max={props.remainingTickets} step="1" value={props.ticketQuantity} onChange={(event) => props.setTicketQuantity(event.target.value)} /></label></div>
             <dl className="purchase-summary"><div><dt>{t("total")}</dt><dd>{props.formatKas(props.purchaseTotal)}</dd></div><div><dt>{t("remaining")}</dt><dd>{props.remainingTickets.toLocaleString()}</dd></div></dl>
             <p className="fee-disclosure">{props.buyCostTooltip}</p>
+            {props.buyNotice ? <p className="action-status-note rescue-buy-notice" role="status">{props.buyNotice}</p> : null}
             {props.buyBlockedReason ? <p className="action-status-note" role="status">{props.buyBlockedReason}</p> : null}
             <button type="button" className="wide" onClick={props.onBuy} disabled={!props.canBuy}>{props.isBuying ? t("buyingTickets") : t(props.parsedTicketQuantity === 1 ? "buyTicketButton.one" : "buyTicketButton", { count: Number.isInteger(props.parsedTicketQuantity) && props.parsedTicketQuantity > 0 ? props.parsedTicketQuantity.toLocaleString() : "" })}</button>
             {actionFeedback("buy")}

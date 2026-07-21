@@ -235,6 +235,8 @@ const en: Record<string, string> = {
   "buyTicketButton": "Buy {count} tickets",
   "buyTicketButton.one": "Buy 1 ticket",
   "buyRoundFirst": "Create or load an open round before buying tickets.",
+  "rescueBuy.notice": "Rescue settlement: this round has reached the draw deadline and appears drawable. If the existing covenant UTXO is too old for the node's randomness lookup, buy exactly 1 rescue ticket to advance the covenant, then draw immediately. This spends {total} plus the wallet network fee.",
+  "rescueBuy.oneTicketOnly": "Rescue settlement only allows exactly 1 additional ticket. Set quantity to 1 before signing.",
   "covenantAction": "Covenant action",
   "drawPayout": "Draw and payout",
   "winnerTicket": "Ticket #{ticket}",
@@ -467,6 +469,8 @@ const zh: Record<string, string> = {
   "buyTicketButton": "购买 {count} 张票",
   "buyTicketButton.one": "购买 1 张票",
   "buyRoundFirst": "请先创建或加载一个开放购票的抽奖。",
+  "rescueBuy.notice": "救援结算：本轮已到开奖时间且达到最低票数。如果当前 covenant UTXO 太旧导致节点无法查找开奖随机性，可以且只能再买 1 张救援票推进 covenant，然后立刻开奖。这会花费 {total} 加钱包网络费。",
+  "rescueBuy.oneTicketOnly": "救援结算只允许额外购买 1 张票。请先把数量设为 1，再发起签名。",
   "covenantAction": "Covenant 操作",
   "drawPayout": "开奖并派奖",
   "winnerTicket": "中奖票 #{ticket}",
@@ -669,6 +673,8 @@ const exactRuntimeZh: Record<string, string> = {
   "Unable to save the node endpoint.": "无法保存节点地址。",
   "Unable to connect to node.": "无法连接节点。",
   "Unable to connect the selected wallet.": "无法连接所选钱包。",
+  "Connect a Kaspa node before connecting a wallet.": "连接钱包前请先连接 Kaspa 节点。",
+  "Connect a Kaspa node before updating the wallet account.": "更新钱包账户前请先连接 Kaspa 节点。",
   "Unable to disconnect KasWare Wallet.": "无法断开 KasWare 钱包。",
   "Unable to refresh balance.": "无法刷新余额。",
   "Unable to update the connected wallet.": "无法更新已连接钱包。",
@@ -730,6 +736,7 @@ export function translateRuntimeText(language: Language, text: string): string {
   return text
     .replace(/^Loaded (\d+) raffle rounds?\./, "已加载 $1 轮抽奖。")
     .replace(/These participated rounds came from browser storage\./, "这些参与过的轮次来自浏览器本地记录。")
+    .replace(/^The connected node reports ([^,]+), but ([^.]+) is selected\.$/, "当前连接的节点报告为 $1，但页面选择的是 $2。")
     .replace(/Large-round proofs came from the configured index\./, "大轮次证明来自已配置的索引服务。")
     .replace(/Showing (\d+) large rounds? from the registry without index proofs\./, "已显示 Registry 中的 $1 个大轮次，但尚无索引证明。")
     .replace(/No raffle index was needed\./, "本次无需抽奖索引服务。")

@@ -103,6 +103,7 @@ export interface BuyRaffleCovenantTicketInput {
   ticket: TicketState;
   ticketCount: number;
   chainSearchHintHash?: string;
+  allowDeadlineRescueBuy?: boolean;
   payload: Uint8Array;
 }
 
@@ -451,7 +452,7 @@ function sumUtxoAmounts(entries: IUtxoEntry[]): bigint {
 
 export function transactionRejectionRequiresStateRefresh(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /(?:double[- ]?spend|already spent|spent by another|missing (?:referenced )?(?:outpoint|input)|(?:outpoint|input).*(?:not found|unknown|missing)|conflicting transaction)/i.test(message);
+  return /(?:double[- ]?spend|already spent|spent by another|missing (?:referenced )?(?:outpoint|input)|(?:outpoint|input).*(?:not found|unknown|missing)|conflicting transaction|loaded covenant UTXO is no longer available|loaded covenant amount .*does not match)/i.test(message);
 }
 
 export function normalizeTransactionError(error: unknown): Error {
@@ -1388,7 +1389,19 @@ export async function buyRaffleCovenantTicket(input: BuyRaffleCovenantTicketInpu
     const dagInfo = await input.connection.client.getBlockDagInfo();
     const salesDeadline = BigInt(input.covenant.refundAfterDaaScore || "0");
     if (salesDeadline <= 0n || dagInfo.virtualDaaScore >= salesDeadline) {
-      throw new Error(`Ticket sales closed at DAA ${salesDeadline}. No wallet signing request was opened.`);
+      const covenantInputDaa = BigInt(covenantUtxo.blockDaaScore);
+      const canRescueStuckDrawableRound = Boolean(
+        input.allowDeadlineRescueBuy &&
+        input.covenant.status === "Open" &&
+        input.covenant.soldTickets >= input.round.minTickets &&
+        input.covenant.soldTickets < input.round.maxTickets &&
+        input.ticketCount === 1 &&
+        covenantInputDaa > 0n &&
+        covenantInputDaa < salesDeadline
+      );
+      if (!canRescueStuckDrawableRound) {
+        throw new Error(`Ticket sales closed at DAA ${salesDeadline}. No wallet signing request was opened.`);
+      }
     }
     const currentChainHash = input.chainSearchHintHash ?? dagInfo.sink;
     failureStage = "wallet input selection";

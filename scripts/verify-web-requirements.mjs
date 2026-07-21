@@ -430,6 +430,7 @@ try {
   const explorerLink = fs.readFileSync(path.join(root, "src/app/components/ExplorerLink.tsx"), "utf8");
   const rpc = fs.readFileSync(path.join(root, "src/kaspa/rpc.ts"), "utf8");
   const networks = fs.readFileSync(path.join(root, "src/kaspa/networks.ts"), "utf8");
+  const walletTypes = fs.readFileSync(path.join(root, "src/kaspa/wallet-types.ts"), "utf8");
   const localWallet = fs.readFileSync(path.join(root, "src/kaspa/wallet-local-test.ts"), "utf8");
   const transactions = fs.readFileSync(path.join(root, "src/kaspa/transactions.ts"), "utf8");
   const history = fs.readFileSync(path.join(root, "src/kaspa/history.ts"), "utf8");
@@ -780,6 +781,7 @@ try {
   );
   assert(
     transactionsModule.transactionRejectionRequiresStateRefresh(new Error("Rejected transaction: input is already spent")) &&
+      transactionsModule.transactionRejectionRequiresStateRefresh(new Error("The loaded covenant UTXO is no longer available.")) &&
       /new review and signature/.test(transactionsModule.normalizeTransactionError(new Error("Rejected transaction: conflicting transaction already spent the outpoint")).message) &&
       /parent/.test(transactionsModule.normalizeTransactionError(new Error("transaction is an orphan where orphan is disallowed")).message) &&
       /No retry or replacement signing request/.test(transactionsModule.normalizeTransactionError(new Error("Rejected transaction: policy failure")).message) &&
@@ -793,6 +795,49 @@ try {
       transactions.includes("utxo.amount !== expectedAmount") &&
       app.includes("ticketPrice * BigInt(Math.max(0, soldTickets - refundedTickets))"),
     "prize/refund principal is derived from covenant counters and the node UTXO must match the loaded cursor amount"
+  );
+  assert(
+    app.includes("recoverTicketStatesFromCovenantBatches") &&
+      app.includes("addressFromPubkeyHex(ownerPubkey, input.network)") &&
+      app.includes("ticketBatchEnds") &&
+      app.includes("setTickets(loadedTickets)"),
+    "small rounds can recover complete local ticket batches from covenant commitments when history omits ticket payloads"
+  );
+  assert(
+    rpc.includes("RESOLVER_LOOKUP_TIMEOUT_MS") &&
+      rpc.includes("RPC_CONNECT_TIMEOUT_MS") &&
+      rpc.includes("RPC_STATUS_TIMEOUT_MS") &&
+      rpc.includes("await client.disconnect().catch"),
+    "node resolver and wRPC connection attempts are bounded and release failed clients"
+  );
+  assert(
+    app.includes("const networkChanged = profile.id !== networkId || rpcConnectionRef.current?.status.network !== profile.id") &&
+      app.includes("void disconnectBrowserRpc(rpcConnectionRef.current).catch(() => undefined);") &&
+      app.includes("setNodeStatus({ connected: false, network: \"unknown\", syncStatus: \"unknown\" });"),
+    "imported or shared mainnet rounds force a node reconnect instead of reusing a stale testnet RPC connection"
+  );
+  assert(
+    !app.includes("RESCUE_ROUND_METADATA") &&
+      app.includes("const rescueBuyCandidate = Boolean") &&
+      app.includes("const rescueBuyQuantityOk = Number.isInteger(parsedTicketQuantity) && parsedTicketQuantity === 1") &&
+      app.includes("rescueBuyAvailable") &&
+      app.includes("allowDeadlineRescueBuy: rescueBuyAvailable") &&
+      transactions.includes("allowDeadlineRescueBuy?: boolean") &&
+      transactions.includes("input.ticketCount === 1") &&
+      transactions.includes("covenantInputDaa < salesDeadline") &&
+      transactions.includes("canRescueStuckDrawableRound"),
+    "deadline rescue buying is a general guarded release feature limited to one ticket and still requires the covenant input DAA to precede the sales deadline"
+  );
+  assert(
+    app.includes("function requireConnectedPageNetworkForWallet()") &&
+      app.includes("Connect a Kaspa node before connecting a wallet.") &&
+      app.includes("const connectedNetwork = normalizeNetworkId(connection.status.network)") &&
+      app.includes("if (connectedNetwork !== networkId)") &&
+      app.includes("let connectedWallet = await withWalletConnectionTimeout(connectBrowserWallet(adapterId, walletNetwork))") &&
+      app.includes("const nextWallet = await readConnectedBrowserWallet(wallet, connectedNetwork)") &&
+      app.includes("setWallet(null);") &&
+      walletTypes.includes("if (!address.startsWith(profile.addressPrefix))"),
+    "wallet connection and account refresh are pinned to the actually connected page node network"
   );
   assert(
     transactions.includes("const sponsorUtxos: IUtxoEntry[] = []") &&
