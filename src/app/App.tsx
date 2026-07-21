@@ -3624,6 +3624,11 @@ export function App() {
         </p>
       </section>
 
+      <details className="rescue-guide-disclosure">
+        <summary>{t("rescueGuide.summary")}</summary>
+        <p>{t("rescueGuide.detail")}</p>
+      </details>
+
       {gameplayGuide}
 
       <section className="setup-strip header-connectivity" aria-label={t("connection.aria")}>

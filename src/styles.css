@@ -2023,6 +2023,26 @@ body::before {
   color: #fff;
 }
 
+.rescue-guide-disclosure {
+  background: rgba(240, 255, 250, 0.9);
+  border: 1px solid rgba(22, 159, 139, 0.28);
+  border-radius: 12px;
+  color: #06343a;
+  margin: -6px 0 16px;
+  padding: 10px 14px;
+}
+
+.rescue-guide-disclosure summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.rescue-guide-disclosure p {
+  color: #315c5b;
+  line-height: 1.55;
+  margin: 8px 0 0;
+}
+
 button {
   background: linear-gradient(145deg, #49eacb, #159d89);
   border-color: var(--lotto-red-dark);

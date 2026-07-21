@@ -8,7 +8,7 @@ This checklist prepares the current worktree for review and commit. It does not 
 - Protocol: `raffle-vnext-liveness-guard-b1000`
 - Round artifact SHA-256: `215aaae53f9a3d71fef0cf6deb8783582a36c212cd3bb9a67bedb7a850206f3d`
 - Refund artifact SHA-256: `bd1a8f4c0be89a909a8565e06ab4379f85b8ad72e1a7620b2280404022c137e2`
-- Single-file SHA-256: `ee77f7ef696b6e1d5451c7d998451acd83458882aa276abe04b357469a00d1b2`
+- Single-file SHA-256: `750745dbc7c280ebbbe76cd555055f6af6d13bcb3739366a532f0377a140fd8e`
 
 ## Completed locally
 
