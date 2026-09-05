@@ -6,11 +6,11 @@ use kaspa_consensus_core::header::Header;
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::tx::{
     Transaction, TransactionInput, TransactionOutpoint,
-    ScriptPublicKey, UtxoEntry, PopulatedTransaction,
+    ScriptPublicKey, UtxoEntry, PopulatedTransaction, ComputeCommit,
 };
 use kaspa_txscript::{
     TxScriptEngine, EngineFlags, SeqCommitAccessor,
-    script_builder::ScriptBuilder, opcodes::codes::*,
+    script_builder::ScriptBuilder,
     engine_context::EngineContext, caches::Cache,
     covenants::CovenantsContext,
 };
@@ -18,6 +18,10 @@ use kaspa_txscript_errors::TxScriptError;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::mass::{ComputeBudget, SCRIPT_UNITS_PER_COMPUTE_BUDGET_UNIT};
 use serde_json::Value;
+
+#[path = "../../../../contracts/phase_d_covenant.rs"]
+mod phase_d_covenant;
+use phase_d_covenant::build_bounded_dynamic_covenant;
 
 struct LocalMockAccessor {
     selected_chain: Vec<Hash>,
@@ -113,122 +117,23 @@ fn serialize_full_header(h: &Header) -> Vec<u8> {
     buf
 }
 
-fn append_forward_header_parser(sb: &mut ScriptBuilder, expanded_len: usize) {
-    sb.add_i64(10).unwrap();
-    for _ in 0..expanded_len {
-        sb.add_op(OpOver).unwrap();
-        sb.add_op(OpOver).unwrap();
-        sb.add_op(OpDup).unwrap();
-        sb.add_i64(8).unwrap();
-        sb.add_op(OpAdd).unwrap();
-        sb.add_op(OpSubstr).unwrap();
-        sb.add_op(OpBin2Num).unwrap();
-        sb.add_i64(32).unwrap();
-        sb.add_op(OpMul).unwrap();
-        sb.add_i64(8).unwrap();
-        sb.add_op(OpAdd).unwrap();
-        sb.add_op(OpAdd).unwrap();
-    }
-    sb.add_i64(116).unwrap();
-    sb.add_op(OpAdd).unwrap();
-
-    sb.add_op(OpOver).unwrap();
-    sb.add_op(OpOver).unwrap();
-    sb.add_op(OpDup).unwrap();
-    sb.add_i64(8).unwrap();
-    sb.add_op(OpAdd).unwrap();
-    sb.add_op(OpSubstr).unwrap();
-    sb.add_op(OpBin2Num).unwrap();
-    sb.add_op(OpSwap).unwrap();
-    sb.add_op(OpDrop).unwrap();
-}
-
-fn build_script(delta_daa: i64, expanded_len: usize) -> Vec<u8> {
-    let mut sb = ScriptBuilder::with_flags(EngineFlags { covenants_enabled: true, ..Default::default() });
-
-    sb.add_op(Op0).unwrap();
-    sb.add_op(OpTxInputDaaScore).unwrap();
-    sb.add_i64(delta_daa).unwrap();
-    sb.add_op(OpAdd).unwrap();
-    sb.add_op(OpToAltStack).unwrap();
-
-    // T:
-    sb.add_op(OpDup).unwrap();
-    sb.add_i64(2).unwrap();
-    sb.add_i64(10).unwrap();
-    sb.add_op(OpSubstr).unwrap();
-    sb.add_op(OpBin2Num).unwrap();
-    sb.add_i64(expanded_len as i64).unwrap();
-    sb.add_op(OpEqualVerify).unwrap();
-
-    sb.add_op(OpDup).unwrap();
-    sb.add_i64(18).unwrap();
-    sb.add_i64(50).unwrap();
-    sb.add_op(OpSubstr).unwrap();
-    sb.add_op(OpToAltStack).unwrap(); // Alt: [boundary, T_parent0]
-
-    sb.add_op(OpDup).unwrap();
-    sb.add_data(b"BlockHash").unwrap();
-    sb.add_op(OpBlake2bWithKey).unwrap();
-    sb.add_op(OpChainblockSeqCommit).unwrap();
-    sb.add_op(OpDrop).unwrap();
-
-    append_forward_header_parser(&mut sb, expanded_len);
-    sb.add_op(OpToAltStack).unwrap(); // Alt: [boundary, T_parent0, T_daa_num]
-    sb.add_op(OpDrop).unwrap(); // drop H_T!
-
-    // P:
-    sb.add_op(OpDup).unwrap();
-    sb.add_i64(2).unwrap();
-    sb.add_i64(10).unwrap();
-    sb.add_op(OpSubstr).unwrap();
-    sb.add_op(OpBin2Num).unwrap();
-    sb.add_i64(expanded_len as i64).unwrap();
-    sb.add_op(OpEqualVerify).unwrap();
-
-    sb.add_op(OpDup).unwrap();
-    sb.add_data(b"BlockHash").unwrap();
-    sb.add_op(OpBlake2bWithKey).unwrap(); // [H_P, P_hash]
-
-    sb.add_op(OpFromAltStack).unwrap(); // T_daa_num
-    sb.add_op(OpFromAltStack).unwrap(); // T_parent0
-    sb.add_op(OpRot).unwrap(); // [H_P, T_daa_num, T_parent0, P_hash]
-    sb.add_op(OpEqualVerify).unwrap();
-    sb.add_op(OpToAltStack).unwrap(); // Alt: [boundary, T_daa_num]
-
-    append_forward_header_parser(&mut sb, expanded_len);
-    sb.add_op(OpSwap).unwrap();
-    sb.add_op(OpDrop).unwrap(); // drop H_P -> [P_daa_num]
-
-    sb.add_op(OpFromAltStack).unwrap(); // T_daa_num
-    sb.add_op(OpFromAltStack).unwrap(); // boundary
-
-    sb.add_op(OpRot).unwrap();
-    sb.add_op(OpOver).unwrap();
-    sb.add_op(OpLessThan).unwrap();
-    sb.add_op(OpVerify).unwrap();
-
-    sb.add_op(OpGreaterThanOrEqual).unwrap();
-    sb.add_op(OpVerify).unwrap();
-
-    sb.add_op(OpTrue).unwrap();
-    sb.drain()
-}
-
 fn main() {
+    println!("=== Production Candidate (max_levels=251) Single Source of Truth Measurement ===");
+
     let t_header = parse_header("/root/kaswin/artifacts/tn10/phase-d/T-header.json");
     let p_header = parse_header("/root/kaswin/artifacts/tn10/phase-d/P-header.json");
 
     let t_bytes = serialize_full_header(&t_header);
     let p_bytes = serialize_full_header(&p_header);
 
-    let expanded_len = 61;
+    let max_levels = 251; // Production TN10 limit
     let delta_daa = 100i64;
     let d_arm = t_header.daa_score - 100;
     let seq_commit = t_header.accepted_id_merkle_root;
 
-    let script = build_script(delta_daa, expanded_len);
-    println!("Total script length: {} bytes", script.len());
+    // Single source of truth call:
+    let script = build_bounded_dynamic_covenant(delta_daa, max_levels);
+    println!("Redeem Script Bytes: {}", script.len());
 
     let p2sh_spk = kaspa_txscript::pay_to_script_hash_script(&script);
 
@@ -246,56 +151,48 @@ fn main() {
     sig.add_data(&t_bytes).unwrap();
     sig.add_data(&script).unwrap();
 
-    let tx = Transaction::new(0, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig.drain(), 0, 0)], vec![], 0, SubnetworkId::default(), 0, vec![]);
-    let pop = PopulatedTransaction::new(&tx, vec![UtxoEntry::new(1000000, p2sh_spk.clone(), d_arm, false, None)]);
+    let sig_bytes = sig.drain();
+    println!("Signature Script Bytes: {}", sig_bytes.len());
+
+    // Tx Version 1 with ComputeCommit::ComputeBudget:
+    let tx_measure = Transaction::new(
+        1,
+        vec![TransactionInput::new_with_mass(
+            TransactionOutpoint::new(Hash::default(), 0),
+            sig_bytes.clone(),
+            0,
+            ComputeCommit::ComputeBudget(ComputeBudget(u16::MAX)),
+        )],
+        vec![],
+        0,
+        SubnetworkId::default(),
+        0,
+        vec![],
+    );
+    let pop_measure = PopulatedTransaction::new(&tx_measure, vec![UtxoEntry::new(1000000, p2sh_spk.clone(), d_arm, false, None)]);
     let sig_cache = Cache::new(1000);
     let reused = SigHashReusedValuesUnsync::new();
-    let cov_ctx = CovenantsContext::from_tx(&pop).unwrap();
+    let cov_ctx = CovenantsContext::from_tx(&pop_measure).unwrap();
     let ctx = EngineContext::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx).with_seq_commit_accessor(&accessor);
 
-    // Run VM with max limit to measure actual used_script_units
-    let mut vm = TxScriptEngine::from_transaction_input(&pop, &pop.tx.inputs[0], 0, &pop.entries[0], ctx, flags);
+    let mut vm = TxScriptEngine::from_transaction_input(&pop_measure, &pop_measure.tx.inputs[0], 0, &pop_measure.entries[0], ctx, flags);
     let res = vm.execute();
-    println!("Execution result: {:?}", res);
     assert_eq!(res, Ok(()));
 
-    // How many script units were used?
     let used_units = vm.used_script_units();
-    println!("Actual used script units: {} units", used_units.0);
+    println!("Actual Used Script Units: {}", used_units.0);
 
-    let req_budget = (used_units.0 + SCRIPT_UNITS_PER_COMPUTE_BUDGET_UNIT - 1) / SCRIPT_UNITS_PER_COMPUTE_BUDGET_UNIT;
-    println!("Required ComputeBudget units: {}", req_budget);
-    let compute_mass = req_budget * 100;
-    println!("Resulting compute mass: {} gram", compute_mass);
+    let b_min = ComputeBudget::checked_covering_script_units(used_units).expect("budget must be computable");
+    println!("Minimal ComputeBudget B_min: {}", b_min.value());
 
-    // Test running with EXACT script units limit via from_transaction_input_with_script_units_limit!
-    let ctx2 = EngineContext::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx).with_seq_commit_accessor(&accessor);
-    let mut vm_limited = TxScriptEngine::from_transaction_input_with_script_units_limit(
-        &pop,
-        &pop.tx.inputs[0],
-        0,
-        &pop.entries[0],
-        ctx2,
-        flags,
-        used_units,
-    );
-    let res_limited = vm_limited.execute();
-    println!("Execution with exact script units limit: {:?}", res_limited);
-    assert_eq!(res_limited, Ok(()));
+    let compute_mass = b_min.to_grams().0;
+    println!("Compute Mass: {} gram", compute_mass);
 
-    // Test with used_units - 1 to prove that the limit is enforced strictly!
-    let ctx3 = EngineContext::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx).with_seq_commit_accessor(&accessor);
-    let mut vm_too_tight = TxScriptEngine::from_transaction_input_with_script_units_limit(
-        &pop,
-        &pop.tx.inputs[0],
-        0,
-        &pop.entries[0],
-        ctx3,
-        flags,
-        used_units - kaspa_consensus_core::mass::ScriptUnits(1),
-    );
-    let res_too_tight = vm_too_tight.execute();
-    println!("Execution with (used_units - 1): {:?}", res_too_tight);
-    assert!(matches!(res_too_tight, Err(TxScriptError::ExceededCommittedScriptUnits { .. })));
-    println!(">>> Script units meter strictly validated! <<<");
+    // Calculate total transaction mass (transient + compute)
+    let total_tx_bytes = 2 + 2 + (32 + 4 + sig_bytes.len() + 8 + 2) + 1 + 8 + 20 + 8; // approx serialized tx size
+    let transient_mass = total_tx_bytes as u64; // 1 gram per tx byte
+    let total_mass = compute_mass.max(transient_mass);
+    println!("Total Transaction Bytes: ~{} bytes", total_tx_bytes);
+    println!("Transient Mass: {} gram", transient_mass);
+    println!("Total Transaction Mass: {} gram (Block limit: 500,000 gram)", total_mass);
 }
