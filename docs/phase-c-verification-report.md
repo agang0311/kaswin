@@ -62,7 +62,7 @@
 
 ## 6. 真实脚本实现与反汇编 (REAL SCRIPT)
 
-- **Redeem Script Hex (12 字节)**：
+- **Redeem Script Hex (14 字节)**：
   ```text
   09426c6f636b48617368a7d47551
   ```
