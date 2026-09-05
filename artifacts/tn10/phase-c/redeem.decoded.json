@@ -1,0 +1,9 @@
+{
+  "txid": "f5d6d9fd5c2610783e9ea6cc45b43d546bca09fde21bda0a31a08fa42b432a7e",
+  "spent_outpoint": "02e3ea462eefd8afda9dbad88e8dda2f31044cb4c07050a65d29d2be1e04e478:0",
+  "input_value_sompi": "1000000",
+  "fee_sompi": "1000000",
+  "network": "testnet-10",
+  "covenant_verified": true,
+  "opcode": "OpChainblockSeqCommit(OpBlake2bWithKey(header_preimage))"
+}
