@@ -1,0 +1,54 @@
+{
+  "observedAt": "2026-09-05T09:17:36.674Z",
+  "source": "single resolver-discovered RPC; not independent consensus proof",
+  "endpoint": "wss://neutrino-10.kaspa.stream/kaspa/testnet-10/wrpc/borsh",
+  "serverInfo": {
+    "rpcApiVersion": 1,
+    "rpcApiRevision": 0,
+    "serverVersion": "2.0.1",
+    "networkId": "testnet-10",
+    "hasUtxoIndex": true,
+    "isSynced": true,
+    "virtualDaaScore": "562409525"
+  },
+  "address": "kaspatest:qrg05u38z50weug9f8lcws7p07fzzvfsx9ap82f0akk4gxcs0ew86qd384xyt",
+  "balanceSompi": "500000000000",
+  "utxos": [
+    {
+      "isCoinbase": false,
+      "blockDaaScore": "562405949",
+      "scriptPublicKey": {
+        "script": "20d0fa7227151eecf10549ff8743c17f92213130317a13a92fedad541b107e5c7dac",
+        "version": 0
+      },
+      "entry": {
+        "address": {
+          "prefix": "kaspatest",
+          "payload": "qrg05u38z50weug9f8lcws7p07fzzvfsx9ap82f0akk4gxcs0ew86qd384xyt",
+          "version": "PubKey"
+        },
+        "outpoint": {
+          "transactionId": "7383813a068c39a55eccbe747d7c504809c0b26ba9c2c65b8a6835c56c6519e1",
+          "index": 0
+        },
+        "amount": "500000000000",
+        "scriptPublicKey": {
+          "script": "20d0fa7227151eecf10549ff8743c17f92213130317a13a92fedad541b107e5c7dac",
+          "version": 0
+        },
+        "blockDaaScore": "562405949",
+        "isCoinbase": false
+      },
+      "amount": "500000000000",
+      "address": {
+        "prefix": "kaspatest",
+        "payload": "qrg05u38z50weug9f8lcws7p07fzzvfsx9ap82f0akk4gxcs0ew86qd384xyt",
+        "version": "PubKey"
+      },
+      "outpoint": {
+        "transactionId": "7383813a068c39a55eccbe747d7c504809c0b26ba9c2c65b8a6835c56c6519e1",
+        "index": 0
+      }
+    }
+  ]
+}

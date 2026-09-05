@@ -1,0 +1,35 @@
+{
+  "phase_a": {
+    "fund_txid": "8fdf99a904a0c3c5ecd4b8fad0c1174c4202471642434b86a7ce8eb74fb0b288",
+    "p2sh_outpoint": "8fdf99a904a0c3c5ecd4b8fad0c1174c4202471642434b86a7ce8eb74fb0b288:0",
+    "amount": "10000000",
+    "d_arm": "562621862",
+    "spk": "aa20866d893cb477d7cfdc1371ed2eab9d7a3778ff3ac1cc6df27bdb8433f7d1b6fd87",
+    "p2sh_address": "kaspatest:pzrxmzfuk3ma0n7uzdc76t4tn4arw78l8tqucm0j00dcgvlh6xm06qwdlyk6z",
+    "redeem_script_hex": "00c000a06951",
+    "redeem_txid": "b5ebb9ff2753580702cc6e9e00f9cc81a2d7d4bbad6a3d6bf4586d90a20f6418",
+    "status": "ACCEPTED_AND_CONFIRMED"
+  },
+  "phase_b": {
+    "fund_txid": "8e60e283f8642a361cb1826cc3c6334d11a16e5666778e117a85d6ce229024ac",
+    "p2sh_outpoint": "8e60e283f8642a361cb1826cc3c6334d11a16e5666778e117a85d6ce229024ac:0",
+    "amount": "5000000",
+    "spk": "aa20301be5696027cd30473d13ff81cc59c9b1c4164f8c30c7c6c586d918ce3356e787",
+    "p2sh_address": "kaspatest:pqcphetfvqnu6vz885fllqwvt8ymr3qkf7xrp37xckrdjxxwxdtwwhntpva84",
+    "redeem_script_hex": "d47551",
+    "target_block_hash": "aecfcbae475b3673fa55beca95fb55d077fa33363f722768aa159217dbb24fb6",
+    "redeem_txid": "920ecb3feed0bd5c811e3c6914c2b7829c40c0cd191f2af6184054a0bb34bdbc",
+    "status": "ACCEPTED_AND_CONFIRMED"
+  },
+  "phase_d": {
+    "fund_txid": "bdb11f4d9974300c5488c9b25e45e5060bda5962b67782a9078178af1bdb899c",
+    "armed_outpoint": "bdb11f4d9974300c5488c9b25e45e5060bda5962b67782a9078178af1bdb899c:0",
+    "amount": "2000000",
+    "d_arm": "562624493",
+    "boundary": "562624593",
+    "spk": "aa20241f122b32b86e6aa915fb408884cfc66b859625a6698546ba8cabd0fb9098ed87",
+    "p2sh_address": "kaspatest:pqjp7y3tx2uxu64fzha5pzyyelrxhpvkyknxnp2xh2x2h58mjzvw60hu24nf6",
+    "redeem_script_hex": "00c00164936b6b6c7c6c6ea2696b756bd4756c6b6c7b886c9f6951",
+    "status": "DISPUTED_UNDER_AUDIT"
+  }
+}

@@ -1,0 +1,28 @@
+[39186:39214:0905/170800.165977:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39214:0905/170800.166734:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39214:0905/170800.173544:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39214:0905/170800.194395:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39186:0905/170800.268667:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39186:0905/170800.268729:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39214:0905/170800.268742:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39214:0905/170800.268761:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39186:0905/170800.268938:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39186:0905/170800.272783:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39186:0905/170800.283310:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39186:0905/170800.284518:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39214:0905/170800.284564:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39186:0905/170800.292839:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39214:0905/170800.292925:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39186:0905/170800.299121:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39186:39214:0905/170800.300254:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[39186:39186:0905/170800.303848:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[39231:39259:0905/170802.935825:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun.cloudflare.com., errorcode: -105
+[39231:39259:0905/170802.935897:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun.cloudflare.com., errorcode: -105
+[39231:39259:0905/170802.935906:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun.cloudflare.com., errorcode: -105
+[39231:39259:0905/170802.935944:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun1.l.google.com., errorcode: -105
+[39231:39259:0905/170802.935957:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun1.l.google.com., errorcode: -105
+[39231:39259:0905/170802.935967:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun1.l.google.com., errorcode: -105
+[39231:39259:0905/170802.935989:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun.l.google.com., errorcode: -105
+[39231:39259:0905/170802.936001:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun.l.google.com., errorcode: -105
+[39231:39259:0905/170802.936008:ERROR:services/network/p2p/socket_manager.cc:145] Failed to resolve address for stun.l.google.com., errorcode: -105
+[39186:39217:0905/170804.127094:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT

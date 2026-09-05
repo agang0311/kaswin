@@ -1,0 +1,10 @@
+[package]
+name = "kaswin-vm-validation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kaspa-hashes = { path = "/root/kaspa/references/rusty-kaspa/crypto/hashes" }
+kaspa-consensus-core = { path = "/root/kaspa/references/rusty-kaspa/consensus/core" }
+kaspa-txscript = { path = "/root/kaspa/references/rusty-kaspa/crypto/txscript" }
+kaspa-txscript-errors = { path = "/root/kaspa/references/rusty-kaspa/crypto/txscript/errors" }

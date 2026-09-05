@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaswin A 型协议离线设计工作台</title>
+  <meta name="description" content="Kaswin A 型抽奖协议离线参数设计与推演工作台。未部署，不可投注，无真实合约。">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- 显式且常驻的顶部横幅 -->
+  <aside class="persistent-banner" role="alert" aria-label="协议状态警示">
+    <div class="banner-inner">
+      <span class="banner-badge">离线设计工作台 · 未部署 · 不可投注</span>
+      <span class="banner-text">
+        当前仅供 Kaswin A 型协议参数推演与规则验证。<strong>本协议无真实部署合约</strong>，随机证据与活性证明尚未冻结，严禁充值或下注。所有导入数据均视为<strong>本地未验证数据</strong>，绝非链上事实证据。
+      </span>
+    </div>
+  </aside>
+
+  <div class="app-container">
+    <!-- 头部标识 -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="header-title-wrap">
+          <div class="brand-icon" aria-hidden="true">K</div>
+          <div>
+            <h1 class="app-title">Kaswin 协议工作台</h1>
+          </div>
+        </div>
+        <div class="header-meta">
+          <span class="meta-tag highlight">A 型: 满额开奖 / 未满退款</span>
+          <span class="meta-tag">草案版本 0.1</span>
+          <span class="meta-tag">离线推演</span>
+          <span class="meta-tag">无特权私钥</span>
+        </div>
+      </div>
+      <p class="app-subtitle">
+        任何人可创建、纯链上规则裁决、零平台抽成的 Kaspa 抽奖协议规范推演环境。
+      </p>
+    </header>
+
+    <!-- 主工作区双列布局 -->
+    <main class="workbench-grid">
+      <!-- 左侧：参数设计、实时奖池与导入导出 -->
+      <section class="grid-column" aria-label="参数设计与推演">
+        
+        <!-- 参数设计卡片 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">A 型参数草案配置</h2>
+            <span id="draft-status-badge" class="card-badge">本地设计草案（离线推演）</span>
+          </div>
+
+          <!-- 动态错误提示框 -->
+          <div id="validation-alert" class="alert alert-danger" style="display: none;" role="alert">
+            <strong>参数校验未通过：</strong>
+            <span id="validation-error-msg"></span>
+          </div>
+
+          <form id="draft-form" novalidate>
+            <!-- 标题 -->
+            <div class="form-group">
+              <label class="form-label" for="draft-title">
+                <span>草案标题 (Title)</span>
+                <span class="label-hint">1 ~ 64 字符</span>
+              </label>
+              <input
+                id="draft-title"
+                name="title"
+                type="text"
+                class="input-control"
+                maxlength="64"
+                autocomplete="off"
+                required
+              >
+              <div class="field-help">用于本地草案标识与推演区分，使用纯文本存储。</div>
+            </div>
+
+            <!-- 票价 (KAS) -->
+            <div class="form-group">
+              <label class="form-label" for="ticket-price-kas">
+                <span>单票价格 (Ticket Price, KAS)</span>
+                <span class="label-hint">十进制字符串，最多 8 位小数</span>
+              </label>
+              <input
+                id="ticket-price-kas"
+                name="ticketPriceKas"
+                type="text"
+                inputmode="decimal"
+                class="input-control mono"
+                autocomplete="off"
+                required
+              >
+              <div class="field-help">
+                Kaspa 链上原子单位为 sompi (1 KAS = 100,000,000 sompis)。本系统采用 BigInt 绝对精确计算，杜绝浮点数精度损耗。
+              </div>
+            </div>
+
+            <!-- 总票数 (Tickets) -->
+            <div class="form-group">
+              <label class="form-label" for="ticket-count">
+                <span>总发行票数 (Total Tickets)</span>
+                <span class="label-hint">规范正整数 [2 ~ 1,000,000]</span>
+              </label>
+              <input
+                id="ticket-count"
+                name="ticketCount"
+                type="number"
+                min="2"
+                max="1000000"
+                step="1"
+                class="input-control mono"
+                autocomplete="off"
+                required
+              >
+              <div class="field-help important">
+                <strong>注意：</strong>[2 ~ 1,000,000] 为明确的<strong>本地草案推演范围</strong>，非 Kaspa 链上协议的硬性共识限制。
+              </div>
+            </div>
+
+            <!-- 退款 DAA 阈值 -->
+            <div class="form-group">
+              <label class="form-label" for="refund-daa">
+                <span>未满退款 DAA 阈值 (Refund Threshold DAA)</span>
+                <span class="label-hint">正整数 &le; 2^63 - 1</span>
+              </label>
+              <input
+                id="refund-daa"
+                name="refundThresholdDaa"
+                type="text"
+                inputmode="numeric"
+                class="input-control mono"
+                autocomplete="off"
+                required
+              >
+              <div class="field-help">
+                DAA score 与 blue score 是不同指标。此字段仅为本地草案：拟在满足经验证的链上时间条件且仍未满时，允许任何人发起退款；具体锁定语义尚未实现。
+              </div>
+            </div>
+
+            <!-- 奖池精确推演预览框 -->
+            <div class="prize-preview-box" aria-live="polite">
+              <div class="preview-title">
+                <span>精确 BigInt 奖池核算预览</span>
+                <span>P = Price &times; Tickets</span>
+              </div>
+              <div class="preview-gross-row">
+                <span class="gross-label">满额总奖池 (Gross Pool P):</span>
+                <span id="preview-gross-kas" class="gross-amount">— KAS</span>
+              </div>
+              <div id="preview-gross-sompi" class="gross-sompi">— sompis</div>
+
+              <div class="preview-specs">
+                <div class="spec-item">
+                  <span>单票价格:</span>
+                  <strong id="preview-single-kas">— KAS</strong>
+                  <span id="preview-single-sompi" style="font-family: var(--font-mono); font-size: 0.72rem;">— sompis</span>
+                </div>
+                <div class="spec-item">
+                  <span>票数规模:</span>
+                  <strong id="preview-count-display">— 张</strong>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">单赢家全额获得</span>
+                </div>
+                <div class="spec-item">
+                  <span>平台抽成比例:</span>
+                  <strong style="color: var(--teal-primary);">0.0% (零抽成)</strong>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">票款 100% 归胜出者</span>
+                </div>
+                <div class="spec-item">
+                  <span>初始执行储备 (C):</span>
+                  <strong>创建者预付 (独立于 P)</strong>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">网络费不侵蚀票款本金</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 表单操作按钮组 -->
+            <div class="btn-group">
+              <button id="btn-download-json" type="button" class="btn btn-primary">
+                导出草案 JSON 文件
+              </button>
+              <button id="btn-reset-form" type="button" class="btn btn-secondary">
+                恢复默认参数
+              </button>
+            </div>
+
+            <!-- 资金操作显式禁用区 -->
+            <div class="money-disabled-zone">
+              <div class="money-disabled-header">
+                <span>🚫 资金操作已禁用 (不可投注 / 未部署)</span>
+              </div>
+              <div class="money-disabled-buttons">
+                <button
+                  type="button"
+                  class="btn btn-disabled"
+                  disabled
+                  title="不可投注 · 协议未部署 · 链上逻辑尚未冻结"
+                >
+                  发起链上创建 (不可用 · 未部署)
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-disabled"
+                  disabled
+                  title="不可投注 · 协议未部署 · 链上逻辑尚未冻结"
+                >
+                  投注买票 (不可用 · 未部署)
+                </button>
+              </div>
+              <div class="money-disabled-caption">
+                真实链上交易入口已锁定：本协议当前无已部署合约，链上随机算法与活性证明未解决，杜绝任何资金操作与钱包连接。
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- 草案导入与 JSON 审查区 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">草案导入与 JSON 审查</h2>
+            <span class="card-badge">Schema: kaswin/a-type-draft/v1</span>
+          </div>
+
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            支持导入版本化草案 JSON 进行推演。系统进行严格的模式校验、字节尺寸限制 (&le; 64 KB) 及私钥拦截检查。所有导入数据均标识为<strong>未验证本地数据</strong>。
+          </p>
+
+          <div class="btn-group" style="margin-top: 0; margin-bottom: 0.75rem;">
+            <input id="file-input" type="file" accept=".json,application/json" class="file-input-hidden">
+            <button id="btn-import-file" type="button" class="btn btn-secondary">
+              从本地 JSON 文件导入
+            </button>
+            <button id="btn-parse-pasted-json" type="button" class="btn btn-secondary">
+              解析下方文本框 JSON
+            </button>
+            <button id="btn-copy-json" type="button" class="btn btn-secondary">
+              复制 JSON
+            </button>
+          </div>
+
+          <div class="json-inspector-wrap">
+            <textarea
+              id="json-inspector"
+              class="json-textarea"
+              spellcheck="false"
+              placeholder="此处显示当前草案的规范 JSON 数据，或粘贴外部草案 JSON 后点击“解析下方文本框 JSON”..."
+            ></textarea>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- 右侧：协议状态机图解、核心不变式与风险阻塞点 -->
+      <section class="grid-column" aria-label="协议规范与阻塞点论证">
+        
+        <!-- 状态机转换图卡片 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">A 型协议状态转换图</h2>
+            <span class="card-badge">UTXO 状态机语义</span>
+          </div>
+
+          <div class="state-flow">
+            <!-- 初始 -->
+            <div class="state-step">
+              <div class="state-step-header">
+                <span class="state-name">[NONE] 初始状态</span>
+                <span class="state-trigger">动作: create</span>
+              </div>
+              <div class="state-desc">
+                创建者存入初始执行储备 C 并锁定不变配置（票价、总票数、退款 DAA）。无预铸未付款票。
+              </div>
+            </div>
+
+            <!-- OPEN -->
+            <div class="state-step active">
+              <div class="state-step-header">
+                <span class="state-name">[OPEN] 售票中 (Tickets: 0..N-1)</span>
+                <span class="state-trigger">动作: buy (原子新增票权与付款)</span>
+              </div>
+              <div class="state-desc">
+                购买者付款，票款本金 P 精确增加 <code>price &times; count</code>。未满前持续保持 OPEN 状态。
+              </div>
+              <div class="state-rule-highlight">
+                分支 1: 售出最后一票 &rarr; [SEALED] | 分支 2: DAA 达到阈值且未满 &rarr; [REFUNDING] | 分支 3: 零购 &rarr; [TERMINATED]
+              </div>
+            </div>
+
+            <!-- SEALED -->
+            <div class="state-step">
+              <div class="state-step-header">
+                <span class="state-name">[SEALED] 满额封盘 (Tickets: N)</span>
+                <span class="state-trigger">动作: draw &amp; pay</span>
+              </div>
+              <div class="state-desc">
+                最后一票交易原子冻结全体票权集合，永久关闭购买通道。依据不可操控随机证据计算唯一胜出者。
+              </div>
+            </div>
+
+            <!-- PAID -->
+            <div class="state-step">
+              <div class="state-step-header">
+                <span class="state-name terminal">[PAID] 开奖终局 (Terminal)</span>
+                <span class="state-trigger">结果: 胜出者全额领奖</span>
+              </div>
+              <div class="state-desc">
+                唯一胜出者获得全部票款奖池 P。不可逆终局，绝不能重新开放售票或篡改赢家。
+              </div>
+            </div>
+
+            <!-- REFUNDING -->
+            <div class="state-step">
+              <div class="state-step-header">
+                <span class="state-name">[REFUNDING] 到期退款中</span>
+                <span class="state-trigger">条件: DAA &ge; 阈值 且 未满额</span>
+              </div>
+              <div class="state-desc">
+                冻结退款集合，禁止再买或开奖。参与者按票权逐笔或批量取回原始本金。
+              </div>
+            </div>
+
+            <!-- REFUNDED / TERMINATED -->
+            <div class="state-step">
+              <div class="state-step-header">
+                <span class="state-name terminal">[REFUNDED / TERMINATED] 退出终局</span>
+                <span class="state-trigger">终局状态</span>
+              </div>
+              <div class="state-desc">
+                本金 100% 退回参与者；若零购买则创建者回收储备 C 终止。不可逆终局。
+              </div>
+            </div>
+          </div>
+
+          <!-- 核心不可变式 -->
+          <div class="invariants-list">
+            <div class="invariant-item">
+              <div class="invariant-title">1. 资金严格分离 (P vs C)</div>
+              <div class="invariant-desc">
+                票款本金 P 与执行储备 C 严格隔离。网络执行手续费由储备支付，绝不隐式侵蚀票款。
+              </div>
+            </div>
+            <div class="invariant-item">
+              <div class="invariant-title">2. 终局不可逆</div>
+              <div class="invariant-desc">
+                一旦进入 PAID、REFUNDED 或 TERMINATED，状态永久锁定，无法恢复为售票或更换赢家。
+              </div>
+            </div>
+            <div class="invariant-item">
+              <div class="invariant-title">3. 无管理员特权</div>
+              <div class="invariant-desc">
+                无任何管理员公钥。推进与退款均为无许可执行，无法由特权者中途改动规则。
+              </div>
+            </div>
+            <div class="invariant-item">
+              <div class="invariant-title">4. 零抽成单赢家</div>
+              <div class="invariant-desc">
+                默认 0% 平台抽成，总奖池等于全部售出票款，由链上随机选出的单张票权独占。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 核心阻塞点与风险论证 (取自 docs/type-a.md & docs/randomness-recovery.md) -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">协议核心阻塞点论证 (Docs 核验)</h2>
+            <span class="card-badge" style="color: #fbbf24; border-color: #854d0e;">关键理论阻塞</span>
+          </div>
+
+          <!-- 阻塞点 1 -->
+          <div class="risk-card">
+            <div class="risk-title">
+              <span>⚠️ 阻塞点 1: 时间与购买竞争 (Time vs Buy Contention)</span>
+            </div>
+            <div class="risk-content">
+              当满足协议退款时间条件时，未满 OPEN 状态下的买票（buy）与退款（beginRefund）存在交易竞争。Kaspa 交易的 locktime 无法直接作为当前时间的绝对上限，输入 DAA 的检查仅能约束消费交易边界。协议暂以“到达退款条件后允许发起退出”为语义，不能宣传为绝对精确的墙钟时刻自动截止。
+            </div>
+          </div>
+
+          <!-- 阻塞点 2 -->
+          <div class="risk-card">
+            <div class="risk-title">
+              <span>⚠️ 阻塞点 2: 公平随机与证据窗口 (Randomness Beacon &amp; R1a)</span>
+            </div>
+            <div class="risk-content">
+              开奖随机种子必须在全体票权集合封盘（SEALED）之后产生，严禁依赖可预测的历史区块或中心化 Oracle。Kaspa 原生 <code>OpChainblockSeqCommit</code> 仅支持有限深度窗口访问；若超窗，直接查询将失败。主设计候选 R1a 采用“旧开奖目标 T + 新验证锚 R”的分步递推证明，但上游 <code>proving-spec</code> 仍为 Reserved，最坏证据大小与 mass 尚未冻结。
+            </div>
+          </div>
+
+          <!-- 阻塞点 3 -->
+          <div class="risk-card">
+            <div class="risk-title">
+              <span>⚠️ 阻塞点 3: 满额后的活性保障 (Post-Sealed Liveness)</span>
+            </div>
+            <div class="risk-content">
+              为防止胜负揭晓后的套利，协议禁止任意的“看结果退款”。然而，若封盘后随机证明长期无法获得、执行储备耗尽或验证脚本超限，契约资金的退出通道尚未证明成立。在彻底论证活性与退出路径之前，严禁作为真实接收资金的产品交付。
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- 底部合规与真实性声明 -->
+    <footer class="app-footer">
+      <div class="footer-inner">
+        <div class="footer-notice">
+          <strong>真实性与合规声明：</strong>
+          本工作台为自包含离线单页，不包含任何伪造的交易历史、虚拟中奖轮次或动画转盘。不连接任何链上节点，不调用钱包 API，不存储或访问任何私钥，不执行链上广播。
+        </div>
+        <div class="footer-meta">
+          <span>Kaswin Protocol Research Workbench</span>
+          <span>&middot;</span>
+          <span>纯前端静态构建</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 开发环境下加载 ES 模块脚本；生产构建时将由 tools/build.js 内联替换 -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

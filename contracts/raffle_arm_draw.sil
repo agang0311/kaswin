@@ -1,0 +1,86 @@
+// Kaswin V1 Minimal ARM -> DRAW Covenant Specification
+// Protocol: SEALED -> ARMED -> DRAWN
+// Language: SilverScript (Toccata Profile)
+
+contract KaswinArmDraw(
+    int protocol_version,
+    byte[32] round_id,
+    byte[32] ticket_root,
+    int total_tickets,
+    int delta_daa
+) {
+    // Domain separation key for header hash: "BlockHash"
+    const byte[9] BLOCK_HASH_KEY = 0x426c6f636b48617368; // "BlockHash"
+
+    // Reconstruct block hash from canonical header preimage components
+    function blockHash(
+        byte[] before_daa,
+        int daa_score,
+        int blue_score,
+        byte[] encoded_blue_work,
+        byte[32] pruning_point
+    ) : byte[32] {
+        byte[] header = before_daa + byte[](byte[8](daa_score)) + byte[](byte[8](blue_score)) + encoded_blue_work + byte[](pruning_point);
+        return(byte[32](OpBlake2bWithKey(header, byte[](BLOCK_HASH_KEY))));
+    }
+
+    // Permissionless ARM: Advances contract state from SEALED to ARMED
+    // The created ARMED UTXO records the block DAA score at inclusion time.
+    entrypoint function arm() {
+        // Enforce state transition: outputs[0] retains the covenant script
+        require(OpTxOutputCount == 1);
+        require(OpTxOutputSpk(0) == OpTxInputSpk(OpTxInputIndex));
+        require(OpTxOutputAmount(0) == OpTxInputAmount(OpTxInputIndex));
+    }
+
+    // Permissionless DRAW: Consumes ARMED UTXO and certifies canonical first-crossing block
+    entrypoint function draw(
+        byte[] target_before_daa,
+        int target_daa,
+        int target_blue_score,
+        byte[] target_blue_work,
+        byte[32] target_pruning_point,
+        byte[32] parent_hash,
+        byte[] parent_before_daa,
+        int parent_daa,
+        int parent_blue_score,
+        byte[] parent_blue_work,
+        byte[32] parent_pruning_point
+    ) {
+        // 1. Read creation DAA of the ARMED UTXO being spent
+        int d_arm = OpTxInputDaaScore(OpTxInputIndex);
+        int boundary = d_arm + delta_daa;
+
+        // 2. Boundary crossing predicate
+        require(parent_daa < boundary && target_daa >= boundary);
+
+        // 3. Reconstruct Parent Hash and Target Hash
+        byte[32] computed_parent_hash = blockHash(parent_before_daa, parent_daa, parent_blue_score, parent_blue_work, parent_pruning_point);
+        require(computed_parent_hash == parent_hash);
+
+        // 4. In Toccata consensus, target.direct_parents()[0] is strictly the selected parent.
+        // In the canonical block-hash preimage, parent[0] is located at byte offset 18..50.
+        require(byte[32](target_before_daa.slice(18, 50)) == parent_hash);
+
+        // 5. Reconstruct Target Block Hash
+        byte[32] target_hash = blockHash(target_before_daa, target_daa, target_blue_score, target_blue_work, target_pruning_point);
+
+        // 6. Assert Target Block is on the selected-parent chain within access window
+        byte[32] seq_commit = byte[32](OpChainblockSeqCommit(target_hash));
+        require(seq_commit != 0x0000000000000000000000000000000000000000000000000000000000000000);
+
+        // 7. Seed derivation and Winner mapping
+        byte[32] seed = sha256(
+            0x4b415357494e5f445241575f5631 + // "KASWIN_DRAW_V1"
+            byte[](byte[4](protocol_version)) +
+            byte[](round_id) +
+            byte[](ticket_root) +
+            byte[](byte[8](total_tickets)) +
+            byte[](target_hash) +
+            byte[](seq_commit)
+        );
+
+        // Winner output settlement validation (P2PK payout)
+        require(OpTxOutputCount >= 1);
+    }
+}

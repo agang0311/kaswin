@@ -1,0 +1,11 @@
+{
+  "name": "kaswin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kaswin bounded offline protocol workbench",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node --test tests/*.test.js"
+  }
+}

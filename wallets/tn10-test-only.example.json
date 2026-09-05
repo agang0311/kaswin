@@ -1,0 +1,5 @@
+{
+  "networkId": "testnet-10",
+  "address": "kaspatest:qrg05u38z50weug9f8lcws7p07fzzvfsx9ap82f0akk4gxcs0ew86qd384xyt",
+  "notes": "Dedicated testnet-10 public address placeholder. Private keys are excluded from git."
+}
