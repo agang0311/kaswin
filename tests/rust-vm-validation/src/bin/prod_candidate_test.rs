@@ -159,7 +159,7 @@ fn main() {
 
     // 1. Measure script units with unbounded run
     let tx_measure = Transaction::new(
-        1,
+        1, // Version 1!
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
             sig_bytes.clone(),
@@ -319,13 +319,31 @@ fn main() {
     let b_min_251 = ComputeBudget::checked_covering_script_units(vm_251.used_script_units()).unwrap();
     println!("Required ComputeBudget for L=251: {}", b_min_251.value());
 
-    // 5. Test Malformed L = 252 -> MUST FAIL
-    println!("\n5. Testing Malformed L = 252 (exceeding max_levels=251)...");
-    let mut bad_l252_bytes = t_l251_bytes.clone();
-    bad_l252_bytes[2..10].copy_from_slice(&(252u64).to_le_bytes()); // Corrupt L to 252
+    // 5. Blocker B Fix: Isolated Test with Valid BlockHash for L = 252 -> MUST FAIL AT PARSER
+    println!("\n5. Blocker B Fix: Testing L = 252 fixture with authentic BlockHash in SeqCommit...");
+    let mut t_l252 = t_header.clone();
+    let mut t_levels_252 = Vec::new();
+    t_levels_252.push(vec![p_l251.hash]);
+    for _ in 1..252 {
+        t_levels_252.push(vec![Hash::default()]);
+    }
+    t_l252.parents_by_level = t_levels_252.try_into().unwrap();
+    t_l252.hash = reassemble_hash(&t_l252);
+    assert_eq!(t_l252.parents_by_level.expanded_len(), 252);
+
+    let t_l252_bytes = serialize_full_header(&t_l252);
+
+    // Register t_l252.hash with mock SeqCommit so OpChainblockSeqCommit SUCCEEDS!
+    let mut seq_commits_252 = HashMap::new();
+    seq_commits_252.insert(t_l252.hash, t_l252.accepted_id_merkle_root);
+    let accessor_252 = LocalMockAccessor {
+        selected_chain: vec![p_l251.hash, t_l252.hash],
+        seq_commits: seq_commits_252,
+    };
+
     let mut sig_252 = ScriptBuilder::with_flags(flags);
     sig_252.add_data(&p_l251_bytes).unwrap();
-    sig_252.add_data(&bad_l252_bytes).unwrap();
+    sig_252.add_data(&t_l252_bytes).unwrap();
     sig_252.add_data(&script).unwrap();
     let tx_252 = Transaction::new(
         1,
@@ -343,11 +361,13 @@ fn main() {
     );
     let pop_252 = PopulatedTransaction::new(&tx_252, vec![UtxoEntry::new(1000000, p2sh_spk, d_arm, false, None)]);
     let cov_ctx_252 = CovenantsContext::from_tx(&pop_252).unwrap();
-    let ctx_252 = EngineContext::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_252).with_seq_commit_accessor(&accessor_251);
+    let ctx_252 = EngineContext::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_252).with_seq_commit_accessor(&accessor_252);
     let mut vm_252 = TxScriptEngine::from_transaction_input(&pop_252, &pop_252.tx.inputs[0], 0, &pop_252.entries[0], ctx_252, flags);
     let res_252 = vm_252.execute();
-    println!("Execution with L = 252 (exceeding limit): {:?}", res_252);
-    assert!(res_252.is_err(), "L = 252 MUST be rejected by max_levels check!");
+    println!("Execution with authentic SeqCommit but L = 252: {:?}", res_252);
+    // BlockHash was authentic, SeqCommit succeeded, but parser rejected L > 251 with VerifyError!
+    assert!(matches!(res_252, Err(TxScriptError::VerifyError)), "L = 252 MUST fail at parser's OpLessThanOrEqual + OpVerify with VerifyError!");
+    println!(">>> Blocker B verified: L=252 rejected specifically with VerifyError at parser level! <<<");
 
-    println!("\n>>> ALL TESTS IN PROD CANDIDATE (max_levels=251) PASSED WITH COMPLETE CONSENSUS ACCURACY! <<<");
+    println!("\n>>> ALL TESTS IN PROD CANDIDATE (max_levels=251) COMPLETED! <<<");
 }
