@@ -1750,10 +1750,13 @@ dependencies = [
 name = "kaswin-vm-validation"
 version = "0.1.0"
 dependencies = [
+ "blake2b_simd",
+ "faster-hex",
  "kaspa-consensus-core",
  "kaspa-hashes",
  "kaspa-txscript",
  "kaspa-txscript-errors",
+ "serde_json",
 ]
 
 [[package]]
