@@ -1,21 +1,9 @@
-// Kaswin Phase D Authenticated First-Crossing Covenant
-// Implements full cryptographic binding:
-// 1. T_header = T_before_parent0 || T_parent0 || T_between_p0_and_daa || T_daa || T_tail
-// 2. BlockHash(T_header) via OpBlake2bWithKey("BlockHash")
-// 3. OpChainblockSeqCommit(T_hash)
-// 4. P_header = P_before_daa || P_daa || P_tail
-// 5. BlockHash(P_header) via OpBlake2bWithKey("BlockHash")
-// 6. require(T_parent0 == P_hash)
-// 7. boundary = OpTxInputDaaScore(0) + delta
-// 8. require(OpBin2Num(T_daa) >= boundary)
-// 9. require(OpBin2Num(P_daa) < boundary)
-
 use kaspa_txscript::{
     script_builder::ScriptBuilder,
     opcodes::codes::*,
 };
 
-pub fn build_authenticated_first_crossing_script(delta_daa: i64) -> Vec<u8> {
+pub fn build_repartition_proof_first_crossing_script(delta_daa: i64) -> Vec<u8> {
     let mut sb = ScriptBuilder::new();
 
     // 1. Calculate boundary from ARMED input 0 DAA:
@@ -33,23 +21,42 @@ pub fn build_authenticated_first_crossing_script(delta_daa: i64) -> Vec<u8> {
     //  T_before_parent0, T_parent0 (32B), T_between, T_daa (8B), T_tail]
 
     // Step A: Process T
-    // Top of stack is T_tail.
-    // Concatenate T components:
-    // Stack: [..., T_before_parent0, T_parent0, T_between, T_daa, T_tail]
-    // We need T_daa for numeric comparison later, so let's save a copy to AltStack!
-    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_p0, T_between, T_tail, T_daa]
-    sb.add_op(OpDup).unwrap();  // duplicate T_daa
+    // 1. Assert T_tail is exactly 55 bytes
+    sb.add_op(OpSize).unwrap(); // [..., T_tail, len(T_tail)]
+    sb.add_i64(55).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap(); // Strictly enforces T_tail == 55 bytes!
+
+    // 2. Assert T_daa is exactly 8 bytes
+    sb.add_op(OpSwap).unwrap(); // [..., T_between, T_tail, T_daa]
+    sb.add_op(OpSize).unwrap(); // [..., T_between, T_tail, T_daa, len(T_daa)]
+    sb.add_i64(8).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap(); // Strictly enforces T_daa == 8 bytes!
+
+    // Save T_daa to AltStack for numeric comparison
+    sb.add_op(OpDup).unwrap();
     sb.add_op(OpToAltStack).unwrap(); // Alt: [boundary, T_daa]
-    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_p0, T_between, T_daa, T_tail]
-    sb.add_op(OpCat).unwrap();  // [..., T_before, T_p0, T_between, T_daa_tail]
+    sb.add_op(OpSwap).unwrap(); // [..., T_between, T_daa, T_tail]
+    sb.add_op(OpCat).unwrap();  // [..., T_between, T_daa_tail]
     sb.add_op(OpCat).unwrap();  // [..., T_before, T_p0, T_between_daa_tail]
 
-    // Save T_parent0 for comparison with P_hash!
-    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_between_daa_tail, T_parent0]
+    // 3. Assert T_parent0 is exactly 32 bytes
+    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_between_daa_tail, T_p0]
+    sb.add_op(OpSize).unwrap();
+    sb.add_i64(32).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap(); // Strictly enforces T_parent0 == 32 bytes!
+
+    // Save T_parent0 to AltStack
     sb.add_op(OpDup).unwrap();
     sb.add_op(OpToAltStack).unwrap(); // Alt: [boundary, T_daa, T_parent0]
-    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_parent0, T_between_daa_tail]
+    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_p0, T_between_daa_tail]
     sb.add_op(OpCat).unwrap();  // [..., T_before, T_p0_between_daa_tail]
+
+    // 4. Assert T_before_parent0 is exactly 18 bytes
+    sb.add_op(OpSwap).unwrap(); // [..., T_p0_between_daa_tail, T_before]
+    sb.add_op(OpSize).unwrap();
+    sb.add_i64(18).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap(); // Strictly enforces T_before_parent0 == 18 bytes!
+    sb.add_op(OpSwap).unwrap(); // [..., T_before, T_p0_between_daa_tail]
     sb.add_op(OpCat).unwrap();  // [P_before_daa, P_daa, P_tail, T_full_header]
 
     // Compute T_hash:
@@ -59,18 +66,27 @@ pub fn build_authenticated_first_crossing_script(delta_daa: i64) -> Vec<u8> {
 
     // Enforce OpChainblockSeqCommit(T_hash):
     sb.add_op(OpChainblockSeqCommit).unwrap();
-    // Stack: [P_before_daa, P_daa, P_tail, T_seq_commit]
     sb.add_op(OpDrop).unwrap(); // drop seq_commit
     // Stack: [P_before_daa, P_daa, P_tail]
 
     // Step B: Process P
-    // We need P_daa for numeric comparison later, save a copy to AltStack!
+    // 5. Assert P_tail is exactly 55 bytes
+    sb.add_op(OpSize).unwrap();
+    sb.add_i64(55).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap(); // Strictly enforces P_tail == 55 bytes!
+
+    // 6. Assert P_daa is exactly 8 bytes
     sb.add_op(OpSwap).unwrap(); // [P_before_daa, P_tail, P_daa]
+    sb.add_op(OpSize).unwrap();
+    sb.add_i64(8).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap(); // Strictly enforces P_daa == 8 bytes!
+
+    // Save P_daa to AltStack
     sb.add_op(OpDup).unwrap();
     sb.add_op(OpToAltStack).unwrap(); // Alt: [boundary, T_daa, T_parent0, P_daa]
     sb.add_op(OpSwap).unwrap(); // [P_before_daa, P_daa, P_tail]
-    sb.add_op(OpCat).unwrap();  // [P_before_daa, P_daa_tail]
-    sb.add_op(OpCat).unwrap();  // [P_full_header]
+    sb.add_op(OpCat).unwrap();
+    sb.add_op(OpCat).unwrap(); // [P_full_header]
 
     // Compute P_hash:
     sb.add_data(b"BlockHash").unwrap();
@@ -86,7 +102,7 @@ pub fn build_authenticated_first_crossing_script(delta_daa: i64) -> Vec<u8> {
     // Stack: [P_daa]
 
     // Step D: Verify P_daa < boundary
-    sb.add_op(OpBin2Num).unwrap(); // converts 8-byte LE to script number!
+    sb.add_op(OpBin2Num).unwrap();
     sb.add_op(OpFromAltStack).unwrap(); // T_daa
     sb.add_op(OpFromAltStack).unwrap(); // boundary
     // Stack: [P_daa_num, T_daa_bytes, boundary]
