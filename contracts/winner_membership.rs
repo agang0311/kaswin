@@ -35,11 +35,51 @@ pub fn build_winner_membership_verifier_script(
     sb.add_op(OpNumEqualVerify)?;
 
     // -------------------------------------------------------------
+    // STEP 0: Canonical Witness Width Checks
+    // purchase_index (depth 0): exactly 8 bytes
+    // start_ticket (depth 1): exactly 8 bytes
+    // count (depth 2): exactly 8 bytes
+    // siblings[0..26] (depths 4..30): each exactly 32 bytes
+    // -------------------------------------------------------------
+    // purchase_index:
+    sb.add_op(Op0)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // start_ticket:
+    sb.add_op(Op1)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // count:
+    sb.add_op(Op2)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // siblings[0..26]:
+    for i in 4..31 {
+        sb.add_i64(i as i64)?;
+        sb.add_op(OpPick)?;
+        sb.add_op(OpSize)?;
+        sb.add_i64(32)?;
+        sb.add_op(OpNumEqualVerify)?;
+        sb.add_op(OpDrop)?;
+    }
+
+    // -------------------------------------------------------------
     // STEP 1: Range Interval Assertion:
     // start_ticket <= winner_index < start_ticket + count
     // -------------------------------------------------------------
     // Range check 1: start_ticket <= winner_index
-    // [start_ticket, winner_index] OpLessThanOrEqual (a <= b)
     sb.add_op(Op1)?;
     sb.add_op(OpPick)?; // start_ticket (8B LE)
     sb.add_op(OpBin2Num)?;
@@ -48,7 +88,6 @@ pub fn build_winner_membership_verifier_script(
     sb.add_op(OpVerify)?; // start_ticket <= winner_index verified!
 
     // Range check 2: winner_index < start_ticket + count
-    // [winner_index, start_ticket + count] OpLessThan (a < b)
     sb.add_i64(winner_index as i64)?;
     sb.add_op(Op2)?;
     sb.add_op(OpPick)?; // start_ticket
@@ -64,10 +103,9 @@ pub fn build_winner_membership_verifier_script(
     // STEP 2: Compute payout_commitment
     // payout_commitment = BLAKE2b256(b"KaswinPayoutSpkV1" || le_u32(len) || payout_spk)
     // -------------------------------------------------------------
-    // Stack: [siblings[26..0], payout_spk, count, start_ticket, purchase_index]
     sb.add_i64(3)?;
     sb.add_op(OpPick)?; // [..., payout_spk]
-    sb.add_op(OpSize)?;  // [..., payout_spk, len] (OpSize does not consume payout_spk!)
+    sb.add_op(OpSize)?;  // [..., payout_spk, len]
     sb.add_i64(4)?;
     sb.add_op(OpNum2Bin)?; // [..., payout_spk, len_4B_le]
     sb.add_data(b"KaswinPayoutSpkV1")?;
@@ -118,7 +156,6 @@ pub fn build_winner_membership_verifier_script(
     // STEP 4: Merkle Tree Bottom-Up Traversal (Level 0 up to Level 26)
     // -------------------------------------------------------------
     for i in 0..TREE_DEPTH {
-        // Stack: [..., sibling_i, purchase_idx_num]
         sb.add_op(OpDup)?;
         if i > 0 {
             sb.add_i64(1i64 << i)?;
@@ -137,7 +174,6 @@ pub fn build_winner_membership_verifier_script(
             sb.add_op(OpSwap)?; // if bit == 1: sibling_i (left) || current_hash (right)
         sb.add_op(OpEndIf)?;
 
-        // Now top of stack is [left, right]
         sb.add_op(OpCat)?; // [left || right] (64 bytes)
         sb.add_data(b"KaswinTicketNodeV1")?;
         sb.add_op(OpSwap)?;

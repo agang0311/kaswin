@@ -52,13 +52,33 @@ pub fn build_open_prefix(
     res
 }
 
+/// Canonical initial OPEN covenant builder:
+/// Enforces sold_tickets = 0, purchase_count = 0, ticket_root = EMPTY_ROOT_27.
+pub fn build_initial_open_covenant(
+    round_id: Hash,
+    ticket_price: u64,
+    total_tickets: u64,
+    delta_daa: u64,
+) -> ScriptBuilderResult<Vec<u8>> {
+    let empty_root = crate::ticket_commitment::compute_empty_root_27();
+    build_open_covenant(
+        round_id,
+        ticket_price,
+        total_tickets,
+        0,
+        0,
+        empty_root,
+        delta_daa,
+    )
+}
+
 pub fn canonical_open_body_len(
     round_id: Hash,
     ticket_price: u64,
     total_tickets: u64,
     delta_daa: u64,
 ) -> usize {
-    let mut guess = 1500usize;
+    let mut guess = 3000usize;
     for _ in 0..16 {
         let body = build_open_covenant_body(round_id, ticket_price, total_tickets, delta_daa, guess).unwrap();
         if body.len() == guess {
@@ -117,6 +137,27 @@ fn build_open_covenant_body(
     sb.add_op(OpNumEqualVerify)?;
 
     // -------------------------------------------------------------
+    // STEP 0: Witness Canonical Width Checks
+    // count is at depth 6: MUST be exactly 8 bytes!
+    // siblings[0..26] are at depths 8..34: EACH MUST be exactly 32 bytes!
+    // -------------------------------------------------------------
+    sb.add_i64(6)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?; // drop count copy
+
+    for i in 8..35 {
+        sb.add_i64(i as i64)?;
+        sb.add_op(OpPick)?;
+        sb.add_op(OpSize)?;
+        sb.add_i64(32)?;
+        sb.add_op(OpNumEqualVerify)?;
+        sb.add_op(OpDrop)?; // drop sibling copy
+    }
+
+    // -------------------------------------------------------------
     // STEP 1: Count Validation and Interval Calculation
     // -------------------------------------------------------------
     sb.add_i64(6)?;
@@ -148,9 +189,8 @@ fn build_open_covenant_body(
     // Stack is back to initial 35 items!
 
     // -------------------------------------------------------------
-    // STEP 2: Atomic Payment Verification
-    // Output 0 Value >= Input 0 Value + ticket_price * count
-    // (i.e. expected_min <= actual_output)
+    // STEP 2: Exact Atomic Payment Verification
+    // Output 0 Value == Input 0 Value + ticket_price * count
     // -------------------------------------------------------------
     sb.add_i64(6)?;
     sb.add_op(OpPick)?; // count
@@ -162,18 +202,17 @@ fn build_open_covenant_body(
 
     sb.add_op(Op0)?;
     sb.add_op(OpTxInputAmount)?;
-    sb.add_op(OpAdd)?; // expected_min_output_amount (depth 1)
+    sb.add_op(OpAdd)?; // expected_exact_output_amount
 
     sb.add_op(Op0)?;
-    sb.add_op(OpTxOutputAmount)?; // actual_output_amount (depth 0)
-    sb.add_op(OpLessThanOrEqual)?; // expected_min <= actual_output verified!
-    sb.add_op(OpVerify)?;
+    sb.add_op(OpTxOutputAmount)?;
+    sb.add_op(OpEqualVerify)?; // EXACT payment verified!
     // Stack is back to initial 35 items!
 
     // -------------------------------------------------------------
-    // STEP 3: Compute purchase_leaf and save state to AltStack
+    // STEP 3: Compute purchase_leaf, empty_leaf, and setup AltStack
     // -------------------------------------------------------------
-    // 1) Compute next_purchase_count_num and save to AltStack:
+    // 1) Read purchase_count as number and compute next_purchase_count_num:
     sb.add_op(Op1)?;
     sb.add_op(OpPick)?; // purchase_count (depth 1)
     sb.add_op(OpBin2Num)?;
@@ -182,9 +221,18 @@ fn build_open_covenant_body(
     sb.add_op(OpAdd)?;  // [..., purchase_count_num, next_purchase_count_num]
     sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num]
     sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num]
-    // Stack is back to initial 35 items!
 
-    // 2) Compute payout_comm:
+    // 2) Copy ticket_root to AltStack:
+    sb.add_op(Op0)?;
+    sb.add_op(OpPick)?; // ticket_root (depth 0)
+    sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num, ticket_root]
+
+    // 3) Push canonical empty_leaf to AltStack:
+    let empty_leaf = crate::ticket_commitment::compute_empty_leaf();
+    sb.add_data(&empty_leaf.as_bytes())?;
+    sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num, ticket_root, empty_leaf]
+
+    // 4) Compute payout_comm:
     sb.add_i64(7)?;
     sb.add_op(OpPick)?; // payout_spk (depth 7)
     sb.add_op(OpSize)?;
@@ -198,7 +246,7 @@ fn build_open_covenant_body(
     sb.add_data(b"")?;
     sb.add_op(OpBlake2bWithKey)?; // Stack: [initial 35 items, payout_comm (32B)]
 
-    // 3) Assemble purchase_leaf:
+    // 5) Assemble purchase_leaf:
     sb.add_data(b"KaswinTicketRangeV1")?;
     sb.add_i64(7)?;
     sb.add_op(OpPick)?; // round_id (depth 6 + 1 = 7)
@@ -220,27 +268,36 @@ fn build_open_covenant_body(
     sb.add_op(OpCat)?;
     sb.add_data(b"")?;
     sb.add_op(OpBlake2bWithKey)?; // Stack: [initial 35 items, purchase_leaf (32B)]
+    sb.add_op(OpToAltStack)?;     // AltStack: [sold_after, next_pc, current_pc, ticket_root, empty_leaf, purchase_leaf]
 
-    // Move purchase_leaf to AltStack right under current_purchase_count_num:
-    sb.add_op(OpFromAltStack)?; // [initial 35 items, purchase_leaf, current_purchase_count_num]
-    sb.add_op(OpSwap)?;         // [initial 35 items, current_purchase_count_num, purchase_leaf]
-    sb.add_op(OpToAltStack)?;   // AltStack: [sold_after, next_purchase_count_num, purchase_leaf]
-    sb.add_op(OpToAltStack)?;   // AltStack: [sold_after, next_purchase_count_num, purchase_leaf, current_purchase_count_num]
-
-    // Clean top 8 non-sibling items:
+    // 6) Clean top 8 non-sibling items from dstack:
     for _ in 0..4 {
         sb.add_op(Op2Drop)?;
     }
-    // Stack now contains ONLY: [siblings[26..0]] (27 items, siblings[0] at top)!
+    // Stack now contains ONLY: [siblings[26..0]]!
 
-    // Bring current_purchase_count_num to dstack:
-    sb.add_op(OpFromAltStack)?;
-    // Stack: [siblings[26..0], current_purchase_count_num]
-    // AltStack: [sold_after, next_purchase_count_num, purchase_leaf]
-    // Top of AltStack is purchase_leaf!
+    // 7) Reshuffle AltStack so that:
+    // dstack has: [siblings[26..0], current_purchase_count_num]
+    // AltStack has: [sold_after, next_purchase_count_num, ticket_root, empty_leaf, purchase_leaf]
+    sb.add_op(OpFromAltStack)?; // purchase_leaf
+    sb.add_op(OpFromAltStack)?; // empty_leaf
+    sb.add_op(OpFromAltStack)?; // ticket_root
+    sb.add_op(OpFromAltStack)?; // current_purchase_count_num (now at top of dstack!)
+    sb.add_op(OpSwap)?;         // [..., current_pc, ticket_root]
+    sb.add_op(OpToAltStack)?;   // push ticket_root -> AltStack: [sold_after, next_pc, ticket_root]
+    sb.add_op(OpSwap)?;         // [..., current_pc, empty_leaf]
+    sb.add_op(OpToAltStack)?;   // push empty_leaf -> AltStack: [sold_after, next_pc, ticket_root, empty_leaf]
+    sb.add_op(OpSwap)?;         // [..., current_pc, purchase_leaf]
+    sb.add_op(OpToAltStack)?;   // push purchase_leaf -> AltStack: [sold_after, next_pc, ticket_root, empty_leaf, purchase_leaf]
+
+    // Stack is now: [siblings[26..0], current_purchase_count_num]!
+    // AltStack top is purchase_leaf (new_hash), second is empty_leaf (old_hash)!
 
     // -------------------------------------------------------------
-    // STEP 4: Merkle Tree New-Root Computation (Level 0 up to Level 26)
+    // STEP 4: Parallel Dual-Root SMT Computation (27 Levels)
+    // Simultaneously computes:
+    //   old_root_candidate from empty_leaf + siblings
+    //   new_root_candidate from purchase_leaf + same siblings
     // -------------------------------------------------------------
     for i in 0..TREE_DEPTH {
         sb.add_op(OpDup)?;
@@ -251,31 +308,67 @@ fn build_open_covenant_body(
         sb.add_i64(2)?;
         sb.add_op(OpMod)?; // [..., sibling_i, current_purchase_count_num, bit_i]
 
-        sb.add_op(OpFromAltStack)?; // current_hash
-        sb.add_i64(3)?;
-        sb.add_op(OpRoll)?; // sibling_i to top!
-
         sb.add_i64(2)?;
-        sb.add_op(OpRoll)?; // bit_i
+        sb.add_op(OpRoll)?; // [..., current_purchase_count_num, bit_i, sibling_i]
+        sb.add_op(OpDup)?;  // [..., current_purchase_count_num, bit_i, sibling_i, sibling_i]
+
+        // 1. Compute new_hash:
+        sb.add_op(OpFromAltStack)?; // [..., current_pc, bit_i, sibling_i, sibling_i, new_hash]
+        sb.add_op(OpSwap)?;         // [..., current_pc, bit_i, sibling_i, new_hash, sibling_i]
+        sb.add_i64(3)?;
+        sb.add_op(OpPick)?;         // [..., current_pc, bit_i, sibling_i, new_hash, sibling_i, bit_i]
         sb.add_op(OpIf)?;
             sb.add_op(OpSwap)?;
         sb.add_op(OpEndIf)?;
-
-        sb.add_op(OpCat)?; // [left || right]
+        sb.add_op(OpCat)?;
         sb.add_data(b"KaswinTicketNodeV1")?;
         sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?; // [b"KaswinTicketNodeV1" || left || right]
+        sb.add_op(OpCat)?;
         sb.add_data(b"")?;
-        sb.add_op(OpBlake2bWithKey)?; // parent_hash
+        sb.add_op(OpBlake2bWithKey)?; // next_new_hash
+        sb.add_op(OpToAltStack)?;
 
-        sb.add_op(OpToAltStack)?; // save to AltStack
+        // 2. Compute old_hash:
+        sb.add_op(OpFromAltStack)?; // next_new_hash
+        sb.add_op(OpFromAltStack)?; // old_hash
+        sb.add_i64(1)?;
+        sb.add_op(OpRoll)?;
+        sb.add_op(OpToAltStack)?;   // next_new_hash back to AltStack
+        sb.add_op(OpSwap)?;         // [old_hash, sibling_i]
+        sb.add_i64(2)?;
+        sb.add_op(OpRoll)?;         // bit_i
+        sb.add_op(OpIf)?;
+            sb.add_op(OpSwap)?;
+        sb.add_op(OpEndIf)?;
+        sb.add_op(OpCat)?;
+        sb.add_data(b"KaswinTicketNodeV1")?;
+        sb.add_op(OpSwap)?;
+        sb.add_op(OpCat)?;
+        sb.add_data(b"")?;
+        sb.add_op(OpBlake2bWithKey)?; // next_old_hash
+
+        // Restore AltStack: [..., next_old_hash, next_new_hash]
+        sb.add_op(OpFromAltStack)?; // next_new_hash
+        sb.add_op(OpSwap)?;
+        sb.add_op(OpToAltStack)?;   // push next_old_hash
+        sb.add_op(OpToAltStack)?;   // push next_new_hash
     }
 
     // Drop current_purchase_count_num:
     sb.add_op(OpDrop)?;
 
-    // Retrieve new_root, next_purchase_count_num, and sold_after:
+    // Retrieve new_root and old_root from AltStack:
     sb.add_op(OpFromAltStack)?; // new_root (32B)
+    sb.add_op(OpFromAltStack)?; // old_root_candidate (32B)
+    sb.add_op(OpFromAltStack)?; // current_ticket_root (32B)
+
+    // -------------------------------------------------------------
+    // CRITICAL SECURITY ASSERTION:
+    // old_root_candidate == current_ticket_root
+    // Proves slot k was EMPTY and previous tree history is authenticated!
+    // -------------------------------------------------------------
+    sb.add_op(OpEqualVerify)?;
+
     sb.add_op(OpFromAltStack)?; // next_purchase_count_num (num)
     sb.add_op(OpFromAltStack)?; // sold_after (num)
 
@@ -360,7 +453,6 @@ fn build_open_covenant_body(
         // Stack: [new_root]
 
         // 1) Compute application_commitment on-the-fly:
-        // app_commitment = BLAKE2b256(b"KaswinAppV1" || round_id || new_root || le_u64(total_tickets))
         sb.add_op(OpDup)?; // [new_root, new_root]
         sb.add_data(b"KaswinAppV1")?;
         sb.add_data(&round_id.as_bytes())?;
