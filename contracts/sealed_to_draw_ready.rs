@@ -1,17 +1,28 @@
-// Kaswin SEALED -> DRAW_READY State Transition with PASS-A Randomness Authentication
+// Kaswin SEALED -> DRAW_READY State Transition with Canonical KIP-21 PASS-A Randomness Freeze
 //
 // Protocol State Machine:
 // OPEN / SELLING -> SEALED -> DRAW_READY -> PAID
 //
 // Transition: SEALED -> DRAW_READY
-// - Verifies KIP-21 PASS-A 240-byte witness opening for first-crossing block T
+// - Boundary dynamically derived from unforgeable on-chain UTXO state:
+//     boundary = OpTxInputDaaScore(0) + delta_daa
+// - Witness opening count strictly enforced: OpDepth == 12
+// - Strict fixed-width byte schema enforced per field before any arithmetic or OpCat:
+//     target_hash (32B), target_activity (32B), target_payload (32B),
+//     target_sp_ts (8B), target_daa (8B), target_blue (8B),
+//     p_parent_seq (32B), p_activity (32B), p_payload (32B),
+//     p_sp_ts (8B), p_daa (8B), p_blue (8B)
 // - Reconstructs SeqCommit(P) and SeqCommit(T) on stack via 8x OpBlake3WithKey
 // - Authenticates T via OpChainblockSeqCommit(target_hash)
-// - Verifies P.daa < boundary && T.daa >= boundary (where boundary = sealed_base_daa + delta_daa)
+// - Verifies P.daa < boundary && T.daa >= boundary (first-crossing uniqueness)
 // - Deterministically computes application_commitment = BLAKE2b256(round_id || ticket_root || total_tickets)
 // - Deterministically computes random_seed = BLAKE2b256("KaspaPoWRandomnessV1" || target_hash || application_commitment)
 // - Enforces successor output state: DRAW_READY { round_id, ticket_root, total_tickets, principal, target_hash, random_seed }
 // - Guarantees target_hash and random_seed are permanently immutable in successor covenant state!
+//
+// NOTE ON DRAW_READY:
+// Current DRAW_READY redeem script is an interim placeholder for testing transition invariants.
+// It is NOT deployable for live funds until complete Winner Selection & Payout covenant logic is attached.
 
 use kaspa_hashes::Hash;
 use kaspa_txscript::{
@@ -62,6 +73,9 @@ pub fn compute_random_seed(
 /// Builds the DRAW_READY successor redeem script template.
 /// Once entered into DRAW_READY, target_hash and random_seed are immutable state parameters.
 /// Subsequent stages (winner selection, payout, refund) do NOT access OpChainblockSeqCommit.
+///
+/// CAUTION: This is an interim placeholder for validating transition invariants only.
+/// DO NOT BROADCAST ON-CHAIN WITH REAL FUNDS.
 pub fn build_draw_ready_redeem_script(
     round_id: Hash,
     ticket_root: Hash,
@@ -84,30 +98,28 @@ pub fn build_draw_ready_redeem_script(
     sb.drain()
 }
 
-/// Builds the SEALED state covenant redeem script.
-/// Spends SEALED UTXO and enforces transition to DRAW_READY successor UTXO:
+/// Builds the production-ready SEALED state covenant redeem script.
+/// Spends SEALED UTXO (strictly Input 0) and enforces transition to DRAW_READY successor UTXO:
 ///
 /// Witness stack on entry:
-/// [0] target_hash (32B)
-/// [1] target_activity (32B)
-/// [2] target_payload (32B)
-/// [3] target_sp_ts (8B)
-/// [4] target_daa (8B)
-/// [5] target_blue (8B)
-/// [6] p_parent_seq (32B)
-/// [7] p_activity (32B)
-/// [8] p_payload (32B)
-/// [9] p_sp_ts (8B)
+/// [0]  target_hash (32B)
+/// [1]  target_activity (32B)
+/// [2]  target_payload (32B)
+/// [3]  target_sp_ts (8B)
+/// [4]  target_daa (8B)
+/// [5]  target_blue (8B)
+/// [6]  p_parent_seq (32B)
+/// [7]  p_activity (32B)
+/// [8]  p_payload (32B)
+/// [9]  p_sp_ts (8B)
 /// [10] p_daa (8B)
 /// [11] p_blue (8B)
 pub fn build_sealed_to_draw_ready_covenant(
     round_id: Hash,
     ticket_root: Hash,
     total_tickets: u64,
-    sealed_base_daa: u64,
     delta_daa: u64,
 ) -> ScriptBuilderResult<Vec<u8>> {
-    let boundary = (sealed_base_daa + delta_daa) as i64;
     let key_mergeset = make_blake3_key(b"SeqCommitMergesetContext");
     let key_branch = make_blake3_key(b"SeqCommitmentMerkleBranchHash");
     let app_commitment = compute_application_commitment(&round_id, &ticket_root, total_tickets);
@@ -115,24 +127,153 @@ pub fn build_sealed_to_draw_ready_covenant(
     let mut sb = ScriptBuilder::new();
 
     // -------------------------------------------------------------
-    // STEP 1: First-Crossing Predicate Checks on DAA scores
+    // STEP 0: Strict Opening Count Check
+    // Stack must have exactly 12 items on entry
     // -------------------------------------------------------------
-    // Check P.daa < boundary: [10] p_daa
+    sb.add_op(OpDepth)?;
+    sb.add_i64(12)?;
+    sb.add_op(OpNumEqualVerify)?;
+
+    // -------------------------------------------------------------
+    // STEP 1: Strict Fixed-Width Opening Schema Verification
+    // Stack from top to bottom on entry:
+    // top = [11] p_blue, [10] p_daa, [9] p_sp_ts, [8] p_payload, [7] p_activity, [6] p_parent_seq,
+    //       [5] target_blue, [4] target_daa, [3] target_sp_ts, [2] target_payload, [1] target_activity, [0] target_hash
+    //
+    // Check item lengths without modifying stack contents:
+    // [11] p_blue: 8 bytes
+    sb.add_op(Op0)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [10] p_daa: 8 bytes
     sb.add_op(Op1)?;
     sb.add_op(OpPick)?;
-    sb.add_i64(boundary)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [9] p_sp_ts: 8 bytes
+    sb.add_op(Op2)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [8] p_payload: 32 bytes
+    sb.add_op(Op3)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(32)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [7] p_activity: 32 bytes
+    sb.add_op(Op4)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(32)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [6] p_parent_seq: 32 bytes
+    sb.add_op(Op5)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(32)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [5] target_blue: 8 bytes
+    sb.add_op(Op6)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [4] target_daa: 8 bytes
+    sb.add_op(Op7)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [3] target_sp_ts: 8 bytes
+    sb.add_op(Op8)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(8)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [2] target_payload: 32 bytes
+    sb.add_op(Op9)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(32)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [1] target_activity: 32 bytes
+    sb.add_op(Op10)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(32)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // [0] target_hash: 32 bytes
+    sb.add_op(Op11)?;
+    sb.add_op(OpPick)?;
+    sb.add_op(OpSize)?;
+    sb.add_i64(32)?;
+    sb.add_op(OpNumEqualVerify)?;
+    sb.add_op(OpDrop)?;
+
+    // -------------------------------------------------------------
+    // STEP 2: Derive Boundary from Authenticated Input 0 DAA Score
+    // boundary = OpTxInputDaaScore(0) + delta_daa
+    // -------------------------------------------------------------
+    // Enforce that the script executing is indeed spending Input 0:
+    sb.add_op(OpTxInputIndex)?;
+    sb.add_op(Op0)?;
+    sb.add_op(OpEqualVerify)?;
+
+    // Compute boundary on AltStack:
+    sb.add_op(Op0)?;
+    sb.add_op(OpTxInputDaaScore)?;
+    sb.add_i64(delta_daa as i64)?;
+    sb.add_op(OpAdd)?;
+    sb.add_op(OpToAltStack)?; // AltStack: [boundary]
+
+    // -------------------------------------------------------------
+    // STEP 3: First-Crossing Predicate Checks on DAA scores
+    // -------------------------------------------------------------
+    // Check P.daa < boundary:
+    sb.add_op(Op1)?;
+    sb.add_op(OpPick)?; // [10] p_daa
+    sb.add_op(OpFromAltStack)?; // boundary
+    sb.add_op(OpDup)?;
+    sb.add_op(OpToAltStack)?;   // keep copy on AltStack: [boundary]
     sb.add_op(OpLessThan)?;
     sb.add_op(OpVerify)?;
 
-    // Check T.daa >= boundary: [4] target_daa
+    // Check T.daa >= boundary:
     sb.add_op(Op7)?;
-    sb.add_op(OpPick)?;
-    sb.add_i64(boundary)?;
+    sb.add_op(OpPick)?; // [4] target_daa
+    sb.add_op(OpFromAltStack)?; // boundary consumed
     sb.add_op(OpGreaterThanOrEqual)?;
     sb.add_op(OpVerify)?;
 
     // -------------------------------------------------------------
-    // STEP 2: Reconstruct C_P via 4x OpBlake3WithKey
+    // STEP 4: Reconstruct C_P via 4x OpBlake3WithKey
     // -------------------------------------------------------------
     // Hash 1: P_ctx = OpBlake3WithKey(key_mergeset, p_sp_ts || p_daa || p_blue)
     sb.add_op(OpCat)?;
@@ -157,7 +298,7 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_op(OpBlake3WithKey)?;
 
     // -------------------------------------------------------------
-    // STEP 3: Reconstruct C_T via 4x OpBlake3WithKey using C_P
+    // STEP 5: Reconstruct C_T via 4x OpBlake3WithKey using C_P
     // -------------------------------------------------------------
     sb.add_i64(3)?;
     sb.add_op(OpRoll)?; // target_sp_ts
@@ -192,7 +333,7 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_op(OpBlake3WithKey)?;
 
     // -------------------------------------------------------------
-    // STEP 4: Authenticate T with OpChainblockSeqCommit
+    // STEP 6: Authenticate T with OpChainblockSeqCommit
     // -------------------------------------------------------------
     // Stack: [target_hash, C_T]
     sb.add_op(OpOver)?; // [target_hash, C_T, target_hash]
@@ -201,7 +342,7 @@ pub fn build_sealed_to_draw_ready_covenant(
     // Stack: [target_hash]
 
     // -------------------------------------------------------------
-    // STEP 5: Covenant-Enforced Random Seed Derivation
+    // STEP 7: Covenant-Enforced Random Seed Derivation
     // random_seed = BLAKE2b256("KaspaPoWRandomnessV1" || target_hash || app_commitment)
     // -------------------------------------------------------------
     sb.add_op(OpDup)?; // [target_hash, target_hash]
@@ -214,7 +355,7 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_op(OpBlake2bWithKey)?; // [target_hash, random_seed]
 
     // -------------------------------------------------------------
-    // STEP 6: Enforce Successor UTXO Output State (DRAW_READY)
+    // STEP 8: Enforce Successor UTXO Output State (DRAW_READY)
     // Construct DRAW_READY SPK on the fly and assert OpTxOutputSpk(0) matches!
     // Output 0 value must equal Input 0 value (principal preserved).
     // -------------------------------------------------------------
@@ -256,7 +397,6 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_op(OpCat)?; // [draw_ready_redeem_script]
 
     // Compute expected P2SH SPK:
-    // P2SH SPK in Kaspa TxScript introspection (OpTxOutputSpk) encodes as:
     // version (2 bytes, big-endian: 0x00, 0x00) || script bytes: [OpBlake2b (0xaa), OpData32 (0x20), blake2b_256(redeem_script), OpEqual (0x87)]
     sb.add_data(b"")?;
     sb.add_op(OpBlake2bWithKey)?; // [p2sh_hash (32B)]

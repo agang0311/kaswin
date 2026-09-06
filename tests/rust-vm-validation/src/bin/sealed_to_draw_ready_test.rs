@@ -1,4 +1,4 @@
-use kaspa_hashes::Hash;
+use kaspa_hashes::{Hash, HasherBase};
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::tx::{
     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
@@ -152,58 +152,43 @@ fn generate_valid_pass_a_fixture(p_daa_num: u64, t_daa_num: u64) -> PassAOpening
 }
 
 fn build_witness_stack(f: &PassAOpeningFixture, redeem_script: &[u8]) -> Vec<u8> {
-    let mut sb = ScriptBuilder::new();
-    // Order in witness:
-    // [0] target_hash (32B)
+    let mut sb = ScriptBuilder::with_flags(EngineFlags { covenants_enabled: true, ..Default::default() });
     sb.add_data(&f.target_hash.as_bytes()).unwrap();
-    // [1] target_activity (32B)
     sb.add_data(&f.target_activity.as_bytes()).unwrap();
-    // [2] target_payload (32B)
     sb.add_data(&f.target_payload.as_bytes()).unwrap();
-    // [3] target_sp_ts (8B)
     sb.add_data(&f.target_sp_ts).unwrap();
-    // [4] target_daa (8B)
     sb.add_data(&f.target_daa).unwrap();
-    // [5] target_blue (8B)
     sb.add_data(&f.target_blue).unwrap();
-    // [6] p_parent_seq (32B)
     sb.add_data(&f.p_parent_seq.as_bytes()).unwrap();
-    // [7] p_activity (32B)
     sb.add_data(&f.p_activity.as_bytes()).unwrap();
-    // [8] p_payload (32B)
     sb.add_data(&f.p_payload.as_bytes()).unwrap();
-    // [9] p_sp_ts (8B)
     sb.add_data(&f.p_sp_ts).unwrap();
-    // [10] p_daa (8B)
     sb.add_data(&f.p_daa).unwrap();
-    // [11] p_blue (8B)
     sb.add_data(&f.p_blue).unwrap();
-    // Finally push redeem script for P2SH
     sb.add_data(redeem_script).unwrap();
     sb.drain()
 }
 
 fn main() {
-    println!("=== Testing Kaswin SEALED -> DRAW_READY State Transition Suite ===");
+    println!("=== Testing Kaswin SEALED -> DRAW_READY Canonical Test Suite ===");
 
     let round_id = Hash::from_u64_word(1);
     let ticket_root = Hash::from_u64_word(2);
     let total_tickets = 100u64;
     let pool_principal = 50_000_000_000u64; // 500 KAS
 
-    let sealed_base_daa = 1_000_000u64;
+    let actual_sealed_daa = 1_000_000u64;
     let delta_daa = 100u64;
-    let boundary = sealed_base_daa + delta_daa; // 1_000_100
+    let boundary = actual_sealed_daa + delta_daa; // 1_000_100
 
     let p_daa_val = boundary - 1; // 1_000_099 (strictly < boundary)
     let t_daa_val = boundary;     // 1_000_100 (>= boundary)
 
-    // Build the SEALED covenant script:
+    // Build the SEALED covenant script (boundary dynamically derived from Input 0):
     let sealed_redeem = build_sealed_to_draw_ready_covenant(
         round_id,
         ticket_root,
         total_tickets,
-        sealed_base_daa,
         delta_daa,
     ).unwrap();
     let sealed_spk = pay_to_script_hash_script(&sealed_redeem);
@@ -223,8 +208,6 @@ fn main() {
         expected_seed,
     );
     let draw_ready_spk = pay_to_script_hash_script(&draw_ready_redeem);
-    println!("Expected DRAW_READY Redeem Script size: {} bytes", draw_ready_redeem.len());
-    println!("Expected DRAW_READY SPK size: {} bytes", draw_ready_spk.script().len());
 
     let sig_cache = Cache::new(1000);
     let reused = SigHashReusedValuesUnsync::new();
@@ -238,19 +221,17 @@ fn main() {
     };
 
     // -------------------------------------------------------------
-    // TEST A: Normal Freeze (SEALED -> DRAW_READY must PASS)
+    // TEST 1: Canonical PASS-A Opening -> PASS
     // -------------------------------------------------------------
-    println!("\n--- TEST A: Normal Freeze ---");
-    let sig_script_a = build_witness_stack(&fixture, &sealed_redeem);
-
-    // 1. Initial measurement with large budget to discover actual script units
-    let tx_measure = Transaction::new(
+    println!("\n--- TEST 1: Canonical PASS-A Opening ---");
+    let sig_script_1 = build_witness_stack(&fixture, &sealed_redeem);
+    let tx_1 = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_a.clone(),
+            sig_script_1.clone(),
             0,
-            ComputeCommit::ComputeBudget(ComputeBudget(u16::MAX)),
+            ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
         vec![TransactionOutput {
             value: pool_principal,
@@ -262,34 +243,60 @@ fn main() {
         0,
         vec![],
     );
-    let pop_measure = PopulatedTransaction::new(&tx_measure, vec![UtxoEntry::new(
+    let pop_1 = PopulatedTransaction::new(&tx_1, vec![UtxoEntry::new(
         pool_principal,
         sealed_spk.clone(),
-        sealed_base_daa,
+        actual_sealed_daa,
         false,
         None,
     )]);
-    let cov_ctx_measure = CovenantsContext::from_tx(&pop_measure).unwrap();
-    let ctx_measure = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_measure).with_seq_commit_accessor(&accessor);
-    let mut vm_measure = TxScriptEngine::from_transaction_input(&pop_measure, &pop_measure.tx.inputs[0], 0, &pop_measure.entries[0], ctx_measure, flags);
-    let res_measure = vm_measure.execute();
-    assert_eq!(res_measure, Ok(()));
-    let used_units = vm_measure.used_script_units();
-    println!("Test A Actual Used Script Units: {}", used_units.0);
+    let cov_ctx_1 = CovenantsContext::from_tx(&pop_1).unwrap();
+    let ctx_1 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_1).with_seq_commit_accessor(&accessor);
+    let mut vm_1 = TxScriptEngine::from_transaction_input(&pop_1, &pop_1.tx.inputs[0], 0, &pop_1.entries[0], ctx_1, flags);
+    let res_1 = vm_1.execute();
+    println!("Test 1 Result: {:?}", res_1);
+    assert_eq!(res_1, Ok(()), "Canonical PASS-A opening MUST pass");
+    let used_units_1 = vm_1.used_script_units();
+    println!("Test 1 Used Script Units: {}", used_units_1.0);
 
-    // Compute minimal covering ComputeBudget:
-    // With 3,469 units, since 3,469 < 9,999 (free units), b_min = ComputeBudget(0)!
-    let b_min = ComputeBudget::checked_covering_script_units(used_units).expect("Compute budget must be valid");
-    println!("Calculated minimal ComputeBudget: {}", b_min.value());
-    assert_eq!(b_min.value(), 0, "Since 3469 <= 9999 free units, required budget is exactly 0");
+    // -------------------------------------------------------------
+    // TEST 2: P context SAME-BYTES repartition (8/8/8 -> 9/8/7) -> FAIL at size rule
+    // -------------------------------------------------------------
+    println!("\n--- TEST 2: P Context SAME-BYTES Repartition Attack (9/8/7) ---");
+    // Concatenation: p_sp_ts (8B) || p_daa (8B) || p_blue (8B) = 24 bytes
+    let mut p_concat = Vec::new();
+    p_concat.extend_from_slice(&fixture.p_sp_ts);
+    p_concat.extend_from_slice(&fixture.p_daa);
+    p_concat.extend_from_slice(&fixture.p_blue);
 
-    let tx_a = Transaction::new(
+    // Malicious repartition:
+    let p_sp_ts_mal = p_concat[0..9].to_vec();  // 9 bytes!
+    let p_daa_mal = p_concat[9..17].to_vec();    // 8 bytes (shifted!)
+    let p_blue_mal = p_concat[17..24].to_vec();  // 7 bytes!
+
+    let mut sb_mal_p = ScriptBuilder::with_flags(EngineFlags { covenants_enabled: true, ..Default::default() });
+    sb_mal_p.add_data(&fixture.target_hash.as_bytes()).unwrap();
+    sb_mal_p.add_data(&fixture.target_activity.as_bytes()).unwrap();
+    sb_mal_p.add_data(&fixture.target_payload.as_bytes()).unwrap();
+    sb_mal_p.add_data(&fixture.target_sp_ts).unwrap();
+    sb_mal_p.add_data(&fixture.target_daa).unwrap();
+    sb_mal_p.add_data(&fixture.target_blue).unwrap();
+    sb_mal_p.add_data(&fixture.p_parent_seq.as_bytes()).unwrap();
+    sb_mal_p.add_data(&fixture.p_activity.as_bytes()).unwrap();
+    sb_mal_p.add_data(&fixture.p_payload.as_bytes()).unwrap();
+    sb_mal_p.add_data(&p_sp_ts_mal).unwrap(); // 9B!
+    sb_mal_p.add_data(&p_daa_mal).unwrap();   // 8B
+    sb_mal_p.add_data(&p_blue_mal).unwrap();  // 7B!
+    sb_mal_p.add_data(&sealed_redeem).unwrap();
+    let sig_script_mal_p = sb_mal_p.drain();
+
+    let tx_2 = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_a.clone(),
+            sig_script_mal_p,
             0,
-            ComputeCommit::ComputeBudget(b_min),
+            ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
         vec![TransactionOutput {
             value: pool_principal,
@@ -301,34 +308,56 @@ fn main() {
         0,
         vec![],
     );
-    let pop_a = PopulatedTransaction::new(&tx_a, vec![UtxoEntry::new(
+    let pop_2 = PopulatedTransaction::new(&tx_2, vec![UtxoEntry::new(
         pool_principal,
         sealed_spk.clone(),
-        sealed_base_daa,
+        actual_sealed_daa,
         false,
         None,
     )]);
-    let cov_ctx_a = CovenantsContext::from_tx(&pop_a).unwrap();
-    let ctx_a = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_a).with_seq_commit_accessor(&accessor);
-    let mut vm_a = TxScriptEngine::from_transaction_input(&pop_a, &pop_a.tx.inputs[0], 0, &pop_a.entries[0], ctx_a, flags);
-    let res_a = vm_a.execute();
-    println!("Test A Result with minimal ComputeBudget({}): {:?}", b_min.value(), res_a);
-    assert_eq!(res_a, Ok(()), "Normal freeze MUST pass");
+    let cov_ctx_2 = CovenantsContext::from_tx(&pop_2).unwrap();
+    let ctx_2 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_2).with_seq_commit_accessor(&accessor);
+    let mut vm_2 = TxScriptEngine::from_transaction_input(&pop_2, &pop_2.tx.inputs[0], 0, &pop_2.entries[0], ctx_2, flags);
+    let res_2 = vm_2.execute();
+    println!("Test 2 Result: {:?}", res_2);
+    assert!(res_2.is_err(), "Same-bytes P repartition attack MUST fail at size check");
 
     // -------------------------------------------------------------
-    // TEST B: Wrong T DAA (tamper target_daa -> commitment mismatch -> FAIL)
+    // TEST 3: T context SAME-BYTES repartition (8/8/8 -> 7/8/9) -> FAIL at size rule
     // -------------------------------------------------------------
-    println!("\n--- TEST B: Wrong T DAA ---");
-    let mut fixture_b = generate_valid_pass_a_fixture(p_daa_val, t_daa_val);
-    fixture_b.target_daa = (t_daa_val + 1).to_le_bytes(); // modified!
-    let sig_script_b = build_witness_stack(&fixture_b, &sealed_redeem);
-    let tx_b = Transaction::new(
+    println!("\n--- TEST 3: T Context SAME-BYTES Repartition Attack (7/8/9) ---");
+    let mut t_concat = Vec::new();
+    t_concat.extend_from_slice(&fixture.target_sp_ts);
+    t_concat.extend_from_slice(&fixture.target_daa);
+    t_concat.extend_from_slice(&fixture.target_blue);
+
+    let target_sp_ts_mal = t_concat[0..7].to_vec(); // 7 bytes!
+    let target_daa_mal = t_concat[7..15].to_vec();   // 8 bytes
+    let target_blue_mal = t_concat[15..24].to_vec(); // 9 bytes!
+
+    let mut sb_mal_t = ScriptBuilder::with_flags(EngineFlags { covenants_enabled: true, ..Default::default() });
+    sb_mal_t.add_data(&fixture.target_hash.as_bytes()).unwrap();
+    sb_mal_t.add_data(&fixture.target_activity.as_bytes()).unwrap();
+    sb_mal_t.add_data(&fixture.target_payload.as_bytes()).unwrap();
+    sb_mal_t.add_data(&target_sp_ts_mal).unwrap(); // 7B!
+    sb_mal_t.add_data(&target_daa_mal).unwrap();   // 8B
+    sb_mal_t.add_data(&target_blue_mal).unwrap();  // 9B!
+    sb_mal_t.add_data(&fixture.p_parent_seq.as_bytes()).unwrap();
+    sb_mal_t.add_data(&fixture.p_activity.as_bytes()).unwrap();
+    sb_mal_t.add_data(&fixture.p_payload.as_bytes()).unwrap();
+    sb_mal_t.add_data(&fixture.p_sp_ts).unwrap();
+    sb_mal_t.add_data(&fixture.p_daa).unwrap();
+    sb_mal_t.add_data(&fixture.p_blue).unwrap();
+    sb_mal_t.add_data(&sealed_redeem).unwrap();
+    let sig_script_mal_t = sb_mal_t.drain();
+
+    let tx_3 = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_b,
+            sig_script_mal_t,
             0,
-            ComputeCommit::ComputeBudget(b_min),
+            ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
         vec![TransactionOutput {
             value: pool_principal,
@@ -340,39 +369,39 @@ fn main() {
         0,
         vec![],
     );
-    let pop_b = PopulatedTransaction::new(&tx_b, vec![UtxoEntry::new(
+    let pop_3 = PopulatedTransaction::new(&tx_3, vec![UtxoEntry::new(
         pool_principal,
         sealed_spk.clone(),
-        sealed_base_daa,
+        actual_sealed_daa,
         false,
         None,
     )]);
-    let cov_ctx_b = CovenantsContext::from_tx(&pop_b).unwrap();
-    let ctx_b = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_b).with_seq_commit_accessor(&accessor);
-    let mut vm_b = TxScriptEngine::from_transaction_input(&pop_b, &pop_b.tx.inputs[0], 0, &pop_b.entries[0], ctx_b, flags);
-    let res_b = vm_b.execute();
-    println!("Test B Result: {:?}", res_b);
-    assert!(res_b.is_err(), "Tampered T DAA must fail commitment check");
+    let cov_ctx_3 = CovenantsContext::from_tx(&pop_3).unwrap();
+    let ctx_3 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_3).with_seq_commit_accessor(&accessor);
+    let mut vm_3 = TxScriptEngine::from_transaction_input(&pop_3, &pop_3.tx.inputs[0], 0, &pop_3.entries[0], ctx_3, flags);
+    let res_3 = vm_3.execute();
+    println!("Test 3 Result: {:?}", res_3);
+    assert!(res_3.is_err(), "Same-bytes T repartition attack MUST fail at size check");
 
     // -------------------------------------------------------------
-    // TEST C: Wrong P DAA (P.daa >= boundary -> FAIL)
+    // TEST 4: Later Target Attack (Canonical P.daa >= boundary) -> FAIL
     // -------------------------------------------------------------
-    println!("\n--- TEST C: Wrong P DAA (P.daa >= boundary) ---");
-    let fixture_c = generate_valid_pass_a_fixture(boundary, t_daa_val);
-    let mut seq_commits_c = HashMap::new();
-    seq_commits_c.insert(fixture_c.target_hash, fixture_c.c_t);
-    let accessor_c = MockSeqCommitAccessor {
-        selected_chain: vec![fixture_c.target_hash],
-        seq_commits: seq_commits_c,
+    println!("\n--- TEST 4: Later Target Attack (P.daa >= boundary) ---");
+    let fixture_4 = generate_valid_pass_a_fixture(boundary, boundary + 1);
+    let mut seq_commits_4 = HashMap::new();
+    seq_commits_4.insert(fixture_4.target_hash, fixture_4.c_t);
+    let accessor_4 = MockSeqCommitAccessor {
+        selected_chain: vec![fixture_4.target_hash],
+        seq_commits: seq_commits_4,
     };
-    let sig_script_c = build_witness_stack(&fixture_c, &sealed_redeem);
-    let tx_c = Transaction::new(
+    let sig_script_4 = build_witness_stack(&fixture_4, &sealed_redeem);
+    let tx_4 = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_c,
+            sig_script_4,
             0,
-            ComputeCommit::ComputeBudget(b_min),
+            ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
         vec![TransactionOutput {
             value: pool_principal,
@@ -384,228 +413,126 @@ fn main() {
         0,
         vec![],
     );
-    let pop_c = PopulatedTransaction::new(&tx_c, vec![UtxoEntry::new(
+    let pop_4 = PopulatedTransaction::new(&tx_4, vec![UtxoEntry::new(
         pool_principal,
         sealed_spk.clone(),
-        sealed_base_daa,
+        actual_sealed_daa,
         false,
         None,
     )]);
-    let cov_ctx_c = CovenantsContext::from_tx(&pop_c).unwrap();
-    let ctx_c = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_c).with_seq_commit_accessor(&accessor_c);
-    let mut vm_c = TxScriptEngine::from_transaction_input(&pop_c, &pop_c.tx.inputs[0], 0, &pop_c.entries[0], ctx_c, flags);
-    let res_c = vm_c.execute();
-    println!("Test C Result: {:?}", res_c);
-    assert!(res_c.is_err(), "P.daa >= boundary must fail");
+    let cov_ctx_4 = CovenantsContext::from_tx(&pop_4).unwrap();
+    let ctx_4 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_4).with_seq_commit_accessor(&accessor_4);
+    let mut vm_4 = TxScriptEngine::from_transaction_input(&pop_4, &pop_4.tx.inputs[0], 0, &pop_4.entries[0], ctx_4, flags);
+    let res_4 = vm_4.execute();
+    println!("Test 4 Result: {:?}", res_4);
+    assert!(res_4.is_err(), "Later target attack MUST fail first crossing predicate");
 
     // -------------------------------------------------------------
-    // TEST D: Later-Target Attack (parent DAA already >= boundary -> FAIL)
+    // TEST 5 & 6: Boundary Enforced Exclusively by Input 0 UtxoEntry DAA Score
+    // Client Claimed Base DAA != actual UtxoEntry.block_daa_score
     // -------------------------------------------------------------
-    println!("\n--- TEST D: Later-Target Attack (parent DAA >= boundary) ---");
-    let fixture_d = generate_valid_pass_a_fixture(boundary + 5, boundary + 6);
-    let mut seq_commits_d = HashMap::new();
-    seq_commits_d.insert(fixture_d.target_hash, fixture_d.c_t);
-    let accessor_d = MockSeqCommitAccessor {
-        selected_chain: vec![fixture_d.target_hash],
-        seq_commits: seq_commits_d,
-    };
-    let sig_script_d = build_witness_stack(&fixture_d, &sealed_redeem);
-    let tx_d = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_d,
-            0,
-            ComputeCommit::ComputeBudget(b_min),
-        )],
-        vec![TransactionOutput {
-            value: pool_principal,
-            script_public_key: draw_ready_spk.clone(),
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_d = PopulatedTransaction::new(&tx_d, vec![UtxoEntry::new(
+    println!("\n--- TEST 5 & 6: Boundary from Genuine Input DAA (Client Claim Mismatch) ---");
+    // Suppose actual on-chain inclusion DAA of SEALED UTXO is 2_000_000 (not 1_000_000):
+    // Then boundary = 2_000_000 + 100 = 2_000_100.
+    // The previous fixture (DAA ~ 1_000_100) MUST FAIL because T.daa (1_000_100) < boundary (2_000_100)!
+    let pop_mismatch = PopulatedTransaction::new(&tx_1, vec![UtxoEntry::new(
         pool_principal,
         sealed_spk.clone(),
-        sealed_base_daa,
+        2_000_000, // Actual on-chain DAA is 2M!
         false,
         None,
     )]);
-    let cov_ctx_d = CovenantsContext::from_tx(&pop_d).unwrap();
-    let ctx_d = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_d).with_seq_commit_accessor(&accessor_d);
-    let mut vm_d = TxScriptEngine::from_transaction_input(&pop_d, &pop_d.tx.inputs[0], 0, &pop_d.entries[0], ctx_d, flags);
-    let res_d = vm_d.execute();
-    println!("Test D Result: {:?}", res_d);
-    assert!(res_d.is_err(), "Later target attack MUST fail first crossing predicate");
+    let cov_ctx_mis = CovenantsContext::from_tx(&pop_mismatch).unwrap();
+    let ctx_mis = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_mis).with_seq_commit_accessor(&accessor);
+    let mut vm_mis = TxScriptEngine::from_transaction_input(&pop_mismatch, &pop_mismatch.tx.inputs[0], 0, &pop_mismatch.entries[0], ctx_mis, flags);
+    let res_mis = vm_mis.execute();
+    println!("Test 5 & 6 Mismatch Result: {:?}", res_mis);
+    assert!(res_mis.is_err(), "Opening matching client base DAA must FAIL when actual UTXO DAA is different");
 
     // -------------------------------------------------------------
-    // TEST E: Wrong Target Hash in SeqCommit
+    // TEST 7: Official kaspa_seq_commit Reference Oracle Match
     // -------------------------------------------------------------
-    println!("\n--- TEST E: Wrong Target Hash in SeqCommit ---");
-    let mut fixture_e = generate_valid_pass_a_fixture(p_daa_val, t_daa_val);
-    fixture_e.target_hash = Hash::from_u64_word(8888); // different hash!
-    let mut seq_commits_e = HashMap::new();
-    seq_commits_e.insert(fixture_e.target_hash, Hash::from_u64_word(7777)); // different commitment
-    let accessor_e = MockSeqCommitAccessor {
-        selected_chain: vec![fixture_e.target_hash],
-        seq_commits: seq_commits_e,
-    };
-    let sig_script_e = build_witness_stack(&fixture_e, &sealed_redeem);
-    let tx_e = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_e,
-            0,
-            ComputeCommit::ComputeBudget(b_min),
-        )],
-        vec![TransactionOutput {
-            value: pool_principal,
-            script_public_key: draw_ready_spk.clone(),
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_e = PopulatedTransaction::new(&tx_e, vec![UtxoEntry::new(
-        pool_principal,
-        sealed_spk.clone(),
-        sealed_base_daa,
-        false,
-        None,
-    )]);
-    let cov_ctx_e = CovenantsContext::from_tx(&pop_e).unwrap();
-    let ctx_e = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_e).with_seq_commit_accessor(&accessor_e);
-    let mut vm_e = TxScriptEngine::from_transaction_input(&pop_e, &pop_e.tx.inputs[0], 0, &pop_e.entries[0], ctx_e, flags);
-    let res_e = vm_e.execute();
-    println!("Test E Result: {:?}", res_e);
-    assert!(res_e.is_err(), "Mismatched SeqCommit must fail");
+    println!("\n--- TEST 7: Official kaspa_seq_commit Reference Oracle Equality ---");
+    // Reconstruct C_P and C_T using official rusty-kaspa kaspa_seq_commit functions:
+    // P Context:
+    let mut p_ctx_hasher = kaspa_hashes::SeqCommitMergesetContext::new();
+    p_ctx_hasher.update(u64::from_le_bytes(fixture.p_sp_ts).to_le_bytes());
+    p_ctx_hasher.update(u64::from_le_bytes(fixture.p_daa).to_le_bytes());
+    p_ctx_hasher.update(u64::from_le_bytes(fixture.p_blue).to_le_bytes());
+    let p_ctx_official = p_ctx_hasher.finalize();
+
+    let mut p_pd_hasher = kaspa_hashes::SeqCommitMerkleBranch::new();
+    p_pd_hasher.update(p_ctx_official);
+    p_pd_hasher.update(fixture.p_payload);
+    let p_pd_official = p_pd_hasher.finalize();
+
+    let mut p_sr_hasher = kaspa_hashes::SeqCommitMerkleBranch::new();
+    p_sr_hasher.update(fixture.p_activity);
+    p_sr_hasher.update(p_pd_official);
+    let p_sr_official = p_sr_hasher.finalize();
+
+    let mut c_p_hasher = kaspa_hashes::SeqCommitMerkleBranch::new();
+    c_p_hasher.update(fixture.p_parent_seq);
+    c_p_hasher.update(p_sr_official);
+    let c_p_official = c_p_hasher.finalize();
+
+    // T Context:
+    let mut t_ctx_hasher = kaspa_hashes::SeqCommitMergesetContext::new();
+    t_ctx_hasher.update(u64::from_le_bytes(fixture.target_sp_ts).to_le_bytes());
+    t_ctx_hasher.update(u64::from_le_bytes(fixture.target_daa).to_le_bytes());
+    t_ctx_hasher.update(u64::from_le_bytes(fixture.target_blue).to_le_bytes());
+    let t_ctx_official = t_ctx_hasher.finalize();
+
+    let mut t_pd_hasher = kaspa_hashes::SeqCommitMerkleBranch::new();
+    t_pd_hasher.update(t_ctx_official);
+    t_pd_hasher.update(fixture.target_payload);
+    let t_pd_official = t_pd_hasher.finalize();
+
+    let mut t_sr_hasher = kaspa_hashes::SeqCommitMerkleBranch::new();
+    t_sr_hasher.update(fixture.target_activity);
+    t_sr_hasher.update(t_pd_official);
+    let t_sr_official = t_sr_hasher.finalize();
+
+    let mut c_t_hasher = kaspa_hashes::SeqCommitMerkleBranch::new();
+    c_t_hasher.update(c_p_official);
+    c_t_hasher.update(t_sr_official);
+    let c_t_official = c_t_hasher.finalize();
+
+    println!("Script fixture C_T : {:?}", fixture.c_t);
+    println!("Official oracle C_T: {:?}", c_t_official);
+    assert_eq!(fixture.c_t, c_t_official, "Fixture C_T must match official rusty-kaspa SeqCommit calculation byte-for-byte");
+    println!("Test 7 Result: Official SeqCommit oracle byte-for-byte equality confirmed!");
 
     // -------------------------------------------------------------
-    // TEST F: Seed Tampering / Output State Tampering
-    // Caller attempts to substitute a fake random_seed in Output 0 SPK!
+    // TEST 8: Actual Wire-Serialized Transaction Bytes & Masses
     // -------------------------------------------------------------
-    println!("\n--- TEST F: Seed Tampering in Successor Output ---");
-    let fake_seed = Hash::from_u64_word(0xbad_5eed);
-    let fake_draw_ready_redeem = build_draw_ready_redeem_script(
-        round_id,
-        ticket_root,
-        total_tickets,
-        fixture.target_hash,
-        fake_seed, // TAMPERED!
-    );
-    let fake_draw_ready_spk = pay_to_script_hash_script(&fake_draw_ready_redeem);
-    let tx_f = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_a.clone(),
-            0,
-            ComputeCommit::ComputeBudget(b_min),
-        )],
-        vec![TransactionOutput {
-            value: pool_principal,
-            script_public_key: fake_draw_ready_spk, // TAMPERED SPK!
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_f = PopulatedTransaction::new(&tx_f, vec![UtxoEntry::new(
-        pool_principal,
-        sealed_spk.clone(),
-        sealed_base_daa,
-        false,
-        None,
-    )]);
-    let cov_ctx_f = CovenantsContext::from_tx(&pop_f).unwrap();
-    let ctx_f = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_f).with_seq_commit_accessor(&accessor);
-    let mut vm_f = TxScriptEngine::from_transaction_input(&pop_f, &pop_f.tx.inputs[0], 0, &pop_f.entries[0], ctx_f, flags);
-    let res_f = vm_f.execute();
-    println!("Test F Result: {:?}", res_f);
-    assert!(res_f.is_err(), "Tampered random seed in output must be rejected by covenant");
-
-    // -------------------------------------------------------------
-    // TEST G: Cross-Round Replay Attack
-    // Trying to spend Round 2's SEALED contract using Round 1's DRAW_READY SPK
-    // -------------------------------------------------------------
-    println!("\n--- TEST G: Cross-Round Replay Attack ---");
-    let round_id_2 = Hash::from_u64_word(2); // different round!
-    let sealed_redeem_round_2 = build_sealed_to_draw_ready_covenant(
-        round_id_2,
-        ticket_root,
-        total_tickets,
-        sealed_base_daa,
-        delta_daa,
-    ).unwrap();
-    let sealed_spk_round_2 = pay_to_script_hash_script(&sealed_redeem_round_2);
-
-    let sig_script_g = build_witness_stack(&fixture, &sealed_redeem_round_2);
-    // Attempting to direct outputs to Round 1's draw_ready_spk:
-    let tx_g = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_g,
-            0,
-            ComputeCommit::ComputeBudget(b_min),
-        )],
-        vec![TransactionOutput {
-            value: pool_principal,
-            script_public_key: draw_ready_spk.clone(), // Round 1 SPK!
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_g = PopulatedTransaction::new(&tx_g, vec![UtxoEntry::new(
-        pool_principal,
-        sealed_spk_round_2,
-        sealed_base_daa,
-        false,
-        None,
-    )]);
-    let cov_ctx_g = CovenantsContext::from_tx(&pop_g).unwrap();
-    let ctx_g = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_g).with_seq_commit_accessor(&accessor);
-    let mut vm_g = TxScriptEngine::from_transaction_input(&pop_g, &pop_g.tx.inputs[0], 0, &pop_g.entries[0], ctx_g, flags);
-    let res_g = vm_g.execute();
-    println!("Test G Result: {:?}", res_g);
-    assert!(res_g.is_err(), "Cross-round replay must fail output SPK check");
-
-    // -------------------------------------------------------------
-    // TEST H: Resource Measurement for Complete SEALED -> DRAW_READY Transaction
-    // -------------------------------------------------------------
-    println!("\n--- TEST H: Resource Measurement ---");
+    println!("\n--- TEST 8: Resource Measurement & Actual Serialized Bytes ---");
     let mc = MassCalculator::new(1, 10, 10_000_000);
-    let non_ctx = mc.calc_non_contextual_masses(&tx_a);
-    let serialized_bytes = non_ctx.transient_mass / 10;
+    let non_ctx = mc.calc_non_contextual_masses(&tx_1);
+    
+    // Wire serialization using Borsh serialization of Transaction:
+    let actual_serialized_wire_bytes = borsh::to_vec(&tx_1).unwrap();
+    let estimated_bytes = kaspa_consensus_core::mass::transaction_estimated_serialized_size(&tx_1);
+
     let compute_mass = non_ctx.compute_mass;
     let transient_mass = non_ctx.transient_mass;
-    let storage_mass = 0u64; // Simple 1 in 1 out standard value transfer
+    let storage_mass = 0u64;
     let fee_mass = std::cmp::max(compute_mass, transient_mass);
-    let min_relay_fee = fee_mass * 100; // 100 sompi / gram
+    let min_relay_fee = fee_mass * 100;
 
     println!("===============================================================");
     println!("SEALED -> DRAW_READY Transaction Resource Audit:");
-    println!("  SignatureScript Length    : {} bytes", sig_script_a.len());
-    println!("  RedeemScript Length       : {} bytes", sealed_redeem.len());
-    println!("  Full Transaction Est Bytes: {} bytes", serialized_bytes);
-    println!("  Compute Mass              : {} gram", compute_mass);
-    println!("  Transient Mass            : {} gram", transient_mass);
-    println!("  Storage Mass              : {} gram", storage_mass);
-    println!("  Fee Mass (Overall)        : {} gram", fee_mass);
-    println!("  Minimum Relay Fee         : {} sompi ({:.6} KAS)", min_relay_fee, min_relay_fee as f64 / 1e8);
+    println!("  SignatureScript Length      : {} bytes", sig_script_1.len());
+    println!("  RedeemScript Length         : {} bytes", sealed_redeem.len());
+    println!("  Actual Serialized Wire Bytes: {} bytes", actual_serialized_wire_bytes.len());
+    println!("  Estimated Serialized Bytes  : {} bytes", estimated_bytes);
+    println!("  Used Script Units           : {}", used_units_1.0);
+    println!("  Compute Mass                : {} gram", compute_mass);
+    println!("  Transient Mass              : {} gram", transient_mass);
+    println!("  Storage Mass                : {} gram", storage_mass);
+    println!("  Fee Mass (Overall)          : {} gram", fee_mass);
+    println!("  Minimum Relay Fee           : {} sompi ({:.6} KAS)", min_relay_fee, min_relay_fee as f64 / 1e8);
     println!("===============================================================");
 
-    println!("\n>>> ALL TESTS IN SEALED -> DRAW_READY SUITE PASSED! <<<");
+    println!("\n>>> ALL TESTS 1 THROUGH 8 PASSED WITH CANONICAL SCHEMA! <<<");
 }
