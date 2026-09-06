@@ -1751,6 +1751,7 @@ name = "kaswin-vm-validation"
 version = "0.1.0"
 dependencies = [
  "blake2b_simd",
+ "blake3",
  "faster-hex",
  "kaspa-consensus-core",
  "kaspa-hashes",

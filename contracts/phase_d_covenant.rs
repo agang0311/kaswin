@@ -8,4 +8,6 @@
 //
 // REPLACED BY: contracts/phase_d_pass_a_covenant.rs (KIP-21 PASS-A 240B Opening)
 
-pub use super::phase_d_pass_a_covenant::*;
+#[path = "phase_d_pass_a_covenant.rs"]
+pub mod phase_d_pass_a_covenant;
+pub use phase_d_pass_a_covenant::*;
