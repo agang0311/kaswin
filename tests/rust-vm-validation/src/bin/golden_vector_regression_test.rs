@@ -58,7 +58,16 @@ fn main() {
     state.update(&initial_open_redeem);
     let redeem_hash = state.finalize();
     let redeem_hash_hex = hex_string(redeem_hash.as_bytes());
-    let genesis_spk_hex = hex_string(genesis_out.script_public_key.script());
+
+    let spk_version: u16 = genesis_out.script_public_key.version();
+    let raw_script_hex = hex_string(genesis_out.script_public_key.script());
+    
+    // Canonical full SPK bytes: be_u16(version) || script
+    let mut full_spk_bytes = Vec::new();
+    full_spk_bytes.extend_from_slice(&spk_version.to_be_bytes());
+    full_spk_bytes.extend_from_slice(genesis_out.script_public_key.script());
+    let full_spk_hex = hex_string(&full_spk_bytes);
+
     let cov_id_hex = covenant_id_c.to_string();
     let round_id_hex = round_id.to_string();
 
@@ -66,7 +75,9 @@ fn main() {
     println!("  round_id:                    {}", round_id_hex);
     println!("  initial_open_redeem_len:     {} bytes", initial_open_redeem.len());
     println!("  initial_open_redeem_blake2b: {}", redeem_hash_hex);
-    println!("  genesis_output_0_spk:        {}", genesis_spk_hex);
+    println!("  genesis_spk_version:         {}", spk_version);
+    println!("  genesis_raw_script_hex:      {}", raw_script_hex);
+    println!("  genesis_full_spk_bytes:      {}", full_spk_hex);
     println!("  covenant_id_c:               {}", cov_id_hex);
 
     // Strict Golden Assertions:
@@ -77,22 +88,32 @@ fn main() {
     );
     assert_eq!(
         initial_open_redeem.len(),
-        9823,
+        9822,
         "Canonical Initial OPEN Redeem Script byte length mismatch"
     );
     assert_eq!(
         redeem_hash_hex,
-        "e3e4b421615fbc47f40f37952772f33b59e7fc0fc147c4bd2b7f4f430c261a75",
+        "15ef554925cd019d207ddab630214aa5d3fb395202ceedbbb61c90f49317b6dc",
         "Canonical Initial OPEN Redeem BLAKE2b-256 hash mismatch"
     );
     assert_eq!(
-        genesis_spk_hex,
-        "aa20e3e4b421615fbc47f40f37952772f33b59e7fc0fc147c4bd2b7f4f430c261a7587",
-        "Canonical Genesis Output 0 ScriptPublicKey hex mismatch"
+        spk_version,
+        0,
+        "Canonical Genesis Output 0 ScriptPublicKey version must be 0"
+    );
+    assert_eq!(
+        raw_script_hex,
+        "aa2015ef554925cd019d207ddab630214aa5d3fb395202ceedbbb61c90f49317b6dc87",
+        "Canonical Genesis Output 0 raw script hex mismatch"
+    );
+    assert_eq!(
+        full_spk_hex,
+        "0000aa2015ef554925cd019d207ddab630214aa5d3fb395202ceedbbb61c90f49317b6dc87",
+        "Canonical Genesis Output 0 full SPK bytes (0000 || raw_script) mismatch"
     );
     assert_eq!(
         cov_id_hex,
-        "18e062983330a6e32371d97595f184e3e477ccd21dbe20bd91f636e6cd1e0f51",
+        "c9111abbf5410215c787576bc497a81008e71ff33be21a03b6dc52f4f774c128",
         "Canonical KIP-20 Covenant ID C mismatch"
     );
 

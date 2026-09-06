@@ -1,6 +1,7 @@
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::tx::{
     ComputeCommit, Transaction, TransactionInput, TransactionOutput, TransactionOutpoint, UtxoEntry, CovenantBinding,
+    ScriptPublicKey,
 };
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::mass::ComputeBudget;
@@ -380,7 +381,7 @@ fn main() {
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(tx_draw.id(), 0),
-            sig_script_dr,
+            sig_script_dr.clone(),
             0,
             ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
@@ -401,6 +402,42 @@ fn main() {
     let u_wt = vm_wt.used_script_units();
     let b_min_wt = ComputeBudget::checked_covering_script_units(u_wt).unwrap();
     println!("  [Step 1.3] DRAW_READY(0) -> WINNER_READY({}) PASS! [Units: {:?}, B_min: {:?}]", winner_index, u_wt, b_min_wt);
+
+    // Negative Attack AMOUNT-A: ACCEPT Path Output 0 Amount Inflation (+1 sompi with extra ordinary input)
+    {
+        let tx_amt_a = Transaction::new(
+            1,
+            vec![
+                TransactionInput::new_with_mass(
+                    TransactionOutpoint::new(tx_draw.id(), 0),
+                    sig_script_dr.clone(),
+                    0,
+                    ComputeCommit::ComputeBudget(ComputeBudget(0)),
+                ),
+                TransactionInput::new_with_mass(
+                    TransactionOutpoint::new(Hash::from_u64_word(0xfee1), 0),
+                    vec![0x44; 66],
+                    0,
+                    ComputeCommit::ComputeBudget(ComputeBudget(0)),
+                ),
+            ],
+            vec![TransactionOutput {
+                value: full_sale_pool + 1, // Inflated!
+                script_public_key: winner_ready_spk.clone(),
+                covenant: Some(CovenantBinding { covenant_id: covenant_id_c, authorizing_input: 0 }),
+            }],
+            0, SubnetworkId::default(), 0, vec![],
+        );
+        let pop_amt_a = kaspa_consensus_core::tx::PopulatedTransaction::new(&tx_amt_a, vec![
+            UtxoEntry::new(full_sale_pool, draw_ready_spk_0.clone(), d0 + 1, false, Some(covenant_id_c)),
+            UtxoEntry::new(100_000_000, ScriptPublicKey::from_vec(0, vec![0x11; 32]), d0 + 1, false, None),
+        ]);
+        let cov_ctx_a = kaspa_txscript::covenants::CovenantsContext::from_tx(&pop_amt_a).unwrap();
+        let ctx_a = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_a);
+        let mut vm_a = TxScriptEngine::from_transaction_input(&pop_amt_a, &pop_amt_a.tx.inputs[0], 0, &pop_amt_a.entries[0], ctx_a, flags);
+        assert!(vm_a.execute().is_err());
+        println!("  -> PASS [AMOUNT-A]: ACCEPT Path Output 0 Amount = Input 0 + 1 sompi strictly BLOCKED by OpEqualVerify!");
+    }
 
     // 1.4 WINNER_READY -> PAID (Atomic Principal to Winner + State Deposit to Creator)
     // Identify winning purchase:

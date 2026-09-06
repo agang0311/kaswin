@@ -390,13 +390,12 @@ fn compile_suffix_body(
     sb.add_op(OpTxOutputSpk).unwrap();
     sb.add_op(OpEqualVerify).unwrap();
 
-    // Assert pool amount preserved: OpTxOutputAmount(0) >= OpTxInputAmount(0)
+    // Assert exact pool amount equality: OpTxOutputAmount(0) == OpTxInputAmount(0)
     sb.add_op(Op0).unwrap();
     sb.add_op(OpTxInputAmount).unwrap();
     sb.add_op(Op0).unwrap();
     sb.add_op(OpTxOutputAmount).unwrap();
-    sb.add_op(OpGreaterThanOrEqual).unwrap();
-    sb.add_op(OpVerify).unwrap();
+    sb.add_op(OpEqualVerify).unwrap();
 
     // Enforce Singleton Continuation Lineage Guard:
     self::lineage::append_kaswin_singleton_continuation_guard(&mut sb).unwrap();

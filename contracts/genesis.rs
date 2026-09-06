@@ -13,7 +13,7 @@
 
 use kaspa_hashes::Hash;
 use kaspa_consensus_core::tx::{Transaction, TransactionOutpoint, TransactionOutput, CovenantBinding};
-use kaspa_consensus_core::constants::MAX_SOMPI;
+use kaspa_consensus_core::constants::{MAX_SOMPI, TX_VERSION_TOCCATA};
 use kaspa_txscript::LOCK_TIME_THRESHOLD;
 
 #[path = "v1_constants.rs"]
@@ -152,8 +152,8 @@ pub fn validate_canonical_kaswin_create(
     if delta_daa != DELTA_DAA_V1 {
         return Err("delta_daa must be exactly DELTA_DAA_V1 (100) for canonical Kaswin V1");
     }
-    if tx.version < 1 {
-        return Err("Transaction version must be >= 1 for covenants");
+    if tx.version != TX_VERSION_TOCCATA {
+        return Err("Transaction version must be exactly TX_VERSION_TOCCATA (1)");
     }
     if tx.inputs.is_empty() {
         return Err("Missing input 0");
@@ -199,6 +199,20 @@ pub fn validate_canonical_kaswin_create(
 
     if binding.covenant_id != expected_covenant_id {
         return Err("Output 0 covenant_id mismatch with canonical derivation");
+    }
+
+    // Genesis Isolation: All non-zero outputs (outputs[1..]) must NOT reuse covenant C,
+    // and must NOT be authorized by Input 0 (no multi-genesis authorization from input 0).
+    // Ordinary wallet change outputs (covenant == None) are explicitly permitted.
+    for output in tx.outputs.iter().skip(1) {
+        if let Some(cov) = output.covenant.as_ref() {
+            if cov.covenant_id == expected_covenant_id {
+                return Err("Non-zero output reuses covenant ID C in CREATE transaction");
+            }
+            if cov.authorizing_input == 0 {
+                return Err("Non-zero output must not be authorized by Input 0 in CREATE transaction");
+            }
+        }
     }
 
     Ok(expected_covenant_id)
