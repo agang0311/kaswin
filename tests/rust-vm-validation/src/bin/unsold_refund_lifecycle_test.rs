@@ -312,6 +312,19 @@ fn main() {
     assert!(res_header_c.is_err());
     println!("  -> PASS: Consensus Header-Context rejected early refund transaction: {:?}", res_header_c);
 
+    // Explicit DAA boundary checks against pinned consensus finality:
+    assert_eq!(
+        reference_check_tx_finalized_in_daa_context(&tx_ref_early, refund_lock_daa),
+        Err("Transaction not finalized in header context: lock_time not reached and inputs not max sequence"),
+        "block DAA == refund_lock_daa MUST fail header-context finality!"
+    );
+    assert_eq!(
+        reference_check_tx_finalized_in_daa_context(&tx_ref_early, refund_lock_daa + 1),
+        Ok(()),
+        "block DAA == refund_lock_daa + 1 MUST pass header-context finality!"
+    );
+    println!("  -> PASS: Boundary verified: DAA == refund_lock_daa (FAIL) & DAA == refund_lock_daa + 1 (PASS)");
+
     // 2. TxScriptEngine CLTV Check if tx.lock_time was tampered lower than refund_lock_daa:
     let mut tx_ref_cltv_tamper = tx_ref_early.clone();
     tx_ref_cltv_tamper.lock_time = refund_lock_daa - 100; // lower lock_time
