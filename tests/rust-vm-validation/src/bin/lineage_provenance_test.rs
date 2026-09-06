@@ -37,7 +37,7 @@ use ticket_commitment::{
 
 #[path = "../../../../contracts/open_covenant.rs"]
 pub mod open_covenant;
-use open_covenant::{build_initial_open_covenant, build_open_covenant};
+use open_covenant::{build_initial_open_covenant, build_open_covenant, ACTION_BUY};
 
 #[path = "../../../../contracts/genesis.rs"]
 pub mod genesis;
@@ -217,6 +217,11 @@ fn main() {
     let empty_levels = compute_empty_levels();
     let empty_leaf = compute_empty_leaf();
 
+    let mut reserve_payout_spk = vec![0x00, 0x00, OpData32 as u8];
+    reserve_payout_spk.extend(vec![0x77; 32]);
+    reserve_payout_spk.push(OpCheckSig as u8);
+    let refund_lock_daa = 1_500_000u64;
+
     // -------------------------------------------------------------
     // TEST 1 — Canonical CREATE
     // -------------------------------------------------------------
@@ -227,6 +232,8 @@ fn main() {
         ticket_price,
         total_tickets,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
     let initial_open_spk = pay_to_script_hash_script(&initial_open_redeem);
 
@@ -278,6 +285,8 @@ fn main() {
         ticket_price,
         total_tickets,
         delta_daa,
+        refund_lock_daa,
+        &reserve_payout_spk,
         initial_reserve,
     ).unwrap();
     assert_eq!(validated_c, official_covenant_id);
@@ -296,6 +305,8 @@ fn main() {
         0,
         bad_root,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
     let tx_bad_root = Transaction::new(
         1,
@@ -307,7 +318,7 @@ fn main() {
         }],
         0, SubnetworkId::default(), 0, vec![],
     );
-    assert!(validate_canonical_kaswin_create(&tx_bad_root, ticket_price, total_tickets, delta_daa, initial_reserve).is_err());
+    assert!(validate_canonical_kaswin_create(&tx_bad_root, ticket_price, total_tickets, delta_daa, refund_lock_daa, &reserve_payout_spk, initial_reserve).is_err());
     println!("  -> PASS: Noncanonical initial root rejected by validate_canonical_kaswin_create");
 
     // -------------------------------------------------------------
@@ -322,6 +333,8 @@ fn main() {
         1,
         empty_root,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
     let tx_bad_state = Transaction::new(
         1,
@@ -333,7 +346,7 @@ fn main() {
         }],
         0, SubnetworkId::default(), 0, vec![],
     );
-    assert!(validate_canonical_kaswin_create(&tx_bad_state, ticket_price, total_tickets, delta_daa, initial_reserve).is_err());
+    assert!(validate_canonical_kaswin_create(&tx_bad_state, ticket_price, total_tickets, delta_daa, refund_lock_daa, &reserve_payout_spk, initial_reserve).is_err());
     println!("  -> PASS: Noncanonical initial state rejected by validate_canonical_kaswin_create");
 
     // -------------------------------------------------------------
@@ -349,7 +362,7 @@ fn main() {
         ],
         0, SubnetworkId::default(), 0, vec![],
     );
-    assert!(validate_canonical_kaswin_create(&tx_multi_genesis, ticket_price, total_tickets, delta_daa, initial_reserve).is_err());
+    assert!(validate_canonical_kaswin_create(&tx_multi_genesis, ticket_price, total_tickets, delta_daa, refund_lock_daa, &reserve_payout_spk, initial_reserve).is_err());
     println!("  -> PASS: Multi-genesis output attempt rejected by validate_canonical_kaswin_create");
 
     // -------------------------------------------------------------
@@ -376,6 +389,8 @@ fn main() {
         1,
         root_1,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
     let next_open_spk_1 = pay_to_script_hash_script(&next_open_redeem_1);
 
@@ -383,6 +398,7 @@ fn main() {
     for i in (0..TREE_DEPTH).rev() { sig_sb_buy1.add_data(&siblings_1[i].as_bytes()).unwrap(); }
     sig_sb_buy1.add_data(&buyer_spk_1).unwrap();
     sig_sb_buy1.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_buy1.add_i64(ACTION_BUY).unwrap();
     sig_sb_buy1.add_data(&initial_open_redeem).unwrap();
     let sig_script_buy1 = sig_sb_buy1.drain();
 
@@ -624,12 +640,15 @@ fn main() {
         2,
         compute_root_from_path(&leaf_2, 1, &siblings_2),
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
 
     let mut sig_sb_buy3 = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() { sig_sb_buy3.add_data(&siblings_3[i].as_bytes()).unwrap(); }
     sig_sb_buy3.add_data(&buyer_spk_3).unwrap();
     sig_sb_buy3.add_data(&count_3.to_le_bytes()).unwrap();
+    sig_sb_buy3.add_i64(ACTION_BUY).unwrap();
     sig_sb_buy3.add_data(&open_redeem_15).unwrap();
     let sig_script_buy3 = sig_sb_buy3.drain();
 

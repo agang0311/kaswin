@@ -38,7 +38,7 @@ use sealed_to_draw_ready::build_sealed_to_draw_ready_covenant;
 
 #[path = "../../../../contracts/open_covenant.rs"]
 pub mod open_covenant;
-use open_covenant::{build_initial_open_covenant, build_open_covenant};
+use open_covenant::{build_initial_open_covenant, build_open_covenant, ACTION_BUY};
 
 #[path = "../../../../contracts/winner_membership.rs"]
 pub mod winner_membership;
@@ -98,6 +98,11 @@ fn main() {
     assert_eq!(buyer_spk_3.len(), 37);
     assert!(is_canonical_payout_spk(&buyer_spk_3));
 
+    let mut reserve_payout_spk = vec![0x00, 0x00, OpData32 as u8];
+    reserve_payout_spk.extend(vec![0x77; 32]);
+    reserve_payout_spk.push(OpCheckSig as u8);
+    let refund_lock_daa = 1_500_000u64;
+
     // -------------------------------------------------------------
     // Test 2: BUY0 (Initial Purchase with Class A PubKey payout_spk)
     // -------------------------------------------------------------
@@ -114,6 +119,8 @@ fn main() {
         ticket_price,
         total_tickets,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
 
     let payout_comm_1 = compute_payout_commitment(&buyer_spk_1);
@@ -128,6 +135,8 @@ fn main() {
         1,
         root_1,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
 
     let mut sig_sb_1 = ScriptBuilder::with_flags(flags);
@@ -136,6 +145,7 @@ fn main() {
     }
     sig_sb_1.add_data(&buyer_spk_1).unwrap();
     sig_sb_1.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_1.add_i64(ACTION_BUY).unwrap();
     sig_sb_1.add_data(&open_redeem_0).unwrap();
     let sig_script_1 = sig_sb_1.drain();
 
@@ -199,6 +209,8 @@ fn main() {
         2,
         root_2,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
 
     let mut sig_sb_2 = ScriptBuilder::with_flags(flags);
@@ -207,6 +219,7 @@ fn main() {
     }
     sig_sb_2.add_data(&buyer_spk_2).unwrap();
     sig_sb_2.add_data(&count_2.to_le_bytes()).unwrap();
+    sig_sb_2.add_i64(ACTION_BUY).unwrap();
     sig_sb_2.add_data(&next_open_redeem_1).unwrap();
     let sig_script_2 = sig_sb_2.drain();
 
@@ -260,6 +273,8 @@ fn main() {
         2,
         r_attack,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
 
     let mut sig_sb_attack = ScriptBuilder::with_flags(flags);
@@ -268,6 +283,7 @@ fn main() {
     }
     sig_sb_attack.add_data(&buyer_spk_2).unwrap();
     sig_sb_attack.add_data(&count_2.to_le_bytes()).unwrap();
+    sig_sb_attack.add_i64(ACTION_BUY).unwrap();
     sig_sb_attack.add_data(&next_open_redeem_1).unwrap();
     let sig_script_attack = sig_sb_attack.drain();
 
@@ -313,6 +329,7 @@ fn main() {
     }
     sig_sb_wrong_slot.add_data(&buyer_spk_2).unwrap();
     sig_sb_wrong_slot.add_data(&count_2.to_le_bytes()).unwrap();
+    sig_sb_wrong_slot.add_i64(ACTION_BUY).unwrap();
     sig_sb_wrong_slot.add_data(&next_open_redeem_1).unwrap();
     let sig_script_wrong_slot = sig_sb_wrong_slot.drain();
 
@@ -325,6 +342,8 @@ fn main() {
         2,
         root_wrong_slot,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk.clone(),
     ).unwrap();
 
     let tx_wrong_slot = Transaction::new(
@@ -371,6 +390,7 @@ fn main() {
     for i in (0..TREE_DEPTH).rev() { sig_sb_6a.add_data(&siblings_1[i].as_bytes()).unwrap(); }
     sig_sb_6a.add_data(&bad_spk_4b).unwrap();
     sig_sb_6a.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_6a.add_i64(ACTION_BUY).unwrap();
     sig_sb_6a.add_data(&open_redeem_0).unwrap();
     let tx_6a = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6a.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }) }], 0, SubnetworkId::default(), 0, vec![]);
     let pop_6a = PopulatedTransaction::new(&tx_6a, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, Some(cov_id))]);
@@ -389,6 +409,7 @@ fn main() {
     for i in (0..TREE_DEPTH).rev() { sig_sb_6b.add_data(&siblings_1[i].as_bytes()).unwrap(); }
     sig_sb_6b.add_data(&bad_spk_v1).unwrap();
     sig_sb_6b.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_6b.add_i64(ACTION_BUY).unwrap();
     sig_sb_6b.add_data(&open_redeem_0).unwrap();
     let tx_6b = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6b.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }) }], 0, SubnetworkId::default(), 0, vec![]);
     let pop_6b = PopulatedTransaction::new(&tx_6b, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, Some(cov_id))]);
@@ -406,6 +427,7 @@ fn main() {
     for i in (0..TREE_DEPTH).rev() { sig_sb_6c.add_data(&siblings_1[i].as_bytes()).unwrap(); }
     sig_sb_6c.add_data(&bad_spk_optrue).unwrap();
     sig_sb_6c.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_6c.add_i64(ACTION_BUY).unwrap();
     sig_sb_6c.add_data(&open_redeem_0).unwrap();
     let tx_6c = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6c.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }) }], 0, SubnetworkId::default(), 0, vec![]);
     let pop_6c = PopulatedTransaction::new(&tx_6c, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, Some(cov_id))]);
@@ -453,6 +475,7 @@ fn main() {
     }
     sig_sb_3.add_data(&buyer_spk_3).unwrap();
     sig_sb_3.add_data(&count_3.to_le_bytes()).unwrap();
+    sig_sb_3.add_i64(ACTION_BUY).unwrap();
     sig_sb_3.add_data(&next_open_redeem_2).unwrap();
     let sig_script_3 = sig_sb_3.drain();
 

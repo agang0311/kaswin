@@ -1,48 +1,49 @@
-// Kaswin Canonical OPEN Covenant State Machine
+// Updated OPEN Covenant with Refund Lifecycle & Action Dispatch
 //
-// State Encoding in Redeem Script:
-// Prefix (Fixed 105 bytes):
-//   OpTxInputIndex, Op0, OpEqualVerify
-//   DataPush(round_id[32])
-//   DataPush(le_u64(ticket_price)[8])
-//   DataPush(le_u64(total_tickets)[8])
-//   DataPush(le_u64(sold_tickets)[8])
-//   DataPush(le_u64(purchase_count)[8])
-//   DataPush(ticket_root[32])
-//
-// Witness stack on entry:
-//   [0]      siblings[26]
-//   ...
-//   [26]     siblings[0]
-//   [27]     payout_spk
-//   [28]     count (8 bytes LE)
-//
-// Total stack depth on entry to body: 35 items.
+// Actions:
+// ACTION_BUY           = 1
+// ACTION_BEGIN_REFUND  = 2
+// ACTION_RECOVER_EMPTY = 3
 
-use kaspa_hashes::Hash;
+use kaspa_hashes::{Hash, ZERO_HASH};
+use kaspa_txscript::{
+    opcodes::codes::*,
+    script_builder::{ScriptBuilder, ScriptBuilderResult},
+};
 
 #[path = "lineage.rs"]
 pub mod lineage;
 
 #[path = "ticket_commitment.rs"]
 pub mod ticket_commitment;
-use kaspa_txscript::{
-    opcodes::codes::*,
-    script_builder::{ScriptBuilder, ScriptBuilderResult},
-};
+use ticket_commitment::{is_canonical_payout_spk, append_canonical_payout_spk_check, TREE_DEPTH};
 
-pub const TREE_DEPTH: usize = 27;
+#[path = "sealed_to_draw_ready.rs"]
+pub mod sealed_to_draw_ready;
+
+#[path = "refunding_covenant.rs"]
+pub mod refunding_covenant;
+use refunding_covenant::build_refunding_covenant;
+
 pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
-pub const OPEN_PREFIX_LEN: usize = 105;
+pub const LOCK_TIME_THRESHOLD: u64 = 500_000_000_000;
+
+pub const ACTION_BUY: i64 = 1;
+pub const ACTION_BEGIN_REFUND: i64 = 2;
+pub const ACTION_RECOVER_EMPTY: i64 = 3;
 
 pub fn build_open_prefix(
     round_id: &Hash,
     ticket_price: u64,
     total_tickets: u64,
+    refund_lock_daa: u64,
+    reserve_payout_spk: &[u8],
     sold_tickets: u64,
     purchase_count: u64,
     ticket_root: &Hash,
 ) -> Vec<u8> {
+    assert!(is_canonical_payout_spk(reserve_payout_spk));
+    assert!(refund_lock_daa > 0 && refund_lock_daa < LOCK_TIME_THRESHOLD);
     let mut sb = ScriptBuilder::new();
     sb.add_op(OpTxInputIndex).unwrap();
     sb.add_op(Op0).unwrap();
@@ -50,23 +51,41 @@ pub fn build_open_prefix(
     sb.add_data(&round_id.as_bytes()).unwrap();
     sb.add_data(&ticket_price.to_le_bytes()).unwrap();
     sb.add_data(&total_tickets.to_le_bytes()).unwrap();
+    sb.add_data(&refund_lock_daa.to_le_bytes()).unwrap();
+    sb.add_data(reserve_payout_spk).unwrap();
     sb.add_data(&sold_tickets.to_le_bytes()).unwrap();
     sb.add_data(&purchase_count.to_le_bytes()).unwrap();
     sb.add_data(&ticket_root.as_bytes()).unwrap();
-    let res = sb.drain();
-    assert_eq!(res.len(), OPEN_PREFIX_LEN);
-    res
+    sb.drain()
 }
 
-/// Canonical initial OPEN covenant builder:
-/// Enforces sold_tickets = 0, purchase_count = 0, ticket_root = EMPTY_ROOT_27.
+pub fn canonical_open_body_len(
+    round_id: Hash,
+    ticket_price: u64,
+    total_tickets: u64,
+    delta_daa: u64,
+    reserve_payout_spk_len: usize,
+) -> usize {
+    let mut guess = 4500usize;
+    for _ in 0..16 {
+        let body = build_open_covenant_body(round_id, ticket_price, total_tickets, delta_daa, guess, reserve_payout_spk_len).unwrap();
+        if body.len() == guess {
+            return guess;
+        }
+        guess = body.len();
+    }
+    panic!("Failed to converge open body length");
+}
+
 pub fn build_initial_open_covenant(
     round_id: Hash,
     ticket_price: u64,
     total_tickets: u64,
     delta_daa: u64,
+    refund_lock_daa: u64,
+    reserve_payout_spk: Vec<u8>,
 ) -> ScriptBuilderResult<Vec<u8>> {
-    let empty_root = self::ticket_commitment::compute_empty_root_27();
+    let empty_root = ticket_commitment::compute_empty_root_27();
     build_open_covenant(
         round_id,
         ticket_price,
@@ -75,24 +94,9 @@ pub fn build_initial_open_covenant(
         0,
         empty_root,
         delta_daa,
+        refund_lock_daa,
+        reserve_payout_spk,
     )
-}
-
-pub fn canonical_open_body_len(
-    round_id: Hash,
-    ticket_price: u64,
-    total_tickets: u64,
-    delta_daa: u64,
-) -> usize {
-    let mut guess = 3000usize;
-    for _ in 0..16 {
-        let body = build_open_covenant_body(round_id, ticket_price, total_tickets, delta_daa, guess).unwrap();
-        if body.len() == guess {
-            return guess;
-        }
-        guess = body.len();
-    }
-    panic!("Failed to converge open body length");
 }
 
 pub fn build_open_covenant(
@@ -103,13 +107,26 @@ pub fn build_open_covenant(
     purchase_count: u64,
     ticket_root: Hash,
     delta_daa: u64,
+    refund_lock_daa: u64,
+    reserve_payout_spk: Vec<u8>,
 ) -> ScriptBuilderResult<Vec<u8>> {
     assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS);
     assert!(sold_tickets <= total_tickets);
+    assert!(is_canonical_payout_spk(&reserve_payout_spk));
+    assert!(refund_lock_daa > 0 && refund_lock_daa < LOCK_TIME_THRESHOLD);
 
-    let body_len = canonical_open_body_len(round_id, ticket_price, total_tickets, delta_daa);
-    let prefix = build_open_prefix(&round_id, ticket_price, total_tickets, sold_tickets, purchase_count, &ticket_root);
-    let body = build_open_covenant_body(round_id, ticket_price, total_tickets, delta_daa, body_len)?;
+    let body_len = canonical_open_body_len(round_id, ticket_price, total_tickets, delta_daa, reserve_payout_spk.len());
+    let prefix = build_open_prefix(
+        &round_id,
+        ticket_price,
+        total_tickets,
+        refund_lock_daa,
+        &reserve_payout_spk,
+        sold_tickets,
+        purchase_count,
+        &ticket_root,
+    );
+    let body = build_open_covenant_body(round_id, ticket_price, total_tickets, delta_daa, body_len, reserve_payout_spk.len())?;
 
     let mut full = Vec::new();
     full.extend_from_slice(&prefix);
@@ -117,401 +134,568 @@ pub fn build_open_covenant(
     Ok(full)
 }
 
-fn build_open_covenant_body(
+pub fn build_open_covenant_body(
     round_id: Hash,
     ticket_price: u64,
     total_tickets: u64,
     delta_daa: u64,
     body_len: usize,
+    reserve_payout_spk_len: usize,
 ) -> ScriptBuilderResult<Vec<u8>> {
     let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
 
-    // Witness Stack on entry (bottom to top):
-    // [0..26] siblings[26..0] (27 items)
-    // [27] payout_spk (1 item)
-    // [28] count (8B LE data push) (1 item)
-    // Plus 6 state items pushed by prefix:
-    // [29] round_id (depth 5)
-    // [30] ticket_price (depth 4)
-    // [31] total_tickets (depth 3)
-    // [32] sold_tickets (depth 2)
-    // [33] purchase_count (depth 1)
-    // [34] ticket_root (depth 0)
-    // Total stack depth = 35 items!
-    sb.add_op(OpDepth)?;
-    sb.add_i64(35)?;
-    sb.add_op(OpNumEqualVerify)?;
+    // On entry to OPEN body:
+    // Prefix has pushed 8 items:
+    // Depth 0: ticket_root (32B)
+    // Depth 1: purchase_count (8B)
+    // Depth 2: sold_tickets (8B)
+    // Depth 3: reserve_payout_spk (raw bytes)
+    // Depth 4: refund_lock_daa (8B)
+    // Depth 5: total_tickets (8B)
+    // Depth 6: ticket_price (8B)
+    // Depth 7: round_id (32B)
+    //
+    // Depth 8: action (1 = BUY, 2 = BEGIN_REFUND, 3 = RECOVER_EMPTY)
 
-    // -------------------------------------------------------------
-    // STEP 0: Witness Canonical Width Checks
-    // count is at depth 6: MUST be exactly 8 bytes!
-    // siblings[0..26] are at depths 8..34: EACH MUST be exactly 32 bytes!
-    // -------------------------------------------------------------
-    sb.add_i64(6)?;
-    sb.add_op(OpPick)?;
-    sb.add_op(OpSize)?;
+    // Branch on action:
     sb.add_i64(8)?;
-    sb.add_op(OpNumEqualVerify)?;
-    sb.add_op(OpDrop)?; // drop count copy
+    sb.add_op(OpPick)?;
+    sb.add_op(OpBin2Num)?; // Stack: [..., action_num]
 
-    for i in 8..35 {
-        sb.add_i64(i as i64)?;
+    sb.add_op(OpDup)?;
+    sb.add_i64(ACTION_BUY)?;
+    sb.add_op(OpEqual)?;
+    sb.add_op(OpIf)?;
+        // =========================================================
+        // ACTION 1: BUY
+        // =========================================================
+        sb.add_op(OpDrop)?; // drop action_num
+        // Stack on entry to BUY logic:
+        // [siblings (27), payout_spk (1), count (1), action (1), prefix items (8)]
+        // Total depth must be 38 items!
+        sb.add_op(OpDepth)?;
+        sb.add_i64(38)?;
+        sb.add_op(OpNumEqualVerify)?;
+
+        // Depths of BUY items:
+        // Depth 0: ticket_root
+        // Depth 1: purchase_count
+        // Depth 2: sold_tickets
+        // Depth 3: reserve_payout_spk
+        // Depth 4: refund_lock_daa
+        // Depth 5: total_tickets
+        // Depth 6: ticket_price
+        // Depth 7: round_id
+        // Depth 8: action (1)
+        // Depth 9: count (8B)
+        // Depth 10: payout_spk
+        // Depth 11..37: siblings[0..26] (27 items)
+
+        // Width checks:
+        sb.add_i64(9)?;
         sb.add_op(OpPick)?;
         sb.add_op(OpSize)?;
-        sb.add_i64(32)?;
+        sb.add_i64(8)?;
         sb.add_op(OpNumEqualVerify)?;
-        sb.add_op(OpDrop)?; // drop sibling copy
-    }
+        sb.add_op(OpDrop)?; // count
 
-    // -------------------------------------------------------------
-    // STEP 1: Count Validation and Interval Calculation
-    // -------------------------------------------------------------
-    sb.add_i64(6)?;
-    sb.add_op(OpPick)?;
-    sb.add_op(OpBin2Num)?; // [..., count_num]
-
-    sb.add_op(OpDup)?;
-    sb.add_i64(1)?;
-    sb.add_op(OpGreaterThanOrEqual)?;
-    sb.add_op(OpVerify)?; // count >= 1 verified!
-
-    // sold_after = sold_tickets + count
-    // count_num is at depth 0, sold_tickets is at depth 2 + 1 = 3!
-    sb.add_op(Op3)?;
-    sb.add_op(OpPick)?;
-    sb.add_op(OpBin2Num)?;
-    sb.add_op(OpAdd)?; // Stack top is now: [..., sold_after]
-
-    // Verify sold_after <= total_tickets:
-    sb.add_op(OpDup)?;
-    sb.add_i64(5)?;
-    sb.add_op(OpPick)?;
-    sb.add_op(OpBin2Num)?;
-    sb.add_op(OpLessThanOrEqual)?;
-    sb.add_op(OpVerify)?; // sold_after <= total_tickets verified!
-
-    // Put sold_after on AltStack:
-    sb.add_op(OpToAltStack)?; // AltStack: [sold_after]
-    // Stack is back to initial 35 items!
-
-    // Enforce Singleton Continuation Lineage Guard:
-    self::lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
-
-    // -------------------------------------------------------------
-    // STEP 2: Exact Atomic Payment Verification
-    // Output 0 Value == Input 0 Value + ticket_price * count
-    // -------------------------------------------------------------
-    sb.add_i64(6)?;
-    sb.add_op(OpPick)?; // count
-    sb.add_op(OpBin2Num)?;
-    sb.add_i64(5)?;
-    sb.add_op(OpPick)?; // ticket_price (depth 4 + 1 = depth 5)
-    sb.add_op(OpBin2Num)?;
-    sb.add_op(OpMul)?; // delta_payment = ticket_price * count
-
-    sb.add_op(Op0)?;
-    sb.add_op(OpTxInputAmount)?;
-    sb.add_op(OpAdd)?; // expected_exact_output_amount
-
-    sb.add_op(Op0)?;
-    sb.add_op(OpTxOutputAmount)?;
-    sb.add_op(OpEqualVerify)?; // EXACT payment verified!
-    // Stack is back to initial 35 items!
-
-    // -------------------------------------------------------------
-    // STEP 3: Validate Canonical Payout SPK & Compute purchase_leaf
-    // payout_spk is at depth 7!
-    // -------------------------------------------------------------
-    // Enforce payout_spk is a canonical ScriptPublicKey (PubKey, PubKeyECDSA, or ScriptHash with version 0):
-    self::ticket_commitment::append_canonical_payout_spk_check(&mut sb, 7)?;
-
-    // 1) Read purchase_count as number and compute next_purchase_count_num:
-    sb.add_op(Op1)?;
-    sb.add_op(OpPick)?; // purchase_count (depth 1)
-    sb.add_op(OpBin2Num)?;
-    sb.add_op(OpDup)?;  // [..., purchase_count_num, purchase_count_num]
-    sb.add_op(Op1)?;
-    sb.add_op(OpAdd)?;  // [..., purchase_count_num, next_purchase_count_num]
-    sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num]
-    sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num]
-
-    // 2) Copy ticket_root to AltStack:
-    sb.add_op(Op0)?;
-    sb.add_op(OpPick)?; // ticket_root (depth 0)
-    sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num, ticket_root]
-
-    // 3) Push canonical empty_leaf to AltStack:
-    let empty_leaf = self::ticket_commitment::compute_empty_leaf();
-    sb.add_data(&empty_leaf.as_bytes())?;
-    sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num, ticket_root, empty_leaf]
-
-    // 4) Compute payout_comm:
-    sb.add_i64(7)?;
-    sb.add_op(OpPick)?; // payout_spk (depth 7)
-    sb.add_op(OpSize)?;
-    sb.add_i64(4)?;
-    sb.add_op(OpNum2Bin)?; // len_4b
-    sb.add_data(b"KaswinPayoutSpkV1")?;
-    sb.add_op(OpSwap)?;
-    sb.add_op(OpCat)?;
-    sb.add_op(OpSwap)?;
-    sb.add_op(OpCat)?;
-    sb.add_data(b"")?;
-    sb.add_op(OpBlake2bWithKey)?; // Stack: [initial 35 items, payout_comm (32B)]
-
-    // 5) Assemble purchase_leaf:
-    sb.add_data(b"KaswinTicketRangeV1")?;
-    sb.add_i64(7)?;
-    sb.add_op(OpPick)?; // round_id (depth 6 + 1 = 7)
-    sb.add_op(OpCat)?;
-
-    sb.add_i64(3)?;
-    sb.add_op(OpPick)?; // purchase_count (depth 2 + 1 = 3)
-    sb.add_op(OpCat)?;
-
-    sb.add_i64(4)?;
-    sb.add_op(OpPick)?; // sold_tickets (depth 3 + 1 = 4)
-    sb.add_op(OpCat)?;
-
-    sb.add_i64(8)?;
-    sb.add_op(OpPick)?; // count (depth 7 + 1 = 8)
-    sb.add_op(OpCat)?;
-
-    sb.add_op(OpSwap)?; // [range_preimage, payout_comm]
-    sb.add_op(OpCat)?;
-    sb.add_data(b"")?;
-    sb.add_op(OpBlake2bWithKey)?; // Stack: [initial 35 items, purchase_leaf (32B)]
-    sb.add_op(OpToAltStack)?;     // AltStack: [sold_after, next_pc, current_pc, ticket_root, empty_leaf, purchase_leaf]
-
-    // 6) Clean top 8 non-sibling items from dstack:
-    for _ in 0..4 {
-        sb.add_op(Op2Drop)?;
-    }
-    // Stack now contains ONLY: [siblings[26..0]]!
-
-    // 7) Reshuffle AltStack so that:
-    // dstack has: [siblings[26..0], current_purchase_count_num]
-    // AltStack has: [sold_after, next_purchase_count_num, ticket_root, empty_leaf, purchase_leaf]
-    sb.add_op(OpFromAltStack)?; // purchase_leaf
-    sb.add_op(OpFromAltStack)?; // empty_leaf
-    sb.add_op(OpFromAltStack)?; // ticket_root
-    sb.add_op(OpFromAltStack)?; // current_purchase_count_num (now at top of dstack!)
-    sb.add_op(OpSwap)?;         // [..., current_pc, ticket_root]
-    sb.add_op(OpToAltStack)?;   // push ticket_root -> AltStack: [sold_after, next_pc, ticket_root]
-    sb.add_op(OpSwap)?;         // [..., current_pc, empty_leaf]
-    sb.add_op(OpToAltStack)?;   // push empty_leaf -> AltStack: [sold_after, next_pc, ticket_root, empty_leaf]
-    sb.add_op(OpSwap)?;         // [..., current_pc, purchase_leaf]
-    sb.add_op(OpToAltStack)?;   // push purchase_leaf -> AltStack: [sold_after, next_pc, ticket_root, empty_leaf, purchase_leaf]
-
-    // Stack is now: [siblings[26..0], current_purchase_count_num]!
-    // AltStack top is purchase_leaf (new_hash), second is empty_leaf (old_hash)!
-
-    // -------------------------------------------------------------
-    // STEP 4: Parallel Dual-Root SMT Computation (27 Levels)
-    // Simultaneously computes:
-    //   old_root_candidate from empty_leaf + siblings
-    //   new_root_candidate from purchase_leaf + same siblings
-    // -------------------------------------------------------------
-    for i in 0..TREE_DEPTH {
-        sb.add_op(OpDup)?;
-        if i > 0 {
-            sb.add_i64(1i64 << i)?;
-            sb.add_op(OpDiv)?;
+        for i in 11..38 {
+            sb.add_i64(i as i64)?;
+            sb.add_op(OpPick)?;
+            sb.add_op(OpSize)?;
+            sb.add_i64(32)?;
+            sb.add_op(OpNumEqualVerify)?;
+            sb.add_op(OpDrop)?;
         }
-        sb.add_i64(2)?;
-        sb.add_op(OpMod)?; // [..., sibling_i, current_purchase_count_num, bit_i]
 
-        sb.add_i64(2)?;
-        sb.add_op(OpRoll)?; // [..., current_purchase_count_num, bit_i, sibling_i]
-        sb.add_op(OpDup)?;  // [..., current_purchase_count_num, bit_i, sibling_i, sibling_i]
+        // Canonical payout_spk check:
+        append_canonical_payout_spk_check(&mut sb, 10)?;
 
-        // 1. Compute new_hash:
-        sb.add_op(OpFromAltStack)?; // [..., current_pc, bit_i, sibling_i, sibling_i, new_hash]
-        sb.add_op(OpSwap)?;         // [..., current_pc, bit_i, sibling_i, new_hash, sibling_i]
-        sb.add_i64(3)?;
-        sb.add_op(OpPick)?;         // [..., current_pc, bit_i, sibling_i, new_hash, sibling_i, bit_i]
-        sb.add_op(OpIf)?;
-            sb.add_op(OpSwap)?;
-        sb.add_op(OpEndIf)?;
+        // Count bounds:
+        sb.add_i64(9)?;
+        sb.add_op(OpPick)?;
+        sb.add_op(OpBin2Num)?; // count_num
+        sb.add_op(OpDup)?;
+        sb.add_i64(1)?;
+        sb.add_op(OpGreaterThanOrEqual)?;
+        sb.add_op(OpVerify)?;
+
+        // sold_after = sold_tickets + count:
+        sb.add_op(Op3)?;
+        sb.add_op(OpPick)?; // sold_tickets (depth 2 + 1)
+        sb.add_op(OpBin2Num)?;
+        sb.add_op(OpAdd)?; // sold_after
+        sb.add_op(OpDup)?;
+        sb.add_i64(7)?;
+        sb.add_op(OpPick)?; // total_tickets (depth 5 + 2)
+        sb.add_op(OpBin2Num)?;
+        sb.add_op(OpLessThanOrEqual)?;
+        sb.add_op(OpVerify)?;
+        sb.add_op(OpToAltStack)?; // AltStack: [sold_after]
+
+        // Exact payment verification:
+        sb.add_i64(9)?;
+        sb.add_op(OpPick)?; // count
+        sb.add_op(OpBin2Num)?;
+        sb.add_i64(7)?;
+        sb.add_op(OpPick)?; // ticket_price (depth 6 + 1)
+        sb.add_op(OpBin2Num)?;
+        sb.add_op(OpMul)?;
+        sb.add_op(Op0)?;
+        sb.add_op(OpTxInputAmount)?;
+        sb.add_op(OpAdd)?; // expected_exact
+        sb.add_op(Op0)?;
+        sb.add_op(OpTxOutputAmount)?;
+        sb.add_op(OpEqualVerify)?;
+
+        // Enforce Singleton Continuation Guard:
+        lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
+        // Setup for Merkle tree:
+        sb.add_op(Op1)?;
+        sb.add_op(OpPick)?; // purchase_count
+        sb.add_op(OpBin2Num)?;
+        sb.add_op(OpDup)?;
+        sb.add_op(Op1)?;
+        sb.add_op(OpAdd)?; // next_pc
+        sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_pc]
+        sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_pc, current_pc]
+
+        sb.add_op(Op0)?;
+        sb.add_op(OpPick)?; // ticket_root
+        sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_pc, current_pc, ticket_root]
+
+        let empty_leaf = ticket_commitment::compute_empty_leaf();
+        sb.add_data(&empty_leaf.as_bytes())?;
+        sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_pc, current_pc, ticket_root, empty_leaf]
+
+        // payout_comm:
+        sb.add_i64(10)?;
+        sb.add_op(OpPick)?; // payout_spk (depth 10)
+        sb.add_op(OpSize)?;
+        sb.add_i64(4)?;
+        sb.add_op(OpNum2Bin)?;
+        sb.add_data(b"KaswinPayoutSpkV1")?;
+        sb.add_op(OpSwap)?;
         sb.add_op(OpCat)?;
-        sb.add_data(b"KaswinTicketNodeV1")?;
         sb.add_op(OpSwap)?;
         sb.add_op(OpCat)?;
         sb.add_data(b"")?;
-        sb.add_op(OpBlake2bWithKey)?; // next_new_hash
+        sb.add_op(OpBlake2bWithKey)?; // payout_comm
+        sb.add_op(OpToAltStack)?;     // Save payout_comm to AltStack, dstack is back to 38 items!
+
+        // assemble purchase_leaf:
+        // Original 38 items: Depth 0: ticket_root, Depth 1: purchase_count, Depth 2: sold_tickets,
+        // Depth 7: round_id, Depth 9: count.
+        sb.add_data(b"KaswinTicketRangeV1")?;
+        sb.add_i64(8)?;
+        sb.add_op(OpPick)?; // round_id (depth 7 + 1)
+        sb.add_op(OpCat)?;
+        sb.add_i64(2)?;
+        sb.add_op(OpPick)?; // purchase_count (depth 1 + 1)
+        sb.add_op(OpCat)?;
+        sb.add_i64(3)?;
+        sb.add_op(OpPick)?; // sold_tickets (depth 2 + 1)
+        sb.add_op(OpCat)?;
+        sb.add_i64(10)?;
+        sb.add_op(OpPick)?; // count (depth 9 + 1)
+        sb.add_op(OpCat)?;
+        sb.add_op(OpFromAltStack)?; // pops payout_comm from AltStack!
+        sb.add_op(OpCat)?;
+        sb.add_data(b"")?;
+        sb.add_op(OpBlake2bWithKey)?; // purchase_leaf
         sb.add_op(OpToAltStack)?;
 
-        // 2. Compute old_hash:
-        sb.add_op(OpFromAltStack)?; // next_new_hash
-        sb.add_op(OpFromAltStack)?; // old_hash
-        sb.add_i64(1)?;
-        sb.add_op(OpRoll)?;
-        sb.add_op(OpToAltStack)?;   // next_new_hash back to AltStack
-        sb.add_op(OpSwap)?;         // [old_hash, sibling_i]
-        sb.add_i64(2)?;
-        sb.add_op(OpRoll)?;         // bit_i
-        sb.add_op(OpIf)?;
+        // Clean top 11 items from dstack (8 prefix + 1 action + 1 count + 1 payout_spk = 11 items):
+        for _ in 0..5 { sb.add_op(Op2Drop)?; }
+        sb.add_op(OpDrop)?;
+        // Stack has ONLY: [siblings[26..0]]!
+
+        // Reshuffle AltStack:
+        sb.add_op(OpFromAltStack)?; // purchase_leaf
+        sb.add_op(OpFromAltStack)?; // empty_leaf
+        sb.add_op(OpFromAltStack)?; // ticket_root
+        sb.add_op(OpFromAltStack)?; // current_pc
+        sb.add_op(OpSwap)?;
+        sb.add_op(OpToAltStack)?;   // ticket_root
+        sb.add_op(OpSwap)?;
+        sb.add_op(OpToAltStack)?;   // empty_leaf
+        sb.add_op(OpSwap)?;
+        sb.add_op(OpToAltStack)?;   // purchase_leaf
+        // dstack: [siblings, current_pc]
+
+        // 27-level parallel SMT traversal:
+        for i in 0..TREE_DEPTH {
+            sb.add_op(OpDup)?;
+            if i > 0 {
+                sb.add_i64(1i64 << i)?;
+                sb.add_op(OpDiv)?;
+            }
+            sb.add_i64(2)?;
+            sb.add_op(OpMod)?;
+
+            sb.add_i64(2)?;
+            sb.add_op(OpRoll)?;
+            sb.add_op(OpDup)?;
+
+            sb.add_op(OpFromAltStack)?;
             sb.add_op(OpSwap)?;
-        sb.add_op(OpEndIf)?;
-        sb.add_op(OpCat)?;
-        sb.add_data(b"KaswinTicketNodeV1")?;
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?;
-        sb.add_data(b"")?;
-        sb.add_op(OpBlake2bWithKey)?; // next_old_hash
+            sb.add_i64(3)?;
+            sb.add_op(OpPick)?;
+            sb.add_op(OpIf)?;
+                sb.add_op(OpSwap)?;
+            sb.add_op(OpEndIf)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"KaswinTicketNodeV1")?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"")?;
+            sb.add_op(OpBlake2bWithKey)?;
+            sb.add_op(OpToAltStack)?;
 
-        // Restore AltStack: [..., next_old_hash, next_new_hash]
-        sb.add_op(OpFromAltStack)?; // next_new_hash
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpToAltStack)?;   // push next_old_hash
-        sb.add_op(OpToAltStack)?;   // push next_new_hash
-    }
+            sb.add_op(OpFromAltStack)?;
+            sb.add_op(OpFromAltStack)?;
+            sb.add_i64(1)?;
+            sb.add_op(OpRoll)?;
+            sb.add_op(OpToAltStack)?;
+            sb.add_op(OpSwap)?;
+            sb.add_i64(2)?;
+            sb.add_op(OpRoll)?;
+            sb.add_op(OpIf)?;
+                sb.add_op(OpSwap)?;
+            sb.add_op(OpEndIf)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"KaswinTicketNodeV1")?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"")?;
+            sb.add_op(OpBlake2bWithKey)?;
 
-    // Drop current_purchase_count_num:
-    sb.add_op(OpDrop)?;
+            sb.add_op(OpFromAltStack)?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpToAltStack)?;
+            sb.add_op(OpToAltStack)?;
+        }
 
-    // Retrieve new_root and old_root from AltStack:
-    sb.add_op(OpFromAltStack)?; // new_root (32B)
-    sb.add_op(OpFromAltStack)?; // old_root_candidate (32B)
-    sb.add_op(OpFromAltStack)?; // current_ticket_root (32B)
+        sb.add_op(OpDrop)?; // drop current_pc
+        sb.add_op(OpFromAltStack)?; // new_root
+        sb.add_op(OpFromAltStack)?; // old_root
+        sb.add_op(OpFromAltStack)?; // ticket_root
+        sb.add_op(OpEqualVerify)?;  // Critical verification!
 
-    // -------------------------------------------------------------
-    // CRITICAL SECURITY ASSERTION:
-    // old_root_candidate == current_ticket_root
-    // Proves slot k was EMPTY and previous tree history is authenticated!
-    // -------------------------------------------------------------
-    sb.add_op(OpEqualVerify)?;
+        sb.add_op(OpFromAltStack)?; // next_pc
+        sb.add_op(OpFromAltStack)?; // sold_after
 
-    sb.add_op(OpFromAltStack)?; // next_purchase_count_num (num)
-    sb.add_op(OpFromAltStack)?; // sold_after (num)
-
-    // Stack: [new_root, next_purchase_count_num, sold_after]
-
-    // -------------------------------------------------------------
-    // STEP 5: Successor Transition Branching
-    // If sold_after < total_tickets -> Transition to OPEN successor
-    // If sold_after == total_tickets -> Atomic Transition to SEALED
-    // -------------------------------------------------------------
-    sb.add_op(OpDup)?;
-    sb.add_i64(total_tickets as i64)?;
-    sb.add_op(OpLessThan)?;
-
-    sb.add_op(OpIf)?;
-        // --- TRANSITION TO OPEN ---
-        let mut open_head_sb = ScriptBuilder::new();
-        open_head_sb.add_op(OpTxInputIndex)?;
-        open_head_sb.add_op(Op0)?;
-        open_head_sb.add_op(OpEqualVerify)?;
-        open_head_sb.add_data(&round_id.as_bytes())?;
-        open_head_sb.add_data(&ticket_price.to_le_bytes())?;
-        open_head_sb.add_data(&total_tickets.to_le_bytes())?;
-        let open_head_bytes = open_head_sb.drain();
-
-        sb.add_i64(8)?;
-        sb.add_op(OpNum2Bin)?; // sold_after_bytes (8B LE)
-        sb.add_data(&[0x08])?;
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?;     // push_sold_after (9B)
-
-        sb.add_data(&open_head_bytes)?;
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?;     // [open_head || push_sold_after]
-
-        // Next push_purchase_count:
-        sb.add_i64(1)?;
-        sb.add_op(OpRoll)?;    // next_purchase_count_num
-        sb.add_i64(8)?;
-        sb.add_op(OpNum2Bin)?; // 8B LE
-        sb.add_data(&[0x08])?;
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?;     // push_next_purchase_count (9B)
-        sb.add_op(OpCat)?;     // [open_head || push_sold_after || push_purchase_count]
-
-        // Next push_ticket_root:
-        sb.add_data(&[0x20])?;
-        sb.add_i64(2)?;
-        sb.add_op(OpRoll)?;    // new_root (32B)
-        sb.add_op(OpCat)?;     // [0x20 || new_root]
-        sb.add_op(OpCat)?;     // [exact_105_byte_open_prefix]
-
-        // Self-Replicating Body Introspection:
-        sb.add_op(Op0)?;
-        sb.add_op(OpTxInputScriptSigLen)?; // Stack: [prefix, sig_len]
+        // Transition: OPEN vs SEALED:
         sb.add_op(OpDup)?;
-        sb.add_i64(body_len as i64)?;
-        sb.add_op(OpSub)?; // body_start = sig_len - body_len
+        sb.add_i64(total_tickets as i64)?;
+        sb.add_op(OpLessThan)?;
 
-        sb.add_op(Op0)?;
-        sb.add_i64(1)?;
-        sb.add_op(OpRoll)?; // body_start
-        sb.add_i64(2)?;
-        sb.add_op(OpRoll)?; // sig_len
-        sb.add_op(OpTxInputScriptSigSubstr)?; // Stack: [prefix, body_bytes]
+        sb.add_op(OpIf)?;
+            // Next OPEN prefix construction:
+            // Introspect immutable part of OPEN prefix (from index 0 up to reserve_payout_spk included):
+            // Immut prefix length = 3 (header) + 33 (round_id) + 9 (price) + 9 (total) + 9 (lock_daa) + (1 + reserve_payout_spk_len) = 64 + reserve_payout_spk_len.
+            let immut_open_prefix_len = 64 + reserve_payout_spk_len;
+            let full_open_prefix_len = immut_open_prefix_len + 9 + 9 + 33; // + sold[9] + pc[9] + root[33]
+            let total_redeem_len = full_open_prefix_len + body_len;
 
-        sb.add_op(OpCat)?; // Stack: [exact_successor_open_redeem_script]
+            // 1. Format sold_after (9B push data: [0x08 || 8B_LE]):
+            sb.add_i64(8)?;
+            sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x08])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?; // [new_root, next_pc, push_sold]
 
-        // Compute expected P2SH SPK:
-        sb.add_data(b"")?;
-        sb.add_op(OpBlake2bWithKey)?;
-        sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?;
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?;
-        sb.add_data(&[0x87])?;
-        sb.add_op(OpCat)?; // Stack: [expected_open_spk]
+            // 2. Format next_pc (9B push data: [0x08 || 8B_LE]):
+            sb.add_op(OpSwap)?; // [new_root, push_sold, next_pc]
+            sb.add_i64(8)?;
+            sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x08])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?; // [new_root, push_sold, push_pc]
+
+            // 3. Re-order on stack to [push_sold, push_pc, new_root] and format new_root:
+            sb.add_op(OpSwap)?; // [new_root, push_pc, push_sold]
+            sb.add_i64(2)?;
+            sb.add_op(OpRoll)?; // [push_pc, push_sold, new_root]
+            sb.add_data(&[0x20])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?; // [push_pc, push_sold, push_root]
+
+            // 4. Save to AltStack in order [push_root, push_pc, push_sold]:
+            sb.add_op(OpToAltStack)?; // astack: [push_root], dstack: [push_pc, push_sold]
+            sb.add_op(OpSwap)?;       // dstack: [push_sold, push_pc]
+            sb.add_op(OpToAltStack)?; // astack: [push_root, push_pc], dstack: [push_sold]
+            sb.add_op(OpToAltStack)?; // astack: [push_root, push_pc, push_sold], dstack: []
+
+            // 5. Slice immut prefix:
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxInputScriptSigLen)?; // [sig_len]
+            sb.add_op(OpDup)?;
+            sb.add_i64(total_redeem_len as i64)?;
+            sb.add_op(OpSub)?; // p_start = sig_len - total_redeem_len
+            sb.add_op(OpDup)?;
+            sb.add_i64(immut_open_prefix_len as i64)?;
+            sb.add_op(OpAdd)?; // p_end = p_start + immut_open_prefix_len
+
+            // Prepare [0, p_start, p_end] for OpTxInputScriptSigSubstr:
+            sb.add_op(OpToAltStack)?; // astack: [..., p_end], dstack: [sig_len, p_start]
+            sb.add_op(Op0)?;          // dstack: [sig_len, p_start, 0]
+            sb.add_op(OpSwap)?;       // dstack: [sig_len, 0, p_start]
+            sb.add_op(OpFromAltStack)?; // astack: [push_root, push_pc, push_sold], dstack: [sig_len, 0, p_start, p_end]
+            sb.add_op(OpTxInputScriptSigSubstr)?; // dstack: [sig_len, immut_prefix]
+
+            // 6. Concatenate prefix pieces:
+            sb.add_op(OpFromAltStack)?; // pops push_sold -> [sig_len, immut_prefix, push_sold]
+            sb.add_op(OpCat)?;          // [sig_len, immut_prefix || push_sold]
+            sb.add_op(OpFromAltStack)?; // pops push_pc -> [sig_len, prefix_with_sold, push_pc]
+            sb.add_op(OpCat)?;          // [sig_len, prefix_with_pc]
+            sb.add_op(OpFromAltStack)?; // pops push_root -> [sig_len, prefix_with_pc, push_root]
+            sb.add_op(OpCat)?;          // [sig_len, full_next_prefix]
+
+            // 7. Slice body:
+            sb.add_op(OpToAltStack)?; // astack: [full_next_prefix], dstack: [sig_len]
+            sb.add_op(OpDup)?;
+            sb.add_i64(body_len as i64)?;
+            sb.add_op(OpSub)?; // body_start = sig_len - body_len
+            sb.add_op(OpSwap)?; // [body_start, sig_len]
+            sb.add_op(OpToAltStack)?; // astack: [full_next_prefix, sig_len], dstack: [body_start]
+            sb.add_op(Op0)?;          // [body_start, 0]
+            sb.add_op(OpSwap)?;       // [0, body_start]
+            sb.add_op(OpFromAltStack)?; // astack: [full_next_prefix], dstack: [0, body_start, sig_len]
+            sb.add_op(OpTxInputScriptSigSubstr)?; // [body_bytes]
+
+            // 8. Concatenate prefix and body:
+            sb.add_op(OpFromAltStack)?; // [body_bytes, full_next_prefix]
+            sb.add_op(OpSwap)?;         // [full_next_prefix, body_bytes]
+            sb.add_op(OpCat)?;          // [next_open_redeem_script]
+
+            sb.add_data(b"")?;
+            sb.add_op(OpBlake2bWithKey)?;
+            sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(&[0x87])?;
+            sb.add_op(OpCat)?;
+
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxOutputSpk)?;
+            sb.add_op(OpEqualVerify)?;
+
+        sb.add_op(OpElse)?;
+            // Sold out -> Transition to SEALED:
+            sb.add_op(OpDrop)?; // drop sold_after
+            sb.add_op(OpDrop)?; // drop next_pc
+            // Stack: [new_root]
+
+            sb.add_op(OpDup)?;
+            sb.add_data(b"KaswinAppV1")?;
+            sb.add_data(&round_id.as_bytes())?;
+            sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(&total_tickets.to_le_bytes())?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"")?;
+            sb.add_op(OpBlake2bWithKey)?; // app_comm
+
+            let (part1, part2, part3) = split_sealed_covenant_into_3_parts(round_id, total_tickets, delta_daa);
+            sb.add_data(&part1)?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(&part2)?;
+            sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(&part3)?;
+            sb.add_op(OpCat)?;
+
+            sb.add_data(b"")?;
+            sb.add_op(OpBlake2bWithKey)?;
+            sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(&[0x87])?;
+            sb.add_op(OpCat)?;
+
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxOutputSpk)?;
+            sb.add_op(OpEqualVerify)?;
+        sb.add_op(OpEndIf)?;
 
     sb.add_op(OpElse)?;
-        // --- ATOMIC TRANSITION TO SEALED ---
-        sb.add_op(OpDrop)?; // drop sold_after
-        sb.add_op(OpDrop)?; // drop next_purchase_count_num
-        // Stack: [new_root]
+        // Not BUY -> Check ACTION_BEGIN_REFUND vs ACTION_RECOVER_EMPTY
+        sb.add_op(OpDup)?;
+        sb.add_i64(ACTION_BEGIN_REFUND)?;
+        sb.add_op(OpEqual)?;
+        sb.add_op(OpIf)?;
+            // =========================================================
+            // ACTION 2: BEGIN_REFUND
+            // =========================================================
+            sb.add_op(OpDrop)?; // drop action_num
+            // 1. sold_tickets > 0:
+            sb.add_op(Op2)?;
+            sb.add_op(OpPick)?; // sold_tickets
+            sb.add_op(OpBin2Num)?;
+            sb.add_op(Op0)?;
+            sb.add_op(OpGreaterThan)?;
+            sb.add_op(OpVerify)?;
 
-        // 1) Compute application_commitment on-the-fly:
-        sb.add_op(OpDup)?; // [new_root, new_root]
-        sb.add_data(b"KaswinAppV1")?;
-        sb.add_data(&round_id.as_bytes())?;
-        sb.add_op(OpCat)?; // [new_root, new_root, prefix || round_id]
-        sb.add_op(OpSwap)?; // [new_root, prefix || round_id, new_root]
-        sb.add_op(OpCat)?;  // [new_root, prefix || round_id || new_root]
-        sb.add_data(&total_tickets.to_le_bytes())?;
-        sb.add_op(OpCat)?;  // [new_root, app_preimage]
-        sb.add_data(b"")?;
-        sb.add_op(OpBlake2bWithKey)?; // Stack: [new_root, app_commitment (32B)]
+            // 2. sold_tickets < total_tickets:
+            sb.add_op(Op2)?;
+            sb.add_op(OpPick)?; // sold_tickets
+            sb.add_op(OpBin2Num)?;
+            sb.add_i64(6)?;
+            sb.add_op(OpPick)?; // total_tickets (depth 5 + 1)
+            sb.add_op(OpBin2Num)?;
+            sb.add_op(OpLessThan)?;
+            sb.add_op(OpVerify)?;
 
-        // 2) Split SEALED template into 3 parts:
-        let (part1, part2, part3) = split_sealed_covenant_into_3_parts(round_id, total_tickets, delta_daa);
+            // 3. Time gate: refund_lock_daa OpCheckLockTimeVerify (pops in Kaspa!)
+            sb.add_i64(4)?;
+            sb.add_op(OpPick)?; // refund_lock_daa (8B LE)
+            sb.add_op(OpCheckLockTimeVerify)?;
 
-        // Part 1 || app_commitment:
-        sb.add_data(&part1)?;
-        sb.add_op(OpSwap)?; // [new_root, part1, app_commitment]
-        sb.add_op(OpCat)?;  // [new_root, part1 || app_commitment]
+            // 4. Output 0 Amount == Input 0 Amount:
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxInputAmount)?;
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxOutputAmount)?;
+            sb.add_op(OpEqualVerify)?;
 
-        // (Part 1 || app_commitment) || Part 2:
-        sb.add_data(&part2)?;
-        sb.add_op(OpCat)?;  // [new_root, part1 || app_comm || part2]
+            // 5. Output 0 SPK == P2SH(REFUNDING with cursor=0, rem=sold_tickets)
+            // Construct REFUNDING prefix:
+            let mut ref_head_sb = ScriptBuilder::new();
+            ref_head_sb.add_op(OpTxInputIndex)?;
+            ref_head_sb.add_op(Op0)?;
+            ref_head_sb.add_op(OpEqualVerify)?;
+            ref_head_sb.add_data(&round_id.as_bytes())?;
+            ref_head_sb.add_data(&ticket_price.to_le_bytes())?;
+            ref_head_sb.add_data(&total_tickets.to_le_bytes())?;
+            let ref_head_bytes = ref_head_sb.drain();
 
-        // (Part 1 || app_commitment || Part 2) || new_root:
-        sb.add_op(OpSwap)?; // [part1 || app_comm || part2, new_root]
-        sb.add_op(OpCat)?;  // [part1 || app_comm || part2 || new_root]
+            // Push ticket_root:
+            sb.add_op(Op0)?;
+            sb.add_op(OpPick)?; // ticket_root (depth 0)
+            sb.add_data(&[0x20])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?; // [0x20 || ticket_root]
 
-        // ((Part 1 || app_commitment || Part 2) || new_root) || Part 3:
-        sb.add_data(&part3)?;
-        sb.add_op(OpCat)?;  // Stack: [exact_prod_sealed_redeem_script]!
+            // Prepend ref_head:
+            sb.add_data(&ref_head_bytes)?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?; // [ref_head || push_root] (Depth 0)
 
-        // Compute expected P2SH SPK:
-        sb.add_data(b"")?;
-        sb.add_op(OpBlake2bWithKey)?;
-        sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?;
-        sb.add_op(OpSwap)?;
-        sb.add_op(OpCat)?;
-        sb.add_data(&[0x87])?;
-        sb.add_op(OpCat)?; // Stack: [expected_sealed_spk]
+            // Push reserve_payout_spk (raw bytes from depth 3, now depth 4):
+            sb.add_i64(4)?;
+            sb.add_op(OpPick)?; // reserve_payout_spk
+            sb.add_op(OpSize)?;
+            sb.add_i64(1)?;
+            sb.add_op(OpNum2Bin)?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?; // [len_1b || reserve_payout_spk]
+            sb.add_op(OpCat)?; // [ref_head || push_root || push_reserve] (Depth 0)
 
+            // Push purchase_count (8B LE from depth 1, now depth 2):
+            sb.add_op(Op2)?;
+            sb.add_op(OpPick)?; // purchase_count
+            sb.add_data(&[0x08])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_op(OpCat)?; // [ref_head || push_root || push_reserve || push_pc] (Depth 0)
+
+            // Push cursor = 0 (8B LE):
+            sb.add_data(&[0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?;
+            sb.add_op(OpCat)?;
+
+            // Push remaining_tickets = sold_tickets (8B LE from depth 2, now depth 3):
+            sb.add_op(Op3)?;
+            sb.add_op(OpPick)?; // sold_tickets
+            sb.add_data(&[0x08])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_op(OpCat)?; // [complete_initial_refunding_prefix]
+
+            // Append static REFUNDING body:
+            let ref_body = refunding_covenant::build_refunding_body(
+                refunding_covenant::canonical_refunding_body_len(reserve_payout_spk_len),
+                reserve_payout_spk_len,
+            )?;
+            // Chunked push to avoid 520B element limit:
+            for chunk in ref_body.chunks(500) {
+                sb.add_data(chunk)?;
+                sb.add_op(OpCat)?;
+            }
+
+            // Compute expected P2SH SPK:
+            sb.add_data(b"")?;
+            sb.add_op(OpBlake2bWithKey)?;
+            sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(&[0x87])?;
+            sb.add_op(OpCat)?;
+
+            // Assert Output 0 SPK matches:
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxOutputSpk)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // Enforce Singleton Continuation Guard:
+            lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
+            // Clean the 8 prefix items + 1 action_num from stack (9 items total):
+            for _ in 0..4 { sb.add_op(Op2Drop)?; }
+            sb.add_op(OpDrop)?;
+
+        sb.add_op(OpElse)?;
+            // =========================================================
+            // ACTION 3: RECOVER_EMPTY
+            // =========================================================
+            sb.add_i64(ACTION_RECOVER_EMPTY)?;
+            sb.add_op(OpEqualVerify)?; // Must be action 3!
+
+            // 1. sold_tickets == 0:
+            sb.add_op(Op2)?;
+            sb.add_op(OpPick)?;
+            sb.add_op(OpBin2Num)?;
+            sb.add_op(Op0)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // 2. purchase_count == 0:
+            sb.add_op(Op1)?;
+            sb.add_op(OpPick)?;
+            sb.add_op(OpBin2Num)?;
+            sb.add_op(Op0)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // 3. Time gate: refund_lock_daa OpCheckLockTimeVerify (pops in Kaspa!)
+            sb.add_i64(4)?;
+            sb.add_op(OpPick)?; // refund_lock_daa
+            sb.add_op(OpCheckLockTimeVerify)?;
+
+            // 4. Output 0 SPK == reserve_payout_spk:
+            sb.add_op(Op3)?;
+            sb.add_op(OpPick)?; // reserve_payout_spk
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxOutputSpk)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // 5. Output 0 Amount == Input 0 Amount:
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxInputAmount)?;
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxOutputAmount)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // 6. Terminal Lineage Guard:
+            lineage::append_kaswin_terminal_lineage_guard(&mut sb)?;
+
+            // Clean the 8 prefix items + 1 witness action item from stack (9 items total):
+            for _ in 0..4 { sb.add_op(Op2Drop)?; }
+            sb.add_op(OpDrop)?;
+        sb.add_op(OpEndIf)?;
     sb.add_op(OpEndIf)?;
-
-    // Assert Output 0 SPK matches:
-    sb.add_op(Op0)?;
-    sb.add_op(OpTxOutputSpk)?;
-    sb.add_op(OpEqualVerify)?;
 
     sb.add_op(OpTrue)?;
     Ok(sb.drain())
@@ -523,12 +707,12 @@ pub fn split_sealed_covenant_into_3_parts(
     delta_daa: u64,
 ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let dummy_root = Hash::from_u64_word(0xdeadbeef);
-    let dummy_app = crate::sealed_to_draw_ready::compute_application_commitment(
+    let dummy_app = self::sealed_to_draw_ready::compute_application_commitment(
         &round_id,
         &dummy_root,
         total_tickets,
     );
-    let full = crate::sealed_to_draw_ready::build_sealed_to_draw_ready_covenant(
+    let full = self::sealed_to_draw_ready::build_sealed_to_draw_ready_covenant(
         round_id,
         dummy_root,
         total_tickets,
