@@ -13,6 +13,9 @@ use kaspa_txscript::{
 use kaspa_consensus_core::mass::{ComputeBudget, MassCalculator};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 
+#[path = "../../../../contracts/winner_ready_settlement.rs"]
+pub mod winner_ready_settlement;
+
 #[path = "../../../../contracts/winner_selection.rs"]
 mod winner_selection;
 use winner_selection::{

@@ -23,6 +23,9 @@ use kaspa_txscript::{
     script_builder::{ScriptBuilder, ScriptBuilderResult},
 };
 
+#[path = "winner_ready_settlement.rs"]
+pub mod winner_ready_settlement;
+
 #[path = "winner_selection.rs"]
 pub mod winner_selection;
 use winner_selection::{
@@ -341,9 +344,12 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_data(&counter_0_push)?;
     sb.add_op(OpCat)?;           // [complete_prefix || counter_0_push]
 
-    // Append production draw_ready_suffix:
-    sb.add_data(&draw_ready_suffix)?;
-    sb.add_op(OpCat)?;           // [exact_production_draw_ready_0_redeem_script]
+    // Append production draw_ready_suffix in <= 500B chunks:
+    for chunk in draw_ready_suffix.chunks(500) {
+        sb.add_data(chunk)?;
+        sb.add_op(OpCat)?;
+    }
+    // Stack: [exact_production_draw_ready_0_redeem_script]
 
     // Compute expected P2SH SPK bytes:
     sb.add_data(b"")?;

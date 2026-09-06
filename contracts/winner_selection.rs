@@ -18,6 +18,9 @@
 // 8. SUFFIX:        sampling, accept transition, self-replicating reject transition
 
 use kaspa_hashes::Hash;
+
+#[path = "winner_ready_settlement.rs"]
+pub mod winner_ready_settlement;
 use kaspa_txscript::{
     opcodes::codes::*,
     script_builder::{ScriptBuilder, ScriptBuilderResult},
@@ -308,13 +311,8 @@ fn compile_suffix_body(
         sb.add_op(OpSwap).unwrap();
         sb.add_op(OpCat).unwrap(); // Stack: [..., random_seed, push_winner_index_8B]
 
-        // Dynamic construction of WINNER_READY Redeem Script from current prefix:
-        let mut wr_suffix_builder = ScriptBuilder::new();
-        wr_suffix_builder.add_op(Op2Drop).unwrap(); // drop winner_index, random_seed
-        wr_suffix_builder.add_op(Op2Drop).unwrap(); // drop target_hash, total_tickets_bytes
-        wr_suffix_builder.add_op(Op2Drop).unwrap(); // drop ticket_root, round_id
-        wr_suffix_builder.add_op(OpTrue).unwrap();
-        let wr_suffix_bytes = wr_suffix_builder.drain();
+        // Dynamic construction of production WINNER_READY Redeem Script from current prefix:
+        let wr_suffix_bytes = self::winner_ready_settlement::build_winner_ready_settlement_suffix();
 
         // Slice prefix from current input signature script:
         sb.add_op(Op0).unwrap();
@@ -343,8 +341,13 @@ fn compile_suffix_body(
         sb.add_i64(1).unwrap();
         sb.add_op(OpRoll).unwrap(); // [..., prefix_bytes, push_winner_index]
         sb.add_op(OpCat).unwrap();  // [..., prefix || push_winner_index]
-        sb.add_data(&wr_suffix_bytes).unwrap();
-        sb.add_op(OpCat).unwrap();  // [..., winner_ready_redeem_script]
+
+        // Concatenate production settlement suffix in <= 520B chunks:
+        for chunk in wr_suffix_bytes.chunks(500) {
+            sb.add_data(chunk).unwrap();
+            sb.add_op(OpCat).unwrap();
+        }
+        // Stack: [..., winner_ready_redeem_script]
 
         // Drop the 5 stack state items below winner_ready_redeem_script:
         sb.add_i64(5).unwrap();
@@ -408,27 +411,12 @@ pub fn build_canonical_winner_ready_redeem_script(
     random_seed: Hash,
     winner_index: u64,
 ) -> Vec<u8> {
-    assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS);
-    let mut sb = ScriptBuilder::new();
-    // Enforce execution at Input 0:
-    sb.add_op(OpTxInputIndex).unwrap();
-    sb.add_op(Op0).unwrap();
-    sb.add_op(OpEqualVerify).unwrap();
-
-    sb.add_data(&round_id.as_bytes()).unwrap();
-    sb.add_data(&ticket_root.as_bytes()).unwrap();
-    sb.add_data(&total_tickets.to_le_bytes()).unwrap(); // fixed 8B LE
-    sb.add_data(&target_hash.as_bytes()).unwrap();
-    sb.add_data(&random_seed.as_bytes()).unwrap();
-    // 8-byte minimal push for winner_index:
-    let mut winner_sb = ScriptBuilder::new();
-    winner_sb.add_data(&winner_index.to_le_bytes()).unwrap();
-    let push_bytes = winner_sb.drain();
-    sb.script_mut().extend_from_slice(&push_bytes);
-    // Suffix:
-    sb.add_op(Op2Drop).unwrap();
-    sb.add_op(Op2Drop).unwrap();
-    sb.add_op(Op2Drop).unwrap();
-    sb.add_op(OpTrue).unwrap();
-    sb.drain()
+    self::winner_ready_settlement::build_production_winner_ready_covenant(
+        round_id,
+        ticket_root,
+        total_tickets,
+        target_hash,
+        random_seed,
+        winner_index,
+    ).unwrap()
 }
