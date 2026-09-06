@@ -2,7 +2,7 @@ use kaspa_hashes::Hash;
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::tx::{
     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
-    UtxoEntry, PopulatedTransaction, ComputeCommit,
+    UtxoEntry, PopulatedTransaction, ComputeCommit, CovenantBinding,
 };
 use kaspa_txscript::{
     TxScriptEngine, EngineFlags, EngineCtx, caches::Cache,
@@ -14,6 +14,9 @@ use kaspa_consensus_core::mass::{ComputeBudget, Mass};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::config::params::TESTNET_PARAMS;
 use kaspa_txscript::opcodes::codes::*;
+
+#[path = "../../../../contracts/lineage.rs"]
+pub mod lineage;
 
 #[path = "../../../../contracts/ticket_commitment.rs"]
 pub mod ticket_commitment;
@@ -53,6 +56,7 @@ fn main() {
     let empty_root = compute_empty_root_27();
     let empty_levels = compute_empty_levels();
     let empty_leaf = compute_empty_leaf();
+    let cov_id = Hash::from_u64_word(77777);
 
     let flags = EngineFlags { covenants_enabled: true, ..Default::default() };
     let sig_cache = Cache::new(1000);
@@ -146,7 +150,7 @@ fn main() {
         vec![TransactionOutput {
             value: 100_000_000 + ticket_price * count_1,
             script_public_key: pay_to_script_hash_script(&next_open_redeem_1),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -158,7 +162,7 @@ fn main() {
         pay_to_script_hash_script(&open_redeem_0),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_1 = CovenantsContext::from_tx(&pop_1).unwrap();
     let ctx_1 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_1);
@@ -217,7 +221,7 @@ fn main() {
         vec![TransactionOutput {
             value: 150_000_000 + ticket_price * count_2,
             script_public_key: pay_to_script_hash_script(&next_open_redeem_2),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -229,7 +233,7 @@ fn main() {
         pay_to_script_hash_script(&next_open_redeem_1),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_2 = CovenantsContext::from_tx(&pop_2).unwrap();
     let ctx_2 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_2);
@@ -278,7 +282,7 @@ fn main() {
         vec![TransactionOutput {
             value: 150_000_000 + ticket_price * count_2,
             script_public_key: pay_to_script_hash_script(&attack_open_redeem),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -290,7 +294,7 @@ fn main() {
         pay_to_script_hash_script(&next_open_redeem_1),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_a = CovenantsContext::from_tx(&pop_attack).unwrap();
     let ctx_a = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_a);
@@ -334,7 +338,7 @@ fn main() {
         vec![TransactionOutput {
             value: 150_000_000 + ticket_price * count_2,
             script_public_key: pay_to_script_hash_script(&wrong_slot_redeem),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -346,7 +350,7 @@ fn main() {
         pay_to_script_hash_script(&next_open_redeem_1),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_ws = CovenantsContext::from_tx(&pop_ws).unwrap();
     let ctx_ws = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_ws);
@@ -368,8 +372,8 @@ fn main() {
     sig_sb_6a.add_data(&bad_spk_4b).unwrap();
     sig_sb_6a.add_data(&count_1.to_le_bytes()).unwrap();
     sig_sb_6a.add_data(&open_redeem_0).unwrap();
-    let tx_6a = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6a.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: None }], 0, SubnetworkId::default(), 0, vec![]);
-    let pop_6a = PopulatedTransaction::new(&tx_6a, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, None)]);
+    let tx_6a = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6a.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }) }], 0, SubnetworkId::default(), 0, vec![]);
+    let pop_6a = PopulatedTransaction::new(&tx_6a, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, Some(cov_id))]);
     let cov_ctx_6a = CovenantsContext::from_tx(&pop_6a).unwrap();
     let ctx_6a = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6a);
     let mut vm_6a = TxScriptEngine::from_transaction_input(&pop_6a, &pop_6a.tx.inputs[0], 0, &pop_6a.entries[0], ctx_6a, flags);
@@ -379,15 +383,15 @@ fn main() {
     // Case 6b: Version 1 (version > 0)
     println!("  Subtest 6b: version = 1 [0x00, 0x01, ...]");
     let mut bad_spk_v1 = buyer_spk_1.clone();
-    bad_spk_v1[1] = 0x01; // version 1
+    bad_spk_v1[1] = 0x01;
     assert!(!is_canonical_payout_spk(&bad_spk_v1));
     let mut sig_sb_6b = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() { sig_sb_6b.add_data(&siblings_1[i].as_bytes()).unwrap(); }
     sig_sb_6b.add_data(&bad_spk_v1).unwrap();
     sig_sb_6b.add_data(&count_1.to_le_bytes()).unwrap();
     sig_sb_6b.add_data(&open_redeem_0).unwrap();
-    let tx_6b = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6b.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: None }], 0, SubnetworkId::default(), 0, vec![]);
-    let pop_6b = PopulatedTransaction::new(&tx_6b, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, None)]);
+    let tx_6b = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6b.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }) }], 0, SubnetworkId::default(), 0, vec![]);
+    let pop_6b = PopulatedTransaction::new(&tx_6b, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, Some(cov_id))]);
     let cov_ctx_6b = CovenantsContext::from_tx(&pop_6b).unwrap();
     let ctx_6b = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6b);
     let mut vm_6b = TxScriptEngine::from_transaction_input(&pop_6b, &pop_6b.tx.inputs[0], 0, &pop_6b.entries[0], ctx_6b, flags);
@@ -403,8 +407,8 @@ fn main() {
     sig_sb_6c.add_data(&bad_spk_optrue).unwrap();
     sig_sb_6c.add_data(&count_1.to_le_bytes()).unwrap();
     sig_sb_6c.add_data(&open_redeem_0).unwrap();
-    let tx_6c = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6c.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: None }], 0, SubnetworkId::default(), 0, vec![]);
-    let pop_6c = PopulatedTransaction::new(&tx_6c, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, None)]);
+    let tx_6c = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6c.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }) }], 0, SubnetworkId::default(), 0, vec![]);
+    let pop_6c = PopulatedTransaction::new(&tx_6c, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, Some(cov_id))]);
     let cov_ctx_6c = CovenantsContext::from_tx(&pop_6c).unwrap();
     let ctx_6c = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6c);
     let mut vm_6c = TxScriptEngine::from_transaction_input(&pop_6c, &pop_6c.tx.inputs[0], 0, &pop_6c.entries[0], ctx_6c, flags);
@@ -415,7 +419,7 @@ fn main() {
     // Test 7: FINAL BUY -> SEALED (with Class C ScriptHash payout_spk)
     // -------------------------------------------------------------
     println!("\n[Test 7] Final BUY -> SEALED (Class C ScriptHash 37B payout_spk): old root verified -> SEALED");
-    let count_3 = 85u64; // reaches 100 sold_tickets!
+    let count_3 = 85u64;
 
     let mut state = blake2b_simd::Params::new().hash_length(32).to_state();
     state.update(b"KaswinTicketNodeV1");
@@ -463,7 +467,7 @@ fn main() {
         vec![TransactionOutput {
             value: 250_000_000 + ticket_price * count_3,
             script_public_key: pay_to_script_hash_script(&sealed_redeem),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -475,7 +479,7 @@ fn main() {
         pay_to_script_hash_script(&next_open_redeem_2),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_3 = CovenantsContext::from_tx(&pop_3).unwrap();
     let ctx_3 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_3);
@@ -553,7 +557,7 @@ fn main() {
     // Test 9: FAKE PAYOUT SPK ATTACK (Winner Membership Thief Substitution)
     // -------------------------------------------------------------
     println!("\n[Test 9] ATTACK: Fake Winner Payout SPK Substitution");
-    let thief_spk = buyer_spk_3.clone(); // substituted different valid SPK
+    let thief_spk = buyer_spk_3.clone();
     let mut sig_sb_thief = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() {
         sig_sb_thief.add_data(&siblings_2[i].as_bytes()).unwrap();
@@ -612,7 +616,7 @@ fn main() {
         vec![TransactionOutput {
             value: 150_000_000 + ticket_price * count_2,
             script_public_key: pay_to_script_hash_script(&next_open_redeem_2),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -624,7 +628,7 @@ fn main() {
         pay_to_script_hash_script(&next_open_redeem_1),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_bp = CovenantsContext::from_tx(&pop_bp).unwrap();
     let ctx_bp = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_bp);
@@ -653,7 +657,7 @@ fn main() {
             vec![TransactionOutput {
                 value: 150_000_000 + ticket_price * count_2,
                 script_public_key: pay_to_script_hash_script(&next_open_redeem_2),
-                covenant: None,
+                covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
             }],
             0,
             SubnetworkId::default(),
@@ -665,7 +669,7 @@ fn main() {
             pay_to_script_hash_script(&next_open_redeem_1),
             1_000_000,
             false,
-            None,
+            Some(cov_id),
         )]);
         let cov_ctx_bf = CovenantsContext::from_tx(&pop_bf).unwrap();
         let ctx_bf = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_bf);

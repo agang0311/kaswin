@@ -20,6 +20,12 @@
 // Total stack depth on entry to body: 35 items.
 
 use kaspa_hashes::Hash;
+
+#[path = "lineage.rs"]
+pub mod lineage;
+
+#[path = "ticket_commitment.rs"]
+pub mod ticket_commitment;
 use kaspa_txscript::{
     opcodes::codes::*,
     script_builder::{ScriptBuilder, ScriptBuilderResult},
@@ -60,7 +66,7 @@ pub fn build_initial_open_covenant(
     total_tickets: u64,
     delta_daa: u64,
 ) -> ScriptBuilderResult<Vec<u8>> {
-    let empty_root = crate::ticket_commitment::compute_empty_root_27();
+    let empty_root = self::ticket_commitment::compute_empty_root_27();
     build_open_covenant(
         round_id,
         ticket_price,
@@ -188,6 +194,9 @@ fn build_open_covenant_body(
     sb.add_op(OpToAltStack)?; // AltStack: [sold_after]
     // Stack is back to initial 35 items!
 
+    // Enforce Singleton Continuation Lineage Guard:
+    self::lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
     // -------------------------------------------------------------
     // STEP 2: Exact Atomic Payment Verification
     // Output 0 Value == Input 0 Value + ticket_price * count
@@ -232,7 +241,7 @@ fn build_open_covenant_body(
     sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num, ticket_root]
 
     // 3) Push canonical empty_leaf to AltStack:
-    let empty_leaf = crate::ticket_commitment::compute_empty_leaf();
+    let empty_leaf = self::ticket_commitment::compute_empty_leaf();
     sb.add_data(&empty_leaf.as_bytes())?;
     sb.add_op(OpToAltStack)?; // AltStack: [sold_after, next_purchase_count_num, current_purchase_count_num, ticket_root, empty_leaf]
 

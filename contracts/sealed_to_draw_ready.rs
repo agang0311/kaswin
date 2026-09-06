@@ -23,6 +23,9 @@ use kaspa_txscript::{
     script_builder::{ScriptBuilder, ScriptBuilderResult},
 };
 
+#[path = "lineage.rs"]
+pub mod lineage;
+
 #[path = "winner_ready_settlement.rs"]
 pub mod winner_ready_settlement;
 
@@ -372,6 +375,9 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_op(OpTxOutputAmount)?;
     sb.add_op(OpGreaterThanOrEqual)?;
     sb.add_op(OpVerify)?;
+
+    // Enforce Singleton Continuation Lineage Guard:
+    self::lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
 
     sb.add_op(OpTrue)?;
     Ok(sb.drain())

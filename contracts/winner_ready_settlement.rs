@@ -20,6 +20,9 @@
 
 use kaspa_hashes::Hash;
 
+#[path = "lineage.rs"]
+pub mod lineage;
+
 #[path = "ticket_commitment.rs"]
 pub mod ticket_commitment;
 use kaspa_txscript::{
@@ -247,6 +250,9 @@ pub fn build_winner_ready_settlement_suffix() -> Vec<u8> {
     sb.add_op(OpFromAltStack).unwrap(); // computed_root
     sb.add_op(OpFromAltStack).unwrap(); // ticket_root
     sb.add_op(OpEqualVerify).unwrap(); // Proven: Winner leaf is in ticket_root!
+
+    // Enforce Terminal Lineage Termination Guard:
+    self::lineage::append_kaswin_terminal_lineage_guard(&mut sb).unwrap();
 
     sb.add_op(OpTrue).unwrap();
     sb.drain()

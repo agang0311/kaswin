@@ -2,7 +2,7 @@ use kaspa_hashes::Hash;
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::tx::{
     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
-    UtxoEntry, PopulatedTransaction, ComputeCommit,
+    UtxoEntry, PopulatedTransaction, ComputeCommit, CovenantBinding,
 };
 use kaspa_txscript::{
     TxScriptEngine, EngineFlags, EngineCtx, caches::Cache,
@@ -133,12 +133,13 @@ fn main() {
         0,
         vec![],
     );
+    let cov_id = Hash::from_u64_word(11111);
     let pop_1 = PopulatedTransaction::new(&tx_1, vec![UtxoEntry::new(
         pool_amount,
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_1 = CovenantsContext::from_tx(&pop_1).unwrap();
     let ctx_1 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_1);
@@ -191,7 +192,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_2 = CovenantsContext::from_tx(&pop_2).unwrap();
     let ctx_2 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_2);
@@ -227,7 +228,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_3 = CovenantsContext::from_tx(&pop_3).unwrap();
     let ctx_3 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_3);
@@ -262,7 +263,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_4 = CovenantsContext::from_tx(&pop_4).unwrap();
     let ctx_4 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_4);
@@ -297,7 +298,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_5 = CovenantsContext::from_tx(&pop_5).unwrap();
     let ctx_5 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_5);
@@ -353,7 +354,7 @@ fn main() {
         pay_to_script_hash_script(&oob_winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_6 = CovenantsContext::from_tx(&pop_6).unwrap();
     let ctx_6 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6);
@@ -401,7 +402,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_7 = CovenantsContext::from_tx(&pop_7).unwrap();
     let ctx_7 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_7);
@@ -447,7 +448,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_8 = CovenantsContext::from_tx(&pop_8).unwrap();
     let ctx_8 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_8);
@@ -531,7 +532,7 @@ fn main() {
         vec![TransactionOutput {
             value: pool_amount,
             script_public_key: prod_winner_ready_spk_3.clone(),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -543,7 +544,7 @@ fn main() {
         pay_to_script_hash_script(&draw_ready_redeem_3),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_a3 = CovenantsContext::from_tx(&pop_step_a3).unwrap();
     let ctx_a3 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_a3);
@@ -589,7 +590,7 @@ fn main() {
         prod_winner_ready_spk_3.clone(), // UTXO from Step A!
         1_000_001,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_b = CovenantsContext::from_tx(&pop_step_b).unwrap();
     let ctx_b = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_b);
@@ -626,7 +627,7 @@ fn main() {
         pay_to_script_hash_script(&winner_ready_redeem),
         1_000_000,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_bp = CovenantsContext::from_tx(&pop_bp).unwrap();
     let ctx_bp = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_bp);
@@ -667,7 +668,7 @@ fn main() {
             pay_to_script_hash_script(&winner_ready_redeem),
             1_000_000,
             false,
-            None,
+            Some(cov_id),
         )]);
         let cov_ctx_bf = CovenantsContext::from_tx(&pop_bf).unwrap();
         let ctx_bf = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_bf);

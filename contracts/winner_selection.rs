@@ -19,6 +19,9 @@
 
 use kaspa_hashes::Hash;
 
+#[path = "lineage.rs"]
+pub mod lineage;
+
 #[path = "winner_ready_settlement.rs"]
 pub mod winner_ready_settlement;
 use kaspa_txscript::{
@@ -397,6 +400,9 @@ fn compile_suffix_body(
     sb.add_op(OpTxOutputAmount).unwrap();
     sb.add_op(OpGreaterThanOrEqual).unwrap();
     sb.add_op(OpVerify).unwrap();
+
+    // Enforce Singleton Continuation Lineage Guard:
+    self::lineage::append_kaswin_singleton_continuation_guard(&mut sb).unwrap();
 
     sb.add_op(OpTrue).unwrap();
     sb.drain()

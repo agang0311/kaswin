@@ -2,7 +2,7 @@ use kaspa_hashes::{Hash, HasherBase};
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::tx::{
     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
-    UtxoEntry, PopulatedTransaction, ComputeCommit,
+    UtxoEntry, PopulatedTransaction, ComputeCommit, CovenantBinding,
 };
 use kaspa_txscript::{
     TxScriptEngine, EngineFlags, EngineCtx, caches::Cache,
@@ -175,6 +175,8 @@ fn build_witness_stack(f: &PassAOpeningFixture, redeem_script: &[u8]) -> Vec<u8>
 fn main() {
     println!("=== Testing Kaswin SEALED -> DRAW_READY Canonical Test Suite ===");
 
+    let cov_id = Hash::from_u64_word(0xc0c0c0);
+
     let round_id = Hash::from_u64_word(1);
     let ticket_root = Hash::from_u64_word(2);
     let total_tickets = 100u64;
@@ -240,7 +242,7 @@ fn main() {
         vec![TransactionOutput {
             value: pool_principal,
             script_public_key: draw_ready_spk.clone(),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -252,7 +254,7 @@ fn main() {
         sealed_spk.clone(),
         actual_sealed_daa,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_1 = CovenantsContext::from_tx(&pop_1).unwrap();
     let ctx_1 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_1).with_seq_commit_accessor(&accessor);
@@ -444,7 +446,7 @@ fn main() {
         sealed_spk.clone(),
         2_000_000, // Actual on-chain DAA is 2M!
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_mis = CovenantsContext::from_tx(&pop_mismatch).unwrap();
     let ctx_mis = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_mis).with_seq_commit_accessor(&accessor);

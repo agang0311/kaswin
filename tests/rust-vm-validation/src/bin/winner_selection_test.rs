@@ -2,7 +2,7 @@ use kaspa_hashes::Hash;
 use kaspa_consensus_core::subnets::SubnetworkId;
 use kaspa_consensus_core::tx::{
     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
-    UtxoEntry, PopulatedTransaction, ComputeCommit,
+    UtxoEntry, PopulatedTransaction, ComputeCommit, CovenantBinding,
 };
 use kaspa_txscript::{
     TxScriptEngine, EngineFlags, EngineCtx, caches::Cache,
@@ -161,6 +161,8 @@ impl kaspa_txscript::SeqCommitAccessor for MockSeqCommitAccessor {
 fn main() {
     println!("=== Testing Kaswin Winner Selection Canonical Layout & Self-Replication Suite ===");
 
+    let cov_id = Hash::from_u64_word(0xc0c0c0);
+
     let round_id = Hash::from_u64_word(1);
     let ticket_root = Hash::from_u64_word(2);
     let target_hash = Hash::from_u64_word(999);
@@ -259,7 +261,7 @@ fn main() {
             vec![TransactionOutput {
                 value: pool_principal,
                 script_public_key: prod_draw_ready_spk_0.clone(),
-                covenant: None,
+                covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
             }],
             0,
             SubnetworkId::default(),
@@ -271,7 +273,7 @@ fn main() {
             sealed_spk,
             actual_sealed_daa,
             false,
-            None,
+            Some(cov_id),
         )]);
         let cov_ctx_s = CovenantsContext::from_tx(&pop_sealed).unwrap();
         let ctx_s = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_s).with_seq_commit_accessor(&accessor);
@@ -351,7 +353,7 @@ fn main() {
         vec![TransactionOutput {
             value: pool_principal,
             script_public_key: win_ready_spk.clone(),
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -363,7 +365,7 @@ fn main() {
         spk_prod_c0.clone(),
         1_000_100,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_acc = CovenantsContext::from_tx(&pop_accept).unwrap();
     let ctx_acc = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_acc);
@@ -397,7 +399,7 @@ fn main() {
         vec![TransactionOutput {
             value: pool_principal,
             script_public_key: tampered_winner_spk,
-            covenant: None,
+            covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
         0,
         SubnetworkId::default(),
@@ -409,7 +411,7 @@ fn main() {
         spk_prod_c0,
         1_000_100,
         false,
-        None,
+        Some(cov_id),
     )]);
     let cov_ctx_tamp = CovenantsContext::from_tx(&pop_tamp).unwrap();
     let ctx_tamp = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tamp);
