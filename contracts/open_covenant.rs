@@ -5,7 +5,7 @@
 // ACTION_BEGIN_REFUND  = 2
 // ACTION_RECOVER_EMPTY = 3
 
-use kaspa_hashes::{Hash, ZERO_HASH};
+use kaspa_hashes::Hash;
 use kaspa_txscript::{
     opcodes::codes::*,
     script_builder::{ScriptBuilder, ScriptBuilderResult},
@@ -18,12 +18,15 @@ pub mod lineage;
 pub mod ticket_commitment;
 use ticket_commitment::{is_canonical_payout_spk, append_canonical_payout_spk_check, TREE_DEPTH};
 
-#[path = "sealed_to_draw_ready.rs"]
-pub mod sealed_to_draw_ready;
+#[path = "v1_constants.rs"]
+pub mod v1_constants;
+
+#[path = "sealed_covenant.rs"]
+pub mod sealed_covenant;
+use sealed_covenant::build_sealed_body_v1;
 
 #[path = "refunding_covenant.rs"]
 pub mod refunding_covenant;
-use refunding_covenant::build_refunding_covenant;
 
 pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
 pub const LOCK_TIME_THRESHOLD: u64 = 500_000_000_000;
@@ -63,12 +66,12 @@ pub fn canonical_open_body_len(
     round_id: Hash,
     ticket_price: u64,
     total_tickets: u64,
-    delta_daa: u64,
+    _delta_daa: u64,
     reserve_payout_spk_len: usize,
 ) -> usize {
     let mut guess = 4500usize;
     for _ in 0..16 {
-        let body = build_open_covenant_body(round_id, ticket_price, total_tickets, delta_daa, guess, reserve_payout_spk_len).unwrap();
+        let body = build_open_covenant_body(round_id, ticket_price, total_tickets, _delta_daa, guess, reserve_payout_spk_len).unwrap();
         if body.len() == guess {
             return guess;
         }
@@ -138,7 +141,7 @@ pub fn build_open_covenant_body(
     round_id: Hash,
     ticket_price: u64,
     total_tickets: u64,
-    delta_daa: u64,
+    _delta_daa: u64,
     body_len: usize,
     reserve_payout_spk_len: usize,
 ) -> ScriptBuilderResult<Vec<u8>> {
@@ -483,33 +486,80 @@ pub fn build_open_covenant_body(
             sb.add_op(OpEqualVerify)?;
 
         sb.add_op(OpElse)?;
-            // Sold out -> Transition to SEALED:
+            // Sold out -> Transition to production SEALED V1:
+            // Input stack: [new_root, next_pc, sold_after]
             sb.add_op(OpDrop)?; // drop sold_after
-            sb.add_op(OpDrop)?; // drop next_pc
-            // Stack: [new_root]
+            // Stack now: [new_root, next_pc]
 
-            sb.add_op(OpDup)?;
-            sb.add_data(b"KaswinAppV1")?;
-            sb.add_data(&round_id.as_bytes())?;
-            sb.add_op(OpCat)?;
+            // Format next_pc into push-data: [0x08 || next_pc(8B)]
+            sb.add_i64(8)?;
+            sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x08])?;
             sb.add_op(OpSwap)?;
-            sb.add_op(OpCat)?;
-            sb.add_data(&total_tickets.to_le_bytes())?;
-            sb.add_op(OpCat)?;
-            sb.add_data(b"")?;
-            sb.add_op(OpBlake2bWithKey)?; // app_comm
+            sb.add_op(OpCat)?; // [new_root, push_next_pc]
+            sb.add_op(OpToAltStack)?; // AltStack: [push_next_pc], Stack: [new_root]
 
-            let (part1, part2, part3) = split_sealed_covenant_into_3_parts(round_id, total_tickets, delta_daa);
-            sb.add_data(&part1)?;
+            // Format new_root into push-data: [0x20 || new_root(32B)]
+            sb.add_data(&[0x20])?;
             sb.add_op(OpSwap)?;
-            sb.add_op(OpCat)?;
-            sb.add_data(&part2)?;
-            sb.add_op(OpCat)?;
-            sb.add_op(OpSwap)?;
-            sb.add_op(OpCat)?;
-            sb.add_data(&part3)?;
-            sb.add_op(OpCat)?;
+            sb.add_op(OpCat)?; // [push_new_root]
+            sb.add_op(OpToAltStack)?; // AltStack: [push_next_pc, push_new_root], Stack is EMPTY!
 
+            // Introspect total_redeem_len of current OPEN input:
+            let immut_open_prefix_len = 64 + reserve_payout_spk_len;
+            let full_open_prefix_len = immut_open_prefix_len + 9 + 9 + 33;
+            let total_redeem_len = full_open_prefix_len + body_len;
+
+            // Calculate redeem_start in Input 0 scriptSig:
+            sb.add_op(Op0)?;
+            sb.add_op(OpTxInputScriptSigLen)?; // [sig_len]
+            sb.add_i64(total_redeem_len as i64)?;
+            sb.add_op(OpSub)?; // [redeem_start]
+
+            // Slice Segment 1: [redeem_start + 0 .. redeem_start + 54]
+            // (OpTxInputIndex[3] || round_id[33] || ticket_price[9] || total_tickets[9] = 54B)
+            sb.add_op(OpDup)?; // [redeem_start, redeem_start]
+            sb.add_op(OpToAltStack)?; // AltStack: [push_next_pc, push_new_root, redeem_start]
+            sb.add_op(Op0)?;   // [redeem_start, 0]
+            sb.add_op(OpSwap)?; // [0, redeem_start]
+            sb.add_op(OpDup)?;  // [0, redeem_start, redeem_start]
+            sb.add_i64(54)?;
+            sb.add_op(OpAdd)?;  // [0, redeem_start, seg1_end]
+            sb.add_op(OpTxInputScriptSigSubstr)?; // [open_prefix_54]
+
+            // Append push_new_root from AltStack:
+            sb.add_op(OpFromAltStack)?; // redeem_start
+            sb.add_op(OpSwap)?;         // [redeem_start, open_prefix_54]
+            sb.add_op(OpFromAltStack)?; // push_new_root
+            sb.add_op(OpCat)?;          // [redeem_start, open_prefix_54 || push_new_root]
+
+            // Append push_next_pc from AltStack:
+            sb.add_op(OpFromAltStack)?; // push_next_pc
+            sb.add_op(OpCat)?;          // [redeem_start, open_prefix_54 || push_new_root || push_next_pc]
+
+            // Slice Segment 2 from OPEN Input 0: reserve_payout_spk
+            // Starts at redeem_start + 63, ends at redeem_start + 63 + 1 + reserve_payout_spk_len
+            sb.add_op(OpSwap)?; // [assembled_part, redeem_start]
+            sb.add_op(Op0)?;
+            sb.add_op(OpSwap)?; // [assembled_part, 0, redeem_start]
+            sb.add_op(OpDup)?;  // [assembled_part, 0, redeem_start, redeem_start]
+            sb.add_i64(63)?;
+            sb.add_op(OpAdd)?;  // [assembled_part, 0, redeem_start, res_start]
+            sb.add_op(OpSwap)?; // [assembled_part, 0, res_start, redeem_start]
+            let res_end_offset = (63 + 1 + reserve_payout_spk_len) as i64;
+            sb.add_i64(res_end_offset)?;
+            sb.add_op(OpAdd)?;  // [assembled_part, 0, res_start, res_end]
+            sb.add_op(OpTxInputScriptSigSubstr)?; // [assembled_part, push_reserve_spk]
+            sb.add_op(OpCat)?;  // [assembled_sealed_prefix] (133B or 134B)
+
+            // Append canonical production SEALED V1 body:
+            let sealed_body = build_sealed_body_v1(total_tickets, reserve_payout_spk_len)?;
+            for chunk in sealed_body.chunks(500) {
+                sb.add_data(chunk)?;
+                sb.add_op(OpCat)?;
+            }
+
+            // P2SH of production SEALED V1:
             sb.add_data(b"")?;
             sb.add_op(OpBlake2bWithKey)?;
             sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?;
@@ -699,34 +749,4 @@ pub fn build_open_covenant_body(
 
     sb.add_op(OpTrue)?;
     Ok(sb.drain())
-}
-
-pub fn split_sealed_covenant_into_3_parts(
-    round_id: Hash,
-    total_tickets: u64,
-    delta_daa: u64,
-) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-    let dummy_root = Hash::from_u64_word(0xdeadbeef);
-    let dummy_app = self::sealed_to_draw_ready::compute_application_commitment(
-        &round_id,
-        &dummy_root,
-        total_tickets,
-    );
-    let full = self::sealed_to_draw_ready::build_sealed_to_draw_ready_covenant(
-        round_id,
-        dummy_root,
-        total_tickets,
-        delta_daa,
-    ).unwrap();
-
-    let push_app = [0x20].iter().chain(dummy_app.as_bytes().iter()).copied().collect::<Vec<u8>>();
-    let pos_app = full.windows(push_app.len()).position(|w| w == push_app.as_slice()).expect("push app found");
-
-    let push_root = [0x20].iter().chain(dummy_root.as_bytes().iter()).copied().collect::<Vec<u8>>();
-    let pos_root = full.windows(push_root.len()).position(|w| w == push_root.as_slice()).expect("push root found");
-
-    let part1 = full[0..pos_app + 1].to_vec();
-    let part2 = full[pos_app + push_app.len()..pos_root + 1].to_vec();
-    let part3 = full[pos_root + push_root.len()..].to_vec();
-    (part1, part2, part3)
 }

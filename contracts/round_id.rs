@@ -1,5 +1,5 @@
 use kaspa_hashes::Hash;
-use kaspa_consensus_core::tx::{TransactionOutpoint, TransactionOutput};
+use kaspa_consensus_core::tx::TransactionOutpoint;
 
 /// Canonical round_id derivation from genesis funding outpoint:
 /// BLAKE2b256(b"KaswinRoundV1" || funding_outpoint.txid[32] || le_u32(funding_outpoint.index)[4])

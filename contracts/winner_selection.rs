@@ -1,48 +1,47 @@
-// Kaswin Deterministic Stateful Rejection Sampling Winner Selection Covenant
+// Kaswin Winner Selection & Suffix Self-Replication Covenant
 //
-// Protocol State Machine:
-// OPEN / SELLING -> SEALED -> DRAW_READY(counter) -> WINNER_READY -> PAID
-//                                  |
-//                                  +--(if rejected)--> DRAW_READY(counter + 1)
+// Protocol Version: Kaswin V1 (Toccata Consensus Rules)
+// State Machine: DRAW_READY -> DRAW_READY(counter+1) [REJECT]
+//                DRAW_READY -> WINNER_READY          [ACCEPT]
 //
-// CANONICAL DRAW_READY STATE BYTE LAYOUT (Strict Fixed-Width):
-// 1. Enforce Input 0: [OpTxInputIndex, Op0, OpEqualVerify] = 3 bytes
-// 2. round_id:      OpData32 (0x20) || 32B  = 33 bytes
-// 3. ticket_root:   OpData32 (0x20) || 32B  = 33 bytes
-// 4. total_tickets: OpData8  (0x08) || 8B LE = 9 bytes  <-- FIXED 8B LE PUSH (Constant across all N!)
-// 5. target_hash:   OpData32 (0x20) || 32B  = 33 bytes
-// 6. random_seed:   OpData32 (0x20) || 32B  = 33 bytes
-// TOTAL CANONICAL PREFIX LENGTH = 3 + 33 + 33 + 9 + 33 + 33 = 144 bytes (PROTOCOL CONSTANT!)
-//
-// 7. counter_push:  OpData8  (0x08) || 8B LE = 9 bytes (Fixed 8B LE push)
-// 8. SUFFIX:        sampling, accept transition, self-replicating reject transition
+// State Propagation:
+//   Propagates round_id, ticket_price, total_tickets, ticket_root,
+//   target_hash, random_seed, creator_refund_spk from SEALED into DRAW_READY and WINNER_READY.
 
 use kaspa_hashes::Hash;
+use kaspa_txscript::{
+    opcodes::codes::*,
+    script_builder::{ScriptBuilder, ScriptBuilderResult},
+};
 
 #[path = "lineage.rs"]
 pub mod lineage;
 
 #[path = "winner_ready_settlement.rs"]
 pub mod winner_ready_settlement;
-use kaspa_txscript::{
-    opcodes::codes::*,
-    script_builder::{ScriptBuilder, ScriptBuilderResult},
-};
 
-pub const MAX_TOTAL_TICKETS: u64 = 100_000_000; // 100M tickets max strictly unified across protocol
+pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+pub const COUNTER_PUSH_LEN: usize = 9; // 0x08 push opcode + 8 bytes LE counter
 pub const DOMAIN_R_56: i64 = 1i64 << 56; // 72,057,594,037,927,936
-pub const DRAW_READY_PREFIX_LEN: usize = 144; // Protocol constant!
-pub const COUNTER_PUSH_LEN: usize = 9; // 0x08 opcode + 8 bytes LE
 
-/// Pure Rust Reference Oracle for Winner Selection Step
-#[derive(Debug, PartialEq, Eq, Clone)]
+pub fn draw_ready_prefix_len(creator_refund_spk_len: usize) -> usize {
+    // 3 (OpTxInputIndex, Op0, OpEqualVerify)
+    // + 33 (round_id)
+    // + 9  (ticket_price)
+    // + 9  (total_tickets)
+    // + 33 (ticket_root)
+    // + 33 (target_hash)
+    // + 33 (random_seed)
+    // + 1 + creator_refund_spk_len
+    154 + creator_refund_spk_len
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WinnerStepResult {
     Accepted { winner_index: u64 },
     Rejected { next_counter: u64 },
 }
 
-/// Computes the candidate hash:
-/// BLAKE2b256("KaswinWinnerCandidateV1" || random_seed[32] || le_u64(counter)[8])
 pub fn compute_candidate_hash(random_seed: &Hash, counter: u64) -> Hash {
     let mut state = blake2b_simd::Params::new().hash_length(32).to_state();
     state.update(b"KaswinWinnerCandidateV1");
@@ -54,23 +53,20 @@ pub fn compute_candidate_hash(random_seed: &Hash, counter: u64) -> Hash {
     Hash::from_bytes(out)
 }
 
-/// Extracts candidate_num in domain [0, 2^56)
 pub fn extract_candidate_num(candidate_hash: &Hash) -> i64 {
-    let b = candidate_hash.as_bytes();
-    let mut buf = [0u8; 8];
-    buf[0..7].copy_from_slice(&b[0..7]);
-    buf[7] = 0x00; // strictly non-negative
-    i64::from_le_bytes(buf)
+    let bytes = candidate_hash.as_bytes();
+    let mut num_bytes = [0u8; 8];
+    num_bytes[0..7].copy_from_slice(&bytes[0..7]);
+    num_bytes[7] = 0;
+    i64::from_le_bytes(num_bytes)
 }
 
-/// Rust reference oracle implementing rejection sampling
 pub fn reference_winner_step(
+    total_tickets: u64,
     random_seed: &Hash,
     counter: u64,
-    total_tickets: u64,
 ) -> WinnerStepResult {
-    assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS, "Invalid total_tickets");
-    assert!(counter <= i64::MAX as u64, "counter exceeds i64::MAX domain");
+    assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS);
     if total_tickets == 1 {
         return WinnerStepResult::Accepted { winner_index: 0 };
     }
@@ -90,13 +86,14 @@ pub fn reference_winner_step(
 }
 
 /// Static Prefix before counter in DRAW_READY redeem script.
-/// Strictly fixed-width: total_tickets is formatted as fixed 8B LE data push (0x08 || le_u64).
 pub fn build_draw_ready_prefix(
     round_id: &Hash,
-    ticket_root: &Hash,
+    ticket_price: u64,
     total_tickets: u64,
+    ticket_root: &Hash,
     target_hash: &Hash,
     random_seed: &Hash,
+    creator_refund_spk: &[u8],
 ) -> Vec<u8> {
     assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS);
     let mut sb = ScriptBuilder::new();
@@ -107,38 +104,31 @@ pub fn build_draw_ready_prefix(
 
     // Push state constants:
     sb.add_data(&round_id.as_bytes()).unwrap();
-    sb.add_data(&ticket_root.as_bytes()).unwrap();
-    // Fixed 8-byte LE push for total_tickets:
+    sb.add_data(&ticket_price.to_le_bytes()).unwrap();
     sb.add_data(&total_tickets.to_le_bytes()).unwrap();
+    sb.add_data(&ticket_root.as_bytes()).unwrap();
     sb.add_data(&target_hash.as_bytes()).unwrap();
     sb.add_data(&random_seed.as_bytes()).unwrap();
+    sb.add_data(creator_refund_spk).unwrap();
     let prefix = sb.drain();
-    assert_eq!(prefix.len(), DRAW_READY_PREFIX_LEN, "DRAW_READY prefix len must strictly equal PROTOCOL CONSTANT");
+    assert_eq!(prefix.len(), draw_ready_prefix_len(creator_refund_spk.len()));
     prefix
 }
 
 /// Builds the shared canonical self-replicating reject successor bytecode.
-/// Exactly identical between production script and test harness.
 pub fn append_canonical_reject_successor_bytecode(
     sb: &mut ScriptBuilder,
+    creator_refund_spk_len: usize,
     suffix_len: usize,
 ) {
-    // Drop the 5 state items below counter_bytes:
-    sb.add_i64(5).unwrap();
-    sb.add_op(OpRoll).unwrap();
-    sb.add_op(OpDrop).unwrap(); // dropped round_id
-    sb.add_i64(4).unwrap();
-    sb.add_op(OpRoll).unwrap();
-    sb.add_op(OpDrop).unwrap(); // dropped ticket_root
-    sb.add_i64(3).unwrap();
-    sb.add_op(OpRoll).unwrap();
-    sb.add_op(OpDrop).unwrap(); // dropped total_tickets_bytes
-    sb.add_i64(2).unwrap();
-    sb.add_op(OpRoll).unwrap();
-    sb.add_op(OpDrop).unwrap(); // dropped target_hash
-    sb.add_i64(1).unwrap();
-    sb.add_op(OpRoll).unwrap();
-    sb.add_op(OpDrop).unwrap(); // dropped random_seed -> Stack: [counter_bytes]
+    // Drop the 7 state items below counter_bytes:
+    // [round_id, ticket_price, total_tickets, ticket_root, target_hash, random_seed, creator_refund_spk, counter_bytes]
+    for i in (1..=7).rev() {
+        sb.add_i64(i).unwrap();
+        sb.add_op(OpRoll).unwrap();
+        sb.add_op(OpDrop).unwrap();
+    }
+    // Stack: [counter_bytes]
 
     // Calculate next_counter = counter + 1:
     sb.add_op(OpBin2Num).unwrap(); // [counter (i64)]
@@ -155,7 +145,7 @@ pub fn append_canonical_reject_successor_bytecode(
     sb.add_op(Op0).unwrap();
     sb.add_op(OpTxInputScriptSigLen).unwrap(); // Stack: [next_counter_push, sig_len]
 
-    let prefix_len = DRAW_READY_PREFIX_LEN;
+    let prefix_len = draw_ready_prefix_len(creator_refund_spk_len);
     let total_redeem_len = (prefix_len + COUNTER_PUSH_LEN + suffix_len) as i64;
 
     // Compute p_start = sig_len - total_redeem_len
@@ -177,56 +167,69 @@ pub fn append_canonical_reject_successor_bytecode(
     sb.add_op(OpTxInputScriptSigSubstr).unwrap(); // Stack: [next_counter_push, sig_len, prefix_bytes]
 
     // Concatenate prefix || next_counter_push:
-    sb.add_i64(2).unwrap();
-    sb.add_op(OpRoll).unwrap(); // [sig_len, prefix_bytes, next_counter_push]
-    sb.add_op(OpCat).unwrap();  // Stack: [sig_len, prefix || next_counter_push]
-
-    // Compute s_start = sig_len - suffix_len
-    sb.add_op(OpSwap).unwrap(); // Stack: [prefix || next_counter_push, sig_len]
-    sb.add_op(OpDup).unwrap();
-    sb.add_i64(suffix_len as i64).unwrap();
-    sb.add_op(OpSub).unwrap(); // Stack: [prefix || next_counter_push, sig_len, s_start]
-
-    // Slice suffix: from s_start to sig_len (s_end)
-    sb.add_i64(0).unwrap();
+    sb.add_op(OpSwap).unwrap();
+    sb.add_op(OpDrop).unwrap(); // drop sig_len -> Stack: [next_counter_push, prefix_bytes]
     sb.add_i64(1).unwrap();
     sb.add_op(OpRoll).unwrap();
+    sb.add_op(OpCat).unwrap(); // Stack: [prefix || next_counter_push]
+
+    // Introspect suffix_bytes: [sig_len - suffix_len .. sig_len]
+    sb.add_op(Op0).unwrap();
+    sb.add_op(OpTxInputScriptSigLen).unwrap(); // Stack: [combined_prefix, sig_len]
+    sb.add_op(OpDup).unwrap();
+    sb.add_i64(suffix_len as i64).unwrap();
+    sb.add_op(OpSub).unwrap(); // Stack: [combined_prefix, sig_len, s_start]
+    sb.add_op(OpSwap).unwrap(); // Stack: [combined_prefix, s_start, sig_len]
+    sb.add_op(Op0).unwrap();    // Stack: [combined_prefix, s_start, sig_len, 0]
     sb.add_i64(2).unwrap();
-    sb.add_op(OpRoll).unwrap();
-    sb.add_op(OpTxInputScriptSigSubstr).unwrap(); // Stack: [prefix || next_counter_push, suffix_bytes]
+    sb.add_op(OpRoll).unwrap(); // Stack: [combined_prefix, sig_len, 0, s_start]
+    sb.add_i64(2).unwrap();
+    sb.add_op(OpRoll).unwrap(); // Stack: [combined_prefix, 0, s_start, sig_len]
+    sb.add_op(OpTxInputScriptSigSubstr).unwrap(); // Stack: [combined_prefix, suffix_bytes]
 
-    // Form complete successor DRAW_READY(counter + 1) redeem script:
-    sb.add_op(OpCat).unwrap(); // Stack: [successor_draw_ready_redeem_script]
+    // Assemble complete self-replicated script:
+    sb.add_op(OpCat).unwrap(); // Stack: [next_redeem_script]
 
-    // Compute expected P2SH SPK bytes for successor:
+    // Compute expected P2SH SPK:
     sb.add_data(b"").unwrap();
     sb.add_op(OpBlake2bWithKey).unwrap();
     sb.add_data(&[0x00, 0x00, 0xaa, 0x20]).unwrap();
     sb.add_op(OpSwap).unwrap();
     sb.add_op(OpCat).unwrap();
     sb.add_data(&[0x87]).unwrap();
-    sb.add_op(OpCat).unwrap(); // Stack: [expected_successor_draw_ready_spk]
+    sb.add_op(OpCat).unwrap(); // Stack: [expected_next_draw_ready_spk]
 }
 
-/// Builds the production DRAW_READY redeem script.
+/// Builds complete DRAW_READY redeem script for a given round state and counter.
 pub fn build_draw_ready_covenant(
     round_id: Hash,
-    ticket_root: Hash,
+    ticket_price: u64,
     total_tickets: u64,
+    ticket_root: Hash,
     target_hash: Hash,
     random_seed: Hash,
+    creator_refund_spk: Vec<u8>,
     counter: u64,
 ) -> ScriptBuilderResult<Vec<u8>> {
     assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS, "total_tickets out of bounds");
     assert!(counter <= i64::MAX as u64, "counter exceeds i64::MAX");
 
-    let prefix = build_draw_ready_prefix(&round_id, &ticket_root, total_tickets, &target_hash, &random_seed);
+    let prefix = build_draw_ready_prefix(
+        &round_id,
+        ticket_price,
+        total_tickets,
+        &ticket_root,
+        &target_hash,
+        &random_seed,
+        &creator_refund_spk,
+    );
 
     let mut counter_push = vec![0x08];
     counter_push.extend_from_slice(&counter.to_le_bytes());
 
     let suffix = build_complete_draw_ready_suffix(
         total_tickets,
+        creator_refund_spk.len(),
     );
 
     let mut full_script = Vec::new();
@@ -236,19 +239,21 @@ pub fn build_draw_ready_covenant(
     Ok(full_script)
 }
 
-/// Returns the exact canonical suffix length for a given total_tickets N.
-pub fn canonical_suffix_len(total_tickets: u64) -> usize {
-    build_complete_draw_ready_suffix(total_tickets).len()
+/// Returns the exact canonical suffix length for a given total_tickets and creator_refund_spk_len.
+pub fn canonical_suffix_len(total_tickets: u64, creator_refund_spk_len: usize) -> usize {
+    build_complete_draw_ready_suffix(total_tickets, creator_refund_spk_len).len()
 }
 
-/// Builds complete suffix with strict fixed-point convergence enforcement
+/// Builds complete suffix with strict fixed-point convergence enforcement.
 pub fn build_complete_draw_ready_suffix(
     total_tickets: u64,
+    creator_refund_spk_len: usize,
 ) -> Vec<u8> {
     let mut current_len = 0;
     for _ in 0..16 {
         let compiled = compile_suffix_body(
             total_tickets,
+            creator_refund_spk_len,
             current_len,
         );
         if compiled.len() == current_len {
@@ -261,23 +266,24 @@ pub fn build_complete_draw_ready_suffix(
 
 fn compile_suffix_body(
     total_tickets: u64,
+    creator_refund_spk_len: usize,
     suffix_len: usize,
 ) -> Vec<u8> {
     let mut sb = ScriptBuilder::new();
     // At entry of suffix, the stack has:
-    // [round_id, ticket_root, total_tickets_bytes (8B LE), target_hash, random_seed, counter_bytes]
+    // [round_id, ticket_price, total_tickets_bytes, ticket_root, target_hash, random_seed, creator_refund_spk, counter_bytes]
     //
     // STEP 1: Compute candidate_hash
-    sb.add_op(OpDup).unwrap(); // [..., random_seed, counter_bytes, counter_bytes]
-    sb.add_i64(2).unwrap();
-    sb.add_op(OpPick).unwrap(); // [..., random_seed, counter_bytes, counter_bytes, random_seed]
-    sb.add_data(b"KaswinWinnerCandidateV1").unwrap(); // [..., counter_bytes, random_seed, prefix]
+    sb.add_op(OpDup).unwrap(); // [..., counter_bytes, counter_bytes]
+    sb.add_i64(3).unwrap();
+    sb.add_op(OpPick).unwrap(); // [..., counter_bytes, counter_bytes, random_seed]
+    sb.add_data(b"KaswinWinnerCandidateV1").unwrap();
     sb.add_op(OpSwap).unwrap();
-    sb.add_op(OpCat).unwrap(); // [..., counter_bytes, prefix || random_seed]
+    sb.add_op(OpCat).unwrap();
     sb.add_op(OpSwap).unwrap();
-    sb.add_op(OpCat).unwrap(); // [..., prefix || random_seed || counter_bytes]
+    sb.add_op(OpCat).unwrap();
     sb.add_data(b"").unwrap();
-    sb.add_op(OpBlake2bWithKey).unwrap(); // Stack: [..., random_seed, counter_bytes, candidate_hash (32B)]
+    sb.add_op(OpBlake2bWithKey).unwrap(); // [..., counter_bytes, candidate_hash (32B)]
 
     // STEP 2: Extract candidate_num = LE_U56(candidate_hash[0..7])
     sb.add_i64(0).unwrap();
@@ -285,7 +291,7 @@ fn compile_suffix_body(
     sb.add_op(OpSubstr).unwrap(); // [..., counter_bytes, cand_bytes (7B)]
     sb.add_data(&[0x00]).unwrap();
     sb.add_op(OpCat).unwrap(); // [..., counter_bytes, cand_bytes_8 (8B LE, MSB=0)]
-    sb.add_op(OpBin2Num).unwrap(); // Stack: [round_id, ticket_root, total_tickets_bytes, target_hash, random_seed, counter_bytes, candidate_num (i64)]
+    sb.add_op(OpBin2Num).unwrap(); // [..., counter_bytes, candidate_num (i64)]
 
     // STEP 3: Rejection Threshold Computation
     let n = total_tickets as i64;
@@ -296,23 +302,23 @@ fn compile_suffix_body(
     sb.add_op(OpDup).unwrap();
     sb.add_i64(limit).unwrap();
     sb.add_op(OpLessThan).unwrap();
-    // Stack: [round_id, ticket_root, total_tickets_bytes, target_hash, random_seed, counter_bytes, candidate_num, is_accepted]
+    // Stack: [round_id, ticket_price, total_tickets_bytes, ticket_root, target_hash, random_seed, creator_refund_spk, counter_bytes, candidate_num, is_accepted]
 
     sb.add_op(OpIf).unwrap();
         // =========================================================
         // ACCEPT PATH: Transition to WINNER_READY
         // =========================================================
         sb.add_i64(n).unwrap();
-        sb.add_op(OpMod).unwrap(); // Stack: [round_id, ticket_root, total_tickets_bytes, target_hash, random_seed, counter_bytes, winner_index]
+        sb.add_op(OpMod).unwrap(); // [..., creator_refund_spk, counter_bytes, winner_index]
         sb.add_op(OpSwap).unwrap();
-        sb.add_op(OpDrop).unwrap(); // drop counter_bytes -> Stack: [round_id, ticket_root, total_tickets_bytes, target_hash, random_seed, winner_index]
+        sb.add_op(OpDrop).unwrap(); // drop counter_bytes -> [..., creator_refund_spk, winner_index]
 
         // Format push winner_index: 8 bytes LE via OpNum2Bin
         sb.add_i64(8).unwrap();
-        sb.add_op(OpNum2Bin).unwrap(); // Stack: [..., random_seed, winner_index_bytes (8B)]
-        sb.add_data(&[0x08]).unwrap(); // push opcode for 8 bytes
+        sb.add_op(OpNum2Bin).unwrap();
+        sb.add_data(&[0x08]).unwrap();
         sb.add_op(OpSwap).unwrap();
-        sb.add_op(OpCat).unwrap(); // Stack: [..., random_seed, push_winner_index_8B]
+        sb.add_op(OpCat).unwrap(); // [..., creator_refund_spk, push_winner_index_8B]
 
         // Dynamic construction of production WINNER_READY Redeem Script from current prefix:
         let wr_suffix_bytes = self::winner_ready_settlement::build_winner_ready_settlement_suffix();
@@ -321,7 +327,7 @@ fn compile_suffix_body(
         sb.add_op(Op0).unwrap();
         sb.add_op(OpTxInputScriptSigLen).unwrap(); // [..., push_winner_index, sig_len]
 
-        let prefix_len = DRAW_READY_PREFIX_LEN;
+        let prefix_len = draw_ready_prefix_len(creator_refund_spk_len);
         let total_redeem_len = (prefix_len + COUNTER_PUSH_LEN + suffix_len) as i64;
         sb.add_op(OpDup).unwrap();
         sb.add_i64(total_redeem_len).unwrap();
@@ -350,24 +356,15 @@ fn compile_suffix_body(
             sb.add_data(chunk).unwrap();
             sb.add_op(OpCat).unwrap();
         }
-        // Stack: [..., winner_ready_redeem_script]
+        // Stack: [round_id, ticket_price, total_tickets_bytes, ticket_root, target_hash, random_seed, creator_refund_spk, winner_ready_redeem_script]
 
-        // Drop the 5 stack state items below winner_ready_redeem_script:
-        sb.add_i64(5).unwrap();
-        sb.add_op(OpRoll).unwrap();
-        sb.add_op(OpDrop).unwrap(); // dropped round_id
-        sb.add_i64(4).unwrap();
-        sb.add_op(OpRoll).unwrap();
-        sb.add_op(OpDrop).unwrap(); // dropped ticket_root
-        sb.add_i64(3).unwrap();
-        sb.add_op(OpRoll).unwrap();
-        sb.add_op(OpDrop).unwrap(); // dropped total_tickets_bytes
-        sb.add_i64(2).unwrap();
-        sb.add_op(OpRoll).unwrap();
-        sb.add_op(OpDrop).unwrap(); // dropped target_hash
-        sb.add_i64(1).unwrap();
-        sb.add_op(OpRoll).unwrap();
-        sb.add_op(OpDrop).unwrap(); // dropped random_seed -> Stack: [winner_ready_redeem_script]
+        // Drop the 7 state items below winner_ready_redeem_script:
+        for i in (1..=7).rev() {
+            sb.add_i64(i).unwrap();
+            sb.add_op(OpRoll).unwrap();
+            sb.add_op(OpDrop).unwrap();
+        }
+        // Stack: [winner_ready_redeem_script]
 
         // Compute expected P2SH SPK bytes:
         sb.add_data(b"").unwrap();
@@ -383,7 +380,7 @@ fn compile_suffix_body(
         // REJECT PATH: Shared Canonical Self-Replication
         // =========================================================
         sb.add_op(OpDrop).unwrap(); // drop candidate_num
-        append_canonical_reject_successor_bytecode(&mut sb, suffix_len);
+        append_canonical_reject_successor_bytecode(&mut sb, creator_refund_spk_len, suffix_len);
 
     sb.add_op(OpEndIf).unwrap();
 
@@ -393,7 +390,7 @@ fn compile_suffix_body(
     sb.add_op(OpTxOutputSpk).unwrap();
     sb.add_op(OpEqualVerify).unwrap();
 
-    // Assert pool principal preserved: OpTxOutputAmount(0) >= OpTxInputAmount(0)
+    // Assert pool amount preserved: OpTxOutputAmount(0) >= OpTxInputAmount(0)
     sb.add_op(Op0).unwrap();
     sb.add_op(OpTxInputAmount).unwrap();
     sb.add_op(Op0).unwrap();
@@ -411,18 +408,22 @@ fn compile_suffix_body(
 /// Canonical formatted WINNER_READY redeem script that matches the on-the-fly construction
 pub fn build_canonical_winner_ready_redeem_script(
     round_id: Hash,
-    ticket_root: Hash,
+    ticket_price: u64,
     total_tickets: u64,
+    ticket_root: Hash,
     target_hash: Hash,
     random_seed: Hash,
+    creator_refund_spk: Vec<u8>,
     winner_index: u64,
 ) -> Vec<u8> {
     self::winner_ready_settlement::build_production_winner_ready_covenant(
         round_id,
-        ticket_root,
+        ticket_price,
         total_tickets,
+        ticket_root,
         target_hash,
         random_seed,
+        creator_refund_spk,
         winner_index,
     ).unwrap()
 }

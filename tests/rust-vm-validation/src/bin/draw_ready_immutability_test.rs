@@ -13,9 +13,9 @@ use kaspa_txscript::{
 use kaspa_consensus_core::mass::ComputeBudget;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 
-#[path = "../../../../contracts/sealed_to_draw_ready.rs"]
-mod sealed_to_draw_ready;
-use sealed_to_draw_ready::build_draw_ready_redeem_script;
+#[path = "../../../../contracts/winner_selection.rs"]
+mod winner_selection;
+use winner_selection::build_draw_ready_covenant;
 
 fn main() {
     println!("=== Testing DRAW_READY Output Execution (No SeqCommit access required) ===");
@@ -27,13 +27,21 @@ fn main() {
     let random_seed = Hash::from_u64_word(123456);
     let pool_principal = 50_000_000_000u64;
 
-    let draw_ready_redeem = build_draw_ready_redeem_script(
+    let ticket_price = 500_000_000u64;
+    let mut creator_refund_spk = vec![0x00, 0x00, 0x20];
+    creator_refund_spk.extend(vec![0x77; 32]);
+    creator_refund_spk.push(0xac);
+
+    let draw_ready_redeem = build_draw_ready_covenant(
         round_id,
-        ticket_root,
+        ticket_price,
         total_tickets,
+        ticket_root,
         target_hash,
         random_seed,
-    );
+        creator_refund_spk,
+        0,
+    ).unwrap();
     let draw_ready_spk = pay_to_script_hash_script(&draw_ready_redeem);
 
     // Spending DRAW_READY requires NO Header preimages and NO OpChainblockSeqCommit:
