@@ -26,8 +26,9 @@ use kaspa_txscript::{
 #[path = "winner_selection.rs"]
 pub mod winner_selection;
 use winner_selection::{
-    build_draw_ready_prefix,
     build_complete_draw_ready_suffix,
+    MAX_TOTAL_TICKETS,
+    DRAW_READY_PREFIX_LEN,
 };
 
 fn make_blake3_key(tag: &[u8]) -> [u8; 32] {
@@ -43,6 +44,7 @@ pub fn compute_application_commitment(
     ticket_root: &Hash,
     total_tickets: u64,
 ) -> Hash {
+    assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS, "total_tickets out of bounds");
     let mut state = blake2b_simd::Params::new().hash_length(32).to_state();
     state.update(b"KaswinAppV1");
     state.update(round_id.as_bytes().as_slice());
@@ -78,6 +80,8 @@ pub fn build_sealed_to_draw_ready_covenant(
     total_tickets: u64,
     delta_daa: u64,
 ) -> ScriptBuilderResult<Vec<u8>> {
+    assert!(total_tickets >= 1 && total_tickets <= MAX_TOTAL_TICKETS, "total_tickets out of bounds");
+
     let key_mergeset = make_blake3_key(b"SeqCommitMergesetContext");
     let key_branch = make_blake3_key(b"SeqCommitmentMerkleBranchHash");
     let app_commitment = compute_application_commitment(&round_id, &ticket_root, total_tickets);
@@ -306,18 +310,12 @@ pub fn build_sealed_to_draw_ready_covenant(
     pre_th_sb.add_op(OpEqualVerify)?;
     pre_th_sb.add_data(&round_id.as_bytes())?;
     pre_th_sb.add_data(&ticket_root.as_bytes())?;
-    pre_th_sb.add_i64(total_tickets as i64)?;
+    pre_th_sb.add_data(&total_tickets.to_le_bytes())?; // Canonical fixed 8B LE!
     let pre_th_bytes = pre_th_sb.drain();
 
-    // Suffix for DRAW_READY:
+    // Suffix for DRAW_READY(0):
     let draw_ready_suffix = build_complete_draw_ready_suffix(
-        &round_id,
-        &ticket_root,
         total_tickets,
-        &round_id, // target_hash placeholder in suffix compilation (needed for wr_prefix)
-        &round_id, // random_seed placeholder in suffix compilation
-        137,
-        false,
     );
 
     // Counter push for counter = 0: [0x08, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -337,7 +335,7 @@ pub fn build_sealed_to_draw_ready_covenant(
     sb.add_data(&[0x20])?;
     sb.add_op(OpSwap)?;
     sb.add_op(OpCat)?;           // [pre_th || push_target_hash, push_random_seed]
-    sb.add_op(OpCat)?;           // [complete_prefix]
+    sb.add_op(OpCat)?;           // [complete_prefix (144B)]
 
     // Append counter_0_push:
     sb.add_data(&counter_0_push)?;
