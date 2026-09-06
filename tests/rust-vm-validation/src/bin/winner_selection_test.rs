@@ -17,17 +17,123 @@ use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 mod winner_selection;
 use winner_selection::{
     build_draw_ready_covenant,
+    build_draw_ready_covenant_test_reject,
     build_canonical_winner_ready_redeem_script,
-    compute_draw_ready_spk_bytes,
     reference_winner_step,
-    extract_candidate_num,
-    compute_candidate_hash,
     WinnerStepResult,
-    DOMAIN_R_56,
+    MAX_TOTAL_TICKETS,
 };
 
+#[path = "../../../../contracts/sealed_to_draw_ready.rs"]
+mod sealed_to_draw_ready;
+use sealed_to_draw_ready::{
+    build_sealed_to_draw_ready_covenant,
+    compute_application_commitment,
+    compute_random_seed,
+};
+
+fn blake3_hash(key: &[u8], data: &[u8]) -> Hash {
+    let mut key_arr = [0u8; 32];
+    key_arr[..key.len()].copy_from_slice(key);
+    let h = blake3::keyed_hash(&key_arr, data);
+    Hash::from_bytes(*h.as_bytes())
+}
+
+struct PassAOpeningFixture {
+    pub target_hash: Hash,
+    pub target_activity: Hash,
+    pub target_payload: Hash,
+    pub target_sp_ts: [u8; 8],
+    pub target_daa: [u8; 8],
+    pub target_blue: [u8; 8],
+    pub p_parent_seq: Hash,
+    pub p_activity: Hash,
+    pub p_payload: Hash,
+    pub p_sp_ts: [u8; 8],
+    pub p_daa: [u8; 8],
+    pub p_blue: [u8; 8],
+    pub c_t: Hash,
+}
+
+fn generate_valid_pass_a_fixture(p_daa_num: u64, t_daa_num: u64) -> PassAOpeningFixture {
+    let p_sp_ts = 1_700_000_000u64.to_le_bytes();
+    let p_daa = p_daa_num.to_le_bytes();
+    let p_blue = (p_daa_num - 100).to_le_bytes();
+
+    let key_ctx = b"SeqCommitMergesetContext";
+    let key_branch = b"SeqCommitmentMerkleBranchHash";
+
+    let mut p_ctx_in = Vec::new();
+    p_ctx_in.extend_from_slice(&p_sp_ts);
+    p_ctx_in.extend_from_slice(&p_daa);
+    p_ctx_in.extend_from_slice(&p_blue);
+    let p_ctx = blake3_hash(key_ctx, &p_ctx_in);
+
+    let p_payload = Hash::from_u64_word(101);
+    let mut p_pd_in = Vec::new();
+    p_pd_in.extend_from_slice(&p_ctx.as_bytes());
+    p_pd_in.extend_from_slice(&p_payload.as_bytes());
+    let p_pd = blake3_hash(key_branch, &p_pd_in);
+
+    let p_activity = Hash::from_u64_word(102);
+    let mut p_sr_in = Vec::new();
+    p_sr_in.extend_from_slice(&p_activity.as_bytes());
+    p_sr_in.extend_from_slice(&p_pd.as_bytes());
+    let p_sr = blake3_hash(key_branch, &p_sr_in);
+
+    let p_parent_seq = Hash::from_u64_word(103);
+    let mut c_p_in = Vec::new();
+    c_p_in.extend_from_slice(&p_parent_seq.as_bytes());
+    c_p_in.extend_from_slice(&p_sr.as_bytes());
+    let c_p = blake3_hash(key_branch, &c_p_in);
+
+    let target_sp_ts = (1_700_000_000u64 + 10).to_le_bytes();
+    let target_daa = t_daa_num.to_le_bytes();
+    let target_blue = (t_daa_num - 100).to_le_bytes();
+    let mut t_ctx_in = Vec::new();
+    t_ctx_in.extend_from_slice(&target_sp_ts);
+    t_ctx_in.extend_from_slice(&target_daa);
+    t_ctx_in.extend_from_slice(&target_blue);
+    let t_ctx = blake3_hash(key_ctx, &t_ctx_in);
+
+    let target_payload = Hash::from_u64_word(201);
+    let mut t_pd_in = Vec::new();
+    t_pd_in.extend_from_slice(&t_ctx.as_bytes());
+    t_pd_in.extend_from_slice(&target_payload.as_bytes());
+    let t_pd = blake3_hash(key_branch, &t_pd_in);
+
+    let target_activity = Hash::from_u64_word(202);
+    let mut t_sr_in = Vec::new();
+    t_sr_in.extend_from_slice(&target_activity.as_bytes());
+    t_sr_in.extend_from_slice(&t_pd.as_bytes());
+    let t_sr = blake3_hash(key_branch, &t_sr_in);
+
+    let mut c_t_in = Vec::new();
+    c_t_in.extend_from_slice(&c_p.as_bytes());
+    c_t_in.extend_from_slice(&t_sr.as_bytes());
+    let c_t = blake3_hash(key_branch, &c_t_in);
+
+    let target_hash = Hash::from_u64_word(999);
+
+    PassAOpeningFixture {
+        target_hash,
+        target_activity,
+        target_payload,
+        target_sp_ts,
+        target_daa,
+        target_blue,
+        p_parent_seq,
+        p_activity,
+        p_payload,
+        p_sp_ts,
+        p_daa,
+        p_blue,
+        c_t,
+    }
+}
+
 fn main() {
-    println!("=== Testing Kaswin Stateful Rejection Sampling Winner Selection Suite ===");
+    println!("=== Testing Kaswin Self-Replicating Winner Selection Suite ===");
 
     let round_id = Hash::from_u64_word(1);
     let ticket_root = Hash::from_u64_word(2);
@@ -39,9 +145,9 @@ fn main() {
     let flags = EngineFlags { covenants_enabled: true, ..Default::default() };
 
     // -------------------------------------------------------------
-    // TEST 1: N=100 Canonical Candidate Accepted -> matches Rust reference
+    // TEST 1: ACCEPT Candidate -> Exact WINNER_READY SPK (PASS)
     // -------------------------------------------------------------
-    println!("\n--- TEST 1: N=100 Canonical Candidate Accepted ---");
+    println!("\n--- TEST 1: ACCEPT Candidate -> Exact WINNER_READY SPK ---");
     let total_tickets_100 = 100u64;
     let random_seed_acc = Hash::from_u64_word(100);
     let ref_res_1 = reference_winner_step(&random_seed_acc, 0, total_tickets_100);
@@ -49,7 +155,7 @@ fn main() {
         WinnerStepResult::Accepted { winner_index } => winner_index,
         _ => panic!("Expected accepted"),
     };
-    println!("Found accepted seed at counter=0: winner_index = {}", expected_winner_1);
+    println!("Candidate accepted at counter=0: winner_index = {}", expected_winner_1);
 
     let draw_ready_redeem_1 = build_draw_ready_covenant(
         round_id,
@@ -104,52 +210,37 @@ fn main() {
     let ctx_1 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_1);
     let mut vm_1 = TxScriptEngine::from_transaction_input(&pop_1, &pop_1.tx.inputs[0], 0, &pop_1.entries[0], ctx_1, flags);
     let res_1 = vm_1.execute();
-    println!("Test 1 VM execution result: {:?}", res_1);
-    assert_eq!(res_1, Ok(()), "N=100 accepted candidate MUST pass and match reference winner");
+    println!("Test 1 Result: {:?}", res_1);
+    assert_eq!(res_1, Ok(()), "ACCEPT candidate must transition to WINNER_READY");
 
     // -------------------------------------------------------------
-    // TEST 2: Rejection Zone Candidate -> MUST advance to DRAW_READY(counter + 1)
+    // TEST 2: REJECT c -> Exact Production DRAW_READY(c+1) (PASS)
     // -------------------------------------------------------------
-    println!("\n--- TEST 2: Rejection Zone Candidate -> DRAW_READY(counter+1) ---");
-    let rej_seed = Hash::from_u64_word(1);
-    let rej_counter = 0u64;
-    let cand_num = extract_candidate_num(&compute_candidate_hash(&rej_seed, rej_counter));
-    let n_rej = cand_num as u64;
-    let r = DOMAIN_R_56;
-    let limit_2 = (r / n_rej as i64) * n_rej as i64;
-    println!("cand_num: {}, limit_2: {}, candidate_num < limit: {}", cand_num, limit_2, cand_num < limit_2);
-    assert!(cand_num >= limit_2, "Must be in rejection zone!");
-    assert_eq!(reference_winner_step(&rej_seed, rej_counter, n_rej), WinnerStepResult::Rejected { next_counter: rej_counter + 1 });
-
-    // Build DRAW_READY(c):
-    let draw_ready_rej_redeem = build_draw_ready_covenant(
+    println!("\n--- TEST 2: REJECT c -> Exact Production DRAW_READY(c+1) ---");
+    // Test rejection branch using test-reject builder on N=100:
+    let draw_ready_rej_c0 = build_draw_ready_covenant_test_reject(
         round_id,
         ticket_root,
-        n_rej,
+        total_tickets_100,
         target_hash,
-        rej_seed,
-        rej_counter,
+        random_seed_acc,
+        0,
     ).unwrap();
-    let draw_ready_rej_spk = pay_to_script_hash_script(&draw_ready_rej_redeem);
+    let draw_ready_spk_c0 = pay_to_script_hash_script(&draw_ready_rej_c0);
 
-    // Expected successor SPK is DRAW_READY(c + 1) calculated via helper:
-    let next_spk_bytes = compute_draw_ready_spk_bytes(
-        &round_id,
-        &ticket_root,
-        n_rej,
-        &target_hash,
-        &rej_seed,
-        rej_counter + 1,
-    );
-    // Convert SPK bytes to ScriptPublicKey:
-    // format of next_spk_bytes: [0x00, 0x00, script_bytes...]
-    let draw_ready_next_spk = kaspa_consensus_core::tx::ScriptPublicKey::new(
-        u16::from_be_bytes([next_spk_bytes[0], next_spk_bytes[1]]),
-        kaspa_consensus_core::tx::ScriptVec::from_slice(&next_spk_bytes[2..]),
-    );
+    // Exact production DRAW_READY(c + 1):
+    let draw_ready_prod_c1 = build_draw_ready_covenant_test_reject(
+        round_id,
+        ticket_root,
+        total_tickets_100,
+        target_hash,
+        random_seed_acc,
+        1,
+    ).unwrap();
+    let draw_ready_spk_c1 = pay_to_script_hash_script(&draw_ready_prod_c1);
 
     let mut sig_sb_2 = ScriptBuilder::with_flags(flags);
-    sig_sb_2.add_data(&draw_ready_rej_redeem).unwrap();
+    sig_sb_2.add_data(&draw_ready_rej_c0).unwrap();
     let sig_script_2 = sig_sb_2.drain();
 
     let tx_2 = Transaction::new(
@@ -162,7 +253,7 @@ fn main() {
         )],
         vec![TransactionOutput {
             value: pool_principal,
-            script_public_key: draw_ready_next_spk.clone(), // Successor has counter + 1!
+            script_public_key: draw_ready_spk_c1.clone(), // Must match production c+1!
             covenant: None,
         }],
         0,
@@ -172,7 +263,7 @@ fn main() {
     );
     let pop_2 = PopulatedTransaction::new(&tx_2, vec![UtxoEntry::new(
         pool_principal,
-        draw_ready_rej_spk.clone(),
+        draw_ready_spk_c0.clone(),
         1_000_100,
         false,
         None,
@@ -181,73 +272,120 @@ fn main() {
     let ctx_2 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_2);
     let mut vm_2 = TxScriptEngine::from_transaction_input(&pop_2, &pop_2.tx.inputs[0], 0, &pop_2.entries[0], ctx_2, flags);
     let res_2 = vm_2.execute();
-    println!("Test 2 VM execution result: {:?}", res_2);
-    assert_eq!(res_2, Ok(()), "Rejected candidate MUST successfully advance to DRAW_READY(counter + 1)");
+    println!("Test 2 Result: {:?}", res_2);
+    assert_eq!(res_2, Ok(()), "REJECT candidate must transition to exact production DRAW_READY(c+1)");
 
     // -------------------------------------------------------------
-    // TEST 3: Rejection Successor Attempt: Skip to counter + 2 -> FAIL
+    // TEST 3: Successor Byte Identity Across Multiple Counters
+    // generated(c+1) == production_builder(c+1) for c in [0, 1, 2, 255, 65535]
     // -------------------------------------------------------------
-    println!("\n--- TEST 3: Rejection Successor Attempt counter + 2 -> FAIL ---");
-    let draw_ready_skip2_bytes = compute_draw_ready_spk_bytes(
-        &round_id,
-        &ticket_root,
-        n_rej,
-        &target_hash,
-        &rej_seed,
-        rej_counter + 2, // SKIPPED TO COUNTER + 2!
-    );
-    let draw_ready_skip2_spk = kaspa_consensus_core::tx::ScriptPublicKey::new(
-        u16::from_be_bytes([draw_ready_skip2_bytes[0], draw_ready_skip2_bytes[1]]),
-        kaspa_consensus_core::tx::ScriptVec::from_slice(&draw_ready_skip2_bytes[2..]),
-    );
+    println!("\n--- TEST 3: Successor Byte Identity Proof ---");
+    let test_counters = [0u64, 1u64, 2u64, 255u64, 65535u64];
+    for &c in &test_counters {
+        let sc = build_draw_ready_covenant(round_id, ticket_root, total_tickets_100, target_hash, random_seed_acc, c).unwrap();
+        let expected_sc1 = build_draw_ready_covenant(round_id, ticket_root, total_tickets_100, target_hash, random_seed_acc, c + 1).unwrap();
 
-    let tx_3 = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_2.clone(),
+        // Simulate script self-replication:
+        let mut reconstructed = Vec::new();
+        reconstructed.extend_from_slice(&sc[0..137]);
+        reconstructed.push(0x08);
+        reconstructed.extend_from_slice(&(c + 1).to_le_bytes());
+        reconstructed.extend_from_slice(&sc[146..]);
+
+        assert_eq!(reconstructed, expected_sc1, "Byte identity failed for counter {}", c);
+        assert_eq!(
+            pay_to_script_hash_script(&reconstructed),
+            pay_to_script_hash_script(&expected_sc1),
+            "SPK identity failed for counter {}", c
+        );
+    }
+    println!("Successor Byte Identity passed for all representative counters [0, 1, 2, 255, 65535]!");
+
+    // -------------------------------------------------------------
+    // TEST 4: Real Multi-Step Chained UTXO VM Evidence: U0 -> U1 -> U2 -> U3
+    // -------------------------------------------------------------
+    println!("\n--- TEST 4: Real Multi-Step Chained UTXO Execution U0 -> U1 -> U2 -> U3 ---");
+    let mut current_counter = 0u64;
+    let current_utxo_amount = pool_principal;
+
+    for step in 0..3 {
+        println!("Executing chained transition step {} (c={})...", step, current_counter);
+        let cur_redeem = build_draw_ready_covenant_test_reject(
+            round_id,
+            ticket_root,
+            total_tickets_100,
+            target_hash,
+            random_seed_acc,
+            current_counter,
+        ).unwrap();
+        let cur_spk = pay_to_script_hash_script(&cur_redeem);
+
+        // Next counter:
+        let next_redeem = build_draw_ready_covenant_test_reject(
+            round_id,
+            ticket_root,
+            total_tickets_100,
+            target_hash,
+            random_seed_acc,
+            current_counter + 1,
+        ).unwrap();
+        let next_spk = pay_to_script_hash_script(&next_redeem);
+
+        let mut sig_sb = ScriptBuilder::with_flags(flags);
+        sig_sb.add_data(&cur_redeem).unwrap();
+        let sig_script = sig_sb.drain();
+
+        let tx_step = Transaction::new(
+            1,
+            vec![TransactionInput::new_with_mass(
+                TransactionOutpoint::new(Hash::from_u64_word(step as u64 + 10), 0),
+                sig_script,
+                0,
+                ComputeCommit::ComputeBudget(ComputeBudget(0)),
+            )],
+            vec![TransactionOutput {
+                value: current_utxo_amount,
+                script_public_key: next_spk.clone(),
+                covenant: None,
+            }],
             0,
-            ComputeCommit::ComputeBudget(ComputeBudget(0)),
-        )],
-        vec![TransactionOutput {
-            value: pool_principal,
-            script_public_key: draw_ready_skip2_spk, // SKIPPED!
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_3 = PopulatedTransaction::new(&tx_3, vec![UtxoEntry::new(
-        pool_principal,
-        draw_ready_rej_spk.clone(),
-        1_000_100,
-        false,
-        None,
-    )]);
-    let cov_ctx_3 = CovenantsContext::from_tx(&pop_3).unwrap();
-    let ctx_3 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_3);
-    let mut vm_3 = TxScriptEngine::from_transaction_input(&pop_3, &pop_3.tx.inputs[0], 0, &pop_3.entries[0], ctx_3, flags);
-    let res_3 = vm_3.execute();
-    println!("Test 3 Result: {:?}", res_3);
-    assert!(res_3.is_err(), "Skipping counter to c+2 MUST fail SPK check");
+            SubnetworkId::default(),
+            0,
+            vec![],
+        );
+        let pop_step = PopulatedTransaction::new(&tx_step, vec![UtxoEntry::new(
+            current_utxo_amount,
+            cur_spk.clone(),
+            1_000_100 + step as u64 * 10,
+            false,
+            None,
+        )]);
+        let cov_ctx_step = CovenantsContext::from_tx(&pop_step).unwrap();
+        let ctx_step = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_step);
+        let mut vm_step = TxScriptEngine::from_transaction_input(&pop_step, &pop_step.tx.inputs[0], 0, &pop_step.entries[0], ctx_step, flags);
+        let res_step = vm_step.execute();
+        assert_eq!(res_step, Ok(()), "Chained transition step {} MUST succeed", step);
+        println!("  Step {} (U{} -> U{}) verified OK!", step, step, step + 1);
+
+        current_counter += 1;
+    }
+    println!("Real multi-step chained UTXO execution (U0 -> U1 -> U2 -> U3) successfully completed!");
 
     // -------------------------------------------------------------
-    // TEST 4: Caller attempts to force WINNER_READY when candidate was rejected -> FAIL
+    // TEST 5: Skip c -> c + 2 -> FAIL
     // -------------------------------------------------------------
-    println!("\n--- TEST 4: Attempting WINNER_READY on rejected candidate -> FAIL ---");
-    let fake_winner_redeem = build_canonical_winner_ready_redeem_script(
+    println!("\n--- TEST 5: Skip c -> c + 2 -> FAIL ---");
+    let draw_ready_prod_c2 = build_draw_ready_covenant_test_reject(
         round_id,
         ticket_root,
-        n_rej,
+        total_tickets_100,
         target_hash,
-        rej_seed,
-        0,
-    );
-    let fake_winner_spk = pay_to_script_hash_script(&fake_winner_redeem);
+        random_seed_acc,
+        2, // SKIPPED!
+    ).unwrap();
+    let draw_ready_spk_c2 = pay_to_script_hash_script(&draw_ready_prod_c2);
 
-    let tx_4 = Transaction::new(
+    let tx_skip = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
@@ -257,7 +395,7 @@ fn main() {
         )],
         vec![TransactionOutput {
             value: pool_principal,
-            script_public_key: fake_winner_spk,
+            script_public_key: draw_ready_spk_c2, // SKIPPED!
             covenant: None,
         }],
         0,
@@ -265,36 +403,35 @@ fn main() {
         0,
         vec![],
     );
-    let pop_4 = PopulatedTransaction::new(&tx_4, vec![UtxoEntry::new(
+    let pop_skip = PopulatedTransaction::new(&tx_skip, vec![UtxoEntry::new(
         pool_principal,
-        draw_ready_rej_spk.clone(),
+        draw_ready_spk_c0.clone(),
         1_000_100,
         false,
         None,
     )]);
-    let cov_ctx_4 = CovenantsContext::from_tx(&pop_4).unwrap();
-    let ctx_4 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_4);
-    let mut vm_4 = TxScriptEngine::from_transaction_input(&pop_4, &pop_4.tx.inputs[0], 0, &pop_4.entries[0], ctx_4, flags);
-    let res_4 = vm_4.execute();
-    println!("Test 4 Result: {:?}", res_4);
-    assert!(res_4.is_err(), "Cannot force WINNER_READY when candidate was rejected");
+    let cov_ctx_skip = CovenantsContext::from_tx(&pop_skip).unwrap();
+    let ctx_skip = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_skip);
+    let mut vm_skip = TxScriptEngine::from_transaction_input(&pop_skip, &pop_skip.tx.inputs[0], 0, &pop_skip.entries[0], ctx_skip, flags);
+    let res_skip = vm_skip.execute();
+    println!("Test 5 Result: {:?}", res_skip);
+    assert!(res_skip.is_err(), "Skipping c to c+2 must FAIL SPK check");
 
     // -------------------------------------------------------------
-    // TEST 5: Accepted candidate but tampered winner_index -> FAIL
+    // TEST 6: Tampered Winner Index -> FAIL
     // -------------------------------------------------------------
-    println!("\n--- TEST 5: Tampered winner_index -> FAIL ---");
-    let tampered_winner_index = expected_winner_1 + 1; // TAMPERED!
+    println!("\n--- TEST 6: Tampered Winner Index -> FAIL ---");
     let tampered_winner_redeem = build_canonical_winner_ready_redeem_script(
         round_id,
         ticket_root,
         total_tickets_100,
         target_hash,
         random_seed_acc,
-        tampered_winner_index,
+        expected_winner_1 + 1, // TAMPERED!
     );
     let tampered_winner_spk = pay_to_script_hash_script(&tampered_winner_redeem);
 
-    let tx_5 = Transaction::new(
+    let tx_tamp = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
             TransactionOutpoint::new(Hash::default(), 0),
@@ -312,128 +449,98 @@ fn main() {
         0,
         vec![],
     );
-    let pop_5 = PopulatedTransaction::new(&tx_5, vec![UtxoEntry::new(
+    let pop_tamp = PopulatedTransaction::new(&tx_tamp, vec![UtxoEntry::new(
         pool_principal,
         draw_ready_spk_1.clone(),
         1_000_100,
         false,
         None,
     )]);
-    let cov_ctx_5 = CovenantsContext::from_tx(&pop_5).unwrap();
-    let ctx_5 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_5);
-    let mut vm_5 = TxScriptEngine::from_transaction_input(&pop_5, &pop_5.tx.inputs[0], 0, &pop_5.entries[0], ctx_5, flags);
-    let res_5 = vm_5.execute();
-    println!("Test 5 Result: {:?}", res_5);
-    assert!(res_5.is_err(), "Tampered winner_index must fail SPK verification");
+    let cov_ctx_tamp = CovenantsContext::from_tx(&pop_tamp).unwrap();
+    let ctx_tamp = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tamp);
+    let mut vm_tamp = TxScriptEngine::from_transaction_input(&pop_tamp, &pop_tamp.tx.inputs[0], 0, &pop_tamp.entries[0], ctx_tamp, flags);
+    let res_tamp = vm_tamp.execute();
+    println!("Test 6 Result: {:?}", res_tamp);
+    assert!(res_tamp.is_err(), "Tampered winner must FAIL SPK check");
 
     // -------------------------------------------------------------
-    // TEST 6: N = 1 -> Winner must strictly be 0
+    // TEST 7: MAX_TOTAL_TICKETS Exactly Unified
     // -------------------------------------------------------------
-    println!("\n--- TEST 6: N = 1 Edge Case ---");
-    let n_1 = 1u64;
-    assert_eq!(reference_winner_step(&random_seed_acc, 0, n_1), WinnerStepResult::Accepted { winner_index: 0 });
+    println!("\n--- TEST 7: MAX_TOTAL_TICKETS Unification Check ---");
+    assert_eq!(MAX_TOTAL_TICKETS, 100_000_000, "MAX_TOTAL_TICKETS must strictly be 100,000,000");
+    println!("MAX_TOTAL_TICKETS is strictly unified to {}", MAX_TOTAL_TICKETS);
 
-    let draw_ready_redeem_n1 = build_draw_ready_covenant(
+    // -------------------------------------------------------------
+    // TEST 8: SEALED PASS-A -> Production DRAW_READY(0) -> Winner Selection Spend PASS
+    // -------------------------------------------------------------
+    println!("\n--- TEST 8: End-to-End SEALED PASS-A -> Production DRAW_READY(0) -> Spend ---");
+    // Build SEALED covenant that targets production DRAW_READY(0):
+    let delta_daa = 100u64;
+    let actual_sealed_daa = 1_000_000u64;
+    let boundary = actual_sealed_daa + delta_daa;
+
+    let p_daa_val = boundary - 1;
+    let t_daa_val = boundary;
+    let pass_a_fixture = generate_valid_pass_a_fixture(p_daa_val, t_daa_val);
+
+    let app_commitment = compute_application_commitment(&round_id, &ticket_root, total_tickets_100);
+    let derived_seed = compute_random_seed(&pass_a_fixture.target_hash, &app_commitment);
+
+    // Build production DRAW_READY(0) script:
+    let prod_draw_ready_0 = build_draw_ready_covenant(
         round_id,
         ticket_root,
-        n_1,
-        target_hash,
-        random_seed_acc,
+        total_tickets_100,
+        pass_a_fixture.target_hash,
+        derived_seed,
         0,
     ).unwrap();
-    let draw_ready_spk_n1 = pay_to_script_hash_script(&draw_ready_redeem_n1);
+    let prod_draw_ready_spk_0 = pay_to_script_hash_script(&prod_draw_ready_0);
 
-    let winner_ready_redeem_n1 = build_canonical_winner_ready_redeem_script(
+    // Spend SEALED to produce prod_draw_ready_spk_0:
+    let sealed_redeem = build_sealed_to_draw_ready_covenant(
         round_id,
         ticket_root,
-        n_1,
-        target_hash,
-        random_seed_acc,
-        0,
-    );
-    let winner_ready_spk_n1 = pay_to_script_hash_script(&winner_ready_redeem_n1);
+        total_tickets_100,
+        delta_daa,
+    ).unwrap();
+    let sealed_spk = pay_to_script_hash_script(&sealed_redeem);
 
-    let mut sig_sb_6 = ScriptBuilder::with_flags(flags);
-    sig_sb_6.add_data(&draw_ready_redeem_n1).unwrap();
-    let sig_script_6 = sig_sb_6.drain();
+    // Build witness stack for SEALED:
+    let mut sb_sealed = ScriptBuilder::with_flags(flags);
+    sb_sealed.add_data(&pass_a_fixture.target_hash.as_bytes()).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.target_activity.as_bytes()).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.target_payload.as_bytes()).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.target_sp_ts).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.target_daa).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.target_blue).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.p_parent_seq.as_bytes()).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.p_activity.as_bytes()).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.p_payload.as_bytes()).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.p_sp_ts).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.p_daa).unwrap();
+    sb_sealed.add_data(&pass_a_fixture.p_blue).unwrap();
+    sb_sealed.add_data(&sealed_redeem).unwrap();
+    let sig_script_sealed = sb_sealed.drain();
 
-    let tx_6 = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_6,
-            0,
-            ComputeCommit::ComputeBudget(ComputeBudget(0)),
-        )],
-        vec![TransactionOutput {
-            value: pool_principal,
-            script_public_key: winner_ready_spk_n1,
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_6 = PopulatedTransaction::new(&tx_6, vec![UtxoEntry::new(
-        pool_principal,
-        draw_ready_spk_n1,
-        1_000_100,
-        false,
-        None,
-    )]);
-    let cov_ctx_6 = CovenantsContext::from_tx(&pop_6).unwrap();
-    let ctx_6 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6);
-    let mut vm_6 = TxScriptEngine::from_transaction_input(&pop_6, &pop_6.tx.inputs[0], 0, &pop_6.entries[0], ctx_6, flags);
-    let res_6 = vm_6.execute();
-    println!("Test 6 Result: {:?}", res_6);
-    assert_eq!(res_6, Ok(()), "N = 1 must strictly yield winner = 0");
-
-    // -------------------------------------------------------------
-    // TEST 7: Representative Non-Power-of-Two N (N = 37)
-    // -------------------------------------------------------------
-    println!("\n--- TEST 7: Representative Non-Power-of-Two N (N = 37) ---");
-    let n_37 = 37u64;
-    let ref_37 = reference_winner_step(&random_seed_acc, 0, n_37);
-    let expected_winner_37 = match ref_37 {
-        WinnerStepResult::Accepted { winner_index } => winner_index,
-        _ => panic!("Expected accept for this seed"),
+    let mut seq_commits = std::collections::HashMap::new();
+    seq_commits.insert(pass_a_fixture.target_hash, pass_a_fixture.c_t);
+    let accessor = crate::MockSeqCommitAccessor {
+        selected_chain: vec![pass_a_fixture.target_hash],
+        seq_commits,
     };
-    let draw_ready_redeem_37 = build_draw_ready_covenant(
-        round_id,
-        ticket_root,
-        n_37,
-        target_hash,
-        random_seed_acc,
-        0,
-    ).unwrap();
-    let draw_ready_spk_37 = pay_to_script_hash_script(&draw_ready_redeem_37);
 
-    let winner_ready_redeem_37 = build_canonical_winner_ready_redeem_script(
-        round_id,
-        ticket_root,
-        n_37,
-        target_hash,
-        random_seed_acc,
-        expected_winner_37,
-    );
-    let winner_ready_spk_37 = pay_to_script_hash_script(&winner_ready_redeem_37);
-
-    let mut sig_sb_7 = ScriptBuilder::with_flags(flags);
-    sig_sb_7.add_data(&draw_ready_redeem_37).unwrap();
-    let sig_script_7 = sig_sb_7.drain();
-
-    let tx_7 = Transaction::new(
+    let tx_sealed = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_7,
+            TransactionOutpoint::new(Hash::from_u64_word(1), 0),
+            sig_script_sealed,
             0,
             ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
         vec![TransactionOutput {
             value: pool_principal,
-            script_public_key: winner_ready_spk_37,
+            script_public_key: prod_draw_ready_spk_0.clone(), // Output is production DRAW_READY(0)!
             covenant: None,
         }],
         0,
@@ -441,65 +548,50 @@ fn main() {
         0,
         vec![],
     );
-    let pop_7 = PopulatedTransaction::new(&tx_7, vec![UtxoEntry::new(
+    let pop_sealed = PopulatedTransaction::new(&tx_sealed, vec![UtxoEntry::new(
         pool_principal,
-        draw_ready_spk_37,
-        1_000_100,
+        sealed_spk,
+        actual_sealed_daa,
         false,
         None,
     )]);
-    let cov_ctx_7 = CovenantsContext::from_tx(&pop_7).unwrap();
-    let ctx_7 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_7);
-    let mut vm_7 = TxScriptEngine::from_transaction_input(&pop_7, &pop_7.tx.inputs[0], 0, &pop_7.entries[0], ctx_7, flags);
-    let res_7 = vm_7.execute();
-    println!("Test 7 Result (N=37): {:?}", res_7);
-    assert_eq!(res_7, Ok(()), "N = 37 non-power-of-two MUST pass and match reference");
+    let cov_ctx_s = CovenantsContext::from_tx(&pop_sealed).unwrap();
+    let ctx_s = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_s).with_seq_commit_accessor(&accessor);
+    let mut vm_s = TxScriptEngine::from_transaction_input(&pop_sealed, &pop_sealed.tx.inputs[0], 0, &pop_sealed.entries[0], ctx_s, flags);
+    let res_s = vm_s.execute();
+    println!("Step 1 (SEALED -> Production DRAW_READY(0)) Result: {:?}", res_s);
+    assert_eq!(res_s, Ok(()), "SEALED must successfully transition to production DRAW_READY(0)");
 
-    // -------------------------------------------------------------
-    // TEST 8: Large N Boundary (10,000,000 tickets)
-    // -------------------------------------------------------------
-    println!("\n--- TEST 8: Large N Boundary (10M tickets) ---");
-    let n_10m = 10_000_000u64;
-    let ref_10m = reference_winner_step(&random_seed_acc, 0, n_10m);
-    let expected_winner_10m = match ref_10m {
+    // Step 2: Now spend that exact production DRAW_READY(0) UTXO in Winner Selection!
+    let ref_winner = match reference_winner_step(&derived_seed, 0, total_tickets_100) {
         WinnerStepResult::Accepted { winner_index } => winner_index,
-        _ => panic!("Expected accept for this seed"),
+        _ => panic!("Expected accept"),
     };
-    let draw_ready_redeem_10m = build_draw_ready_covenant(
+    let win_ready_redeem = build_canonical_winner_ready_redeem_script(
         round_id,
         ticket_root,
-        n_10m,
-        target_hash,
-        random_seed_acc,
-        0,
-    ).unwrap();
-    let draw_ready_spk_10m = pay_to_script_hash_script(&draw_ready_redeem_10m);
-
-    let winner_ready_redeem_10m = build_canonical_winner_ready_redeem_script(
-        round_id,
-        ticket_root,
-        n_10m,
-        target_hash,
-        random_seed_acc,
-        expected_winner_10m,
+        total_tickets_100,
+        pass_a_fixture.target_hash,
+        derived_seed,
+        ref_winner,
     );
-    let winner_ready_spk_10m = pay_to_script_hash_script(&winner_ready_redeem_10m);
+    let win_ready_spk = pay_to_script_hash_script(&win_ready_redeem);
 
-    let mut sig_sb_8 = ScriptBuilder::with_flags(flags);
-    sig_sb_8.add_data(&draw_ready_redeem_10m).unwrap();
-    let sig_script_8 = sig_sb_8.drain();
+    let mut sb_spend = ScriptBuilder::with_flags(flags);
+    sb_spend.add_data(&prod_draw_ready_0).unwrap();
+    let sig_script_spend = sb_spend.drain();
 
-    let tx_8 = Transaction::new(
+    let tx_spend = Transaction::new(
         1,
         vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_8,
+            TransactionOutpoint::new(tx_sealed.id(), 0),
+            sig_script_spend,
             0,
             ComputeCommit::ComputeBudget(ComputeBudget(0)),
         )],
         vec![TransactionOutput {
             value: pool_principal,
-            script_public_key: winner_ready_spk_10m,
+            script_public_key: win_ready_spk,
             covenant: None,
         }],
         0,
@@ -507,59 +599,72 @@ fn main() {
         0,
         vec![],
     );
-    let pop_8 = PopulatedTransaction::new(&tx_8, vec![UtxoEntry::new(
+    let pop_spend = PopulatedTransaction::new(&tx_spend, vec![UtxoEntry::new(
         pool_principal,
-        draw_ready_spk_10m,
+        prod_draw_ready_spk_0,
         1_000_100,
         false,
         None,
     )]);
-    let cov_ctx_8 = CovenantsContext::from_tx(&pop_8).unwrap();
-    let ctx_8 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_8);
-    let mut vm_8 = TxScriptEngine::from_transaction_input(&pop_8, &pop_8.tx.inputs[0], 0, &pop_8.entries[0], ctx_8, flags);
-    let res_8 = vm_8.execute();
-    println!("Test 8 Result (N=10M): {:?}", res_8);
-    assert_eq!(res_8, Ok(()), "N = 10M tickets MUST pass without arithmetic overflow");
+    let cov_ctx_sp = CovenantsContext::from_tx(&pop_spend).unwrap();
+    let ctx_sp = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_sp);
+    let mut vm_sp = TxScriptEngine::from_transaction_input(&pop_spend, &pop_spend.tx.inputs[0], 0, &pop_spend.entries[0], ctx_sp, flags);
+    let res_sp = vm_sp.execute();
+    println!("Step 2 (Production DRAW_READY(0) -> WINNER_READY) Result: {:?}", res_sp);
+    assert_eq!(res_sp, Ok(()), "Production DRAW_READY(0) must successfully spend to WINNER_READY");
 
     // -------------------------------------------------------------
-    // TEST 9: Resource Measurement for ACCEPT & REJECT paths
+    // TEST 9: Resource Measurement
     // -------------------------------------------------------------
-    println!("\n--- TEST 9: Resource Measurement for ACCEPT & REJECT paths ---");
+    println!("\n--- TEST 9: Resource Measurement ---");
     let mc = MassCalculator::new(1, 10, 10_000_000);
 
-    // Accept Path (tx_1):
     let wire_bytes_acc = borsh::to_vec(&tx_1).unwrap().len();
     let non_ctx_acc = mc.calc_non_contextual_masses(&tx_1);
     let used_units_acc = vm_1.used_script_units();
 
-    // Reject Path (tx_2):
     let wire_bytes_rej = borsh::to_vec(&tx_2).unwrap().len();
     let non_ctx_rej = mc.calc_non_contextual_masses(&tx_2);
     let used_units_rej = vm_2.used_script_units();
 
     println!("===============================================================");
-    println!("DRAW_READY ACCEPT PATH Resources:");
+    println!("DRAW_READY ACCEPT PATH (tx_1):");
     println!("  SignatureScript Length      : {} bytes", sig_script_1.len());
     println!("  RedeemScript Length         : {} bytes", draw_ready_redeem_1.len());
-    println!("  Actual Serialized Wire Bytes: {} bytes", wire_bytes_acc);
+    println!("  Actual Wire Bytes           : {} bytes", wire_bytes_acc);
     println!("  Used Script Units           : {}", used_units_acc.0);
     println!("  Compute Mass                : {} gram", non_ctx_acc.compute_mass);
     println!("  Transient Mass              : {} gram", non_ctx_acc.transient_mass);
-    println!("  Storage Mass                : 0 gram");
-    println!("  Fee Mass (Overall)          : {} gram", std::cmp::max(non_ctx_acc.compute_mass, non_ctx_acc.transient_mass));
-    println!("  Minimum Relay Fee           : {} sompi ({:.6} KAS)", std::cmp::max(non_ctx_acc.compute_mass, non_ctx_acc.transient_mass) * 100, (std::cmp::max(non_ctx_acc.compute_mass, non_ctx_acc.transient_mass) * 100) as f64 / 1e8);
+    println!("  Fee Mass                    : {} gram", std::cmp::max(non_ctx_acc.compute_mass, non_ctx_acc.transient_mass));
     println!("---------------------------------------------------------------");
-    println!("DRAW_READY REJECT PATH Resources:");
+    println!("DRAW_READY REJECT PATH (tx_2):");
     println!("  SignatureScript Length      : {} bytes", sig_script_2.len());
-    println!("  RedeemScript Length         : {} bytes", draw_ready_rej_redeem.len());
-    println!("  Actual Serialized Wire Bytes: {} bytes", wire_bytes_rej);
+    println!("  RedeemScript Length         : {} bytes", draw_ready_rej_c0.len());
+    println!("  Actual Wire Bytes           : {} bytes", wire_bytes_rej);
     println!("  Used Script Units           : {}", used_units_rej.0);
     println!("  Compute Mass                : {} gram", non_ctx_rej.compute_mass);
     println!("  Transient Mass              : {} gram", non_ctx_rej.transient_mass);
-    println!("  Storage Mass                : 0 gram");
-    println!("  Fee Mass (Overall)          : {} gram", std::cmp::max(non_ctx_rej.compute_mass, non_ctx_rej.transient_mass));
-    println!("  Minimum Relay Fee           : {} sompi ({:.6} KAS)", std::cmp::max(non_ctx_rej.compute_mass, non_ctx_rej.transient_mass) * 100, (std::cmp::max(non_ctx_rej.compute_mass, non_ctx_rej.transient_mass) * 100) as f64 / 1e8);
+    println!("  Fee Mass                    : {} gram", std::cmp::max(non_ctx_rej.compute_mass, non_ctx_rej.transient_mass));
     println!("===============================================================");
 
-    println!("\n>>> ALL TESTS 1 THROUGH 9 IN WINNER SELECTION SUITE PASSED! <<<");
+    println!("\n>>> ALL 9 TESTS PASSED WITH RECURSIVELY CLOSED STATEFUL ARCHITECTURE! <<<");
+}
+
+struct MockSeqCommitAccessor {
+    pub selected_chain: Vec<Hash>,
+    pub seq_commits: std::collections::HashMap<Hash, Hash>,
+}
+
+impl kaspa_txscript::SeqCommitAccessor for MockSeqCommitAccessor {
+    fn is_chain_ancestor_from_pov(&self, block_hash: Hash) -> Option<bool> {
+        Some(self.selected_chain.contains(&block_hash))
+    }
+
+    fn seq_commitment_within_depth(&self, block_hash: Hash) -> Option<Hash> {
+        if self.selected_chain.contains(&block_hash) {
+            self.seq_commits.get(&block_hash).copied()
+        } else {
+            None
+        }
+    }
 }

@@ -19,10 +19,13 @@ use std::collections::HashMap;
 mod sealed_to_draw_ready;
 use sealed_to_draw_ready::{
     build_sealed_to_draw_ready_covenant,
-    build_draw_ready_redeem_script,
     compute_application_commitment,
     compute_random_seed,
 };
+
+#[path = "../../../../contracts/winner_selection.rs"]
+mod winner_selection;
+use winner_selection::build_draw_ready_covenant;
 
 struct MockSeqCommitAccessor {
     pub selected_chain: Vec<Hash>,
@@ -200,13 +203,14 @@ fn main() {
     let app_commitment = compute_application_commitment(&round_id, &ticket_root, total_tickets);
     let expected_seed = compute_random_seed(&fixture.target_hash, &app_commitment);
 
-    let draw_ready_redeem = build_draw_ready_redeem_script(
+    let draw_ready_redeem = build_draw_ready_covenant(
         round_id,
         ticket_root,
         total_tickets,
         fixture.target_hash,
         expected_seed,
-    );
+        0,
+    ).unwrap();
     let draw_ready_spk = pay_to_script_hash_script(&draw_ready_redeem);
 
     let sig_cache = Cache::new(1000);
