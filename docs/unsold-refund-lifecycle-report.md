@@ -26,7 +26,11 @@ Under `rusty-kaspa/consensus/src/processes/transaction_validator/tx_validation_i
   1. `tx.lock_time < current_block_daa_score` (when `tx.lock_time < LOCK_TIME_THRESHOLD = 500_000_000_000`), OR
   2. Every input has `input.sequence == u64::MAX` (`constants::MaxTxInSequenceNum`).
 - Therefore, for `OpCheckLockTimeVerify` (CLTV) to be effective and binding, the spending transaction input **MUST NOT** set sequence to `u64::MAX`. In Kaswin, spending inputs use `sequence = 0`.
+- The consensus predicate `reference_check_tx_finalized_in_daa_context` used in test validation is a byte/logic-parity reference against the pinned rusty-kaspa header-context predicate (where `validate_tx_in_header_context` is crate-private).
 - If an attacker attempts to mine or broadcast a transaction with `tx.lock_time = refund_lock_daa` when `block_daa <= refund_lock_daa`, the transaction is rejected at the consensus header-context layer before execution.
+- Thus, valid refund spending requires:
+  $$\text{containing\_block\_daa} > \text{tx.lock\_time} \ge \text{refund\_lock\_daa}$$
+  Production clients fix $\text{tx.lock\_time} = \text{refund\_lock\_daa}$ and $\text{sequence} = 0$ for earliest legal confirmation. Contracts do not assert exact equality of lock_time; CLTV asserts $\ge$.
 
 ### 2.2 `OpCheckLockTimeVerify` (`0xb0`) Execution Semantics
 Under `rusty-kaspa/crypto/txscript/src/opcodes/mod.rs` (lines 1014–1060):
@@ -221,6 +225,12 @@ Total independent contract tests: 15 + 10 + 14 + 10 + 10 + 8 = 67.
 | **DRAW_READY Rejection** | 2,044 B | 2,041 B | 13,869 | ComputeBudget(1) | 9,116 g | 0.009116 KAS |
 | **WINNER_READY -> PAID** | 2,728 B | 1,769 B | 15,162 | ComputeBudget(1) | 11,716 g | 0.011716 KAS |
 
-*Note on CREATE*: The CREATE row above is fixture-only and excludes the unlocking/signature cost of the real funding input; it must not be treated as final end-to-end TN10 CREATE fee.
-*Note on Finality*: The refund time gate is enforced by consensus DAA finality rules; confirmed transactions remain subject to standard Kaspa reorg and finality semantics.
+## 8. Lifecycle & Artifact Freeze Status
+
+- **KIP-20 Covenant Lineage**: **PASS / FROZEN** (provenance, 1-in-1-out continuation, split rejection, terminal paid/refunded).
+- **Unsold Refund Core Logic**: **PASS / FROZEN** (CLTV gating, sequential SMT cursor refunding, empty reserve reclamation).
+- **Unsold Refund Lifecycle**: **PASS / FROZEN** (All 15 matrix cases A-O pass 100% in real VM, verified with bounded compute budgets).
+- **V1 Canonical CREATE Byte Artifact**: **NOT FROZEN**
+  *Reason*: The `OPEN` Final-BUY transition path embeds the production `SEALED` contract bytecode. In the subsequent protocol stage, if a recovery/liveness branch is added to `SEALED` for the KIP-21 access-window, the `SEALED` script bytes will change, which changes the `OPEN` script bytes, which changes the genesis Output 0 SPK, and consequently modifies the canonical KIP-20 `covenant_id` $C$. Therefore, the final canonical CREATE byte artifact and covenant ID can only be frozen once the full-sale liveness / KIP-21 recovery specification is formally frozen.
+
 

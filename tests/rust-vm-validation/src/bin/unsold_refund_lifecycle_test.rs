@@ -10,6 +10,7 @@ use kaspa_txscript::{
     covenants::CovenantsContext,
     standard::pay_to_script_hash_script,
 };
+use kaspa_txscript_errors::TxScriptError;
 use kaspa_consensus_core::mass::{ComputeBudget, Mass, ScriptUnits};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::config::params::TESTNET_PARAMS;
@@ -50,12 +51,13 @@ use genesis::{build_canonical_kaswin_genesis_output, validate_canonical_kaswin_c
 pub mod refunding_covenant;
 use refunding_covenant::build_refunding_covenant;
 
-// Helper to check transaction finality under consensus rules (matching check_tx_is_finalized in rusty-kaspa)
-fn check_tx_finalized_in_header_context(tx: &Transaction, block_daa_score: u64) -> Result<(), &'static str> {
+// Reference helper to check transaction finality under consensus rules (matching check_tx_is_finalized in rusty-kaspa)
+// byte/logic-parity reference against pinned rusty-kaspa header-context predicate
+fn reference_check_tx_finalized_in_daa_context(tx: &Transaction, block_daa_score: u64) -> Result<(), &'static str> {
     if tx.lock_time < block_daa_score {
         return Ok(());
     }
-    for (i, input) in tx.inputs.iter().enumerate() {
+    for input in tx.inputs.iter() {
         if input.sequence != u64::MAX {
             return Err("Transaction not finalized in header context: lock_time not reached and inputs not max sequence");
         }
@@ -100,7 +102,7 @@ fn main() {
         refund_lock_daa,
         reserve_payout_spk.clone(),
         initial_reserve,
-    );
+    ).expect("valid canonical genesis creation");
 
     let default_reserve_spk = reserve_payout_spk.clone();
     let default_refund_lock_daa = refund_lock_daa;
@@ -197,6 +199,55 @@ fn main() {
     assert_eq!(res_a, Ok(()));
     println!("  -> PASS: BUY before deadline confirmed in VM! [Units: {:?}, B_min: {:?}]", u_buy, b_min_buy);
 
+    // Strict B_min bounded script units execution proof:
+    {
+        let mut tx_a_bmin = tx_a.clone();
+        tx_a_bmin.inputs[0].compute_commit = ComputeCommit::ComputeBudget(b_min_buy);
+        let pop_a_bmin = PopulatedTransaction::new(&tx_a_bmin, vec![UtxoEntry::new(
+            initial_reserve,
+            initial_open_spk.clone(),
+            1_000_000,
+            false,
+            Some(covenant_id_c),
+        )]);
+        let cov_ctx = CovenantsContext::from_tx(&pop_a_bmin).unwrap();
+        let ctx = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx);
+        let mut vm = TxScriptEngine::from_transaction_input_with_script_units_limit(
+            &pop_a_bmin,
+            &pop_a_bmin.tx.inputs[0],
+            0,
+            &pop_a_bmin.entries[0],
+            ctx,
+            flags,
+            tx_a_bmin.inputs[0].compute_commit.allowed_script_units(),
+        );
+        assert_eq!(vm.execute(), Ok(()), "OPEN BUY must PASS with exact B_min");
+
+        if b_min_buy.0 > 0 {
+            let mut tx_a_tight = tx_a.clone();
+            tx_a_tight.inputs[0].compute_commit = ComputeCommit::ComputeBudget(ComputeBudget(b_min_buy.0 - 1));
+            let pop_a_tight = PopulatedTransaction::new(&tx_a_tight, vec![UtxoEntry::new(
+                initial_reserve,
+                initial_open_spk.clone(),
+                1_000_000,
+                false,
+                Some(covenant_id_c),
+            )]);
+            let cov_ctx_tight = CovenantsContext::from_tx(&pop_a_tight).unwrap();
+            let ctx_tight = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tight);
+            let mut vm_tight = TxScriptEngine::from_transaction_input_with_script_units_limit(
+                &pop_a_tight,
+                &pop_a_tight.tx.inputs[0],
+                0,
+                &pop_a_tight.entries[0],
+                ctx_tight,
+                flags,
+                tx_a_tight.inputs[0].compute_commit.allowed_script_units(),
+            );
+            assert!(matches!(vm_tight.execute(), Err(TxScriptError::ExceededCommittedScriptUnits { .. })), "OPEN BUY must FAIL with B_min - 1");
+        }
+    }
+
     // -------------------------------------------------------------
     // B. BUY after deadline (proves race semantics: buying remains active)
     // -------------------------------------------------------------
@@ -257,7 +308,7 @@ fn main() {
     );
 
     // 1. Consensus Header Context Check: block DAA = 1_400_000 <= 1_500_000
-    let res_header_c = check_tx_finalized_in_header_context(&tx_ref_early, 1_400_000);
+    let res_header_c = reference_check_tx_finalized_in_daa_context(&tx_ref_early, 1_400_000);
     assert!(res_header_c.is_err());
     println!("  -> PASS: Consensus Header-Context rejected early refund transaction: {:?}", res_header_c);
 
@@ -282,7 +333,7 @@ fn main() {
     // -------------------------------------------------------------
     println!("\n[Test D] BEGIN_REFUND after deadline (block DAA = 1_600_000 > 1_500_000)");
     // 1. Consensus Header Context Check:
-    let res_header_d = check_tx_finalized_in_header_context(&tx_ref_early, 1_600_000);
+    let res_header_d = reference_check_tx_finalized_in_daa_context(&tx_ref_early, 1_600_000);
     assert_eq!(res_header_d, Ok(()));
     println!("  -> Consensus Header-Context: Finalized & Eligible");
 
@@ -301,6 +352,55 @@ fn main() {
     let u_begin_ref = vm_d.used_script_units();
     let b_min_begin_ref = ComputeBudget::checked_covering_script_units(u_begin_ref).unwrap();
     println!("  -> PASS: BEGIN_REFUND confirmed in VM! OPEN(5,1) -> REFUNDING(cursor=0, rem=5) [Units: {:?}, B_min: {:?}]", u_begin_ref, b_min_begin_ref);
+
+    // Strict B_min bounded script units execution proof:
+    {
+        let mut tx_d_bmin = tx_ref_early.clone();
+        tx_d_bmin.inputs[0].compute_commit = ComputeCommit::ComputeBudget(b_min_begin_ref);
+        let pop_d_bmin = PopulatedTransaction::new(&tx_d_bmin, vec![UtxoEntry::new(
+            initial_reserve + ticket_price * count_1,
+            next_open_spk_1.clone(),
+            1_600_000,
+            false,
+            Some(covenant_id_c),
+        )]);
+        let cov_ctx = CovenantsContext::from_tx(&pop_d_bmin).unwrap();
+        let ctx = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx);
+        let mut vm = TxScriptEngine::from_transaction_input_with_script_units_limit(
+            &pop_d_bmin,
+            &pop_d_bmin.tx.inputs[0],
+            0,
+            &pop_d_bmin.entries[0],
+            ctx,
+            flags,
+            tx_d_bmin.inputs[0].compute_commit.allowed_script_units(),
+        );
+        assert_eq!(vm.execute(), Ok(()), "BEGIN_REFUND must PASS with exact B_min");
+
+        if b_min_begin_ref.0 > 0 {
+            let mut tx_d_tight = tx_ref_early.clone();
+            tx_d_tight.inputs[0].compute_commit = ComputeCommit::ComputeBudget(ComputeBudget(b_min_begin_ref.0 - 1));
+            let pop_d_tight = PopulatedTransaction::new(&tx_d_tight, vec![UtxoEntry::new(
+                initial_reserve + ticket_price * count_1,
+                next_open_spk_1.clone(),
+                1_600_000,
+                false,
+                Some(covenant_id_c),
+            )]);
+            let cov_ctx_tight = CovenantsContext::from_tx(&pop_d_tight).unwrap();
+            let ctx_tight = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tight);
+            let mut vm_tight = TxScriptEngine::from_transaction_input_with_script_units_limit(
+                &pop_d_tight,
+                &pop_d_tight.tx.inputs[0],
+                0,
+                &pop_d_tight.entries[0],
+                ctx_tight,
+                flags,
+                tx_d_tight.inputs[0].compute_commit.allowed_script_units(),
+            );
+            assert!(matches!(vm_tight.execute(), Err(TxScriptError::ExceededCommittedScriptUnits { .. })), "BEGIN_REFUND must FAIL with B_min - 1");
+        }
+    }
 
     // -------------------------------------------------------------
     // E. BEGIN_REFUND with sold=0 (Must FAIL, cannot enter refunding when no tickets sold)
@@ -382,6 +482,55 @@ fn main() {
     let u_rec_empty = vm_f.used_script_units();
     let b_min_rec_empty = ComputeBudget::checked_covering_script_units(u_rec_empty).unwrap();
     println!("  -> PASS: RECOVER_EMPTY confirmed in VM! Lineage terminated and reserve reclaimed [Units: {:?}, B_min: {:?}]", u_rec_empty, b_min_rec_empty);
+
+    // Strict B_min bounded script units execution proof:
+    {
+        let mut tx_f_bmin = tx_f.clone();
+        tx_f_bmin.inputs[0].compute_commit = ComputeCommit::ComputeBudget(b_min_rec_empty);
+        let pop_f_bmin = PopulatedTransaction::new(&tx_f_bmin, vec![UtxoEntry::new(
+            initial_reserve,
+            initial_open_spk.clone(),
+            1_600_000,
+            false,
+            Some(covenant_id_c),
+        )]);
+        let cov_ctx = CovenantsContext::from_tx(&pop_f_bmin).unwrap();
+        let ctx = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx);
+        let mut vm = TxScriptEngine::from_transaction_input_with_script_units_limit(
+            &pop_f_bmin,
+            &pop_f_bmin.tx.inputs[0],
+            0,
+            &pop_f_bmin.entries[0],
+            ctx,
+            flags,
+            tx_f_bmin.inputs[0].compute_commit.allowed_script_units(),
+        );
+        assert_eq!(vm.execute(), Ok(()), "RECOVER_EMPTY must PASS with exact B_min");
+
+        if b_min_rec_empty.0 > 0 {
+            let mut tx_f_tight = tx_f.clone();
+            tx_f_tight.inputs[0].compute_commit = ComputeCommit::ComputeBudget(ComputeBudget(b_min_rec_empty.0 - 1));
+            let pop_f_tight = PopulatedTransaction::new(&tx_f_tight, vec![UtxoEntry::new(
+                initial_reserve,
+                initial_open_spk.clone(),
+                1_600_000,
+                false,
+                Some(covenant_id_c),
+            )]);
+            let cov_ctx_tight = CovenantsContext::from_tx(&pop_f_tight).unwrap();
+            let ctx_tight = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tight);
+            let mut vm_tight = TxScriptEngine::from_transaction_input_with_script_units_limit(
+                &pop_f_tight,
+                &pop_f_tight.tx.inputs[0],
+                0,
+                &pop_f_tight.entries[0],
+                ctx_tight,
+                flags,
+                tx_f_tight.inputs[0].compute_commit.allowed_script_units(),
+            );
+            assert!(matches!(vm_tight.execute(), Err(TxScriptError::ExceededCommittedScriptUnits { .. })), "RECOVER_EMPTY must FAIL with B_min - 1");
+        }
+    }
 
     // -------------------------------------------------------------
     // G. recoverEmpty sold > 0 (Must FAIL, cannot skim ticket funds)
@@ -524,6 +673,55 @@ fn main() {
     let b_min_ref_step = ComputeBudget::checked_covering_script_units(u_ref_step).unwrap();
     println!("  -> PASS: Step H1 (Refund Purchase 0) succeeded! [Units: {:?}, B_min: {:?}]", u_ref_step, b_min_ref_step);
 
+    // Strict B_min bounded script units execution proof:
+    {
+        let mut tx_h1_bmin = tx_h1.clone();
+        tx_h1_bmin.inputs[0].compute_commit = ComputeCommit::ComputeBudget(b_min_ref_step);
+        let pop_h1_bmin = PopulatedTransaction::new(&tx_h1_bmin, vec![UtxoEntry::new(
+            pool_amt_15,
+            refunding_spk_c0.clone(),
+            1_000_000,
+            false,
+            Some(covenant_id_c),
+        )]);
+        let cov_ctx = CovenantsContext::from_tx(&pop_h1_bmin).unwrap();
+        let ctx = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx);
+        let mut vm = TxScriptEngine::from_transaction_input_with_script_units_limit(
+            &pop_h1_bmin,
+            &pop_h1_bmin.tx.inputs[0],
+            0,
+            &pop_h1_bmin.entries[0],
+            ctx,
+            flags,
+            tx_h1_bmin.inputs[0].compute_commit.allowed_script_units(),
+        );
+        assert_eq!(vm.execute(), Ok(()), "REFUNDING normal must PASS with exact B_min");
+
+        if b_min_ref_step.0 > 0 {
+            let mut tx_h1_tight = tx_h1.clone();
+            tx_h1_tight.inputs[0].compute_commit = ComputeCommit::ComputeBudget(ComputeBudget(b_min_ref_step.0 - 1));
+            let pop_h1_tight = PopulatedTransaction::new(&tx_h1_tight, vec![UtxoEntry::new(
+                pool_amt_15,
+                refunding_spk_c0.clone(),
+                1_000_000,
+                false,
+                Some(covenant_id_c),
+            )]);
+            let cov_ctx_tight = CovenantsContext::from_tx(&pop_h1_tight).unwrap();
+            let ctx_tight = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tight);
+            let mut vm_tight = TxScriptEngine::from_transaction_input_with_script_units_limit(
+                &pop_h1_tight,
+                &pop_h1_tight.tx.inputs[0],
+                0,
+                &pop_h1_tight.entries[0],
+                ctx_tight,
+                flags,
+                tx_h1_tight.inputs[0].compute_commit.allowed_script_units(),
+            );
+            assert!(matches!(vm_tight.execute(), Err(TxScriptError::ExceededCommittedScriptUnits { .. })), "REFUNDING normal must FAIL with B_min - 1");
+        }
+    }
+
     // STEP H2: Final Refund Purchase 1 (cursor 1 -> terminal refund)
     let mut sig_sb_h2 = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() { sig_sb_h2.add_data(&siblings_2[i].as_bytes()).unwrap(); }
@@ -575,6 +773,55 @@ fn main() {
     let u_ref_final = vm_h2.used_script_units();
     let b_min_ref_final = ComputeBudget::checked_covering_script_units(u_ref_final).unwrap();
     println!("  -> PASS: Step H2 (Final Refund Purchase 1) succeeded! Lineage terminated and reserve reclaimed! [Units: {:?}, B_min: {:?}]", u_ref_final, b_min_ref_final);
+
+    // Strict B_min bounded script units execution proof:
+    {
+        let mut tx_h2_bmin = tx_h2.clone();
+        tx_h2_bmin.inputs[0].compute_commit = ComputeCommit::ComputeBudget(b_min_ref_final);
+        let pop_h2_bmin = PopulatedTransaction::new(&tx_h2_bmin, vec![UtxoEntry::new(
+            pool_amt_10,
+            refunding_spk_c1.clone(),
+            1_000_001,
+            false,
+            Some(covenant_id_c),
+        )]);
+        let cov_ctx = CovenantsContext::from_tx(&pop_h2_bmin).unwrap();
+        let ctx = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx);
+        let mut vm = TxScriptEngine::from_transaction_input_with_script_units_limit(
+            &pop_h2_bmin,
+            &pop_h2_bmin.tx.inputs[0],
+            0,
+            &pop_h2_bmin.entries[0],
+            ctx,
+            flags,
+            tx_h2_bmin.inputs[0].compute_commit.allowed_script_units(),
+        );
+        assert_eq!(vm.execute(), Ok(()), "REFUNDING final must PASS with exact B_min");
+
+        if b_min_ref_final.0 > 0 {
+            let mut tx_h2_tight = tx_h2.clone();
+            tx_h2_tight.inputs[0].compute_commit = ComputeCommit::ComputeBudget(ComputeBudget(b_min_ref_final.0 - 1));
+            let pop_h2_tight = PopulatedTransaction::new(&tx_h2_tight, vec![UtxoEntry::new(
+                pool_amt_10,
+                refunding_spk_c1.clone(),
+                1_000_001,
+                false,
+                Some(covenant_id_c),
+            )]);
+            let cov_ctx_tight = CovenantsContext::from_tx(&pop_h2_tight).unwrap();
+            let ctx_tight = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_tight);
+            let mut vm_tight = TxScriptEngine::from_transaction_input_with_script_units_limit(
+                &pop_h2_tight,
+                &pop_h2_tight.tx.inputs[0],
+                0,
+                &pop_h2_tight.entries[0],
+                ctx_tight,
+                flags,
+                tx_h2_tight.inputs[0].compute_commit.allowed_script_units(),
+            );
+            assert!(matches!(vm_tight.execute(), Err(TxScriptError::ExceededCommittedScriptUnits { .. })), "REFUNDING final must FAIL with B_min - 1");
+        }
+    }
 
     // -------------------------------------------------------------
     // I. Try refund purchase_index != cursor (Must FAIL)
