@@ -16,11 +16,6 @@
 //
 // 7. counter_push:  OpData8  (0x08) || 8B LE = 9 bytes (Fixed 8B LE push)
 // 8. SUFFIX:        sampling, accept transition, self-replicating reject transition
-//
-// Truly Self-Replicating Successor Architecture:
-// In the reject path, DRAW_READY(c) dynamically constructs the exact Redeem Script of DRAW_READY(c + 1)
-// via script introspection (`OpTxInputScriptSigSubstr`), completely eliminating lookahead recursion,
-// dummy leaves, or off-chain precomputed successor chains.
 
 use kaspa_hashes::Hash;
 use kaspa_txscript::{
@@ -235,11 +230,17 @@ pub fn build_draw_ready_covenant(
     Ok(full_script)
 }
 
+/// Returns the exact canonical suffix length for a given total_tickets N.
+pub fn canonical_suffix_len(total_tickets: u64) -> usize {
+    build_complete_draw_ready_suffix(total_tickets).len()
+}
+
+/// Builds complete suffix with strict fixed-point convergence enforcement
 pub fn build_complete_draw_ready_suffix(
     total_tickets: u64,
 ) -> Vec<u8> {
     let mut current_len = 0;
-    for _ in 0..5 {
+    for _ in 0..16 {
         let compiled = compile_suffix_body(
             total_tickets,
             current_len,
@@ -249,10 +250,7 @@ pub fn build_complete_draw_ready_suffix(
         }
         current_len = compiled.len();
     }
-    compile_suffix_body(
-        total_tickets,
-        current_len,
-    )
+    panic!("Strict fixed point failed to converge for total_tickets = {}", total_tickets);
 }
 
 fn compile_suffix_body(

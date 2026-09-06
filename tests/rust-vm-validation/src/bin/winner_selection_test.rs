@@ -20,6 +20,7 @@ use winner_selection::{
     build_canonical_winner_ready_redeem_script,
     build_draw_ready_prefix,
     build_complete_draw_ready_suffix,
+    canonical_suffix_len,
     reference_winner_step,
     WinnerStepResult,
     MAX_TOTAL_TICKETS,
@@ -167,9 +168,9 @@ fn main() {
     let flags = EngineFlags { covenants_enabled: true, ..Default::default() };
 
     // -------------------------------------------------------------
-    // TEST 1-4: Encoding-Class Layout Identity across N = [1, 100, 128, 100_000_000]
+    // TEST 1-4: Encoding-Class Layout & Suffix Fixed-Point Proof across N = [1, 100, 128, 100M]
     // -------------------------------------------------------------
-    println!("\n--- TEST 1-4: Canonical Layout & Prefix Length Verification ---");
+    println!("\n--- TEST 1-4: Canonical Layout & Suffix Fixed-Point Verification ---");
     let test_ns = [1u64, 100u64, 128u64, 100_000_000u64];
     for &n in &test_ns {
         let sc_0 = build_draw_ready_covenant(round_id, ticket_root, n, target_hash, Hash::from_u64_word(100), 0).unwrap();
@@ -179,11 +180,16 @@ fn main() {
         let prefix = build_draw_ready_prefix(&round_id, &ticket_root, n, &target_hash, &Hash::from_u64_word(100));
         assert_eq!(prefix.len(), DRAW_READY_PREFIX_LEN, "Prefix length must strictly be 144B for N={}", n);
 
+        // Verify suffix fixed point:
+        let s_len = canonical_suffix_len(n);
+        let actual_suffix = build_complete_draw_ready_suffix(n);
+        assert_eq!(s_len, actual_suffix.len(), "Suffix fixed point failed for N={}", n);
+
         assert_eq!(sc_0.len(), sc_1.len(), "Redeem length mismatch for N={}", n);
         assert_eq!(sc_0.len(), sc_max.len(), "Redeem length mismatch for N={} at max counter", n);
-        println!("  N = {:<11}: prefix_len = {} (exact), total_redeem_len = {} (exact constant)", n, prefix.len(), sc_0.len());
+        println!("  N = {:<11}: prefix_len = {} (exact), suffix_len = {} (fixed point), total_len = {}", n, prefix.len(), s_len, sc_0.len());
     }
-    println!("Canonical layout identity verified for all test N classes [1, 100, 128, 100M]!");
+    println!("Canonical layout & strict suffix fixed-point verified for all test N classes [1, 100, 128, 100M]!");
 
     // -------------------------------------------------------------
     // TEST 5: SEALED -> Exact Production DRAW_READY(0) across N = [1, 100, 100M]
@@ -364,7 +370,7 @@ fn main() {
     assert_eq!(res_accept, Ok(()), "Accept candidate must transition to WINNER_READY");
 
     // -------------------------------------------------------------
-    // TEST 8: Skip c -> c + 2 -> FAIL
+    // TEST 8: Tampered Winner Output -> FAIL
     // -------------------------------------------------------------
     println!("\n--- TEST 8: Tampered Winner Output -> FAIL ---");
     let tampered_winner_redeem = build_canonical_winner_ready_redeem_script(
