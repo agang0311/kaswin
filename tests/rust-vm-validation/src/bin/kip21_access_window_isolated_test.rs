@@ -208,7 +208,66 @@ fn main() {
     assert!(matches!(res_f, Err(TxScriptError::BlockIsTooDeep(_))));
     println!("  -> PASS: OpChainblockSeqCommit halts execution immediately on BlockIsTooDeep; cannot be branched or caught!");
 
+    // -------------------------------------------------------------
+    // Test G: G = 432_000 (> 0xffff) 32-bit relative sequence lock proof
+    // -------------------------------------------------------------
+    println!("\n[Test G] G = 432_000 (> 0xffff) 32-bit relative sequence lock proof");
+    let g_v1 = 432_000u64;
+    assert!(g_v1 > 0xffff, "G must exceed 16-bit 0xffff");
+    assert_eq!(g_v1 & SEQUENCE_LOCK_TIME_MASK, g_v1, "32-bit mask must preserve 432_000");
+
+    let tx_g = Transaction::new(
+        1,
+        vec![TransactionInput::new_with_mass(
+            TransactionOutpoint::new(Hash::from_u64_word(3), 0),
+            vec![],
+            g_v1, // sequence = 432_000
+            ComputeCommit::ComputeBudget(kaspa_consensus_core::mass::ComputeBudget(0)),
+        )],
+        vec![TransactionOutput {
+            value: 10_000_000,
+            script_public_key: kaspa_consensus_core::tx::ScriptPublicKey::from_vec(0, vec![]),
+            covenant: None,
+        }],
+        0, SubnetworkId::default(), 0, vec![],
+    );
+    let pop_g = kaspa_consensus_core::tx::PopulatedTransaction::new(&tx_g, vec![
+        UtxoEntry::new(10_000_000, kaspa_consensus_core::tx::ScriptPublicKey::from_vec(0, vec![]), d0, false, None)
+    ]);
+    // lock_daa = d0 + 432_000 - 1
+    // At PoV = d0 + 432_000 - 1: lock_daa >= pov_daa -> FAIL
+    let res_g_early = reference_check_sequence_lock(&pop_g, d0 + g_v1 - 1);
+    assert!(res_g_early.is_err());
+    println!("  -> PASS: PoV DAA (D0 + 432_000 - 1) rejected with {:?}", res_g_early.err().unwrap());
+
+    // At PoV = d0 + 432_000: lock_daa < pov_daa -> PASS
+    let res_g_mature = reference_check_sequence_lock(&pop_g, d0 + g_v1);
+    assert_eq!(res_g_mature, Ok(()));
+    println!("  -> PASS: PoV DAA (D0 + 432_000) sequence lock accepted!");
+
+    // OpCheckSequenceVerify in VM with G = 432_000:
+    let mut sb_csv_g = ScriptBuilder::with_flags(flags);
+    sb_csv_g.add_data(&g_v1.to_le_bytes()).unwrap();
+    sb_csv_g.add_op(OpCheckSequenceVerify).unwrap();
+    sb_csv_g.add_op(OpTrue).unwrap();
+    let script_csv_g = sb_csv_g.drain();
+
+    let pop_g_vm = kaspa_consensus_core::tx::PopulatedTransaction::new(&tx_g, vec![
+        UtxoEntry::new(10_000_000, kaspa_consensus_core::tx::ScriptPublicKey::from_vec(0, script_csv_g), d0, false, None)
+    ]);
+    let ctx_csv_g = EngineCtx::new(&sig_cache).with_reused(&reused);
+    let mut vm_csv_g = TxScriptEngine::from_transaction_input(&pop_g_vm, &pop_g_vm.tx.inputs[0], 0, &pop_g_vm.entries[0], ctx_csv_g, flags);
+    assert_eq!(vm_csv_g.execute(), Ok(()));
+    println!("  -> PASS: OpCheckSequenceVerify(432_000) verified Ok(()) with matching 32-bit sequence!");
+
+    // -------------------------------------------------------------
+    // Test H: assert SEQUENCE_LOCK_TIME_MASK == 0x00000000ffffffff
+    // -------------------------------------------------------------
+    println!("\n[Test H] assert SEQUENCE_LOCK_TIME_MASK == 0x00000000ffffffff");
+    assert_eq!(SEQUENCE_LOCK_TIME_MASK, 0x00000000ffffffffu64);
+    println!("  -> PASS: Pinned consensus SEQUENCE_LOCK_TIME_MASK is exactly 0x00000000ffffffff (32-bit)!");
+
     println!("\n===============================================================");
-    println!("ALL 6 ISOLATED TESTS (A - F) PASSED 100%!");
+    println!("ALL 8 ISOLATED TESTS (A - H) PASSED 100%!");
     println!("===============================================================");
 }

@@ -177,56 +177,75 @@ Because the target block header is public knowledge before the draw transaction 
 
 **Crucial Protocol Finding**:
 This race **does not bias the Kaspa PoW random seed derivation**. However, it introduces an **ex-post cancellation option** if the draw grace period expires before anyone triggers the draw.
-In a decentralized protocol without keepers, this trade-off is accepted by defining $G$ as a sufficiently long **Permissionless Draw Grace Period** (e.g., 2 to 6 hours on Testnet-10). If nobody claims or triggers the draw during this entire window, the round is deemed abandoned and cancels back to buyers.
+In Kaswin V1, this trade-off is accepted by defining $G$ as a fixed, canonical **Application Policy Grace Period** of approximately 12 hours (432,000 DAA). If nobody claims or triggers the draw during this entire nominal window, the round is deemed abandoned and enters the full-refund cancellation race.
 
 ---
 
 ## 8. Historical / ZK Proving Alternative Analysis
 
 We evaluated whether a historical zero-knowledge proof or Merkle ancestry bridge could prove target block expiration or bridge old SeqCommitments:
-- **KIP-21 Proving Spec Status**: The companion document `references/kips/kip-0021/proving-spec.md` is currently marked **"Status: Reserved companion document"** and provides no normative witness formats or verification specs for L1 covenants.
-- **ZK Verifier Requirements**: Validating GHOSTDAG selected-parent continuity or STARK/SNARK proofs requires an on-chain verifier (`OpZkPrecompile` / KIP-16), which is not activated on Kaspa L1 mainnet/TN10.
-- **Hash-Chain Shortcut Fallacy**: Incrementally hashing `H_seq` across thousands of blocks cannot authenticate historical selected-parent continuity without full header verification inside script, which would far exceed Kaspa transaction mass and script limits.
+- **ZK Verifier Availability**: Pinned KIP-16 is `Status: Active`. In `rusty-kaspa/crypto/txscript/src/opcodes/mod.rs`, `OpZkPrecompile` (`0xa6`) is fully available and functional when `vm.flags.covenants_enabled` is true, natively supporting `ZkTag::Groth16` (`0x20`) and `ZkTag::R0Succinct` (`0x21`).
+- **KIP-21 Proving Spec Status**: However, companion document `references/kips/kip-0021/proving-spec.md` is currently marked **"Status: Reserved companion document"** and provides no normative witness formats or verification specs for L1 covenants.
+- **Complexity and Audit Burden**: Building a custom Kaswin guest and prover to verify historical selected-parent continuity, GHOSTDAG validity, and bridge old SeqCommitments to recent ones would require a dedicated custom ZK architecture, massive witness payloads, and a separate security audit.
+- **Hash-Chain Shortcut Fallacy**: Incrementally hashing `H_seq` across thousands of blocks without full header verification inside script cannot authenticate historical selected-parent continuity.
 
-**Status Verdict**: **NOT CURRENTLY SPECIFIED / IMPRACTICAL FOR V1**.
-
----
-
-## 9. Recovery Delay Policy ($G$)
-
-$G$ is measured in DAA score units (1 sompi/second at 10 BPS).
-Constraints:
-1. $G > \text{delta\_daa}$ (recovery cannot unlock before the target block is mined).
-2. $G \le \text{SEQUENCE\_LOCK\_TIME\_MASK} = 0x000000000000FFFF$ (65,535 DAA score units $\approx$ 109 minutes at 10 BPS).
-
-*Distinction*:
-- **Consensus Safety Bound**: None exists natively to prove KIP-21 window expiry in DAA units.
-- **Application Policy Grace Period**: $G$ is strictly an application grace period during which draw execution has exclusive liveness.
+**Status Verdict**: **TECHNICALLY POSSIBLE IN PRINCIPLE, BUT NOT CURRENTLY SPECIFIED FOR KIP-21 AND DEFERRED FROM V1 SCOPE**.
 
 ---
 
-## 10. Isolated Test Results (6/6 PASS)
+## 9. Parameter Freezing for V1 Liveness
 
-The test suite in `tests/rust-vm-validation/src/bin/kip21_access_window_isolated_test.rs` validates all 6 isolated proof cases:
+### 9.1 DELTA_DAA_V1 Frozen to 100
+- $\text{DELTA\_DAA\_V1} = 100$ DAA score units.
+- Canonical round creation in V1 will strictly enforce $\text{delta\_daa} == 100$. Creator-configured delta is prohibited because choosing $\Delta \approx G$ would destroy the exclusive draw window.
+
+### 9.2 FULL_SALE_RECOVERY_DELAY_DAA_V1 Frozen to 432,000
+- $\text{FULL\_SALE\_RECOVERY\_DELAY\_DAA\_V1} = 432,000$ DAA score units.
+- The 10-BPS Kaspa network nominally advances approximately 10 DAA-score units per second (independent of sompi currency units).
+- Based on pinned consensus parameters: $\text{FINALITY\_DURATION} = 43,200\text{ seconds}$, so $10 \times 43,200 = 432,000$ DAA units $\approx 12\text{ hours}$.
+- **Consensus vs. Policy Distinction**: 432,000 DAA is **NOT** a mathematical equivalence proof of 432,000 blue score steps, and does not prove that the target block is `BlockIsTooDeep`. It is strictly an **Application Policy Grace Period**.
+- **No Creator-Configured $G$ in V1**: Creator-selected $G$ is prohibited in canonical V1:
+  - If $G$ is too small, losing participants gain an early cancellation option;
+  - If $G$ is too large, round funds can be strategically griefed and locked for unreasonable durations.
+  Therefore, canonical V1 fixes $G = 432,000$ exactly.
+
+### 9.3 Nominal Economic Timeline
+$$\text{SEALED input DAA} = D_0$$
+$$\text{Target boundary} = D_0 + 100$$
+$$\text{Nominal exclusive draw grace} = 431,900\text{ DAA units} \ (\approx 11.99\text{ hours})$$
+$$\text{Full refund maturity} = D_0 + 432,000$$
+
+- For $\text{PoV DAA} < D_0 + 432,000$: `ACTION_FULL_REFUND` is strictly blocked by consensus sequence lock and CSV.
+- For $\text{PoV DAA} \ge D_0 + 432,000$: `ACTION_FULL_REFUND` becomes eligible. If the target block is still accessible, draw and refund enter an ex-post cancellation race for the same UTXO.
+
+### 9.4 32-Bit Sequence Mask Consensus Truth
+In `rusty-kaspa/consensus/core/src/constants.rs`:
+$$\text{SEQUENCE\_LOCK\_TIME\_MASK} = \text{0x00000000ffffffff} \ (32\text{-bit})$$
+The maximum relative lock is $4,294,967,295$ DAA units ($\approx 13.6$ years at 10 BPS), easily accommodating $G = 432,000$. Prior references to 16-bit / 65,535 limits are consensus errors and are fully superseded.
+
+---
+
+## 10. Isolated Test Results (8/8 PASS)
+
+The test suite in `tests/rust-vm-validation/src/bin/kip21_access_window_isolated_test.rs` validates all 8 isolated proof cases:
 
 | Test | Description | Result | Details |
 | :--- | :--- | :---: | :--- |
 | **Test A** | Target within accessor threshold | **PASS** | `OpChainblockSeqCommit` succeeds and returns Merkle root |
-| **Test B** | Target exceeds accessor depth | **PASS** | Halts with `TxScriptError::BlockIsTooDeep`, proves non-boolean |
+| **Test B** | Target exceeds accessor depth | **PASS** | Halts with fatal `TxScriptError::BlockIsTooDeep` |
 | **Test C** | Relative recovery before maturity ($DAA < D_0 + G$) | **PASS** | Rejected with `SequenceLockConditionsAreNotMet` |
 | **Test D** | Relative recovery at maturity ($DAA = D_0 + G$) | **PASS** | UTXO sequence lock & `OpCheckSequenceVerify` both pass |
 | **Test E** | Sequence disabled-bit bypass attempt | **PASS** | Blocked with `TxScriptError::UnsatisfiedLockTime` |
 | **Test F** | Attempting to catch `BlockIsTooDeep` with `IF/ELSE` | **PASS** | Fatal error cannot be branched; script aborts immediately |
+| **Test G** | $G = 432,000\ (> 0xFFFF)$ 32-bit sequence lock proof | **PASS** | Rejects at $D_0 + G - 1$, passes at $D_0 + G$ and via CSV |
+| **Test H** | Consensus mask equality assertion | **PASS** | `SEQUENCE_LOCK_TIME_MASK == 0x00000000ffffffff` verified |
 
 ---
 
-## 11. Architectural Decision: OPTION A
+## 11. Architectural Decision & Protocol Freeze Status
 
-We select **OPTION A: NATIVE TIMEOUT REFUND ACCEPTED FOR V1**.
+- **FULL-SALE LIVENESS DESIGN**: **PASS / FROZEN**
+  (Option A with fixed $\Delta = 100$ and fixed $G = 432,000$ accepted).
+- **V1 CANONICAL CREATE BYTE ARTIFACT**: **NOT FROZEN**
+  *Reason*: Production `SEALED` and `OPEN` covenants have not yet integrated the dual-action selector and successor script reconstruction bytecode.
 
-### Specification of Option A
-1. `SEALED` includes a permissionless draw grace period enforced via relative DAA delay $G$ using `OpCheckSequenceVerify`.
-2. During the grace period ($DAA < D_0 + G$), only `ACTION_DRAW` is valid.
-3. After the grace period ($DAA \ge D_0 + G$), `ACTION_FULL_REFUND` unlocks, transitioning to `REFUNDING(cursor=0, rem=N)`.
-4. If a round is abandoned, participants recover 100% of their ticket funds and the creator recovers their reserve through the frozen `REFUNDING` pipeline.
-5. If the target is still accessible after $G$, any race between draw and refund is accepted as a standard permissionless cancellation semantic.
