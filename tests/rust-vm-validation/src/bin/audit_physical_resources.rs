@@ -13,6 +13,8 @@ use kaspa_txscript::{
     EngineFlags,
 };
 
+use kaspa_txscript::script_class::ScriptClass;
+
 #[path = "../../../../contracts/v1_constants.rs"]
 pub mod v1_constants;
 use v1_constants::{DELTA_DAA_V1, FULL_SALE_RECOVERY_DELAY_DAA_V1};
@@ -60,11 +62,16 @@ fn make_p2pk_unlock_placeholder() -> Vec<u8> {
     vec![0x41; 66]
 }
 
-/// Standard 34-byte P2PK script public key: 0x00, 0x00, 32-byte pubkey
+/// Standard 34-byte P2PK script public key:
+/// OpData32 (0x20) || 32-byte pubkey || OpCheckSig (0xac)
 fn make_p2pk_spk(tag: u8) -> ScriptPublicKey {
-    let mut script = vec![0x00, 0x00];
+    let mut script = vec![0x20];
     script.extend(vec![tag; 32]);
-    ScriptPublicKey::from_vec(0, script)
+    script.push(0xac);
+    let spk = ScriptPublicKey::from_vec(0, script);
+    assert_eq!(ScriptClass::from_script(&spk), ScriptClass::PubKey);
+    assert_eq!(spk.script().len(), 34);
+    spk
 }
 
 fn calc_min_relay_fee(fee_mass: u64) -> u64 {
