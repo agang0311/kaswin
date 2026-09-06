@@ -19,6 +19,9 @@
 // Stack depth on entry to suffix: 37 items.
 
 use kaspa_hashes::Hash;
+
+#[path = "ticket_commitment.rs"]
+pub mod ticket_commitment;
 use kaspa_txscript::{
     opcodes::codes::*,
     script_builder::{ScriptBuilder, ScriptBuilderResult},
@@ -113,6 +116,9 @@ pub fn build_winner_ready_settlement_suffix() -> Vec<u8> {
     // -------------------------------------------------------------
     // STEP 2: Exact Principal Payment & Output 0 SPK Binding
     // -------------------------------------------------------------
+    // Enforce claimant payout_spk is canonical (defense-in-depth):
+    self::ticket_commitment::append_canonical_payout_spk_check(&mut sb, 9).unwrap();
+
     // 1) Exact payment: OpTxOutputAmount(0) == OpTxInputAmount(0)
     sb.add_op(Op0).unwrap();
     sb.add_op(OpTxInputAmount).unwrap();

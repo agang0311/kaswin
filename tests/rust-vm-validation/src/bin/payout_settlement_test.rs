@@ -10,24 +10,27 @@ use kaspa_txscript::{
     covenants::CovenantsContext,
     standard::pay_to_script_hash_script,
 };
-use kaspa_consensus_core::mass::{ComputeBudget, Mass, ScriptUnits};
+use kaspa_consensus_core::mass::{ComputeBudget, Mass};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::config::params::TESTNET_PARAMS;
+use kaspa_txscript::opcodes::codes::*;
 
 #[path = "../../../../contracts/ticket_commitment.rs"]
 pub mod ticket_commitment;
 use ticket_commitment::{
+    compute_empty_leaf,
     compute_empty_levels,
     compute_payout_commitment,
     compute_purchase_leaf,
     compute_root_from_path,
     reference_verify_winner_membership,
+    is_canonical_payout_spk,
     TREE_DEPTH,
 };
 
 #[path = "../../../../contracts/winner_ready_settlement.rs"]
 pub mod winner_ready_settlement;
-use winner_ready_settlement::{build_production_winner_ready_covenant, build_winner_ready_settlement_suffix};
+use winner_ready_settlement::build_production_winner_ready_covenant;
 
 #[path = "../../../../contracts/winner_selection.rs"]
 pub mod winner_selection;
@@ -49,19 +52,25 @@ fn main() {
     let random_seed = Hash::from_u64_word(888);
 
     let empty_levels = compute_empty_levels();
-    let buyer_spk_2 = vec![
-        0x00, 0x00, 0xaa, 0x20,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
-        0x87,
-    ];
+    let empty_leaf = compute_empty_leaf();
+
+    // Canonical Class B (PubKeyECDSA 37B):
+    let mut buyer_spk_2 = vec![0x00, 0x00, OpData33 as u8];
+    buyer_spk_2.extend(vec![0x22; 33]);
+    buyer_spk_2.push(OpCheckSigECDSA as u8);
+    assert!(is_canonical_payout_spk(&buyer_spk_2));
+
     let count_2 = 10u64;
     let start_ticket_2 = 5u64;
     let purchase_index_2 = 1u64;
 
-    let leaf_1 = compute_purchase_leaf(&round_id, 0, 0, 5, &compute_payout_commitment(&[0x00, 0x00, 0x20, 0x11]));
+    // Buyer 1: Class A (PubKey 36B):
+    let mut buyer_spk_1 = vec![0x00, 0x00, OpData32 as u8];
+    buyer_spk_1.extend(vec![0x11; 32]);
+    buyer_spk_1.push(OpCheckSig as u8);
+    assert!(is_canonical_payout_spk(&buyer_spk_1));
+
+    let leaf_1 = compute_purchase_leaf(&round_id, 0, 0, 5, &compute_payout_commitment(&buyer_spk_1));
     let mut siblings_2 = [Hash::default(); TREE_DEPTH];
     siblings_2[0] = leaf_1;
     for i in 1..TREE_DEPTH {
@@ -144,8 +153,9 @@ fn main() {
     // 2. WITNESS PAYOUT_SPK DOES NOT MATCH MERKLE LEAF
     // -------------------------------------------------------------
     println!("\n[Test 2] Attack: Witness payout_spk does not match Merkle leaf");
-    let mut fake_buyer_spk = vec![0x00, 0x00, 0xaa, 0x20];
-    fake_buyer_spk.extend(vec![0x99; 33]);
+    let mut fake_buyer_spk = vec![0x00, 0x00, OpData32 as u8];
+    fake_buyer_spk.extend(vec![0x99; 32]);
+    fake_buyer_spk.push(OpCheckSig as u8);
     let mut sig_sb_2 = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() {
         sig_sb_2.add_data(&siblings_2[i].as_bytes()).unwrap();
@@ -446,93 +456,29 @@ fn main() {
     println!("  -> PASS: Non-canonical 1-byte count BLOCKED by witness width assertion!");
 
     // -------------------------------------------------------------
-    // 9. MANDATORY CHAINED VM TEST: DRAW_READY -> WINNER_READY -> PAID
+    // 9. MANDATORY CHAINED UTXO EXECUTION: DRAW_READY -> WINNER_READY -> PAID
     // -------------------------------------------------------------
     println!("\n[Test 9] Mandatory Chained UTXO Execution: DRAW_READY -> WINNER_READY -> PAID");
 
-    // STEP A: DRAW_READY -> production WINNER_READY
-    // Find candidate for counter 0:
     let candidate_hash_0 = compute_candidate_hash(&random_seed, 0);
     let candidate_num_0 = extract_candidate_num(&candidate_hash_0);
-    let q = ((1i64 << 56) / (total_tickets as i64));
+    let q = (1i64 << 56) / (total_tickets as i64);
     let limit = q * (total_tickets as i64);
     assert!(candidate_num_0 < limit, "Counter 0 must be accepted in test fixture");
     let chosen_winner_index = (candidate_num_0 % (total_tickets as i64)) as u64;
     println!("  Candidate 0 accepted: chosen winner_index = {}", chosen_winner_index);
 
-    let draw_ready_redeem = build_draw_ready_covenant(
-        round_id,
-        ticket_root,
-        total_tickets,
-        target_hash,
-        random_seed,
-        0, // counter = 0
-    ).unwrap();
-
-    let prod_winner_ready = build_canonical_winner_ready_redeem_script(
-        round_id,
-        ticket_root,
-        total_tickets,
-        target_hash,
-        random_seed,
-        chosen_winner_index,
-    );
-    let prod_winner_ready_spk = pay_to_script_hash_script(&prod_winner_ready);
-
-    let mut sig_sb_step_a = ScriptBuilder::with_flags(flags);
-    sig_sb_step_a.add_data(&draw_ready_redeem).unwrap();
-    let sig_script_step_a = sig_sb_step_a.drain();
-
-    let tx_step_a = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_step_a,
-            0,
-            ComputeCommit::ComputeBudget(ComputeBudget(0)),
-        )],
-        vec![TransactionOutput {
-            value: pool_amount,
-            script_public_key: prod_winner_ready_spk.clone(),
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_step_a = PopulatedTransaction::new(&tx_step_a, vec![UtxoEntry::new(
-        pool_amount,
-        pay_to_script_hash_script(&draw_ready_redeem),
-        1_000_000,
-        false,
-        None,
-    )]);
-    let cov_ctx_a = CovenantsContext::from_tx(&pop_step_a).unwrap();
-    let ctx_a = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_a);
-    let mut vm_step_a = TxScriptEngine::from_transaction_input(&pop_step_a, &pop_step_a.tx.inputs[0], 0, &pop_step_a.entries[0], ctx_a, flags);
-    let res_step_a = vm_step_a.execute();
-    assert_eq!(res_step_a, Ok(()));
-    let u_draw = vm_step_a.used_script_units();
-    let b_min_draw = ComputeBudget::checked_covering_script_units(u_draw).unwrap();
-    println!("  -> PASS: Step A (DRAW_READY -> production WINNER_READY) succeeded! [Units: {:?}, B_min: {:?}]", u_draw, b_min_draw);
-
     // STEP B: WINNER_READY -> PAID (Consuming Step A Output 0 as Input 0)
-    // In Test 9: total_tickets = 100, chosen_winner_index = 92.
-    // We construct the complete 100-ticket sold tree with Buyer 3 owning [15, 100):
-    let buyer_spk_3 = vec![
-        0x00, 0x00, 0xaa, 0x20,
-        0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22,
-        0x11, 0x00, 0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa,
-        0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22,
-        0x11, 0x00, 0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa,
-        0x87,
-    ];
+    // Construct Buyer 3 with Class C ScriptHash SPK for [15, 100):
+    let mut buyer_spk_3 = vec![0x00, 0x00, OpBlake2b as u8, OpData32 as u8];
+    buyer_spk_3.extend(vec![0x33; 32]);
+    buyer_spk_3.push(OpEqual as u8);
+    assert!(is_canonical_payout_spk(&buyer_spk_3));
+
     let start_ticket_3 = 15u64;
     let count_3 = 85u64;
     let purchase_index_3 = 2u64;
 
-    // Parent of leaf_1 and leaf_2:
     let mut state = blake2b_simd::Params::new().hash_length(32).to_state();
     state.update(b"KaswinTicketNodeV1");
     state.update(leaf_1.as_bytes().as_slice());
@@ -550,7 +496,7 @@ fn main() {
     let leaf_3 = compute_purchase_leaf(&round_id, purchase_index_3, start_ticket_3, count_3, &payout_comm_3);
     let ticket_root_3 = compute_root_from_path(&leaf_3, purchase_index_3, &siblings_3);
 
-    // Recompute Step A with ticket_root_3 so that winner 92 is verified against ticket_root_3:
+    // STEP A: DRAW_READY -> production WINNER_READY
     let draw_ready_redeem_3 = build_draw_ready_covenant(
         round_id,
         ticket_root_3,
@@ -603,8 +549,11 @@ fn main() {
     let ctx_a3 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_a3);
     let mut vm_step_a3 = TxScriptEngine::from_transaction_input(&pop_step_a3, &pop_step_a3.tx.inputs[0], 0, &pop_step_a3.entries[0], ctx_a3, flags);
     assert_eq!(vm_step_a3.execute(), Ok(()));
+    let u_draw = vm_step_a3.used_script_units();
+    let b_min_draw = ComputeBudget::checked_covering_script_units(u_draw).unwrap();
+    println!("  -> PASS: Step A (DRAW_READY -> production WINNER_READY) succeeded! [Units: {:?}, B_min: {:?}]", u_draw, b_min_draw);
 
-    // Now Step B consumes Step A's output:
+    // STEP B: WINNER_READY -> PAID (Consuming Step A Output 0 as Input 0)
     let winner_spk_3 = kaspa_consensus_core::tx::ScriptPublicKey::from_vec(0, buyer_spk_3[2..].to_vec());
     let mut sig_sb_step_b = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() {
@@ -747,14 +696,14 @@ fn main() {
     let cofactors = TESTNET_PARAMS.prior_block_mass_limits.cofactors();
 
     // A. DRAW_READY -> production WINNER_READY:
-    let draw_nc_mass = calc.calc_non_contextual_masses(&tx_step_a);
-    let draw_c_mass = calc.calc_contextual_masses(&pop_step_a).unwrap();
+    let draw_nc_mass = calc.calc_non_contextual_masses(&tx_step_a3);
+    let draw_c_mass = calc.calc_contextual_masses(&pop_step_a3).unwrap();
     let draw_mass = Mass::new(draw_nc_mass, draw_c_mass);
     let draw_total_mass = draw_mass.normalized_max(&cofactors);
     println!("\nA. DRAW_READY -> PRODUCTION WINNER_READY:");
-    println!("   SignatureScript Bytes:  {} bytes", tx_step_a.inputs[0].signature_script.len());
-    println!("   RedeemScript Bytes:     {} bytes", draw_ready_redeem.len());
-    println!("   Actual Serialized:      {} bytes", kaspa_consensus_core::mass::transaction_estimated_serialized_size(&tx_step_a));
+    println!("   SignatureScript Bytes:  {} bytes", tx_step_a3.inputs[0].signature_script.len());
+    println!("   RedeemScript Bytes:     {} bytes", draw_ready_redeem_3.len());
+    println!("   Actual Serialized:      {} bytes", kaspa_consensus_core::mass::transaction_estimated_serialized_size(&tx_step_a3));
     println!("   Used Script Units:      {:?}", u_draw);
     println!("   B_min:                  {:?}", b_min_draw);
     println!("   Compute Mass:           {} gram", draw_nc_mass.compute_mass);

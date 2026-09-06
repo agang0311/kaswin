@@ -10,9 +10,10 @@ use kaspa_txscript::{
     covenants::CovenantsContext,
     standard::pay_to_script_hash_script,
 };
-use kaspa_consensus_core::mass::{ComputeBudget, Mass, ScriptUnits};
+use kaspa_consensus_core::mass::{ComputeBudget, Mass};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::config::params::TESTNET_PARAMS;
+use kaspa_txscript::opcodes::codes::*;
 
 #[path = "../../../../contracts/ticket_commitment.rs"]
 pub mod ticket_commitment;
@@ -24,6 +25,7 @@ use ticket_commitment::{
     compute_purchase_leaf,
     compute_root_from_path,
     reference_verify_winner_membership,
+    is_canonical_payout_spk,
     TREE_DEPTH,
 };
 
@@ -69,10 +71,33 @@ fn main() {
     println!("  -> PASS: compute_empty_levels()[27] == compute_empty_root_27()");
 
     // -------------------------------------------------------------
-    // Test 2: BUY0 (Initial Purchase OPEN(0,0) -> OPEN(5,1))
+    // Canonical SPK Fixtures:
     // -------------------------------------------------------------
-    println!("\n[Test 2] BUY0: old empty root verified, new R1 produced (OPEN(0,0) -> OPEN(5,1))");
-    let buyer_spk_1 = vec![0x20, 0x11, 0x22, 0x33];
+    // Buyer 1: Class A (PubKey 32B Schnorr) -> 36 bytes: [00 00] [OpData32] [32 bytes] [OpCheckSig]
+    let mut buyer_spk_1 = vec![0x00, 0x00, OpData32 as u8];
+    buyer_spk_1.extend(vec![0x11; 32]);
+    buyer_spk_1.push(OpCheckSig as u8);
+    assert_eq!(buyer_spk_1.len(), 36);
+    assert!(is_canonical_payout_spk(&buyer_spk_1));
+
+    // Buyer 2: Class B (PubKeyECDSA 33B) -> 37 bytes: [00 00] [OpData33] [33 bytes] [OpCheckSigECDSA]
+    let mut buyer_spk_2 = vec![0x00, 0x00, OpData33 as u8];
+    buyer_spk_2.extend(vec![0x22; 33]);
+    buyer_spk_2.push(OpCheckSigECDSA as u8);
+    assert_eq!(buyer_spk_2.len(), 37);
+    assert!(is_canonical_payout_spk(&buyer_spk_2));
+
+    // Buyer 3: Class C (ScriptHash 32B) -> 37 bytes: [00 00] [OpBlake2b] [OpData32] [32 bytes] [OpEqual]
+    let mut buyer_spk_3 = vec![0x00, 0x00, OpBlake2b as u8, OpData32 as u8];
+    buyer_spk_3.extend(vec![0x33; 32]);
+    buyer_spk_3.push(OpEqual as u8);
+    assert_eq!(buyer_spk_3.len(), 37);
+    assert!(is_canonical_payout_spk(&buyer_spk_3));
+
+    // -------------------------------------------------------------
+    // Test 2: BUY0 (Initial Purchase with Class A PubKey payout_spk)
+    // -------------------------------------------------------------
+    println!("\n[Test 2] BUY0: Class A (PubKey 36B) payout_spk -> OPEN(5,1)");
     let count_1 = 5u64;
 
     let mut siblings_1 = [Hash::default(); TREE_DEPTH];
@@ -142,13 +167,12 @@ fn main() {
     assert_eq!(res_1, Ok(()));
     let u_1 = vm_1.used_script_units();
     let b_min_1 = ComputeBudget::checked_covering_script_units(u_1).unwrap();
-    println!("  -> PASS: Valid BUY 1 transitioned OPEN(0,0) to OPEN(5,1) [Used Units: {:?}, B_min: {:?}]", u_1, b_min_1);
+    println!("  -> PASS: Valid BUY 1 (Class A PubKey) transitioned OPEN(0,0) to OPEN(5,1) [Used Units: {:?}, B_min: {:?}]", u_1, b_min_1);
 
     // -------------------------------------------------------------
-    // Test 3: BUY1 (Consecutive Purchase OPEN(5,1) -> OPEN(15,2))
+    // Test 3: BUY1 (Consecutive Purchase with Class B PubKeyECDSA payout_spk)
     // -------------------------------------------------------------
-    println!("\n[Test 3] BUY1: old R1 verified from EMPTY slot 1 + same siblings -> new R2 produced");
-    let buyer_spk_2 = vec![0x20, 0xaa, 0xbb, 0xcc];
+    println!("\n[Test 3] BUY1: Class B (PubKeyECDSA 37B) payout_spk -> OPEN(15,2)");
     let count_2 = 10u64;
 
     let mut siblings_2 = [Hash::default(); TREE_DEPTH];
@@ -157,7 +181,6 @@ fn main() {
         siblings_2[i] = empty_levels[i];
     }
 
-    // Verify off-chain that empty slot 1 + siblings_2 reconstructs root_1:
     assert_eq!(compute_root_from_path(&empty_leaf, 1, &siblings_2), root_1);
 
     let payout_comm_2 = compute_payout_commitment(&buyer_spk_2);
@@ -215,7 +238,7 @@ fn main() {
     assert_eq!(res_2, Ok(()));
     let u_2 = vm_2.used_script_units();
     let b_min_2 = ComputeBudget::checked_covering_script_units(u_2).unwrap();
-    println!("  -> PASS: Valid BUY 2 verified old R1 from slot 1 & transitioned to OPEN(15,2) [Used Units: {:?}, B_min: {:?}]", u_2, b_min_2);
+    println!("  -> PASS: Valid BUY 2 (Class B PubKeyECDSA) transitioned to OPEN(15,2) [Used Units: {:?}, B_min: {:?}]", u_2, b_min_2);
 
     // -------------------------------------------------------------
     // Test 4: ADAPTIVE ROOT REPLACEMENT ATTACK (Tampered siblings + matching tampered successor root)
@@ -277,7 +300,7 @@ fn main() {
     println!("  -> PASS: Adaptive root replacement attack BLOCKED! old_root_candidate != current ticket_root: {:?}", res_attack);
 
     // -------------------------------------------------------------
-    // Test 5: WRONG / NON-EMPTY SLOT PROOF (Attempting to overwrite occupied slot 0 in state pc=1)
+    // Test 5: WRONG / NON-EMPTY SLOT PROOF
     // -------------------------------------------------------------
     println!("\n[Test 5] WRONG/NON-EMPTY SLOT ATTACK: providing siblings for occupied slot 0 in state pc=1");
     let mut sig_sb_wrong_slot = ScriptBuilder::with_flags(flags);
@@ -332,54 +355,66 @@ fn main() {
     println!("  -> PASS: Non-empty slot overwrite attack BLOCKED by old_root authentication!");
 
     // -------------------------------------------------------------
-    // Test 6: ONE-BYTE COUNT ENCODING ATTACK (Canonical Witness Width Violation)
+    // Test 6: CANONICAL PAYOUT_SPK ADMISSIBILITY ATTACKS
     // -------------------------------------------------------------
-    println!("\n[Test 6] ATTACK: One-byte count encoding (0x05 instead of 8-byte LE)");
-    let mut sig_sb_one_byte = ScriptBuilder::with_flags(flags);
-    for i in (0..TREE_DEPTH).rev() {
-        sig_sb_one_byte.add_data(&siblings_1[i].as_bytes()).unwrap();
-    }
-    sig_sb_one_byte.add_data(&buyer_spk_1).unwrap();
-    sig_sb_one_byte.add_data(&[0x05]).unwrap(); // 1 byte instead of 8 bytes!
-    sig_sb_one_byte.add_data(&open_redeem_0).unwrap();
-    let sig_script_one_byte = sig_sb_one_byte.drain();
+    println!("\n[Test 6] Canonical Payout SPK Admissibility Attacks on OPEN BUY:");
 
-    let tx_one_byte = Transaction::new(
-        1,
-        vec![TransactionInput::new_with_mass(
-            TransactionOutpoint::new(Hash::default(), 0),
-            sig_script_one_byte,
-            0,
-            ComputeCommit::ComputeBudget(ComputeBudget(0)),
-        )],
-        vec![TransactionOutput {
-            value: 100_000_000 + ticket_price * count_1,
-            script_public_key: pay_to_script_hash_script(&next_open_redeem_1),
-            covenant: None,
-        }],
-        0,
-        SubnetworkId::default(),
-        0,
-        vec![],
-    );
-    let pop_ob = PopulatedTransaction::new(&tx_one_byte, vec![UtxoEntry::new(
-        100_000_000,
-        pay_to_script_hash_script(&open_redeem_0),
-        1_000_000,
-        false,
-        None,
-    )]);
-    let cov_ctx_ob = CovenantsContext::from_tx(&pop_ob).unwrap();
-    let ctx_ob = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_ob);
-    let mut vm_ob = TxScriptEngine::from_transaction_input(&pop_ob, &pop_ob.tx.inputs[0], 0, &pop_ob.entries[0], ctx_ob, flags);
-    assert!(vm_ob.execute().is_err());
-    println!("  -> PASS: Non-canonical 1-byte count encoding BLOCKED by OpSize == 8 check!");
+    // Case 6a: 4-byte truncated fixture [0x20, 0x11, 0x22, 0x33]
+    println!("  Subtest 6a: 4-byte truncated fixture [0x20, 0x11, 0x22, 0x33]");
+    let bad_spk_4b = vec![0x20, 0x11, 0x22, 0x33];
+    assert!(!is_canonical_payout_spk(&bad_spk_4b));
+    let mut sig_sb_6a = ScriptBuilder::with_flags(flags);
+    for i in (0..TREE_DEPTH).rev() { sig_sb_6a.add_data(&siblings_1[i].as_bytes()).unwrap(); }
+    sig_sb_6a.add_data(&bad_spk_4b).unwrap();
+    sig_sb_6a.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_6a.add_data(&open_redeem_0).unwrap();
+    let tx_6a = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6a.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: None }], 0, SubnetworkId::default(), 0, vec![]);
+    let pop_6a = PopulatedTransaction::new(&tx_6a, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, None)]);
+    let cov_ctx_6a = CovenantsContext::from_tx(&pop_6a).unwrap();
+    let ctx_6a = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6a);
+    let mut vm_6a = TxScriptEngine::from_transaction_input(&pop_6a, &pop_6a.tx.inputs[0], 0, &pop_6a.entries[0], ctx_6a, flags);
+    assert!(vm_6a.execute().is_err());
+    println!("    -> PASS: 4-byte truncated payout_spk BLOCKED by length check!");
+
+    // Case 6b: Version 1 (version > 0)
+    println!("  Subtest 6b: version = 1 [0x00, 0x01, ...]");
+    let mut bad_spk_v1 = buyer_spk_1.clone();
+    bad_spk_v1[1] = 0x01; // version 1
+    assert!(!is_canonical_payout_spk(&bad_spk_v1));
+    let mut sig_sb_6b = ScriptBuilder::with_flags(flags);
+    for i in (0..TREE_DEPTH).rev() { sig_sb_6b.add_data(&siblings_1[i].as_bytes()).unwrap(); }
+    sig_sb_6b.add_data(&bad_spk_v1).unwrap();
+    sig_sb_6b.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_6b.add_data(&open_redeem_0).unwrap();
+    let tx_6b = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6b.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: None }], 0, SubnetworkId::default(), 0, vec![]);
+    let pop_6b = PopulatedTransaction::new(&tx_6b, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, None)]);
+    let cov_ctx_6b = CovenantsContext::from_tx(&pop_6b).unwrap();
+    let ctx_6b = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6b);
+    let mut vm_6b = TxScriptEngine::from_transaction_input(&pop_6b, &pop_6b.tx.inputs[0], 0, &pop_6b.entries[0], ctx_6b, flags);
+    assert!(vm_6b.execute().is_err());
+    println!("    -> PASS: version = 1 payout_spk BLOCKED by version 0 check!");
+
+    // Case 6c: Version 0 but NonStandard / OP_TRUE script
+    println!("  Subtest 6c: version = 0 but NonStandard script [0x00, 0x00, 0x51]");
+    let bad_spk_optrue = vec![0x00, 0x00, OpTrue as u8];
+    assert!(!is_canonical_payout_spk(&bad_spk_optrue));
+    let mut sig_sb_6c = ScriptBuilder::with_flags(flags);
+    for i in (0..TREE_DEPTH).rev() { sig_sb_6c.add_data(&siblings_1[i].as_bytes()).unwrap(); }
+    sig_sb_6c.add_data(&bad_spk_optrue).unwrap();
+    sig_sb_6c.add_data(&count_1.to_le_bytes()).unwrap();
+    sig_sb_6c.add_data(&open_redeem_0).unwrap();
+    let tx_6c = Transaction::new(1, vec![TransactionInput::new(TransactionOutpoint::new(Hash::default(), 0), sig_sb_6c.drain(), 0, 0)], vec![TransactionOutput { value: 150_000_000, script_public_key: pay_to_script_hash_script(&next_open_redeem_1), covenant: None }], 0, SubnetworkId::default(), 0, vec![]);
+    let pop_6c = PopulatedTransaction::new(&tx_6c, vec![UtxoEntry::new(100_000_000, pay_to_script_hash_script(&open_redeem_0), 1_000_000, false, None)]);
+    let cov_ctx_6c = CovenantsContext::from_tx(&pop_6c).unwrap();
+    let ctx_6c = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_6c);
+    let mut vm_6c = TxScriptEngine::from_transaction_input(&pop_6c, &pop_6c.tx.inputs[0], 0, &pop_6c.entries[0], ctx_6c, flags);
+    assert!(vm_6c.execute().is_err());
+    println!("    -> PASS: NonStandard OP_TRUE payout_spk BLOCKED by class opcode assertions!");
 
     // -------------------------------------------------------------
-    // Test 7: FINAL BUY -> SEALED (Sold-Out Transition)
+    // Test 7: FINAL BUY -> SEALED (with Class C ScriptHash payout_spk)
     // -------------------------------------------------------------
-    println!("\n[Test 7] Final BUY -> SEALED: old root verified, final new root inherited exactly");
-    let buyer_spk_3 = vec![0x20, 0x33, 0x44, 0x55];
+    println!("\n[Test 7] Final BUY -> SEALED (Class C ScriptHash 37B payout_spk): old root verified -> SEALED");
     let count_3 = 85u64; // reaches 100 sold_tickets!
 
     let mut state = blake2b_simd::Params::new().hash_length(32).to_state();
@@ -395,7 +430,6 @@ fn main() {
         siblings_3[i] = empty_levels[i];
     }
 
-    // Verify off-chain that empty slot 2 + siblings_3 reconstructs root_2:
     assert_eq!(compute_root_from_path(&empty_leaf, 2, &siblings_3), root_2);
 
     let payout_comm_3 = compute_payout_commitment(&buyer_spk_3);
@@ -450,7 +484,7 @@ fn main() {
     assert_eq!(res_3, Ok(()));
     let u_3 = vm_3.used_script_units();
     let b_min_3 = ComputeBudget::checked_covering_script_units(u_3).unwrap();
-    println!("  -> PASS: Final BUY sold out pool and transitioned to SEALED [Used Units: {:?}, B_min: {:?}]", u_3, b_min_3);
+    println!("  -> PASS: Final BUY (Class C ScriptHash) sold out pool & transitioned to SEALED [Used Units: {:?}, B_min: {:?}]", u_3, b_min_3);
 
     // -------------------------------------------------------------
     // Test 8: WINNER MEMBERSHIP CANONICAL PROOF
@@ -519,7 +553,7 @@ fn main() {
     // Test 9: FAKE PAYOUT SPK ATTACK (Winner Membership Thief Substitution)
     // -------------------------------------------------------------
     println!("\n[Test 9] ATTACK: Fake Winner Payout SPK Substitution");
-    let thief_spk = vec![0x20, 0xde, 0xad, 0xbe, 0xef];
+    let thief_spk = buyer_spk_3.clone(); // substituted different valid SPK
     let mut sig_sb_thief = ScriptBuilder::with_flags(flags);
     for i in (0..TREE_DEPTH).rev() {
         sig_sb_thief.add_data(&siblings_2[i].as_bytes()).unwrap();

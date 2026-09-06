@@ -210,8 +210,12 @@ fn build_open_covenant_body(
     // Stack is back to initial 35 items!
 
     // -------------------------------------------------------------
-    // STEP 3: Compute purchase_leaf, empty_leaf, and setup AltStack
+    // STEP 3: Validate Canonical Payout SPK & Compute purchase_leaf
+    // payout_spk is at depth 7!
     // -------------------------------------------------------------
+    // Enforce payout_spk is a canonical ScriptPublicKey (PubKey, PubKeyECDSA, or ScriptHash with version 0):
+    self::ticket_commitment::append_canonical_payout_spk_check(&mut sb, 7)?;
+
     // 1) Read purchase_count as number and compute next_purchase_count_num:
     sb.add_op(Op1)?;
     sb.add_op(OpPick)?; // purchase_count (depth 1)

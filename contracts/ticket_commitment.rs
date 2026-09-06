@@ -148,3 +148,145 @@ pub fn reference_verify_winner_membership(
     let computed_root = compute_root_from_path(&leaf, purchase_index, siblings);
     computed_root == *ticket_root
 }
+
+/// Validates whether a byte slice conforms to Kaspa L1 canonical ScriptPublicKey.to_bytes()
+/// under pinned rusty-kaspa v2.0.1 rules (ScriptClass != NonStandard, version == 0).
+pub fn is_canonical_payout_spk(bytes: &[u8]) -> bool {
+    if bytes.len() < 2 {
+        return false;
+    }
+    // Version must be exactly 0 (0x00, 0x00)
+    if bytes[0] != 0x00 || bytes[1] != 0x00 {
+        return false;
+    }
+    let script = &bytes[2..];
+
+    // Class A: PubKey (Schnorr 32-byte) -> 2 + 34 = 36 bytes total
+    // [00 00] [OpData32] [32 bytes] [OpCheckSig]
+    if bytes.len() == 36 && script.len() == 34 {
+        if script[0] == kaspa_txscript::opcodes::codes::OpData32 && script[33] == kaspa_txscript::opcodes::codes::OpCheckSig {
+            return true;
+        }
+    }
+
+    // Class B: PubKeyECDSA (Secp256k1 33-byte) -> 2 + 35 = 37 bytes total
+    // [00 00] [OpData33] [33 bytes] [OpCheckSigECDSA]
+    if bytes.len() == 37 && script.len() == 35 {
+        if script[0] == kaspa_txscript::opcodes::codes::OpData33 && script[34] == kaspa_txscript::opcodes::codes::OpCheckSigECDSA {
+            return true;
+        }
+    }
+
+    // Class C: ScriptHash (P2SH 32-byte hash) -> 2 + 35 = 37 bytes total
+    // [00 00] [OpBlake2b] [OpData32] [32 bytes] [OpEqual]
+    if bytes.len() == 37 && script.len() == 35 {
+        if script[0] == kaspa_txscript::opcodes::codes::OpBlake2b && script[1] == kaspa_txscript::opcodes::codes::OpData32 && script[34] == kaspa_txscript::opcodes::codes::OpEqual {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Appends bytecode to verify that the item at depth `payout_spk_depth`
+/// is a canonical Kaspa L1 ScriptPublicKey.to_bytes() matching one of the 3 standard ScriptClasses:
+///   Class A: PubKey (Schnorr 32B) -> 36 bytes: [00 00] [OpData32] [32 bytes] [OpCheckSig]
+///   Class B: PubKeyECDSA (33B)   -> 37 bytes: [00 00] [OpData33] [33 bytes] [OpCheckSigECDSA]
+///   Class C: ScriptHash (P2SH)    -> 37 bytes: [00 00] [OpBlake2b] [OpData32] [32 bytes] [OpEqual]
+pub fn append_canonical_payout_spk_check(
+    sb: &mut kaspa_txscript::script_builder::ScriptBuilder,
+    payout_spk_depth: usize,
+) -> kaspa_txscript::script_builder::ScriptBuilderResult<()> {
+    use kaspa_txscript::opcodes::codes::*;
+
+    // Copy payout_spk to top:
+    sb.add_i64(payout_spk_depth as i64)?;
+    sb.add_op(OpPick)?;
+
+    // 1. Length must be either 36 or 37 bytes:
+    sb.add_op(OpSize)?;
+    sb.add_op(OpDup)?;
+    sb.add_i64(36)?;
+    sb.add_op(OpEqual)?;
+    sb.add_op(OpSwap)?;
+    sb.add_i64(37)?;
+    sb.add_op(OpEqual)?;
+    sb.add_op(OpBoolOr)?;
+    sb.add_op(OpVerify)?;
+
+    // 2. Version prefix must be 0x00, 0x00:
+    sb.add_op(OpDup)?;
+    sb.add_i64(0)?;
+    sb.add_i64(2)?;
+    sb.add_op(OpSubstr)?;
+    sb.add_data(&[0x00, 0x00])?;
+    sb.add_op(OpEqualVerify)?;
+
+    // 3. Class-specific bytecode checks:
+    sb.add_op(OpSize)?;
+    sb.add_i64(36)?;
+    sb.add_op(OpEqual)?;
+    sb.add_op(OpIf)?;
+        // Class A: PubKey (36 bytes total)
+        // byte 2 == OpData32 (0x20)
+        sb.add_op(OpDup)?;
+        sb.add_i64(2)?;
+        sb.add_i64(3)?;
+        sb.add_op(OpSubstr)?;
+        sb.add_data(&[OpData32 as u8])?;
+        sb.add_op(OpEqualVerify)?;
+
+        // byte 35 == OpCheckSig (0xac)
+        sb.add_op(OpDup)?;
+        sb.add_i64(35)?;
+        sb.add_i64(36)?;
+        sb.add_op(OpSubstr)?;
+        sb.add_data(&[OpCheckSig as u8])?;
+        sb.add_op(OpEqualVerify)?;
+    sb.add_op(OpElse)?;
+        // Length 37: Must be Class B (PubKeyECDSA) or Class C (ScriptHash)
+        sb.add_op(OpDup)?;
+        sb.add_i64(2)?;
+        sb.add_i64(3)?;
+        sb.add_op(OpSubstr)?; // byte 2
+        sb.add_op(OpDup)?;
+        sb.add_data(&[OpData33 as u8])?;
+        sb.add_op(OpEqual)?;
+        sb.add_op(OpIf)?;
+            // Class B: PubKeyECDSA
+            sb.add_op(OpDrop)?; // drop byte 2 copy
+            // byte 36 == OpCheckSigECDSA (0xad)
+            sb.add_op(OpDup)?;
+            sb.add_i64(36)?;
+            sb.add_i64(37)?;
+            sb.add_op(OpSubstr)?;
+            sb.add_data(&[OpCheckSigECDSA as u8])?;
+            sb.add_op(OpEqualVerify)?;
+        sb.add_op(OpElse)?;
+            // Must be Class C: byte 2 == OpBlake2b (0xaa)
+            sb.add_data(&[OpBlake2b as u8])?;
+            sb.add_op(OpEqualVerify)?;
+
+            // byte 3 == OpData32 (0x20)
+            sb.add_op(OpDup)?;
+            sb.add_i64(3)?;
+            sb.add_i64(4)?;
+            sb.add_op(OpSubstr)?;
+            sb.add_data(&[OpData32 as u8])?;
+            sb.add_op(OpEqualVerify)?;
+
+            // byte 36 == OpEqual (0x87)
+            sb.add_op(OpDup)?;
+            sb.add_i64(36)?;
+            sb.add_i64(37)?;
+            sb.add_op(OpSubstr)?;
+            sb.add_data(&[OpEqual as u8])?;
+            sb.add_op(OpEqualVerify)?;
+        sb.add_op(OpEndIf)?;
+    sb.add_op(OpEndIf)?;
+
+    // Drop the copied payout_spk, leaving data stack unmodified:
+    sb.add_op(OpDrop)?;
+    Ok(())
+}
+
