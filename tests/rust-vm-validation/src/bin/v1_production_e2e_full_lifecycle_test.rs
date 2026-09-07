@@ -893,14 +893,12 @@ fn main() {
     // Step 1: K = 8 (Terminal, cursor + k == 17)
     println!("\n[Step 2.2] Refund Step 1: Refunding purchases 9..17 (K=8, terminal, creator deposit return)");
     let fees_step1 = vec![190_000u64; 8];
-    let mut gross_step1 = 0u64;
     let mut outputs_step1 = Vec::new();
 
     for j in 0..8 {
         let rec_idx = 9 + j;
         let count = 3u64;
         let gross_j = count * ticket_price;
-        gross_step1 += gross_j;
         let refund_j = gross_j - fees_step1[j];
         let mut buyer_p2pk = vec![0x20];
         buyer_p2pk.extend_from_slice(&records17[rec_idx].1);
