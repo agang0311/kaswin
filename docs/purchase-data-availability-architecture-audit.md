@@ -1,5 +1,14 @@
 # Kaswin V1 Purchase Data Availability Architecture Audit
 
+> **ARCHITECTURAL STATUS NOTICE (2026-09-07)**:
+> - **CURRENT PRIMARY V1 CANDIDATE**: **BOUNDED PURCHASE DIRECTORY** in round state UTXO (36-byte records: u32 cumulative_end LE, 32-byte pubkey).
+> - **VALID FALLBACK ONLY**: Merkle Tree + Untrusted Providers.
+> - **HISTORICAL / SUPERSEDED**: SMT-root-only purchase commitment without in-state records. Any historical statement claiming "V1 adopts Merkle tree + untrusted providers" is **SUPERSEDED**.
+> - **PURCHASE-HISTORY DATA AVAILABILITY**: **PASS** under bounded directory (recoverable from live state UTXO without indexers).
+> - **FRESH CURRENT-STATE DISCOVERY**: **UNPROVEN** on pruned nodes without `--utxoindex`.
+
+---
+
 **日期**: 2026-09-07 UTC  
 **范围**: purchase-data persistence/discoverability；未实现退款或生产 covenant。  
 **Pinned rusty-kaspa**: `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`  

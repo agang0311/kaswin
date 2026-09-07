@@ -1,4 +1,12 @@
-# Kaswin V1 Batched Sequential Refund + Prebroadcast Feasibility Audit
+# Kaswin V1 Batched Sequential Refund + Prebroadcast Feasibility Audit (Historical SMT Design)
+
+> **ARCHITECTURAL STATUS NOTICE (2026-09-07)**:
+> - **CURRENT PRIMARY V1 CANDIDATE**: **BOUNDED PURCHASE DIRECTORY** in round state UTXO (36-byte records, deterministic sequential cursor progression).
+> - **VALID FALLBACK ONLY**: Merkle Tree + Untrusted Providers.
+> - **HISTORICAL / SUPERSEDED**: The SMT cursor refunding and `REFUND_CLAIMS` SMT delete models documented herein are retained strictly as isolated cryptographic reference points and historical evaluation records. They are **NOT** the current Kaswin V1 production refund architecture.
+> - Any prior statement claiming "V1 adopts Merkle tree + untrusted providers" is **SUPERSEDED**.
+
+---
 
 **日期**: 2026-09-07 UTC  
 **证据范围**: pinned `rusty-kaspa` `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`；pinned KIPs `e4ae2332117b5cb68bd6188e065ef885b6d17939`。  

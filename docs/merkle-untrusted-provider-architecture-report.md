@@ -1,4 +1,11 @@
-# Kaswin V1 Merkle Tree + Untrusted Replicable Data Providers
+# Kaswin V1 Merkle Tree + Untrusted Replicable Data Providers (Fallback Architecture)
+
+> **ARCHITECTURAL STATUS NOTICE (2026-09-07)**:
+> - **CURRENT PRIMARY V1 CANDIDATE**: **BOUNDED PURCHASE DIRECTORY** in round state UTXO (storing up to 256 36-byte records directly on-chain).
+> - **ROLE OF THIS SPECIFICATION**: **VALID FALLBACK ONLY**. This architecture was evaluated when directory feasibility was uncertain; with bounded directory confirmed viable up to N=256, Merkle tree + untrusted providers is demoted to a fallback architecture.
+> - Any statement claiming "V1 adopts Merkle tree + untrusted providers" is **SUPERSEDED**.
+
+---
 
 **日期**: 2026-09-07 UTC  
 **状态**: Architecture decision gate  ��� **PROPOSED FREEZE**  
