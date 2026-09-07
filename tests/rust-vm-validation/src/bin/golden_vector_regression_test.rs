@@ -10,6 +10,10 @@ use v1_constants::{DELTA_DAA_V1, FULL_SALE_RECOVERY_DELAY_DAA_V1};
 pub mod genesis;
 use genesis::build_canonical_kaswin_genesis_output;
 
+#[path = "../../../../contracts/ticket_commitment.rs"]
+pub mod ticket_commitment;
+use ticket_commitment::compute_empty_root_27;
+
 #[path = "../../../../contracts/open_covenant.rs"]
 pub mod open_covenant;
 
@@ -32,6 +36,15 @@ fn main() {
     // Implicit Protocol V1 Constants:
     assert_eq!(DELTA_DAA_V1, 100);
     assert_eq!(FULL_SALE_RECOVERY_DELAY_DAA_V1, 432_000);
+
+    // Canonical SMT EMPTY_ROOT_27 Parity Assertion:
+    let empty_root = compute_empty_root_27();
+    let empty_root_hex = hex_string(&empty_root.as_bytes());
+    assert_eq!(
+        empty_root_hex,
+        "e374d1630e835c62b165b3a83874e7d67727bad1e06fd54c1c339a5bd76f2df9",
+        "Canonical EMPTY_ROOT_27 parity mismatch"
+    );
 
     // Canonical Derivations:
     let round_id = genesis::compute_canonical_round_id(&funding_outpoint);

@@ -750,3 +750,558 @@ pub fn build_open_covenant_body(
     sb.add_op(OpTrue)?;
     Ok(sb.drain())
 }
+
+// =============================================================================
+// V1 Bounded Purchase Directory & Variable Sale Close Covenant Implementation
+// =============================================================================
+
+pub const ACTION_CLOSE: i64 = 2;
+
+/// Builds canonical OPEN state prefix layout for bounded directory:
+///   round_id (32B)
+///   ticket_price (8B LE)
+///   ticket_cap (8B LE)
+///   min_tickets (8B LE)
+///   sale_deadline (8B LE)
+///   sold_tickets (8B LE)
+///   purchase_count (8B LE)
+///   ticket_root (32B)
+///   creator_refund_spk (34B)
+///   directory (variable P*36B)
+pub fn build_directory_open_prefix(
+    round_id: &Hash,
+    ticket_price: u64,
+    ticket_cap: u64,
+    min_tickets: u64,
+    sale_deadline: u64,
+    sold_tickets: u64,
+    purchase_count: u64,
+    ticket_root: &Hash,
+    creator_refund_spk: &[u8],
+    directory: &[u8],
+) -> Vec<u8> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+    sb.add_op(OpTxInputIndex).unwrap();
+    sb.add_op(Op0).unwrap();
+    sb.add_op(OpEqualVerify).unwrap();
+
+    sb.add_data(&round_id.as_bytes()).unwrap();
+    sb.add_data(&ticket_price.to_le_bytes()).unwrap();
+    sb.add_data(&ticket_cap.to_le_bytes()).unwrap();
+    sb.add_data(&min_tickets.to_le_bytes()).unwrap();
+    sb.add_data(&sale_deadline.to_le_bytes()).unwrap();
+    sb.add_data(&sold_tickets.to_le_bytes()).unwrap();
+    sb.add_data(&purchase_count.to_le_bytes()).unwrap();
+    sb.add_data(&ticket_root.as_bytes()).unwrap();
+    sb.add_data(creator_refund_spk).unwrap();
+    sb.add_data(directory).unwrap();
+    sb.drain()
+}
+
+fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    sb.add_op(OpSize)?;
+    sb.add_op(OpDup)?; sb.add_i64(75)?; sb.add_op(OpLessThanOrEqual)?;
+    sb.add_op(OpIf)?;
+        sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+        sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+    sb.add_op(OpElse)?;
+        sb.add_op(OpDup)?; sb.add_i64(255)?; sb.add_op(OpLessThanOrEqual)?;
+        sb.add_op(OpIf)?;
+            sb.add_op(OpDup)?; sb.add_i64(127)?; sb.add_op(OpLessThanOrEqual)?;
+            sb.add_op(OpIf)?;
+                sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+            sb.add_op(OpElse)?;
+                sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+                sb.add_i64(0)?; sb.add_i64(1)?; sb.add_op(OpSubstr)?;
+            sb.add_op(OpEndIf)?;
+            sb.add_data(&[0x4c])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpElse)?;
+            sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x4d])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpEndIf)?;
+    sb.add_op(OpEndIf)?;
+    Ok(())
+}
+
+/// Builds production state-independent bounded-directory OPEN body supporting BUY (Action 1) and CLOSE (Action 2).
+pub fn build_directory_open_body(static_body_len: usize) -> ScriptBuilderResult<Vec<u8>> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+
+    // Step 0: Stash directory on AltStack:
+    sb.add_op(OpToAltStack)?; // AltStack: [directory]
+
+    // Validate 9 state parameters on dstack:
+    sb.add_op(Op0)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(34)?; sb.add_op(OpEqualVerify)?; // creator_refund_spk (34B)
+
+    sb.add_i64(1)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(32)?; sb.add_op(OpEqualVerify)?; // ticket_root (32B)
+
+    sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(8)?; sb.add_op(OpEqualVerify)?; // purchase_count (8B)
+
+    sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(8)?; sb.add_op(OpEqualVerify)?; // sold_tickets (8B)
+
+    sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(8)?; sb.add_op(OpEqualVerify)?; // sale_deadline (8B)
+
+    sb.add_i64(5)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(8)?; sb.add_op(OpEqualVerify)?; // min_tickets (8B)
+
+    sb.add_i64(6)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(8)?; sb.add_op(OpEqualVerify)?; // ticket_cap (8B)
+
+    sb.add_i64(7)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(8)?; sb.add_op(OpEqualVerify)?; // ticket_price (8B)
+
+    sb.add_i64(8)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+    sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+    sb.add_i64(32)?; sb.add_op(OpEqualVerify)?; // round_id (32B)
+
+    // Action check on dstack:
+    // Witness action is at depth 9:
+    sb.add_i64(9)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // action (num)
+
+    sb.add_op(OpDup)?;
+    sb.add_i64(ACTION_BUY)?;
+    sb.add_op(OpEqual)?;
+    sb.add_op(OpIf)?;
+        // =====================================================================
+        // ACTION_BUY (1)
+        // =====================================================================
+        sb.add_op(OpDrop)?; // drop action
+
+        // BUY witness items:
+        // depth 9: action (1B)
+        // depth 10: count (8B LE)
+        // depth 11: buyer_payout_spk (34B P2PK: [0x20] || pubkey[32] || [0xac])
+        // depth 12..38: 27 sibling hashes for SMT update
+        sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+        sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+        sb.add_i64(8)?; sb.add_op(OpNumEqualVerify)?;
+
+        sb.add_i64(11)?; sb.add_op(OpPick)?; sb.add_op(OpSize)?;
+        sb.add_op(OpSwap)?; sb.add_op(OpDrop)?;
+        sb.add_i64(34)?; sb.add_op(OpNumEqualVerify)?;
+
+        // Enforce canonical xonly P2PK format: [0x20] || pubkey[32] || [0xac]
+        sb.add_i64(11)?; sb.add_op(OpPick)?;
+        sb.add_i64(0)?; sb.add_i64(1)?; sb.add_op(OpSubstr)?;
+        sb.add_data(&[0x20])?; sb.add_op(OpEqualVerify)?;
+
+        sb.add_i64(11)?; sb.add_op(OpPick)?;
+        sb.add_i64(33)?; sb.add_i64(34)?; sb.add_op(OpSubstr)?;
+        sb.add_data(&[0xac])?; sb.add_op(OpEqualVerify)?;
+
+        // Assert count >= 1:
+        sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // count (num)
+        sb.add_op(OpDup)?; sb.add_i64(1)?; sb.add_op(OpGreaterThanOrEqual)?; sb.add_op(OpVerify)?;
+
+        // Assert sold_tickets + count <= ticket_cap:
+        sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // sold_tickets (depth 3 + 1)
+        sb.add_op(OpAdd)?; // new_sold = sold_tickets + count
+        sb.add_op(OpDup)?;
+        sb.add_i64(8)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // ticket_cap (depth 6 + 2)
+        sb.add_op(OpLessThanOrEqual)?; sb.add_op(OpVerify)?; // new_sold <= ticket_cap
+
+        // Assert purchase_count < 256:
+        sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // purchase_count (depth 2 + 1)
+        sb.add_i64(256)?;
+        sb.add_op(OpLessThan)?; sb.add_op(OpVerify)?; // purchase_count < 256
+
+        // Topology: 1 state input, 1 state output (additional funding inputs allowed via normal outputs)
+        // KIP-20 Singleton continuation on Output 0:
+        lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
+        // Exact amount assertion: Output0Amount == Input0Amount + ticket_price * count:
+        sb.add_i64(8)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // ticket_price (depth 8)
+        sb.add_i64(12)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // count (depth 11 + 1)
+        sb.add_op(OpMul)?; // delta = ticket_price * count
+        sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
+        sb.add_op(OpAdd)?; // expected_output_amount
+        sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
+        sb.add_op(OpEqualVerify)?;
+
+        // Construct 36-byte new purchase record:
+        // [0..4]: u32 LE new_sold, [4..36]: buyer_pubkey (extracted from 34B P2PK: bytes 1..33)
+        sb.add_op(OpDup)?; // new_sold
+        sb.add_i64(4)?; sb.add_op(OpNum2Bin)?; // 4-byte LE new_sold
+        sb.add_i64(13)?; sb.add_op(OpPick)?; // buyer_payout_spk (depth 11 + 2)
+        sb.add_i64(1)?; sb.add_i64(33)?; sb.add_op(OpSubstr)?; // 32-byte pubkey
+        sb.add_op(OpCat)?; // 36-byte new record!
+
+        // Append to directory on AltStack:
+        sb.add_op(OpFromAltStack)?; // directory
+        sb.add_op(OpSwap)?; // [directory, new_record]
+        sb.add_op(OpCat)?; // new_directory!
+        sb.add_op(OpToAltStack)?; // updated directory back to AltStack!
+
+        // Verify 27-level SMT ticket_root update using canonical tags:
+        // payout_commitment = BLAKE2b256("KaswinPayoutSpkV1" || le_u32(34) || buyer_payout_spk)
+        sb.add_data(b"KaswinPayoutSpkV1")?;
+        sb.add_data(&[0x22, 0x00, 0x00, 0x00])?;
+        sb.add_op(OpCat)?;
+        sb.add_i64(13)?; sb.add_op(OpPick)?; // buyer_payout_spk (depth 11 + 2)
+        sb.add_op(OpCat)?;
+        sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?; // payout_commitment on dstack!
+
+        // purchase_leaf = BLAKE2b256("KaswinTicketRangeV1" || round_id || le_u64(purchase_index) || le_u64(start_ticket) || le_u64(count) || payout_commitment)
+        sb.add_data(b"KaswinTicketRangeV1")?;
+        sb.add_i64(11)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // round_id (depth 8 + 3)
+        sb.add_i64(5)?; sb.add_op(OpPick)?; sb.add_i64(8)?; sb.add_op(OpNum2Bin)?; sb.add_op(OpCat)?; // purchase_count (depth 2 + 3)
+        sb.add_i64(6)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // sold_tickets (depth 3 + 3)
+        sb.add_i64(13)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // count (depth 10 + 3)
+        sb.add_op(OpSwap)?; sb.add_op(OpCat)?; // payout_commitment
+        sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?; // new_leaf on dstack!
+
+        // Push new_leaf and empty_leaf to AltStack:
+        // AltStack before: [new_directory]
+        sb.add_op(OpToAltStack)?; // AltStack: [new_directory, new_leaf]
+        let empty_leaf = ticket_commitment::compute_empty_leaf();
+        sb.add_data(&empty_leaf.as_bytes())?;
+        sb.add_op(OpToAltStack)?; // AltStack: [new_directory, new_leaf, empty_leaf]
+
+        // SMT 27-level parallel traversal:
+        for level in 0..27 {
+            // Pick purchase_count at depth 3 (under new_sold, creator_refund_spk, ticket_root):
+            sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?;
+            if level > 0 {
+                sb.add_i64(1i64 << level)?;
+                sb.add_op(OpDiv)?;
+            }
+            sb.add_i64(2)?; sb.add_op(OpMod)?; // bit (0 or 1) on dstack
+
+            let sib_depth = 14 + level;
+            sb.add_i64(sib_depth as i64)?; sb.add_op(OpPick)?; // [..., bit, sibling]
+            sb.add_op(OpDup)?; // [..., bit, sibling, sibling]
+
+            // Update old_hash:
+            sb.add_op(OpFromAltStack)?; // pops old_hash. dstack: [..., bit, sibling, sibling, old_hash]
+            sb.add_i64(3)?; sb.add_op(OpPick)?; // bit
+            sb.add_op(OpIf)?;
+                // bit == 1: sibling is left, old_hash is right -> OpCat does sibling || old_hash
+            sb.add_op(OpElse)?;
+                sb.add_op(OpSwap)?; // bit == 0: old_hash is left, sibling is right -> OpCat does old_hash || sibling
+            sb.add_op(OpEndIf)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"KaswinTicketNodeV1")?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?; // new_old_hash
+            sb.add_op(OpToAltStack)?; // AltStack: [new_directory, new_hash, new_old_hash]
+
+            // Update new_hash:
+            // dstack has: [..., bit, sibling]
+            sb.add_op(OpFromAltStack)?; // pops new_old_hash
+            sb.add_op(OpFromAltStack)?; // pops new_hash
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpToAltStack)?; // AltStack: [new_directory, new_old_hash]
+            // dstack: [..., bit, sibling, new_hash]
+            sb.add_i64(2)?; sb.add_op(OpRoll)?; // moves bit to top: [..., sibling, new_hash, bit]
+            sb.add_op(OpIf)?;
+                // bit == 1: sibling || new_hash
+            sb.add_op(OpElse)?;
+                sb.add_op(OpSwap)?; // bit == 0: new_hash || sibling
+            sb.add_op(OpEndIf)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"KaswinTicketNodeV1")?;
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpCat)?;
+            sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?; // new_new_hash
+
+            sb.add_op(OpFromAltStack)?; // pops new_old_hash: [..., new_new_hash, new_old_hash]
+            sb.add_op(OpSwap)?;
+            sb.add_op(OpToAltStack)?; // pushes new_new_hash
+            sb.add_op(OpToAltStack)?; // pushes new_old_hash
+            // AltStack: [new_directory, new_new_hash, new_old_hash]
+        }
+
+        // Pop final_old_hash from AltStack:
+        sb.add_op(OpFromAltStack)?; // final_old_hash
+        // Assert final_old_hash == current ticket_root (depth 3 on dstack):
+        sb.add_i64(3)?; sb.add_op(OpPick)?;
+        sb.add_op(OpEqualVerify)?; // old_hash verified against current root!
+
+        // Pop updated_ticket_root from AltStack:
+        sb.add_op(OpFromAltStack)?; // updated_ticket_root on dstack!
+        // dstack: [new_sold, updated_ticket_root] (depth 0 is root, depth 1 is new_sold)
+        // AltStack: [new_directory]
+
+        // Slice static directory OPEN body from scriptSig:
+        sb.add_op(Op0)?; sb.add_op(OpTxInputScriptSigLen)?;
+        sb.add_op(OpDup)?;
+        sb.add_i64(static_body_len as i64)?; sb.add_op(OpSub)?;
+        sb.add_op(OpSwap)?;
+        sb.add_op(Op0)?; sb.add_op(OpRot)?; sb.add_op(OpRot)?;
+        sb.add_op(OpTxInputScriptSigSubstr)?; // static body
+        sb.add_op(OpToAltStack)?; // AltStack: [directory, static_body]
+
+        // Reconstruct successor OPEN prefix:
+        // [0xb9, 0x00, 0x88] (3B)
+        sb.add_data(&[0xb9, 0x00, 0x88])?;
+        // round_id (32B): depth 11
+        sb.add_data(&[0x20])?; sb.add_i64(12)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // ticket_price (8B): depth 10
+        sb.add_data(&[0x08])?; sb.add_i64(11)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // ticket_cap (8B): depth 9
+        sb.add_data(&[0x08])?; sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // min_tickets (8B): depth 8
+        sb.add_data(&[0x08])?; sb.add_i64(9)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // sale_deadline (8B): depth 7
+        sb.add_data(&[0x08])?; sb.add_i64(8)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // new_sold (8B LE): on dstack at depth 2 (under prefix_bytes)
+        sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_i64(8)?; sb.add_op(OpNum2Bin)?;
+        sb.add_data(&[0x08])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // new_purchase_count (8B LE): purchase_count is at depth 5
+        sb.add_i64(5)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; sb.add_i64(1)?; sb.add_op(OpAdd)?;
+        sb.add_i64(8)?; sb.add_op(OpNum2Bin)?;
+        sb.add_data(&[0x08])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // updated ticket_root (32B): on dstack at depth 1
+        sb.add_data(&[0x20])?; sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+        // creator_refund_spk (34B): at depth 4 (under prefix_bytes, prefix_so_far, updated_ticket_root, new_sold)
+        sb.add_data(&[0x22])?; sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+
+        // Directory push: directory is on AltStack, static_body is under directory on AltStack:
+        // AltStack was: [directory, static_body]
+        // In Step 0: AltStack: [directory]. In Step Slicing: AltStack: [directory, static_body].
+        // So FromAltStack pops static_body, then FromAltStack pops directory!
+        sb.add_op(OpFromAltStack)?; // static_body
+        sb.add_op(OpFromAltStack)?; // directory
+        sb.add_op(OpSwap)?; // [static_body, directory]
+        sb.add_op(OpToAltStack)?; // AltStack: [static_body]
+        // Now dstack has: [prefix_so_far, directory]
+        append_runtime_directory_push(&mut sb)?; // [prefix_so_far, pushed_directory]
+        sb.add_op(OpCat)?; // [full_prefix]
+        sb.add_op(OpFromAltStack)?; // [full_prefix, static_body]
+        sb.add_op(OpCat)?; // full expected successor redeem script!
+
+        sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?;
+        sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_data(&[0x87])?; sb.add_op(OpCat)?;
+        sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
+        sb.add_op(OpEqualVerify)?;
+
+        // Teardown stack:
+        for _ in 0..41 {
+            sb.add_op(OpDrop)?;
+        }
+        sb.add_op(OpTrue)?;
+
+    sb.add_op(OpElse)?;
+        // =====================================================================
+        // ACTION_CLOSE (2)
+        // =====================================================================
+        sb.add_op(OpDrop)?; // drop action
+
+        // CLOSE trigger assertion:
+        // 1) sold_tickets == ticket_cap:
+        sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // sold_tickets
+        sb.add_i64(7)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // ticket_cap
+        sb.add_op(OpEqual)?;
+
+        // 2) purchase_count == 256:
+        sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // purchase_count
+        sb.add_i64(256)?;
+        sb.add_op(OpEqual)?;
+        sb.add_op(OpOr)?; // condition A: capacity reached
+
+        // 3) Deadline check (Requirement 四):
+        // If not capacity reached, strictly enforce tx.lock_time == sale_deadline AND sequence != MAX_SEQUENCE
+        sb.add_op(OpDup)?;
+        sb.add_op(OpIf)?;
+            // Capacity reached: skip deadline
+        sb.add_op(OpElse)?;
+            sb.add_op(OpDrop)?; // drop false
+            sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // sale_deadline
+            // Enforce tx.lock_time == sale_deadline:
+            sb.add_op(OpDup)?;
+            sb.add_op(OpTxLockTime)?;
+            sb.add_op(OpEqualVerify)?;
+            // Enforce OpCheckLockTimeVerify (which strictly requires input.sequence != u64::MAX):
+            sb.add_op(OpCheckLockTimeVerify)?;
+            sb.add_op(OpTrue)?; // deadline satisfied!
+        sb.add_op(OpEndIf)?;
+        sb.add_op(OpVerify)?; // Trigger verified!
+
+        // Outcome dispatch: sold_tickets >= min_tickets -> SEALED else -> REFUNDING:
+        sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // sold_tickets
+        sb.add_i64(6)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // min_tickets
+        sb.add_op(OpGreaterThanOrEqual)?;
+
+        sb.add_op(OpIf)?;
+            // -----------------------------------------------------------------
+            // DISPATCH TO SEALED (sold_tickets >= min_tickets)
+            // -----------------------------------------------------------------
+            lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
+            // Exact amount preservation:
+            sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
+            sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // Reconstruct SEALED redeem script:
+            // [0xb9, 0x00, 0x88] (3B)
+            sb.add_data(&[0xb9, 0x00, 0x88])?;
+            // round_id (32B): depth 10
+            sb.add_data(&[0x20])?; sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // ticket_price (8B): depth 9
+            sb.add_data(&[0x08])?; sb.add_i64(9)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // draw_ticket_count = sold_tickets (8B): depth 5
+            sb.add_data(&[0x08])?; sb.add_i64(5)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // ticket_root (32B): depth 3
+            sb.add_data(&[0x20])?; sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // purchase_count (8B): depth 4
+            sb.add_data(&[0x08])?; sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // creator_refund_spk (34B): depth 2
+            sb.add_data(&[0x22])?; sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+
+            // Directory from AltStack:
+            sb.add_op(OpFromAltStack)?; // directory
+            append_runtime_directory_push(&mut sb)?;
+            sb.add_op(OpCat)?; // full SEALED prefix
+
+            // Append production directory SEALED body:
+            let sealed_body = sealed_covenant::build_directory_sealed_body()?;
+            sb.add_data(&sealed_body)?;
+            sb.add_op(OpCat)?; // full SEALED redeem script!
+
+            // Output 0 SPK == P2SH(SEALED redeem):
+            sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?;
+            sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_data(&[0x87])?; sb.add_op(OpCat)?;
+            sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
+            sb.add_op(OpEqualVerify)?;
+
+        sb.add_op(OpElse)?;
+            // -----------------------------------------------------------------
+            // DISPATCH TO REFUNDING (sold_tickets < min_tickets)
+            // -----------------------------------------------------------------
+            lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
+            // Exact amount preservation:
+            sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
+            sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
+            sb.add_op(OpEqualVerify)?;
+
+            // Reconstruct initial REFUNDING redeem script (cursor = 0):
+            // [0xb9, 0x00, 0x88] (3B)
+            sb.add_data(&[0xb9, 0x00, 0x88])?;
+            // round_id (32B): depth 10
+            sb.add_data(&[0x20])?; sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // ticket_price (8B): depth 9
+            sb.add_data(&[0x08])?; sb.add_i64(9)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // purchase_count (8B): depth 4
+            sb.add_data(&[0x08])?; sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+            // cursor = 0 (8B LE):
+            sb.add_data(&[0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?; sb.add_op(OpCat)?;
+            // creator_refund_spk (34B): depth 2
+            sb.add_data(&[0x22])?; sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+
+            // Directory from AltStack:
+            sb.add_op(OpFromAltStack)?; // directory
+            append_runtime_directory_push(&mut sb)?;
+            sb.add_op(OpCat)?; // full REFUNDING prefix
+
+            // Append compact universal refunding body:
+            let ref_body = refunding_covenant::compute_converged_compact_universal_body();
+            sb.add_data(&ref_body)?;
+            sb.add_op(OpCat)?; // full initial REFUNDING redeem script!
+
+            // Output 0 SPK == P2SH(REFUNDING redeem):
+            sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?;
+            sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_data(&[0x87])?; sb.add_op(OpCat)?;
+            sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
+            sb.add_op(OpEqualVerify)?;
+        sb.add_op(OpEndIf)?;
+
+        // Teardown stack for CLOSE:
+        for _ in 0..10 {
+            sb.add_op(OpDrop)?;
+        }
+        sb.add_op(OpTrue)?;
+
+    sb.add_op(OpEndIf)?;
+
+    Ok(sb.drain())
+}
+
+pub fn compute_converged_directory_open_body() -> Vec<u8> {
+    let mut guess = 3200usize;
+    for _ in 0..20 {
+        let body = build_directory_open_body(guess).unwrap();
+        if body.len() == guess {
+            return body;
+        }
+        guess = body.len();
+    }
+    build_directory_open_body(guess).unwrap()
+}
+
+pub fn build_initial_directory_open_covenant(
+    round_id: Hash,
+    ticket_price: u64,
+    ticket_cap: u64,
+    min_tickets: u64,
+    sale_deadline: u64,
+    creator_refund_spk: Vec<u8>,
+) -> ScriptBuilderResult<Vec<u8>> {
+    let empty_root = ticket_commitment::compute_empty_root_27();
+    let body = compute_converged_directory_open_body();
+    let prefix = build_directory_open_prefix(
+        &round_id,
+        ticket_price,
+        ticket_cap,
+        min_tickets,
+        sale_deadline,
+        0,
+        0,
+        &empty_root,
+        &creator_refund_spk,
+        &[], // initial directory is empty
+    );
+    let mut full = prefix;
+    full.extend_from_slice(&body);
+    Ok(full)
+}
+
+pub fn build_directory_open_covenant(
+    round_id: Hash,
+    ticket_price: u64,
+    ticket_cap: u64,
+    min_tickets: u64,
+    sale_deadline: u64,
+    sold_tickets: u64,
+    purchase_count: u64,
+    ticket_root: Hash,
+    creator_refund_spk: Vec<u8>,
+    directory: &[u8],
+) -> ScriptBuilderResult<Vec<u8>> {
+    let body = compute_converged_directory_open_body();
+    let prefix = build_directory_open_prefix(
+        &round_id,
+        ticket_price,
+        ticket_cap,
+        min_tickets,
+        sale_deadline,
+        sold_tickets,
+        purchase_count,
+        &ticket_root,
+        &creator_refund_spk,
+        directory,
+    );
+    let mut full = prefix;
+    full.extend_from_slice(&body);
+    Ok(full)
+}

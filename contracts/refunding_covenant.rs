@@ -539,3 +539,604 @@ pub fn build_refunding_body(
     sb.add_op(OpTrue)?;
     Ok(sb.drain())
 }
+
+// =============================================================================
+// V1 Bounded Purchase Directory Universal Refunding Implementation
+// =============================================================================
+
+pub fn min_k_for_p(p: usize) -> usize {
+    if p <= 5 { 1 }
+    else if p <= 27 { 2 }
+    else if p <= 48 { 3 }
+    else if p <= 70 { 4 }
+    else if p <= 92 { 5 }
+    else if p <= 114 { 6 }
+    else if p <= 135 { 7 }
+    else if p <= 157 { 8 }
+    else if p <= 179 { 9 }
+    else if p <= 201 { 10 }
+    else if p <= 223 { 11 }
+    else if p <= 245 { 12 }
+    else { 13 }
+}
+
+pub fn schedule_next_k(remaining: usize, p_total: usize, k_max: usize) -> usize {
+    if remaining <= k_max {
+        return remaining;
+    }
+    let m = min_k_for_p(p_total);
+    let num_steps = (remaining + k_max - 1) / k_max;
+    let base = remaining / num_steps;
+    let rem = remaining % num_steps;
+    let candidate = base + if rem > 0 { 1 } else { 0 };
+    candidate.min(k_max).max(m)
+}
+
+pub fn build_directory_refunding_prefix(
+    round_id: &Hash,
+    ticket_price: u64,
+    purchase_count: u64,
+    cursor: u64,
+    creator_refund_spk: &[u8],
+    directory: &[u8],
+) -> Vec<u8> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+    sb.add_op(OpTxInputIndex).unwrap();
+    sb.add_op(Op0).unwrap();
+    sb.add_op(OpEqualVerify).unwrap();
+    sb.add_data(&round_id.as_bytes()).unwrap();
+    sb.add_data(&ticket_price.to_le_bytes()).unwrap();
+    sb.add_data(&purchase_count.to_le_bytes()).unwrap();
+    sb.add_data(&cursor.to_le_bytes()).unwrap();
+    sb.add_data(creator_refund_spk).unwrap();
+    sb.add_data(directory).unwrap();
+    sb.drain()
+}
+
+fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    sb.add_op(OpSize)?;
+    sb.add_op(OpDup)?; sb.add_i64(75)?; sb.add_op(OpLessThanOrEqual)?;
+    sb.add_op(OpIf)?;
+        sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+        sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+    sb.add_op(OpElse)?;
+        sb.add_op(OpDup)?; sb.add_i64(255)?; sb.add_op(OpLessThanOrEqual)?;
+        sb.add_op(OpIf)?;
+            sb.add_op(OpDup)?; sb.add_i64(127)?; sb.add_op(OpLessThanOrEqual)?;
+            sb.add_op(OpIf)?;
+                sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+            sb.add_op(OpElse)?;
+                sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+                sb.add_i64(0)?; sb.add_i64(1)?; sb.add_op(OpSubstr)?;
+            sb.add_op(OpEndIf)?;
+            sb.add_data(&[0x4c])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpElse)?;
+            sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x4d])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpEndIf)?;
+    sb.add_op(OpEndIf)?;
+    Ok(())
+}
+
+pub fn build_compact_universal_refunding_body(static_body_len: usize) -> Vec<u8> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+
+    // Top item is directory. Park on AltStack:
+    sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory]
+
+    // Parameter shape validation:
+    // depth 0: creator_refund_spk (34B)
+    sb.add_op(Op0).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpSize).unwrap();
+    sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+    sb.add_i64(34).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+    // depth 1: cursor (8B LE)
+    sb.add_i64(1).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpSize).unwrap();
+    sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+    sb.add_i64(8).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+    // depth 2: purchase_count (8B LE)
+    sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpSize).unwrap();
+    sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+    sb.add_i64(8).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+    // depth 3: ticket_price (8B LE)
+    sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpSize).unwrap();
+    sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+    sb.add_i64(8).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+    // depth 4: round_id (32B)
+    sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpSize).unwrap();
+    sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+    sb.add_i64(32).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+    // Witness k at depth 5:
+    sb.add_i64(5).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // k (num)
+
+    // Check depth == k + 6:
+    sb.add_op(OpDepth).unwrap();
+    sb.add_op(Op1Sub).unwrap();
+    sb.add_i64(6).unwrap(); sb.add_op(OpSub).unwrap();
+    sb.add_op(OpOver).unwrap();
+    sb.add_op(OpNumEqualVerify).unwrap();
+
+    // Calculate remaining = purchase_count - cursor:
+    sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // purchase_count
+    sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // cursor
+    sb.add_op(OpSub).unwrap(); // remaining
+
+    // Compute expected_k on-chain:
+    sb.add_op(OpDup).unwrap();
+    sb.add_i64(16).unwrap();
+    sb.add_op(OpLessThanOrEqual).unwrap();
+    sb.add_op(OpIf).unwrap();
+        // expected_k = remaining
+    sb.add_op(OpElse).unwrap();
+        sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // p
+        sb.add_op(OpDup).unwrap(); sb.add_i64(5).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+        sb.add_op(OpIf).unwrap();
+            sb.add_op(OpDrop).unwrap(); sb.add_i64(1).unwrap();
+        sb.add_op(OpElse).unwrap();
+            sb.add_op(OpDup).unwrap(); sb.add_i64(27).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+            sb.add_op(OpIf).unwrap();
+                sb.add_op(OpDrop).unwrap(); sb.add_i64(2).unwrap();
+            sb.add_op(OpElse).unwrap();
+                sb.add_op(OpDup).unwrap(); sb.add_i64(48).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                sb.add_op(OpIf).unwrap();
+                    sb.add_op(OpDrop).unwrap(); sb.add_i64(3).unwrap();
+                sb.add_op(OpElse).unwrap();
+                    sb.add_op(OpDup).unwrap(); sb.add_i64(70).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                    sb.add_op(OpIf).unwrap();
+                        sb.add_op(OpDrop).unwrap(); sb.add_i64(4).unwrap();
+                    sb.add_op(OpElse).unwrap();
+                        sb.add_op(OpDup).unwrap(); sb.add_i64(92).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                        sb.add_op(OpIf).unwrap();
+                            sb.add_op(OpDrop).unwrap(); sb.add_i64(5).unwrap();
+                        sb.add_op(OpElse).unwrap();
+                            sb.add_op(OpDup).unwrap(); sb.add_i64(114).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                            sb.add_op(OpIf).unwrap();
+                                sb.add_op(OpDrop).unwrap(); sb.add_i64(6).unwrap();
+                            sb.add_op(OpElse).unwrap();
+                                sb.add_op(OpDup).unwrap(); sb.add_i64(135).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                                sb.add_op(OpIf).unwrap();
+                                    sb.add_op(OpDrop).unwrap(); sb.add_i64(7).unwrap();
+                                sb.add_op(OpElse).unwrap();
+                                    sb.add_op(OpDup).unwrap(); sb.add_i64(157).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                                    sb.add_op(OpIf).unwrap();
+                                        sb.add_op(OpDrop).unwrap(); sb.add_i64(8).unwrap();
+                                    sb.add_op(OpElse).unwrap();
+                                        sb.add_op(OpDup).unwrap(); sb.add_i64(179).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                                        sb.add_op(OpIf).unwrap();
+                                            sb.add_op(OpDrop).unwrap(); sb.add_i64(9).unwrap();
+                                        sb.add_op(OpElse).unwrap();
+                                            sb.add_op(OpDup).unwrap(); sb.add_i64(201).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                                            sb.add_op(OpIf).unwrap();
+                                                sb.add_op(OpDrop).unwrap(); sb.add_i64(10).unwrap();
+                                            sb.add_op(OpElse).unwrap();
+                                                sb.add_op(OpDup).unwrap(); sb.add_i64(223).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                                                sb.add_op(OpIf).unwrap();
+                                                    sb.add_op(OpDrop).unwrap(); sb.add_i64(11).unwrap();
+                                                sb.add_op(OpElse).unwrap();
+                                                    sb.add_op(OpDup).unwrap(); sb.add_i64(245).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap();
+                                                    sb.add_op(OpIf).unwrap();
+                                                        sb.add_op(OpDrop).unwrap(); sb.add_i64(12).unwrap();
+                                                    sb.add_op(OpElse).unwrap();
+                                                        sb.add_op(OpDrop).unwrap(); sb.add_i64(13).unwrap();
+                                                    sb.add_op(OpEndIf).unwrap();
+                                                sb.add_op(OpEndIf).unwrap();
+                                            sb.add_op(OpEndIf).unwrap();
+                                        sb.add_op(OpEndIf).unwrap();
+                                    sb.add_op(OpEndIf).unwrap();
+                                sb.add_op(OpEndIf).unwrap();
+                            sb.add_op(OpEndIf).unwrap();
+                        sb.add_op(OpEndIf).unwrap();
+                    sb.add_op(OpEndIf).unwrap();
+                sb.add_op(OpEndIf).unwrap();
+            sb.add_op(OpEndIf).unwrap();
+        sb.add_op(OpEndIf).unwrap(); // [remaining, m]
+
+        sb.add_op(OpSwap).unwrap(); // [m, remaining]
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(15).unwrap(); sb.add_op(OpAdd).unwrap();
+        sb.add_i64(16).unwrap(); sb.add_op(OpDiv).unwrap(); // num_steps
+        sb.add_op(OpOver).unwrap();
+        sb.add_op(OpOver).unwrap();
+        sb.add_op(OpDiv).unwrap(); // base
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); // num_steps
+        sb.add_op(OpMul).unwrap(); // base * num_steps
+        sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); // remaining
+        sb.add_op(OpSwap).unwrap();
+        sb.add_op(OpSub).unwrap(); // remaining - (base*num_steps) = rem
+        sb.add_op(Op0).unwrap(); sb.add_op(OpGreaterThan).unwrap();
+        sb.add_op(OpIf).unwrap();
+            sb.add_i64(1).unwrap(); sb.add_op(OpAdd).unwrap();
+        sb.add_op(OpEndIf).unwrap();
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap();
+        sb.add_op(OpMax).unwrap();
+        sb.add_i64(16).unwrap();
+        sb.add_op(OpMin).unwrap();
+    sb.add_op(OpEndIf).unwrap();
+
+    // Verify k == expected_k:
+    sb.add_op(OpEqualVerify).unwrap(); // k was at depth 0, now popped!
+
+    // Pop k from depth 5 (roll to top, and stash on AltStack!):
+    sb.add_i64(5).unwrap(); sb.add_op(OpRoll).unwrap(); sb.add_op(OpBin2Num).unwrap(); // k (num)
+    sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory, k]
+
+    // Common transaction checks:
+    sb.add_op(OpTxInputCount).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+    sb.add_op(OpFromAltStack).unwrap(); // k (num)
+    sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory, k]
+    sb.add_i64(1).unwrap(); sb.add_op(OpAdd).unwrap(); // k + 1
+    sb.add_op(OpTxOutputCount).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+
+    // Check if terminal: cursor + k == purchase_count
+    sb.add_i64(1).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // cursor
+    sb.add_op(OpFromAltStack).unwrap(); // k (num)
+    sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory, k]
+    sb.add_op(OpAdd).unwrap(); // cursor + k
+    sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // purchase_count
+    sb.add_op(OpEqual).unwrap(); // is_terminal
+
+    sb.add_op(OpIf).unwrap();
+        // TERMINAL BATCH
+        sb.add_op(Op0).unwrap(); sb.add_op(OpInputCovenantId).unwrap();
+        sb.add_op(OpDup).unwrap();
+        sb.add_data(&ZERO_HASH.as_bytes()).unwrap(); sb.add_op(OpEqual).unwrap(); sb.add_op(OpNot).unwrap(); sb.add_op(OpVerify).unwrap();
+        sb.add_op(OpDup).unwrap(); sb.add_op(OpCovInputCount).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpAuthOutputCount).unwrap(); sb.add_i64(0).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+        sb.add_op(OpCovOutputCount).unwrap(); sb.add_i64(0).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+
+        for out_idx in 0..17 {
+            sb.add_op(OpFromAltStack).unwrap(); // k
+            sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_i64(out_idx as i64).unwrap();
+            sb.add_op(OpGreaterThanOrEqual).unwrap();
+            sb.add_op(OpIf).unwrap();
+                sb.add_i64(out_idx as i64).unwrap();
+                sb.add_op(OpOutputCovenantId).unwrap();
+                sb.add_data(&ZERO_HASH.as_bytes()).unwrap();
+                sb.add_op(OpEqualVerify).unwrap();
+
+                sb.add_i64(out_idx as i64).unwrap();
+                sb.add_op(OpOutputAuthorizingInput).unwrap();
+                sb.add_op(Op1Negate).unwrap();
+                sb.add_op(OpNumEqualVerify).unwrap();
+            sb.add_op(OpEndIf).unwrap();
+        }
+
+        // Loop over j in 0..16: buyer payouts at Output j
+        sb.add_i64(0).unwrap(); sb.add_op(OpToAltStack).unwrap(); // sum_gross = 0
+
+        for j in 0..16 {
+            sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+            sb.add_op(OpFromAltStack).unwrap(); // k
+            sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_i64(j as i64).unwrap();
+            sb.add_op(OpGreaterThan).unwrap(); // j < k?
+            sb.add_op(OpIf).unwrap();
+                let out_idx = j;
+                sb.add_i64(1).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap();
+                if j > 0 { sb.add_i64(j as i64).unwrap(); sb.add_op(OpAdd).unwrap(); }
+                sb.add_op(OpDup).unwrap();
+                sb.add_i64(36).unwrap(); sb.add_op(OpMul).unwrap();
+                sb.add_op(OpDup).unwrap();
+                sb.add_i64(36).unwrap(); sb.add_op(OpAdd).unwrap();
+
+                sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+                sb.add_op(OpFromAltStack).unwrap(); // k
+                sb.add_op(OpFromAltStack).unwrap(); // directory
+                sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                sb.add_op(OpRot).unwrap();
+                sb.add_op(OpRot).unwrap();
+                sb.add_op(OpSubstr).unwrap();
+
+                sb.add_op(OpDup).unwrap();
+                sb.add_i64(4).unwrap(); sb.add_i64(36).unwrap(); sb.add_op(OpSubstr).unwrap();
+
+                sb.add_data(&[0x20]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+                sb.add_data(&[0xac]).unwrap(); sb.add_op(OpCat).unwrap();
+                sb.add_data(&[0x00, 0x00]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+                sb.add_i64(out_idx as i64).unwrap(); sb.add_op(OpTxOutputSpk).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+                sb.add_i64(0).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpSubstr).unwrap(); sb.add_op(OpBin2Num).unwrap();
+
+                sb.add_op(OpSwap).unwrap();
+                sb.add_op(OpDup).unwrap();
+                sb.add_op(Op0).unwrap();
+                sb.add_op(OpEqual).unwrap();
+                sb.add_op(OpIf).unwrap();
+                    sb.add_op(OpDrop).unwrap();
+                    sb.add_i64(0).unwrap();
+                sb.add_op(OpElse).unwrap();
+                    sb.add_i64(1).unwrap(); sb.add_op(OpSub).unwrap();
+                    sb.add_i64(36).unwrap(); sb.add_op(OpMul).unwrap();
+                    sb.add_op(OpDup).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpAdd).unwrap();
+                    sb.add_op(OpFromAltStack).unwrap();
+                    sb.add_op(OpFromAltStack).unwrap();
+                    sb.add_op(OpFromAltStack).unwrap();
+                    sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                    sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                    sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                    sb.add_op(OpRot).unwrap();
+                    sb.add_op(OpRot).unwrap();
+                    sb.add_op(OpSubstr).unwrap();
+                    sb.add_op(OpBin2Num).unwrap();
+                sb.add_op(OpEndIf).unwrap();
+
+                sb.add_op(OpSub).unwrap();
+                sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap();
+                sb.add_op(OpMul).unwrap();
+
+                sb.add_op(OpDup).unwrap();
+                sb.add_op(OpFromAltStack).unwrap();
+                sb.add_op(OpAdd).unwrap();
+                sb.add_op(OpToAltStack).unwrap();
+
+                let fee_depth = 6 + j;
+                sb.add_i64(fee_depth as i64).unwrap(); sb.add_op(OpPick).unwrap();
+                sb.add_op(OpSize).unwrap(); sb.add_i64(8).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+                sb.add_op(OpBin2Num).unwrap();
+
+                sb.add_op(OpDup).unwrap(); sb.add_i64(0).unwrap(); sb.add_op(OpGreaterThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+                sb.add_op(OpDup).unwrap(); sb.add_i64(1_500_000).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+
+                sb.add_op(OpSub).unwrap();
+                sb.add_op(OpDup).unwrap(); sb.add_i64(10_000).unwrap(); sb.add_op(OpGreaterThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+                sb.add_i64(out_idx as i64).unwrap(); sb.add_op(OpTxOutputAmount).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+            sb.add_op(OpEndIf).unwrap();
+        }
+
+        // Output k SPK == creator_refund_spk
+        sb.add_op(Op0).unwrap(); sb.add_op(OpPick).unwrap();
+        sb.add_data(&[0x00, 0x00]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+        sb.add_op(OpFromAltStack).unwrap(); // k
+        sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap(); // k back to AltStack
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap(); // sum_gross back to AltStack!
+        sb.add_op(OpTxOutputSpk).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+        // Output k Amount == state_deposit (Input0 - sum_gross)
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxInputAmount).unwrap();
+        sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+        sb.add_op(OpSub).unwrap();
+        sb.add_op(OpDup).unwrap(); sb.add_i64(0).unwrap(); sb.add_op(OpGreaterThan).unwrap(); sb.add_op(OpVerify).unwrap();
+        sb.add_op(OpFromAltStack).unwrap(); // k
+        sb.add_op(OpTxOutputAmount).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+        // Drop directory from AltStack:
+        sb.add_op(OpFromAltStack).unwrap(); sb.add_op(OpDrop).unwrap(); // directory dropped!
+        sb.add_data(b"").unwrap(); sb.add_op(OpToAltStack).unwrap(); // sentinel for AltStack cleanup
+    sb.add_op(OpElse).unwrap();
+        // NON-TERMINAL BATCH
+        sb.add_op(Op0).unwrap(); sb.add_op(OpInputCovenantId).unwrap();
+        sb.add_op(OpDup).unwrap();
+        sb.add_data(&ZERO_HASH.as_bytes()).unwrap(); sb.add_op(OpEqual).unwrap(); sb.add_op(OpNot).unwrap(); sb.add_op(OpVerify).unwrap();
+        sb.add_op(OpDup).unwrap(); sb.add_op(OpCovInputCount).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpAuthOutputCount).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+        sb.add_op(OpDup).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpOutputCovenantId).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpOutputAuthorizingInput).unwrap(); sb.add_op(Op0).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+        sb.add_op(OpCovOutputCount).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+
+        for out_idx in 1..=16 {
+            sb.add_op(OpFromAltStack).unwrap(); // k
+            sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_i64(out_idx as i64).unwrap();
+            sb.add_op(OpGreaterThanOrEqual).unwrap();
+            sb.add_op(OpIf).unwrap();
+                sb.add_i64(out_idx as i64).unwrap();
+                sb.add_op(OpOutputCovenantId).unwrap();
+                sb.add_data(&ZERO_HASH.as_bytes()).unwrap();
+                sb.add_op(OpEqualVerify).unwrap();
+
+                sb.add_i64(out_idx as i64).unwrap();
+                sb.add_op(OpOutputAuthorizingInput).unwrap();
+                sb.add_op(Op1Negate).unwrap();
+                sb.add_op(OpNumEqualVerify).unwrap();
+            sb.add_op(OpEndIf).unwrap();
+        }
+
+        // Loop over j in 0..16: buyer payouts at Output (j + 1)
+        sb.add_i64(0).unwrap(); sb.add_op(OpToAltStack).unwrap(); // sum_gross = 0
+
+        for j in 0..16 {
+            sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+            sb.add_op(OpFromAltStack).unwrap(); // k
+            sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_i64(j as i64).unwrap();
+            sb.add_op(OpGreaterThan).unwrap(); // j < k?
+            sb.add_op(OpIf).unwrap();
+                let out_idx = j + 1;
+                sb.add_i64(1).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap();
+                if j > 0 { sb.add_i64(j as i64).unwrap(); sb.add_op(OpAdd).unwrap(); }
+                sb.add_op(OpDup).unwrap();
+                sb.add_i64(36).unwrap(); sb.add_op(OpMul).unwrap();
+                sb.add_op(OpDup).unwrap();
+                sb.add_i64(36).unwrap(); sb.add_op(OpAdd).unwrap();
+
+                sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+                sb.add_op(OpFromAltStack).unwrap(); // k
+                sb.add_op(OpFromAltStack).unwrap(); // directory
+                sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                sb.add_op(OpRot).unwrap();
+                sb.add_op(OpRot).unwrap();
+                sb.add_op(OpSubstr).unwrap();
+
+                sb.add_op(OpDup).unwrap();
+                sb.add_i64(4).unwrap(); sb.add_i64(36).unwrap(); sb.add_op(OpSubstr).unwrap();
+
+                sb.add_data(&[0x20]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+                sb.add_data(&[0xac]).unwrap(); sb.add_op(OpCat).unwrap();
+                sb.add_data(&[0x00, 0x00]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+                sb.add_i64(out_idx as i64).unwrap(); sb.add_op(OpTxOutputSpk).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+                sb.add_i64(0).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpSubstr).unwrap(); sb.add_op(OpBin2Num).unwrap();
+
+                sb.add_op(OpSwap).unwrap();
+                sb.add_op(OpDup).unwrap();
+                sb.add_op(Op0).unwrap();
+                sb.add_op(OpEqual).unwrap();
+                sb.add_op(OpIf).unwrap();
+                    sb.add_op(OpDrop).unwrap();
+                    sb.add_i64(0).unwrap();
+                sb.add_op(OpElse).unwrap();
+                    sb.add_i64(1).unwrap(); sb.add_op(OpSub).unwrap();
+                    sb.add_i64(36).unwrap(); sb.add_op(OpMul).unwrap();
+                    sb.add_op(OpDup).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpAdd).unwrap();
+                    sb.add_op(OpFromAltStack).unwrap();
+                    sb.add_op(OpFromAltStack).unwrap();
+                    sb.add_op(OpFromAltStack).unwrap();
+                    sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                    sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                    sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+                    sb.add_op(OpRot).unwrap();
+                    sb.add_op(OpRot).unwrap();
+                    sb.add_op(OpSubstr).unwrap();
+                    sb.add_op(OpBin2Num).unwrap();
+                sb.add_op(OpEndIf).unwrap();
+
+                sb.add_op(OpSub).unwrap();
+                sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap();
+                sb.add_op(OpMul).unwrap();
+
+                sb.add_op(OpDup).unwrap();
+                sb.add_op(OpFromAltStack).unwrap();
+                sb.add_op(OpAdd).unwrap();
+                sb.add_op(OpToAltStack).unwrap();
+
+                let fee_depth = 6 + j;
+                sb.add_i64(fee_depth as i64).unwrap(); sb.add_op(OpPick).unwrap();
+                sb.add_op(OpSize).unwrap(); sb.add_i64(8).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+                sb.add_op(OpBin2Num).unwrap();
+
+                sb.add_op(OpDup).unwrap(); sb.add_i64(0).unwrap(); sb.add_op(OpGreaterThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+                sb.add_op(OpDup).unwrap(); sb.add_i64(1_500_000).unwrap(); sb.add_op(OpLessThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+
+                sb.add_op(OpSub).unwrap();
+                sb.add_op(OpDup).unwrap(); sb.add_i64(10_000).unwrap(); sb.add_op(OpGreaterThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+                sb.add_i64(out_idx as i64).unwrap(); sb.add_op(OpTxOutputAmount).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+            sb.add_op(OpEndIf).unwrap();
+        }
+
+        // Output 0 Amount == Input0 - sum_gross
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxInputAmount).unwrap();
+        sb.add_op(OpFromAltStack).unwrap(); // sum_gross
+        sb.add_op(OpSub).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputAmount).unwrap(); sb.add_op(OpEqualVerify).unwrap();
+
+        // Reconstruct successor REFUNDING covenant:
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxInputScriptSigLen).unwrap();
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(static_body_len as i64).unwrap(); sb.add_op(OpSub).unwrap();
+        sb.add_op(OpSwap).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpRot).unwrap(); sb.add_op(OpRot).unwrap();
+        sb.add_op(OpTxInputScriptSigSubstr).unwrap(); // universal_body
+        sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory, k, universal_body]
+
+        // 1. [0xb9, 0x00, 0x88]
+        sb.add_data(&[0xb9, 0x00, 0x88]).unwrap();
+        // 2. round_id (32B): at depth 5 under prefix_so_far (depth 6 on dstack)
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(6).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // 3. ticket_price (8B): at depth 4 under prefix_so_far (depth 5 on dstack)
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(5).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // 4. purchase_count (8B): at depth 3 under prefix_so_far (depth 4 on dstack)
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+
+        // 5. new_cursor = cursor + k:
+        sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // cursor (num)
+        sb.add_op(OpFromAltStack).unwrap(); // universal_body
+        sb.add_op(OpFromAltStack).unwrap(); // k (num)
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap(); // universal_body back to AltStack!
+        sb.add_op(OpAdd).unwrap(); // cursor + k
+        sb.add_i64(8).unwrap(); sb.add_op(OpNum2Bin).unwrap();
+        sb.add_data(&[0x08]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_op(OpCat).unwrap(); // prefix_so_far with new_cursor!
+
+        // 6. creator_refund_spk (34B): at depth 1 under prefix_so_far (depth 2 on dstack)
+        sb.add_data(&[0x22]).unwrap();
+        sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap();
+        sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+
+        // 7. directory:
+        sb.add_op(OpFromAltStack).unwrap(); // universal_body
+        sb.add_op(OpFromAltStack).unwrap(); // directory
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap(); // universal_body back to AltStack!
+        append_runtime_directory_push(&mut sb).unwrap();
+        sb.add_op(OpCat).unwrap(); // full_prefix
+
+        // 8. Append universal_body from AltStack:
+        sb.add_op(OpFromAltStack).unwrap(); // universal_body!
+        sb.add_op(OpCat).unwrap(); // full expected successor redeem script!
+
+        // Output 0 SPK == P2SH(expected_redeem):
+        sb.add_data(b"").unwrap(); sb.add_op(OpBlake2bWithKey).unwrap();
+        sb.add_data(&[0x00, 0x00, 0xaa, 0x20]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_data(&[0x87]).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputSpk).unwrap();
+        sb.add_op(OpEqualVerify).unwrap();
+
+        sb.add_data(b"").unwrap(); sb.add_op(OpToAltStack).unwrap();
+    sb.add_op(OpEndIf).unwrap();
+
+    // AltStack cleanup:
+    sb.add_op(OpFromAltStack).unwrap(); sb.add_op(OpDrop).unwrap();
+
+    // Clean execution stack:
+    for _ in 0..22 {
+        sb.add_op(OpDepth).unwrap();
+        sb.add_op(Op0).unwrap();
+        sb.add_op(OpGreaterThan).unwrap();
+        sb.add_op(OpIf).unwrap();
+            sb.add_op(OpDrop).unwrap();
+        sb.add_op(OpEndIf).unwrap();
+    }
+    sb.add_op(OpTrue).unwrap();
+
+    sb.drain()
+}
+
+pub fn compute_converged_compact_universal_body() -> Vec<u8> {
+    let mut guess = 3000;
+    for _ in 0..20 {
+        let b = build_compact_universal_refunding_body(guess);
+        if b.len() == guess {
+            return b;
+        }
+        guess = b.len();
+    }
+    build_compact_universal_refunding_body(guess)
+}
+
+pub fn build_compact_universal_refunding_covenant(
+    round_id: Hash,
+    ticket_price: u64,
+    purchase_count: u64,
+    cursor: u64,
+    creator_refund_spk: Vec<u8>,
+    directory: Vec<u8>,
+) -> Vec<u8> {
+    let prefix = build_directory_refunding_prefix(
+        &round_id,
+        ticket_price,
+        purchase_count,
+        cursor,
+        &creator_refund_spk,
+        &directory,
+    );
+    let body = compute_converged_compact_universal_body();
+    let mut full = prefix;
+    full.extend_from_slice(&body);
+    full
+}

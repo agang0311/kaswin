@@ -426,3 +426,388 @@ pub fn build_canonical_winner_ready_redeem_script(
         winner_index,
     ).unwrap()
 }
+
+// =============================================================================
+// V1 Bounded Purchase Directory DRAW_READY Covenant Implementation
+// =============================================================================
+
+pub const ACTION_ACCEPT: i64 = 1;
+pub const ACTION_REJECT: i64 = 2;
+
+/// Builds canonical production DRAW_READY prefix layout for bounded directory:
+///   round_id (32B)
+///   ticket_price (8B LE)
+///   draw_ticket_count (8B LE)
+///   ticket_root (32B)
+///   purchase_count (8B LE)
+///   target_hash (32B)
+///   random_seed (32B)
+///   counter (8B LE)
+///   creator_refund_spk (34B)
+///   directory (variable P*36B)
+pub fn build_directory_draw_ready_prefix(
+    round_id: &Hash,
+    ticket_price: u64,
+    draw_ticket_count: u64,
+    ticket_root: &Hash,
+    purchase_count: u64,
+    target_hash: &Hash,
+    random_seed: &Hash,
+    counter: u64,
+    creator_refund_spk: &[u8],
+    directory: &[u8],
+) -> Vec<u8> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+    sb.add_op(OpTxInputIndex).unwrap();
+    sb.add_op(Op0).unwrap();
+    sb.add_op(OpEqualVerify).unwrap();
+
+    sb.add_data(&round_id.as_bytes()).unwrap();
+    sb.add_data(&ticket_price.to_le_bytes()).unwrap();
+    sb.add_data(&draw_ticket_count.to_le_bytes()).unwrap();
+    sb.add_data(&ticket_root.as_bytes()).unwrap();
+    sb.add_data(&purchase_count.to_le_bytes()).unwrap();
+    sb.add_data(&target_hash.as_bytes()).unwrap();
+    sb.add_data(&random_seed.as_bytes()).unwrap();
+    sb.add_data(&counter.to_le_bytes()).unwrap();
+    sb.add_data(creator_refund_spk).unwrap();
+    sb.add_data(directory).unwrap();
+    sb.drain()
+}
+
+fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    sb.add_op(OpSize)?;
+    sb.add_op(OpDup)?; sb.add_i64(75)?; sb.add_op(OpLessThanOrEqual)?;
+    sb.add_op(OpIf)?;
+        sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+        sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+    sb.add_op(OpElse)?;
+        sb.add_op(OpDup)?; sb.add_i64(255)?; sb.add_op(OpLessThanOrEqual)?;
+        sb.add_op(OpIf)?;
+            sb.add_op(OpDup)?; sb.add_i64(127)?; sb.add_op(OpLessThanOrEqual)?;
+            sb.add_op(OpIf)?;
+                sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+            sb.add_op(OpElse)?;
+                sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+                sb.add_i64(0)?; sb.add_i64(1)?; sb.add_op(OpSubstr)?;
+            sb.add_op(OpEndIf)?;
+            sb.add_data(&[0x4c])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpElse)?;
+            sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x4d])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpEndIf)?;
+    sb.add_op(OpEndIf)?;
+    Ok(())
+}
+
+/// Builds the production DRAW_READY body for bounded directory supporting ACCEPT and REJECT.
+pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+
+    // Step 0: Initial verification & parameter parking
+    sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory]
+
+    // Validate 9 state parameters on dstack:
+    for (depth, width) in [
+        (0i64, 34i64), // creator_refund_spk (34B)
+        (1, 8),        // counter (8B LE)
+        (2, 32),       // random_seed (32B)
+        (3, 32),       // target_hash (32B)
+        (4, 8),        // purchase_count (8B LE)
+        (5, 32),       // ticket_root (32B)
+        (6, 8),        // draw_ticket_count (8B LE)
+        (7, 8),        // ticket_price (8B LE)
+        (8, 32),       // round_id (32B)
+    ] {
+        sb.add_i64(depth).unwrap();
+        sb.add_op(OpPick).unwrap();
+        sb.add_op(OpSize).unwrap();
+        sb.add_i64(width).unwrap();
+        sb.add_op(OpNumEqualVerify).unwrap();
+        sb.add_op(OpDrop).unwrap();
+    }
+
+    // Compute candidate_num = BLAKE2b256("KaswinWinnerCandidateV1" || random_seed || counter)[0..7]:
+    sb.add_data(b"KaswinWinnerCandidateV1").unwrap();
+    sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); // random_seed (depth 2 + 1)
+    sb.add_op(OpCat).unwrap();
+    sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); // counter (depth 1 + 1)
+    sb.add_op(OpCat).unwrap();
+    sb.add_data(b"").unwrap(); sb.add_op(OpBlake2bWithKey).unwrap(); // 32B hash
+
+    // Extract first 7 bytes:
+    sb.add_i64(0).unwrap(); sb.add_i64(7).unwrap(); sb.add_op(OpSubstr).unwrap();
+    sb.add_op(OpBin2Num).unwrap(); // candidate_num (num)
+
+    // Compute rejection threshold LIMIT = floor(2^56 / draw_ticket_count) * draw_ticket_count:
+    sb.add_i64(1i64 << 56).unwrap(); // R = 2^56
+    sb.add_i64(8).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // draw_ticket_count (depth 6 + 2)
+    sb.add_op(OpDiv).unwrap(); // Q = floor(R / N)
+    sb.add_i64(8).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // draw_ticket_count
+    sb.add_op(OpMul).unwrap(); // LIMIT = Q * N
+
+    // Compare candidate_num < LIMIT:
+    sb.add_op(OpOver).unwrap(); // [candidate_num, LIMIT, candidate_num]
+    sb.add_i64(1).unwrap(); sb.add_op(OpPick).unwrap(); // [candidate_num, LIMIT, candidate_num, LIMIT]
+    sb.add_op(OpLessThan).unwrap(); // boolean: 1 = ACCEPT, 0 = REJECT
+
+    sb.add_op(OpIf).unwrap();
+        // =====================================================================
+        // ACTION_ACCEPT (1) -> WINNER_READY
+        // =====================================================================
+        sb.add_op(OpDrop).unwrap(); // drop LIMIT
+        // winner_index = candidate_num % draw_ticket_count:
+        sb.add_i64(7).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // draw_ticket_count (depth 6 + 1)
+        sb.add_op(OpMod).unwrap(); // winner_index (num)
+
+        // Validate winner ownership from witness purchase index i:
+        // Top of dstack is winner_index (num).
+        // Witness item i (8-byte LE purchase index) is at depth 10:
+        sb.add_i64(10).unwrap(); sb.add_op(OpPick).unwrap();
+        sb.add_op(OpSize).unwrap(); sb.add_i64(8).unwrap(); sb.add_op(OpNumEqualVerify).unwrap();
+        sb.add_op(OpBin2Num).unwrap(); // i (num)
+
+        // 0 <= i < purchase_count:
+        sb.add_op(OpDup).unwrap(); sb.add_i64(0).unwrap(); sb.add_op(OpGreaterThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap();
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(7).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); // purchase_count (depth 4 + 3)
+        sb.add_op(OpLessThan).unwrap(); sb.add_op(OpVerify).unwrap();
+
+        // Extract record i from directory (start_offset = i * 36, end_offset = start + 36):
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(36).unwrap(); sb.add_op(OpMul).unwrap(); // start_offset
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(36).unwrap(); sb.add_op(OpAdd).unwrap(); // end_offset
+
+        // Fetch directory from AltStack:
+        sb.add_op(OpFromAltStack).unwrap(); // directory
+        sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap(); // keep copy on AltStack
+        sb.add_op(OpRot).unwrap();
+        sb.add_op(OpRot).unwrap();
+        sb.add_op(OpSubstr).unwrap(); // 36-byte record i
+
+        // Extract end_ticket: bytes 0..4 (u32 LE):
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(0).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpSubstr).unwrap();
+        sb.add_op(OpBin2Num).unwrap(); // end_ticket (num)
+
+        // Extract start_ticket: if i == 0 -> 0; else record[i-1].end_ticket:
+        sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); // i (num)
+        sb.add_op(Op0).unwrap();
+        sb.add_op(OpEqual).unwrap();
+        sb.add_op(OpIf).unwrap();
+            sb.add_i64(0).unwrap(); // start_ticket = 0
+        sb.add_op(OpElse).unwrap();
+            sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); // i
+            sb.add_i64(1).unwrap(); sb.add_op(OpSub).unwrap();  // i - 1
+            sb.add_i64(36).unwrap(); sb.add_op(OpMul).unwrap(); // prev_start
+            sb.add_op(OpDup).unwrap();
+            sb.add_i64(4).unwrap(); sb.add_op(OpAdd).unwrap();  // prev_end
+            sb.add_op(OpFromAltStack).unwrap();
+            sb.add_op(OpDup).unwrap(); sb.add_op(OpToAltStack).unwrap();
+            sb.add_op(OpRot).unwrap();
+            sb.add_op(OpRot).unwrap();
+            sb.add_op(OpSubstr).unwrap();
+            sb.add_op(OpBin2Num).unwrap(); // start_ticket
+        sb.add_op(OpEndIf).unwrap();
+
+        // Verify range interval: start_ticket <= winner_index < end_ticket
+        // dstack: [..., winner_index, i, record_i, end_ticket, start_ticket]
+        // start_ticket <= winner_index:
+        sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); // winner_index
+        sb.add_op(OpSwap).unwrap(); // [..., winner_index, start_ticket]
+        sb.add_op(OpGreaterThanOrEqual).unwrap(); sb.add_op(OpVerify).unwrap(); // winner_index >= start_ticket
+        // Both start_ticket and winner_index copy consumed!
+        // dstack: [..., winner_index, i, record_i, end_ticket]
+
+        // winner_index < end_ticket:
+        sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); // winner_index
+        sb.add_op(OpGreaterThan).unwrap(); sb.add_op(OpVerify).unwrap(); // end_ticket > winner_index
+        // Both end_ticket and winner_index copy consumed!
+        // dstack: [..., winner_index, i, record_i]
+
+        // Extract winner_payout_spk from record i (bytes 4..36):
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpDrop).unwrap(); // drop i
+        // dstack: [..., winner_index, record_i]
+        sb.add_i64(4).unwrap(); sb.add_i64(36).unwrap(); sb.add_op(OpSubstr).unwrap(); // 32-byte pubkey
+        // Build 34-byte canonical P2PK SPK: [0x20] || pubkey || [0xac]:
+        sb.add_data(&[0x20]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_data(&[0xac]).unwrap(); sb.add_op(OpCat).unwrap(); // 34-byte winner_payout_spk!
+        // dstack: [..., winner_index, winner_payout_spk]
+
+        // Exact pool amount equality: OpTxOutputAmount(0) == OpTxInputAmount(0)
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxInputAmount).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputAmount).unwrap();
+        sb.add_op(OpEqualVerify).unwrap();
+
+        // Enforce Singleton Continuation Guard:
+        self::lineage::append_kaswin_singleton_continuation_guard(&mut sb).unwrap();
+
+        // Assemble WINNER_READY redeem script (DIRECTORY SAFELY DROPPED!):
+        // [0xb9, 0x00, 0x88]
+        sb.add_data(&[0xb9, 0x00, 0x88]).unwrap();
+        // round_id (32B): depth 10 relative to dstack, pick depth 11 + 1 = 12
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(12).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // ticket_price (8B): depth 9, pick depth 10 + 1 = 11
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(11).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // draw_ticket_count (8B): depth 8, pick depth 9 + 1 = 10
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(10).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // ticket_root (32B): depth 7, pick depth 8 + 1 = 9
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(9).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // target_hash (32B): depth 5, pick depth 6 + 1 = 7
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(7).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // random_seed (32B): depth 4, pick depth 5 + 1 = 6
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(6).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // accepted_counter = counter (8B): depth 3, pick depth 4 + 1 = 5
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(5).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // winner_index (8B): depth 1, pick depth 2
+        sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_i64(8).unwrap(); sb.add_op(OpNum2Bin).unwrap();
+        sb.add_data(&[0x08]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // winner_payout_spk (34B): depth 0, pick depth 1 + 1 = 2
+        sb.add_data(&[0x22]).unwrap(); sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // creator_refund_spk (34B): depth 2, pick depth 3 + 1 = 4
+        sb.add_data(&[0x22]).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+
+        // Drop directory from AltStack:
+        sb.add_op(OpFromAltStack).unwrap(); sb.add_op(OpDrop).unwrap();
+
+        // Append production WINNER_READY settlement body:
+        let wr_body = self::winner_ready_settlement::build_winner_ready_settlement_body();
+        sb.add_data(&wr_body).unwrap();
+        sb.add_op(OpCat).unwrap(); // full WINNER_READY redeem script!
+
+        // Output 0 SPK == P2SH(WINNER_READY redeem script):
+        sb.add_data(b"").unwrap(); sb.add_op(OpBlake2bWithKey).unwrap();
+        sb.add_data(&[0x00, 0x00, 0xaa, 0x20]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_data(&[0x87]).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputSpk).unwrap();
+        sb.add_op(OpEqualVerify).unwrap();
+
+        // Clean stack (12 items remaining):
+        for _ in 0..12 {
+            sb.add_op(OpDrop).unwrap();
+        }
+        sb.add_op(OpTrue).unwrap();
+
+    sb.add_op(OpElse).unwrap();
+        // =====================================================================
+        // ACTION_REJECT (2) -> DRAW_READY(counter + 1)
+        // =====================================================================
+        sb.add_op(OpDrop).unwrap(); // drop LIMIT
+        sb.add_op(OpDrop).unwrap(); // drop candidate_num
+
+        // Exact amount equality:
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxInputAmount).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputAmount).unwrap();
+        sb.add_op(OpEqualVerify).unwrap();
+
+        // Singleton continuation guard:
+        self::lineage::append_kaswin_singleton_continuation_guard(&mut sb).unwrap();
+
+        // Slice static DRAW_READY body from scriptSig:
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxInputScriptSigLen).unwrap();
+        sb.add_op(OpDup).unwrap();
+        sb.add_i64(static_body_len as i64).unwrap(); sb.add_op(OpSub).unwrap();
+        sb.add_op(OpSwap).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpRot).unwrap(); sb.add_op(OpRot).unwrap();
+        sb.add_op(OpTxInputScriptSigSubstr).unwrap(); // static body
+        sb.add_op(OpToAltStack).unwrap(); // AltStack: [directory, static_body]
+
+        // Reconstruct successor DRAW_READY(c + 1) prefix:
+        // [0xb9, 0x00, 0x88] (3B)
+        sb.add_data(&[0xb9, 0x00, 0x88]).unwrap();
+        // round_id (32B): depth 8
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(9).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // ticket_price (8B): depth 7
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(8).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // draw_ticket_count (8B): depth 6
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(7).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // ticket_root (32B): depth 5
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(6).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // purchase_count (8B): depth 4
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(5).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // target_hash (32B): depth 3
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // random_seed (32B): depth 2
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // counter + 1 (8B LE): counter is at depth 1
+        sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpAdd).unwrap();
+        sb.add_i64(8).unwrap(); sb.add_op(OpNum2Bin).unwrap();
+        sb.add_data(&[0x08]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // creator_refund_spk (34B): depth 0
+        sb.add_data(&[0x22]).unwrap(); sb.add_op(Op0).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+
+        // Directory push: pop static_body, pop directory, push static_body back:
+        sb.add_op(OpFromAltStack).unwrap(); // static_body
+        sb.add_op(OpFromAltStack).unwrap(); // directory
+        sb.add_op(OpSwap).unwrap(); sb.add_op(OpToAltStack).unwrap();
+        append_runtime_directory_push(&mut sb).unwrap();
+        sb.add_op(OpCat).unwrap(); // full successor prefix
+
+        // Append static_body:
+        sb.add_op(OpFromAltStack).unwrap(); // static_body
+        sb.add_op(OpCat).unwrap(); // full successor redeem script!
+
+        // Output 0 SPK == P2SH(successor redeem script):
+        sb.add_data(b"").unwrap(); sb.add_op(OpBlake2bWithKey).unwrap();
+        sb.add_data(&[0x00, 0x00, 0xaa, 0x20]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_data(&[0x87]).unwrap(); sb.add_op(OpCat).unwrap();
+        sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputSpk).unwrap();
+        sb.add_op(OpEqualVerify).unwrap();
+
+        // Clean stack:
+        for _ in 0..12 {
+            sb.add_op(OpDrop).unwrap();
+        }
+        sb.add_op(OpTrue).unwrap();
+
+    sb.add_op(OpEndIf).unwrap();
+
+    sb.drain()
+}
+
+pub fn compute_converged_directory_draw_ready_body() -> Vec<u8> {
+    let mut guess = 3200usize;
+    for _ in 0..20 {
+        let body = build_directory_draw_ready_body(guess);
+        if body.len() == guess {
+            return body;
+        }
+        guess = body.len();
+    }
+    build_directory_draw_ready_body(guess)
+}
+
+pub fn build_directory_draw_ready_covenant(
+    round_id: Hash,
+    ticket_price: u64,
+    draw_ticket_count: u64,
+    ticket_root: Hash,
+    purchase_count: u64,
+    target_hash: Hash,
+    random_seed: Hash,
+    counter: u64,
+    creator_refund_spk: Vec<u8>,
+    directory: Vec<u8>,
+) -> Vec<u8> {
+    let prefix = build_directory_draw_ready_prefix(
+        &round_id,
+        ticket_price,
+        draw_ticket_count,
+        &ticket_root,
+        purchase_count,
+        &target_hash,
+        &random_seed,
+        counter,
+        &creator_refund_spk,
+        &directory,
+    );
+    let body = compute_converged_directory_draw_ready_body();
+    let mut full = prefix;
+    full.extend_from_slice(&body);
+    full
+}
+
+pub use build_directory_draw_ready_covenant as build_production_draw_ready_covenant;

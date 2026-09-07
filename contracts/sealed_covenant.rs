@@ -608,3 +608,300 @@ pub fn build_production_sealed_covenant_v1(
     full.extend(body);
     Ok(full)
 }
+
+// =============================================================================
+// V1 Bounded Purchase Directory SEALED Covenant Implementation
+// =============================================================================
+
+/// Builds canonical production SEALED prefix layout for bounded directory:
+///   round_id (32B)
+///   ticket_price (8B LE)
+///   draw_ticket_count (8B LE)
+///   ticket_root (32B)
+///   purchase_count (8B LE)
+///   creator_refund_spk (34B)
+///   directory (variable P*36B)
+pub fn build_directory_sealed_prefix(
+    round_id: &Hash,
+    ticket_price: u64,
+    draw_ticket_count: u64,
+    ticket_root: &Hash,
+    purchase_count: u64,
+    creator_refund_spk: &[u8],
+    directory: &[u8],
+) -> Vec<u8> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+    sb.add_op(OpTxInputIndex).unwrap();
+    sb.add_op(Op0).unwrap();
+    sb.add_op(OpEqualVerify).unwrap();
+    sb.add_data(&round_id.as_bytes()).unwrap();
+    sb.add_data(&ticket_price.to_le_bytes()).unwrap();
+    sb.add_data(&draw_ticket_count.to_le_bytes()).unwrap();
+    sb.add_data(&ticket_root.as_bytes()).unwrap();
+    sb.add_data(&purchase_count.to_le_bytes()).unwrap();
+    sb.add_data(creator_refund_spk).unwrap();
+    sb.add_data(directory).unwrap();
+    sb.drain()
+}
+
+fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    sb.add_op(OpSize)?;
+    sb.add_op(OpDup)?; sb.add_i64(75)?; sb.add_op(OpLessThanOrEqual)?;
+    sb.add_op(OpIf)?;
+        sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+        sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+    sb.add_op(OpElse)?;
+        sb.add_op(OpDup)?; sb.add_i64(255)?; sb.add_op(OpLessThanOrEqual)?;
+        sb.add_op(OpIf)?;
+            sb.add_op(OpDup)?; sb.add_i64(127)?; sb.add_op(OpLessThanOrEqual)?;
+            sb.add_op(OpIf)?;
+                sb.add_i64(1)?; sb.add_op(OpNum2Bin)?;
+            sb.add_op(OpElse)?;
+                sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+                sb.add_i64(0)?; sb.add_i64(1)?; sb.add_op(OpSubstr)?;
+            sb.add_op(OpEndIf)?;
+            sb.add_data(&[0x4c])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpElse)?;
+            sb.add_i64(2)?; sb.add_op(OpNum2Bin)?;
+            sb.add_data(&[0x4d])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+            sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+        sb.add_op(OpEndIf)?;
+    sb.add_op(OpEndIf)?;
+    Ok(())
+}
+
+/// Builds production directory SEALED covenant body enforcing PASS-A PoW opening into DRAW_READY(0).
+pub fn build_directory_sealed_body() -> ScriptBuilderResult<Vec<u8>> {
+    let mut sb = ScriptBuilder::with_flags(kaspa_txscript::EngineFlags { covenants_enabled: true, ..Default::default() });
+
+    // Move directory to AltStack first:
+    sb.add_op(OpToAltStack)?; // AltStack: [directory]
+
+    // Move 6 remaining prefix state items to AltStack:
+    for _ in 0..6 {
+        sb.add_op(OpToAltStack)?;
+    }
+    // AltStack top-to-bottom:
+    // [round_id, ticket_price, draw_ticket_count, ticket_root, purchase_count, creator_refund_spk, directory]
+
+    // Action check (on dstack):
+    sb.add_op(OpBin2Num)?;
+    sb.add_i64(ACTION_DRAW)?;
+    sb.add_op(OpNumEqualVerify)?;
+
+    // Witness Stack Canonical Depth (12 items) & Fixed-Width Schema:
+    sb.add_op(OpDepth)?;
+    sb.add_i64(12)?;
+    sb.add_op(OpNumEqualVerify)?;
+
+    // In-place schema validation:
+    for (depth, width) in [
+        (0usize, 8usize),  // p_blue
+        (1, 8),            // p_daa
+        (2, 8),            // p_sp_ts
+        (3, 32),           // p_payload
+        (4, 32),           // p_activity
+        (5, 32),           // p_parent_seq
+        (6, 8),            // target_blue
+        (7, 8),            // target_daa
+        (8, 8),            // target_sp_ts
+        (9, 32),           // target_payload
+        (10, 32),          // target_activity
+        (11, 32),          // target_hash
+    ] {
+        sb.add_i64(depth as i64)?;
+        sb.add_op(OpPick)?;
+        sb.add_op(OpSize)?;
+        sb.add_i64(width as i64)?;
+        sb.add_op(OpNumEqualVerify)?;
+        sb.add_op(OpDrop)?;
+    }
+
+    // Boundary check: boundary = OpTxInputDaaScore(0) + DELTA_DAA_V1 (100)
+    sb.add_op(Op0)?;
+    sb.add_op(OpTxInputDaaScore)?;
+    sb.add_i64(DELTA_DAA_V1 as i64)?;
+    sb.add_op(OpAdd)?;
+    sb.add_op(OpToAltStack)?; // Alt: [..., boundary]
+
+    // Verify P.daa < boundary:
+    sb.add_op(Op1)?;
+    sb.add_op(OpPick)?; // p_daa
+    sb.add_op(OpFromAltStack)?; // boundary
+    sb.add_op(OpDup)?;
+    sb.add_op(OpToAltStack)?;   // keep copy on AltStack
+    sb.add_op(OpLessThan)?;
+    sb.add_op(OpVerify)?;
+
+    // Verify target_daa >= boundary:
+    sb.add_op(Op7)?;
+    sb.add_op(OpPick)?; // target_daa
+    sb.add_op(OpFromAltStack)?; // boundary consumed
+    sb.add_op(OpGreaterThanOrEqual)?;
+    sb.add_op(OpVerify)?;
+
+    // Reconstruct C_P MergesetContext and Merkle Branch (4x OpBlake3WithKey):
+    let key_mergeset = make_blake3_key(b"SeqCommitMergesetContext");
+    let key_branch = make_blake3_key(b"SeqCommitmentMerkleBranchHash");
+
+    sb.add_op(OpCat)?;
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_mergeset)?;
+    sb.add_op(OpBlake3WithKey)?;
+
+    sb.add_op(OpSwap)?;
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_branch)?;
+    sb.add_op(OpBlake3WithKey)?;
+
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_branch)?;
+    sb.add_op(OpBlake3WithKey)?;
+
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_branch)?;
+    sb.add_op(OpBlake3WithKey)?; // C_P
+
+    // Reconstruct C_T:
+    sb.add_i64(3)?; sb.add_op(OpRoll)?; // target_sp_ts
+    sb.add_i64(3)?; sb.add_op(OpRoll)?; // target_daa
+    sb.add_i64(3)?; sb.add_op(OpRoll)?; // target_blue
+    sb.add_op(OpCat)?;
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_mergeset)?;
+    sb.add_op(OpBlake3WithKey)?;
+
+    sb.add_i64(2)?; sb.add_op(OpRoll)?; // target_payload
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_branch)?;
+    sb.add_op(OpBlake3WithKey)?;
+
+    sb.add_i64(2)?; sb.add_op(OpRoll)?; // target_activity
+    sb.add_op(OpSwap)?;
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_branch)?;
+    sb.add_op(OpBlake3WithKey)?;
+
+    sb.add_op(OpCat)?;
+    sb.add_data(&key_branch)?;
+    sb.add_op(OpBlake3WithKey)?; // C_T
+
+    // Authenticate T with OpChainblockSeqCommit:
+    sb.add_op(OpOver)?; // target_hash
+    sb.add_op(OpChainblockSeqCommit)?;
+    sb.add_op(OpEqualVerify)?;
+    // dstack now contains ONLY: [target_hash (32B)]!
+
+    // Pop the 6 prefix items from AltStack to dstack:
+    for _ in 0..6 {
+        sb.add_op(OpFromAltStack)?;
+    }
+    // dstack bottom-to-top:
+    // index 0: target_hash (32B)       -> depth 6
+    // index 1: round_id (32B)          -> depth 5
+    // index 2: ticket_price (8B)       -> depth 4
+    // index 3: draw_ticket_count (8B)  -> depth 3
+    // index 4: ticket_root (32B)       -> depth 2
+    // index 5: purchase_count (8B)     -> depth 1
+    // index 6: creator_refund_spk (34B)-> depth 0
+    // AltStack: [directory]
+
+    // Derive application_commitment:
+    // BLAKE2b256("KaswinAppV1" || round_id || ticket_root || le_u64(draw_ticket_count))
+    sb.add_data(b"KaswinAppV1")?;
+    sb.add_i64(6)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // round_id (depth 5 + 1)
+    sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // ticket_root (depth 2 + 1)
+    sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // draw_ticket_count (depth 3 + 1)
+    sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?; // application_commitment (32B) on top (depth 0)
+
+    // Derive random_seed:
+    // BLAKE2b256("KaspaPoWRandomnessV1" || target_hash || application_commitment)
+    sb.add_data(b"KaspaPoWRandomnessV1")?;
+    sb.add_i64(8)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; // target_hash (depth 6 + 1 + 1)
+    sb.add_i64(1)?; sb.add_op(OpRoll)?; sb.add_op(OpCat)?; // application_commitment
+    sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?; // random_seed (32B) on top!
+
+    // Exact amount preservation:
+    sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
+    sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
+    sb.add_op(OpEqualVerify)?;
+
+    // KIP-20 Singleton continuation:
+    lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+
+    // Save random_seed to AltStack:
+    sb.add_op(OpToAltStack)?; // AltStack: [directory, random_seed]
+
+    // Reconstruct DRAW_READY(0) prefix:
+    sb.add_data(&[0xb9, 0x00, 0x88])?; // prefix at depth 0
+    // 1. round_id (depth 6 relative to dstack, pick depth 7):
+    sb.add_data(&[0x20])?; sb.add_i64(7)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 2. ticket_price (depth 5, pick depth 6):
+    sb.add_data(&[0x08])?; sb.add_i64(6)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 3. draw_ticket_count (depth 4, pick depth 5):
+    sb.add_data(&[0x08])?; sb.add_i64(5)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 4. ticket_root (depth 3, pick depth 4):
+    sb.add_data(&[0x20])?; sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 5. purchase_count (depth 2, pick depth 3):
+    sb.add_data(&[0x08])?; sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 6. target_hash (depth 7, pick depth 8):
+    sb.add_data(&[0x20])?; sb.add_i64(8)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 7. random_seed from AltStack:
+    sb.add_data(&[0x20])?; sb.add_op(OpFromAltStack)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 8. counter = 0:
+    sb.add_data(&[0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?; sb.add_op(OpCat)?;
+    // 9. creator_refund_spk (depth 1, pick depth 2):
+    sb.add_data(&[0x22])?; sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+    // 10. directory from AltStack:
+    sb.add_op(OpFromAltStack)?;
+    append_runtime_directory_push(&mut sb)?;
+    sb.add_op(OpCat)?; // full DRAW_READY(0) prefix!
+
+    // Append DRAW_READY body:
+    let dr_body = winner_selection::compute_converged_directory_draw_ready_body();
+    sb.add_data(&dr_body)?;
+    sb.add_op(OpCat)?; // full expected DRAW_READY(0) redeem!
+
+    // Output 0 SPK == P2SH(expected DRAW_READY redeem):
+    sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?;
+    sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+    sb.add_data(&[0x87])?; sb.add_op(OpCat)?;
+    sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
+    sb.add_op(OpEqualVerify)?;
+
+    // Teardown execution stack (7 items remaining):
+    for _ in 0..7 {
+        sb.add_op(OpDrop)?;
+    }
+    sb.add_op(OpTrue)?;
+
+    Ok(sb.drain())
+}
+
+/// Builds complete production directory SEALED V1 redeem script.
+pub fn build_directory_sealed_covenant(
+    round_id: Hash,
+    ticket_price: u64,
+    draw_ticket_count: u64,
+    ticket_root: Hash,
+    purchase_count: u64,
+    creator_refund_spk: Vec<u8>,
+    directory: Vec<u8>,
+) -> ScriptBuilderResult<Vec<u8>> {
+    let prefix = build_directory_sealed_prefix(
+        &round_id,
+        ticket_price,
+        draw_ticket_count,
+        &ticket_root,
+        purchase_count,
+        &creator_refund_spk,
+        &directory,
+    );
+    let body = build_directory_sealed_body()?;
+    let mut full = prefix;
+    full.extend_from_slice(&body);
+    Ok(full)
+}
+
+pub use build_directory_sealed_covenant as build_production_sealed_covenant;
