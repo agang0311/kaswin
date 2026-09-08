@@ -149,6 +149,21 @@ pub fn reference_verify_winner_membership(
     computed_root == *ticket_root
 }
 
+/// Validates whether a byte slice conforms strictly to canonical Class A Schnorr P2PK:
+/// [0x00, 0x00] || [0x20] || pubkey32 || [0xac] (36 bytes total).
+pub fn is_canonical_class_a_p2pk(bytes: &[u8]) -> bool {
+    if bytes.len() != 36 {
+        return false;
+    }
+    if bytes[0] != 0x00 || bytes[1] != 0x00 {
+        return false;
+    }
+    let script = &bytes[2..];
+    script.len() == 34
+        && script[0] == kaspa_txscript::opcodes::codes::OpData32
+        && script[33] == kaspa_txscript::opcodes::codes::OpCheckSig
+}
+
 /// Validates whether a byte slice conforms to Kaspa L1 canonical ScriptPublicKey.to_bytes()
 /// under pinned rusty-kaspa v2.0.1 rules (ScriptClass != NonStandard, version == 0).
 pub fn is_canonical_payout_spk(bytes: &[u8]) -> bool {

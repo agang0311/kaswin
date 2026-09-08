@@ -6,6 +6,10 @@
 
 实现任务可交给 gemini-3.8-flash-high 驱动的 subagent；派发前发现可执行 agent 与模型，确认确为指定模型，不擅自换模型。主助手制定契约和必要验证、审查实现并负责重大决策；此授权不强制现在派发。
 
+## Git 交付约定
+
+用户已明确长期授权：以后任务完成后默认创建独立 commit 并 push 到 GitHub，核对本地 HEAD 与目标远端分支 SHA 一致后返回完整 SHA。当前目标分支为 `audit/state-deposit-v1`；不自动合并 main，不 amend/rebase/squash/force push。若用户明确要求提交未完成工作，按 BLOCKED 检查点如实提交，不把提交成功称为功能门禁通过。此授权不扩大钱包、签名、节点或广播权限；凭证不得进入提交、日志或 remote URL。
+
 ## 边界
 
 - Kaspa 非 EVM。区块包含不等于 transaction acceptance。

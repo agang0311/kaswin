@@ -537,8 +537,9 @@ pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
     sb.add_op(OpCat).unwrap();
     sb.add_data(b"").unwrap(); sb.add_op(OpBlake2bWithKey).unwrap(); // 32B hash
 
-    // Extract first 7 bytes:
+    // Extract first 7 bytes and append 0x00 to guarantee non-negative 8-byte LE:
     sb.add_i64(0).unwrap(); sb.add_i64(7).unwrap(); sb.add_op(OpSubstr).unwrap();
+    sb.add_data(&[0x00]).unwrap(); sb.add_op(OpCat).unwrap();
     sb.add_op(OpBin2Num).unwrap(); // candidate_num (num)
 
     // Compute rejection threshold LIMIT = floor(2^56 / draw_ticket_count) * draw_ticket_count:
@@ -718,26 +719,26 @@ pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
         // Reconstruct successor DRAW_READY(c + 1) prefix:
         // [0xb9, 0x00, 0x88] (3B)
         sb.add_data(&[0xb9, 0x00, 0x88]).unwrap();
-        // round_id (32B): depth 8
-        sb.add_data(&[0x20]).unwrap(); sb.add_i64(9).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // ticket_price (8B): depth 7
+        // round_id (32B): depth 8 + 2 = 10
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(10).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // ticket_price (8B): depth 7 + 2 = 9
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(9).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // draw_ticket_count (8B): depth 6 + 2 = 8
         sb.add_data(&[0x08]).unwrap(); sb.add_i64(8).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // draw_ticket_count (8B): depth 6
-        sb.add_data(&[0x08]).unwrap(); sb.add_i64(7).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // ticket_root (32B): depth 5
-        sb.add_data(&[0x20]).unwrap(); sb.add_i64(6).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // purchase_count (8B): depth 4
-        sb.add_data(&[0x08]).unwrap(); sb.add_i64(5).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // target_hash (32B): depth 3
+        // ticket_root (32B): depth 5 + 2 = 7
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(7).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // purchase_count (8B): depth 4 + 2 = 6
+        sb.add_data(&[0x08]).unwrap(); sb.add_i64(6).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // target_hash (32B): depth 3 + 2 = 5
+        sb.add_data(&[0x20]).unwrap(); sb.add_i64(5).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // random_seed (32B): depth 2 + 2 = 4
         sb.add_data(&[0x20]).unwrap(); sb.add_i64(4).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // random_seed (32B): depth 2
-        sb.add_data(&[0x20]).unwrap(); sb.add_i64(3).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // counter + 1 (8B LE): counter is at depth 1
+        // counter + 1 (8B LE): counter is at depth 1 + 1 = 2 (above prefix_so_far)
         sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpBin2Num).unwrap(); sb.add_i64(1).unwrap(); sb.add_op(OpAdd).unwrap();
         sb.add_i64(8).unwrap(); sb.add_op(OpNum2Bin).unwrap();
         sb.add_data(&[0x08]).unwrap(); sb.add_op(OpSwap).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
-        // creator_refund_spk (34B): depth 0
-        sb.add_data(&[0x22]).unwrap(); sb.add_op(Op0).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
+        // creator_refund_spk (34B): depth 0 + 2 = 2
+        sb.add_data(&[0x22]).unwrap(); sb.add_i64(2).unwrap(); sb.add_op(OpPick).unwrap(); sb.add_op(OpCat).unwrap(); sb.add_op(OpCat).unwrap();
 
         // Directory push: pop static_body, pop directory, push static_body back:
         sb.add_op(OpFromAltStack).unwrap(); // static_body
@@ -757,8 +758,8 @@ pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
         sb.add_op(Op0).unwrap(); sb.add_op(OpTxOutputSpk).unwrap();
         sb.add_op(OpEqualVerify).unwrap();
 
-        // Clean stack:
-        for _ in 0..12 {
+        // Clean stack (9 prefix items):
+        for _ in 0..9 {
             sb.add_op(OpDrop).unwrap();
         }
         sb.add_op(OpTrue).unwrap();

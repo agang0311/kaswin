@@ -251,8 +251,8 @@ pub fn validate_directory_create_parameters(
     if sale_deadline == 0 || sale_deadline >= LOCK_TIME_THRESHOLD {
         return Err("sale_deadline must be > 0 and < LOCK_TIME_THRESHOLD (500_000_000_000)");
     }
-    if !is_canonical_payout_spk(creator_refund_spk) {
-        return Err("creator_refund_spk must be canonical class A/B/C SPK");
+    if !ticket_commitment::is_canonical_class_a_p2pk(creator_refund_spk) {
+        return Err("creator_refund_spk must be canonical Class A Schnorr P2PK (36 bytes: 0x000020 <pubkey32> ac)");
     }
 
     // Viability condition for successful draw settlement:
@@ -305,11 +305,7 @@ pub fn build_directory_genesis_output(
 
     let derived_round_id = compute_canonical_round_id(&funding_outpoint);
 
-    let script_spk = if creator_refund_spk.len() == 36 {
-        creator_refund_spk[2..].to_vec()
-    } else {
-        creator_refund_spk.clone()
-    };
+    let script_spk = creator_refund_spk[2..].to_vec();
 
     let initial_open_redeem = open_covenant::build_initial_directory_open_covenant(
         derived_round_id,

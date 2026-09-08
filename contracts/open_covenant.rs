@@ -1184,46 +1184,80 @@ pub fn build_directory_open_body(static_body_len: usize) -> ScriptBuilderResult<
             sb.add_op(OpEqualVerify)?;
 
         sb.add_op(OpElse)?;
-            // -----------------------------------------------------------------
-            // DISPATCH TO REFUNDING (sold_tickets < min_tickets)
-            // -----------------------------------------------------------------
-            lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
+            // Check if sold_tickets == 0 && purchase_count == 0 (P = 0 Empty Round):
+            sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // sold_tickets
+            sb.add_op(Op0)?;
+            sb.add_op(OpEqual)?;
+            sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // purchase_count (after OpEqual, depth 2+1=3)
+            sb.add_op(Op0)?;
+            sb.add_op(OpEqual)?;
+            sb.add_op(OpAnd)?;
+            sb.add_op(OpIf)?;
+                // =============================================================
+                // EMPTY ROUND TERMINAL RECOVERY (P = 0)
+                // =============================================================
+                // 1. Lineage destruction guards:
+                // OpCovInputCount(C) == 1, OpAuthOutputCount(0) == 0,
+                // OpCovOutputCount(C) == 0, OpOutputCovenantId(0) == ZERO_HASH,
+                // OpOutputAuthorizingInput(0) == -1
+                lineage::append_kaswin_terminal_lineage_guard(&mut sb)?;
 
-            // Exact amount preservation:
-            sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
-            sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
-            sb.add_op(OpEqualVerify)?;
+                // 2. Output 0 SPK == [0x00, 0x00] || creator_refund_spk (36B SPK)
+                sb.add_i64(0)?; sb.add_op(OpPick)?; // creator_refund_spk (34B)
+                sb.add_data(&[0x00, 0x00])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?; // 36B SPK
+                sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
+                sb.add_op(OpEqualVerify)?;
 
-            // Reconstruct initial REFUNDING redeem script (cursor = 0):
-            // [0xb9, 0x00, 0x88] (3B)
-            sb.add_data(&[0xb9, 0x00, 0x88])?;
-            // round_id (32B): depth 10
-            sb.add_data(&[0x20])?; sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
-            // ticket_price (8B): depth 9
-            sb.add_data(&[0x08])?; sb.add_i64(9)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
-            // purchase_count (8B): depth 4
-            sb.add_data(&[0x08])?; sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
-            // cursor = 0 (8B LE):
-            sb.add_data(&[0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?; sb.add_op(OpCat)?;
-            // creator_refund_spk (34B): depth 2
-            sb.add_data(&[0x22])?; sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+                // 3. Output 0 Amount == Input 0 Amount (exact 100% state_deposit return)
+                sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
+                sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
+                sb.add_op(OpEqualVerify)?;
 
-            // Directory from AltStack:
-            sb.add_op(OpFromAltStack)?; // directory
-            append_runtime_directory_push(&mut sb)?;
-            sb.add_op(OpCat)?; // full REFUNDING prefix
+                // 4. Drop directory from AltStack
+                sb.add_op(OpFromAltStack)?; sb.add_op(OpDrop)?;
 
-            // Append compact universal refunding body:
-            let ref_body = refunding_covenant::compute_converged_compact_universal_body();
-            sb.add_data(&ref_body)?;
-            sb.add_op(OpCat)?; // full initial REFUNDING redeem script!
+            sb.add_op(OpElse)?;
+                // =============================================================
+                // DISPATCH TO REFUNDING (sold_tickets < min_tickets && P > 0)
+                // =============================================================
+                lineage::append_kaswin_singleton_continuation_guard(&mut sb)?;
 
-            // Output 0 SPK == P2SH(REFUNDING redeem):
-            sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?;
-            sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
-            sb.add_data(&[0x87])?; sb.add_op(OpCat)?;
-            sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
-            sb.add_op(OpEqualVerify)?;
+                // Exact amount preservation:
+                sb.add_op(Op0)?; sb.add_op(OpTxInputAmount)?;
+                sb.add_op(Op0)?; sb.add_op(OpTxOutputAmount)?;
+                sb.add_op(OpEqualVerify)?;
+
+                // Reconstruct initial REFUNDING redeem script (cursor = 0):
+                // [0xb9, 0x00, 0x88] (3B)
+                sb.add_data(&[0xb9, 0x00, 0x88])?;
+                // round_id (32B): depth 10
+                sb.add_data(&[0x20])?; sb.add_i64(10)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+                // ticket_price (8B): depth 9
+                sb.add_data(&[0x08])?; sb.add_i64(9)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+                // purchase_count (8B): depth 4
+                sb.add_data(&[0x08])?; sb.add_i64(4)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+                // cursor = 0 (8B LE):
+                sb.add_data(&[0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?; sb.add_op(OpCat)?;
+                // creator_refund_spk (34B): depth 2
+                sb.add_data(&[0x22])?; sb.add_i64(2)?; sb.add_op(OpPick)?; sb.add_op(OpCat)?; sb.add_op(OpCat)?;
+
+                // Directory from AltStack:
+                sb.add_op(OpFromAltStack)?; // directory
+                append_runtime_directory_push(&mut sb)?;
+                sb.add_op(OpCat)?; // full REFUNDING prefix
+
+                // Append compact universal refunding body:
+                let ref_body = refunding_covenant::compute_converged_compact_universal_body();
+                sb.add_data(&ref_body)?;
+                sb.add_op(OpCat)?; // full initial REFUNDING redeem script!
+
+                // Output 0 SPK == P2SH(REFUNDING redeem):
+                sb.add_data(b"")?; sb.add_op(OpBlake2bWithKey)?;
+                sb.add_data(&[0x00, 0x00, 0xaa, 0x20])?; sb.add_op(OpSwap)?; sb.add_op(OpCat)?;
+                sb.add_data(&[0x87])?; sb.add_op(OpCat)?;
+                sb.add_op(Op0)?; sb.add_op(OpTxOutputSpk)?;
+                sb.add_op(OpEqualVerify)?;
+            sb.add_op(OpEndIf)?;
         sb.add_op(OpEndIf)?;
 
         // Teardown stack for CLOSE:

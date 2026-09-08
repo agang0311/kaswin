@@ -8,6 +8,8 @@ kaspa-hashes = { path = "/root/kaspa/references/rusty-kaspa/crypto/hashes" }
 kaspa-consensus-core = { path = "/root/kaspa/references/rusty-kaspa/consensus/core" }
 kaspa-txscript = { path = "/root/kaspa/references/rusty-kaspa/crypto/txscript" }
 kaspa-txscript-errors = { path = "/root/kaspa/references/rusty-kaspa/crypto/txscript/errors" }
+secp256k1 = { version = "0.29", default-features = false, features = ["alloc"] }
+rayon = "1.10"
 blake2b_simd = "1.0"
 blake3 = "1.5"
 borsh = "1.5"

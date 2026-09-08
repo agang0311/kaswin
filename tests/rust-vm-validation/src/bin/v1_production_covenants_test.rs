@@ -144,7 +144,7 @@ fn main() {
     println!("  -> PASS: Canonical bounded-directory BUY accepts ONLY xonly P2PK [0x20 || pubkey || 0xac] (34B)!");
 
     // -------------------------------------------------------------------------
-    // 4. DEADLINE CLOSE SEMANTICS & NEGATIVE TESTS
+    // 4. DEADLINE CLOSE SEMANTICS (PARTIAL SALE P=1 -> REFUNDING) & NEGATIVE TESTS
     // -------------------------------------------------------------------------
     println!("\n[Test 4] Sale Close Deadline Semantics: lock_time == sale_deadline & sequence != u64::MAX");
     let round_id = Hash::from_u64_word(0x555);
@@ -155,18 +155,36 @@ fn main() {
     let creator_spk = valid_p2pk.clone();
     let cov_id = Hash::from_u64_word(0x777);
 
-    let empty_dir = vec![];
+    // 1 purchase of 10 tickets (< min_tickets=50) -> routes to REFUNDING(cur=0)
+    let buyer1_pubkey = [0x11u8; 32];
+    let mut buyer1_p2pk = vec![0x20];
+    buyer1_p2pk.extend_from_slice(&buyer1_pubkey);
+    buyer1_p2pk.push(0xac);
+
+    let buyer_payout = compute_payout_commitment(&buyer1_p2pk);
+    let leaf_0 = compute_purchase_leaf(&round_id, 0, 0, 10, &buyer_payout);
+    let empty_levels = compute_empty_levels();
+    let mut siblings_1 = [Hash::default(); ticket_commitment::TREE_DEPTH];
+    for i in 0..ticket_commitment::TREE_DEPTH {
+        siblings_1[i] = empty_levels[i];
+    }
+    let root_1 = compute_root_from_path(&leaf_0, 0, &siblings_1);
+
+    let mut dir_1 = Vec::new();
+    dir_1.extend_from_slice(&10u32.to_le_bytes());
+    dir_1.extend_from_slice(&buyer1_pubkey);
+
     let open_redeem = build_directory_open_covenant(
         round_id,
         ticket_price,
         ticket_cap,
         min_tickets,
         sale_deadline,
-        0, // sold = 0 < min_tickets -> routes to REFUNDING
-        0, // pc = 0
-        empty_root,
+        10, // sold = 10 < min_tickets -> routes to REFUNDING
+        1,  // pc = 1
+        root_1,
         creator_spk.clone(),
-        &empty_dir,
+        &dir_1,
     ).unwrap();
 
     let open_spk = pay_to_script_hash_script(&open_redeem);
@@ -175,10 +193,10 @@ fn main() {
     let ref_redeem = build_compact_universal_refunding_covenant(
         round_id,
         ticket_price,
-        0, // pc = 0
+        1, // pc = 1
         0, // cur = 0
         creator_spk.clone(),
-        vec![],
+        dir_1.clone(),
     );
     let mut ref_h = blake2b_simd::Params::new().hash_length(32).to_state();
     ref_h.update(&ref_redeem);
@@ -199,7 +217,7 @@ fn main() {
             ComputeCommit::ComputeBudget(ComputeBudget(10)),
         )],
         vec![TransactionOutput {
-            value: 50_000_000,
+            value: 80_000_000,
             script_public_key: ref_spk.clone(),
             covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
@@ -210,7 +228,7 @@ fn main() {
     );
 
     let pop_valid = PopulatedTransaction::new(&tx_close_valid, vec![UtxoEntry::new(
-        50_000_000,
+        80_000_000,
         open_spk.clone(),
         1_000_000,
         false,
@@ -228,7 +246,7 @@ fn main() {
         }
     }
     assert_eq!(res_v, Ok(()));
-    println!("  -> PASS [4A]: Valid deadline close with lock_time == sale_deadline & sequence = 0 executed Ok(())!");
+    println!("  -> PASS [4A]: Valid deadline close (P=1 < min) with lock_time == sale_deadline & sequence = 0 executed Ok(())!");
 
     // 4B: Negative Test: sequence == u64::MAX (MAX_SEQUENCE) -> MUST FAIL (input is finalized, CLTV fails)
     let tx_close_max_seq = Transaction::new(
@@ -245,7 +263,7 @@ fn main() {
             ComputeCommit::ComputeBudget(ComputeBudget(10)),
         )],
         vec![TransactionOutput {
-            value: 50_000_000,
+            value: 80_000_000,
             script_public_key: ref_spk.clone(),
             covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
@@ -255,7 +273,7 @@ fn main() {
         vec![],
     );
     let pop_max_seq = PopulatedTransaction::new(&tx_close_max_seq, vec![UtxoEntry::new(
-        50_000_000,
+        80_000_000,
         open_spk.clone(),
         1_000_000,
         false,
@@ -282,7 +300,7 @@ fn main() {
             ComputeCommit::ComputeBudget(ComputeBudget(10)),
         )],
         vec![TransactionOutput {
-            value: 50_000_000,
+            value: 80_000_000,
             script_public_key: ref_spk.clone(),
             covenant: Some(CovenantBinding { covenant_id: cov_id, authorizing_input: 0 }),
         }],
@@ -292,7 +310,7 @@ fn main() {
         vec![],
     );
     let pop_early = PopulatedTransaction::new(&tx_close_early, vec![UtxoEntry::new(
-        50_000_000,
+        80_000_000,
         open_spk.clone(),
         1_000_000,
         false,
@@ -371,6 +389,241 @@ fn main() {
         assert!(k_sched <= REFUND_K_MAX_V1);
     }
     println!("  -> PASS: Deterministic balanced schedule verified 100% across P in 1..256!");
+
+    // -------------------------------------------------------------------------
+    // 7. CREATE CREATOR REFUND SPK ADMISSION: STRICT CLASS A SCHNORR ONLY
+    // -------------------------------------------------------------------------
+    println!("\n[Test 7] CREATE Creator SPK Admission: Strictly Class A Schnorr P2PK Only");
+    let ticket_price_t7 = MIN_TICKET_PRICE_V1;
+    let ticket_cap_t7 = 250u64;
+    let min_tickets_t7 = 200u64;
+    let sale_deadline_t7 = 1_000_000u64;
+    let state_deposit_t7 = 50_000_000u64;
+
+    // 7A: Valid Class A (36 bytes: 0x0000 20 <pubkey32> ac) -> MUST PASS
+    let mut class_a_spk = vec![0x00, 0x00, 0x20];
+    class_a_spk.extend_from_slice(&[0xaa; 32]);
+    class_a_spk.push(0xac);
+    assert_eq!(class_a_spk.len(), 36);
+    let res_7a = validate_directory_create_parameters(
+        ticket_price_t7, ticket_cap_t7, min_tickets_t7, sale_deadline_t7, &class_a_spk, state_deposit_t7,
+    );
+    assert!(res_7a.is_ok(), "Class A should be accepted");
+    println!("  -> PASS [7A]: Canonical Class A Schnorr P2PK (36B) strictly ACCEPTED!");
+
+    // 7B: Class B ECDSA (37 bytes: 0x0000 21 <pubkey33> aa) -> MUST FAIL
+    let mut class_b_spk = vec![0x00, 0x00, 0x21];
+    class_b_spk.extend_from_slice(&[0xbb; 33]);
+    class_b_spk.push(0xaa);
+    assert_eq!(class_b_spk.len(), 37);
+    let res_7b = validate_directory_create_parameters(
+        ticket_price_t7, ticket_cap_t7, min_tickets_t7, sale_deadline_t7, &class_b_spk, state_deposit_t7,
+    );
+    assert!(res_7b.is_err(), "Class B must be rejected");
+    println!("  -> PASS [7B]: Class B ECDSA P2PK (37B) strictly REJECTED!");
+
+    // 7C: Class C P2SH (37 bytes: 0x0000 aa 20 <hash32> 87) -> MUST FAIL
+    let mut class_c_spk = vec![0x00, 0x00, 0xaa, 0x20];
+    class_c_spk.extend_from_slice(&[0xcc; 32]);
+    class_c_spk.push(0x87);
+    assert_eq!(class_c_spk.len(), 37);
+    let res_7c = validate_directory_create_parameters(
+        ticket_price_t7, ticket_cap_t7, min_tickets_t7, sale_deadline_t7, &class_c_spk, state_deposit_t7,
+    );
+    assert!(res_7c.is_err(), "Class C must be rejected");
+    println!("  -> PASS [7C]: Class C P2SH (37B) strictly REJECTED!");
+
+    // 7D: Malformed 36 bytes (tampered opcodes) -> MUST FAIL
+    let mut malformed_36 = class_a_spk.clone();
+    malformed_36[35] = 0xad; // invalid opcode instead of 0xac
+    let res_7d = validate_directory_create_parameters(
+        ticket_price_t7, ticket_cap_t7, min_tickets_t7, sale_deadline_t7, &malformed_36, state_deposit_t7,
+    );
+    assert!(res_7d.is_err(), "Malformed 36B must be rejected");
+    println!("  -> PASS [7D]: Malformed 36B SPK strictly REJECTED!");
+
+    // 7E: Raw 34-byte script without version prefix -> MUST FAIL
+    let raw_34 = &class_a_spk[2..];
+    let res_7e = validate_directory_create_parameters(
+        ticket_price_t7, ticket_cap_t7, min_tickets_t7, sale_deadline_t7, raw_34, state_deposit_t7,
+    );
+    assert!(res_7e.is_err(), "Raw 34B without version must be rejected");
+    println!("  -> PASS [7E]: Raw 34B script without version prefix strictly REJECTED!");
+
+    // -------------------------------------------------------------------------
+    // 8. EMPTY CLOSE TERMINAL RECOVERY (P = 0) & ADVERSARIAL ATTACKS
+    // -------------------------------------------------------------------------
+    println!("\n[Test 8] Empty Round (P = 0) Direct Terminal Recovery & Adversarial Negative Tests");
+    let round_id_p0 = Hash::from_u64_word(0x888);
+    let cov_id_p0 = Hash::from_u64_word(0x999);
+    let creator_script_34 = class_a_spk[2..].to_vec(); // 34B script payload
+
+    let empty_open_redeem = build_directory_open_covenant(
+        round_id_p0,
+        ticket_price,
+        ticket_cap,
+        min_tickets,
+        sale_deadline,
+        0, // sold = 0
+        0, // pc = 0
+        empty_root,
+        creator_script_34.clone(),
+        &[], // empty directory
+    ).unwrap();
+    let empty_open_spk = pay_to_script_hash_script(&empty_open_redeem);
+
+    let state_deposit_amount = 50_000_000u64;
+
+    // 8A: Valid Empty Round Direct Recovery (2-in-2-out)
+    // Input 0: Kaswin OPEN state (50M sompi)
+    // Input 1: Ordinary fee sponsor input (10M sompi)
+    // Output 0: Creator refund SPK (50M sompi, 100% exact return!), Covenant = None
+    // Output 1: Sponsor change (10M - 200k = 9.8M sompi), Covenant = None
+    let sponsor_in_amount = 10_000_000u64;
+    let actual_fee_p0 = 200_000u64;
+    let sponsor_change_amount = sponsor_in_amount - actual_fee_p0;
+
+    let tx_empty_valid = Transaction::new(
+        1,
+        vec![
+            TransactionInput::new_with_mass(
+                TransactionOutpoint::new(Hash::from_u64_word(0x201), 0),
+                {
+                    let mut sb = ScriptBuilder::with_flags(flags);
+                    sb.add_i64(ACTION_CLOSE).unwrap();
+                    sb.add_data(&empty_open_redeem).unwrap();
+                    sb.drain()
+                },
+                0, // sequence != MAX
+                ComputeCommit::ComputeBudget(ComputeBudget(10)),
+            ),
+            TransactionInput::new_with_mass(
+                TransactionOutpoint::new(Hash::from_u64_word(0x202), 0),
+                vec![], // external fee input
+                0,
+                ComputeCommit::ComputeBudget(ComputeBudget(0)),
+            ),
+        ],
+        vec![
+            TransactionOutput {
+                value: state_deposit_amount,
+                script_public_key: ScriptPublicKey::from_vec(0, creator_script_34.clone()),
+                covenant: None, // Covenant = None!
+            },
+            TransactionOutput {
+                value: sponsor_change_amount,
+                script_public_key: ScriptPublicKey::from_vec(0, vec![0x20, 0x55, 0xac]),
+                covenant: None, // Covenant = None!
+            },
+        ],
+        sale_deadline,
+        SubnetworkId::default(),
+        0,
+        vec![],
+    );
+
+    let pop_empty_valid = PopulatedTransaction::new(&tx_empty_valid, vec![
+        UtxoEntry::new(state_deposit_amount, empty_open_spk.clone(), 1_000_000, false, Some(cov_id_p0)),
+        UtxoEntry::new(sponsor_in_amount, ScriptPublicKey::from_vec(0, vec![0x20, 0x55, 0xac]), 1_000_000, false, None),
+    ]);
+
+    let cov_ctx_p0 = CovenantsContext::from_tx(&pop_empty_valid).unwrap();
+    let ctx_p0 = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_p0);
+    let su_limit_p0 = tx_empty_valid.inputs[0].compute_commit.allowed_script_units();
+    let mut vm_p0 = TxScriptEngine::from_transaction_input_with_script_units_limit(
+        &pop_empty_valid, &pop_empty_valid.tx.inputs[0], 0, &pop_empty_valid.entries[0], ctx_p0, flags, su_limit_p0,
+    );
+    let res_p0 = vm_p0.execute();
+    assert_eq!(res_p0, Ok(()));
+    assert_eq!(
+        (state_deposit_amount + sponsor_in_amount) - (state_deposit_amount + sponsor_change_amount),
+        actual_fee_p0
+    );
+    println!("  -> PASS [8A]: Valid Empty Round direct terminal recovery executed Ok(()) with 100% exact deposit return!");
+
+    // 8B: Negative Test: P=0 attempting to route to REFUNDING successor -> MUST FAIL
+    let ref_redeem_p0 = build_compact_universal_refunding_covenant(
+        round_id_p0, ticket_price, 0, 0, creator_script_34.clone(), vec![],
+    );
+    let ref_spk_p0 = pay_to_script_hash_script(&ref_redeem_p0);
+    let tx_p0_ref_attack = Transaction::new(
+        1,
+        vec![TransactionInput::new_with_mass(
+            TransactionOutpoint::new(Hash::from_u64_word(0x201), 0),
+            {
+                let mut sb = ScriptBuilder::with_flags(flags);
+                sb.add_i64(ACTION_CLOSE).unwrap();
+                sb.add_data(&empty_open_redeem).unwrap();
+                sb.drain()
+            },
+            0,
+            ComputeCommit::ComputeBudget(ComputeBudget(10)),
+        )],
+        vec![TransactionOutput {
+            value: state_deposit_amount,
+            script_public_key: ref_spk_p0.clone(),
+            covenant: Some(CovenantBinding { covenant_id: cov_id_p0, authorizing_input: 0 }),
+        }],
+        sale_deadline,
+        SubnetworkId::default(),
+        0,
+        vec![],
+    );
+    let pop_p0_ref_attack = PopulatedTransaction::new(&tx_p0_ref_attack, vec![
+        UtxoEntry::new(state_deposit_amount, empty_open_spk.clone(), 1_000_000, false, Some(cov_id_p0)),
+    ]);
+    let cov_ctx_p0_ref = CovenantsContext::from_tx(&pop_p0_ref_attack).unwrap();
+    let ctx_p0_ref = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_p0_ref);
+    let mut vm_p0_ref = TxScriptEngine::from_transaction_input(
+        &pop_p0_ref_attack, &pop_p0_ref_attack.tx.inputs[0], 0, &pop_p0_ref_attack.entries[0], ctx_p0_ref, flags,
+    );
+    assert!(vm_p0_ref.execute().is_err());
+    println!("  -> PASS [8B]: P=0 attempting to output REFUNDING successor strictly REJECTED!");
+
+    // 8C: Negative Test: Output 0 amount is state_deposit - 1 (fee theft from deposit) -> MUST FAIL
+    let mut tx_p0_theft = tx_empty_valid.clone();
+    tx_p0_theft.outputs[0].value = state_deposit_amount - 1;
+    let pop_p0_theft = PopulatedTransaction::new(&tx_p0_theft, vec![
+        UtxoEntry::new(state_deposit_amount, empty_open_spk.clone(), 1_000_000, false, Some(cov_id_p0)),
+        UtxoEntry::new(sponsor_in_amount, ScriptPublicKey::from_vec(0, vec![0x20, 0x55, 0xac]), 1_000_000, false, None),
+    ]);
+    let cov_ctx_theft = CovenantsContext::from_tx(&pop_p0_theft).unwrap();
+    let ctx_theft = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_theft);
+    let mut vm_p0_theft = TxScriptEngine::from_transaction_input(
+        &pop_p0_theft, &pop_p0_theft.tx.inputs[0], 0, &pop_p0_theft.entries[0], ctx_theft, flags,
+    );
+    assert!(vm_p0_theft.execute().is_err());
+    println!("  -> PASS [8C]: Creator deposit theft (-1 sompi) strictly REJECTED by OpEqualVerify!");
+
+    // 8D: Negative Test: Creator SPK mismatch -> MUST FAIL
+    let mut tx_p0_spk_mismatch = tx_empty_valid.clone();
+    tx_p0_spk_mismatch.outputs[0].script_public_key = ScriptPublicKey::from_vec(0, vec![0x20, 0x66, 0xac]);
+    let pop_p0_spk_mismatch = PopulatedTransaction::new(&tx_p0_spk_mismatch, vec![
+        UtxoEntry::new(state_deposit_amount, empty_open_spk.clone(), 1_000_000, false, Some(cov_id_p0)),
+        UtxoEntry::new(sponsor_in_amount, ScriptPublicKey::from_vec(0, vec![0x20, 0x55, 0xac]), 1_000_000, false, None),
+    ]);
+    let cov_ctx_spk_m = CovenantsContext::from_tx(&pop_p0_spk_mismatch).unwrap();
+    let ctx_spk_m = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_spk_m);
+    let mut vm_p0_spk_m = TxScriptEngine::from_transaction_input(
+        &pop_p0_spk_mismatch, &pop_p0_spk_mismatch.tx.inputs[0], 0, &pop_p0_spk_mismatch.entries[0], ctx_spk_m, flags,
+    );
+    assert!(vm_p0_spk_m.execute().is_err());
+    println!("  -> PASS [8D]: Creator SPK mismatch strictly REJECTED by OpEqualVerify!");
+
+    // 8E: Negative Test: Hidden same-C continuation on Output 1 -> MUST FAIL
+    let mut tx_p0_hidden_continuation = tx_empty_valid.clone();
+    tx_p0_hidden_continuation.outputs[1].covenant = Some(CovenantBinding { covenant_id: cov_id_p0, authorizing_input: 0 });
+    let pop_p0_hidden = PopulatedTransaction::new(&tx_p0_hidden_continuation, vec![
+        UtxoEntry::new(state_deposit_amount, empty_open_spk.clone(), 1_000_000, false, Some(cov_id_p0)),
+        UtxoEntry::new(sponsor_in_amount, ScriptPublicKey::from_vec(0, vec![0x20, 0x55, 0xac]), 1_000_000, false, None),
+    ]);
+    let cov_ctx_hidden = CovenantsContext::from_tx(&pop_p0_hidden).unwrap();
+    let ctx_hidden = EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx_hidden);
+    let mut vm_p0_hidden = TxScriptEngine::from_transaction_input(
+        &pop_p0_hidden, &pop_p0_hidden.tx.inputs[0], 0, &pop_p0_hidden.entries[0], ctx_hidden, flags,
+    );
+    assert!(vm_p0_hidden.execute().is_err());
+    println!("  -> PASS [8E]: Hidden same-C continuation strictly REJECTED by OpCovOutputCount == 0!");
 
     println!("\n==================================================================");
     println!("ALL KASWIN V1 PRODUCTION COVENANTS TESTS PASSED 100%!");

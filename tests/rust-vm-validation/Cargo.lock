@@ -1758,6 +1758,8 @@ dependencies = [
  "kaspa-hashes",
  "kaspa-txscript",
  "kaspa-txscript-errors",
+ "rayon",
+ "secp256k1",
  "serde_json",
 ]
 
