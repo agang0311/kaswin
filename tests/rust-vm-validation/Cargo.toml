@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 kaspa-hashes = { path = "/root/kaspa/references/rusty-kaspa/crypto/hashes" }
 kaspa-consensus-core = { path = "/root/kaspa/references/rusty-kaspa/consensus/core" }
+kaspa-consensus = { path = "/root/kaspa/references/rusty-kaspa/consensus" }
 kaspa-txscript = { path = "/root/kaspa/references/rusty-kaspa/crypto/txscript" }
 kaspa-txscript-errors = { path = "/root/kaspa/references/rusty-kaspa/crypto/txscript/errors" }
 secp256k1 = { version = "0.29", default-features = false, features = ["alloc"] }

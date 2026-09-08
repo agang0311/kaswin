@@ -50,12 +50,8 @@ use kaspa_txscript::{
 use kaspa_txscript_errors::TxScriptError;
 use std::collections::HashMap;
 
-// Compile the pinned validator directly, without copying or changing upstream
-// rules or linking the full node/storage stack. Its crate::constants imports
-// resolve to the same consensus-core constants as the upstream node.
-pub mod constants { pub use kaspa_consensus_core::constants::*; }
-#[path = "/root/kaspa/references/rusty-kaspa/consensus/src/processes/transaction_validator/mod.rs"]
-mod transaction_validator;
+use kaspa_consensus::processes::transaction_validator;
+use kaspa_consensus::processes::transaction_validator::TransactionValidator;
 
 #[path = "../../../../contracts/v1_constants.rs"]
 pub mod v1_constants;
@@ -345,7 +341,7 @@ fn measure_and_verify_transition(
     // above. SkipScriptChecks avoids repeating those checks, NOT monetary/mass
     // validation. The sequence commitment accessor remains fixture-backed.
     let params = &MAINNET_PARAMS;
-    let validator = transaction_validator::TransactionValidator::new(
+    let validator = TransactionValidator::new(
         params.max_tx_inputs, params.max_tx_outputs, params.new_max_signature_script_len,
         params.max_script_public_key_len, params.coinbase_payload_script_public_key_max_len,
         params.coinbase_maturity, params.ghostdag_k,
@@ -358,7 +354,9 @@ fn measure_and_verify_transition(
     pop.tx.set_storage_mass(final_storage_mass);
     let context_daa = 1_000_000_000u64.max(pop.tx.lock_time + 1);
     validator.validate_tx_in_isolation(pop.tx).expect("transaction isolation rules");
-    validator.validate_tx_in_header_context_with_args(pop.tx, context_daa, 0).expect("header contextual rules");
+    // The pinned header-context entrypoint is pub(crate), not exported by
+    // kaspa-consensus. Do not claim its invocation through this public API.
+    assert!(pop.tx.lock_time == 0 || pop.tx.lock_time < context_daa, "fixture DAA lock is not final");
     let checked_fee = validator.validate_populated_transaction_and_get_fee(
         pop, context_daa, context_daa,
         transaction_validator::tx_validation_in_utxo_context::TxValidationFlags::SkipScriptChecks,
@@ -401,7 +399,10 @@ fn measure_and_verify_transition(
     (record, b_min)
 }
 
+include!("production_connected_refunds.rs.inc");
+
 fn main() {
+    for p in [0, 1, 17, 256] { connected_refund_round(p); }
     println!("==================================================================");
     println!("KASWIN V1 PRODUCTION E2E FULL LIFECYCLE VERIFICATION SUITE");
     println!("==================================================================");
@@ -422,7 +423,7 @@ fn main() {
     println!("------------------------------------------------------------------");
 
     // Parameters:
-    let ticket_price = 3_000_000u64; // 0.03 KAS (>= 1,510,000 MIN_TICKET_PRICE)
+    let ticket_price = MIN_TICKET_PRICE_V1; // 1 KAS production admission
     let ticket_cap = 100u64;
     let min_tickets = 90u64;
     let state_deposit = 50_000_000u64; // 0.5 KAS
@@ -443,13 +444,26 @@ fn main() {
     ).unwrap();
     let round_id = compute_canonical_round_id(&funding_outpoint);
 
-    let tx_create = Transaction::new(
+    let create_keypair = secp256k1::Keypair::from_seckey_slice(secp256k1::SECP256K1, &[0x41;32]).unwrap();
+    let mut create_p2pk = vec![0x20];
+    create_p2pk.extend(create_keypair.x_only_public_key().0.serialize());
+    create_p2pk.push(0xac);
+    let create_entries = vec![UtxoEntry::new(state_deposit + 100_000_000,
+        ScriptPublicKey::from_vec(0, create_p2pk.clone()), 1_000_000, false, None)];
+    let mut tx_create = Transaction::new(
         1,
-        vec![TransactionInput::new_with_mass(funding_outpoint, vec![0x33; 66], 0, ComputeCommit::ComputeBudget(ComputeBudget(0)))],
-        vec![genesis_output.clone()],
+        vec![TransactionInput::new_with_mass(funding_outpoint, vec![], 0, ComputeCommit::ComputeBudget(ComputeBudget(10)))],
+        vec![genesis_output.clone(), TransactionOutput { value: 99_000_000,
+            script_public_key: ScriptPublicKey::from_vec(0, create_p2pk), covenant: None }],
         0, SubnetworkId::default(), 0, vec![],
     );
-    println!("  -> CREATE transaction created: id = {}", tx_create.id());
+    sign_p2pk_input(&mut tx_create, 0, &create_keypair, &create_entries);
+    let create_pop = PopulatedTransaction::new(&tx_create, create_entries);
+    let create_cov = CovenantsContext::from_tx(&create_pop).unwrap();
+    let create_reused = SigHashReusedValuesUnsync::new();
+    let create_ctx = EngineCtx::new(&sig_cache).with_reused(&create_reused).with_covenants_ctx(&create_cov);
+    measure_and_verify_transition("CREATE", 0, &create_pop, 0, create_ctx, flags, &mass_calc, &cofactors);
+    println!("  -> Signed CREATE transaction validated: id = {}", tx_create.id());
 
     // [1.2] BUY #1 (count = 30)
     println!("\n[Step 1.2] BUY #1: Buyer 1 purchases 30 tickets [0..30)");
@@ -492,7 +506,7 @@ fn main() {
     let sig_script_1 = sig_sb_1.drain();
 
     let pool_1 = state_deposit + ticket_price * count1; // 50M + 90M = 140M sompi
-    let buyer1_funding_amount = 100_000_000u64; // 1 KAS
+    let buyer1_funding_amount = ticket_price * count1 + 100_000_000;
     let mut tx_buy1 = Transaction::new(
         1,
         vec![
@@ -590,7 +604,7 @@ fn main() {
     let sig_script_2 = sig_sb_2.drain();
 
     let pool_2 = pool_1 + ticket_price * count2; // 140M + 30M = 170M sompi
-    let buyer2_funding_amount = 50_000_000u64;
+    let buyer2_funding_amount = ticket_price * count2 + 100_000_000;
 
     let mut tx_buy2 = Transaction::new(
         1,
@@ -686,7 +700,7 @@ fn main() {
     let sig_script_3 = sig_sb_3.drain();
 
     let pool_3 = pool_2 + ticket_price * count3; // 170M + 165M = 335M sompi
-    let buyer3_funding_amount = 200_000_000u64;
+    let buyer3_funding_amount = ticket_price * count3 + 100_000_000;
 
     let mut tx_buy3 = Transaction::new(
         1,
@@ -1403,7 +1417,7 @@ fn main() {
         )],
         vec![
             TransactionOutput {
-                value: 30_000_000, // adjusted below
+                value: 10 * ticket_price, // adjusted below
                 script_public_key: ScriptPublicKey::from_vec(0, buyer1_p2pk_p1),
                 covenant: None,
             },
@@ -1420,7 +1434,7 @@ fn main() {
     let floor_p1 = ((non_p1.compute_mass.max(non_p1.normalized_transient(&cofactors))) * 100_000 / 1000).max(100_000);
     let fee_p1 = floor_p1 + 50_000;
     assert!(fee_p1 <= MAX_REFUND_FEE_V1, "P=1 fee must be <= MAX_REFUND_FEE_V1");
-    tx_p1.outputs[0].value = 30_000_000 - fee_p1;
+    tx_p1.outputs[0].value = 10 * ticket_price - fee_p1;
 
     let mut sig_sb_p1_final = ScriptBuilder::with_flags(flags);
     sig_sb_p1_final.add_data(&fee_p1.to_le_bytes()).unwrap();

@@ -1,0 +1,51 @@
+==================================================================
+KASWIN V1 PRODUCTION CONTRACTS INTEGRATION TEST
+==================================================================
+
+[Test 1] V1 Production Candidate Constants
+  -> PASS: All V1 production constants verified!
+
+[Test 2] SMT EMPTY_ROOT_27 Parity & Canonical Tags
+  -> PASS: compute_empty_root_27() matches canonical golden value: e374d1630e835c62b165b3a83874e7d67727bad1e06fd54c1c339a5bd76f2df9
+  -> PASS: Canonical tags (KaswinTicketEmptyV1, KaswinPayoutSpkV1, KaswinTicketRangeV1, KaswinTicketNodeV1) verified!
+
+[Test 3] Bounded Directory Payout Single Semantic: ONLY xonly P2PK [0x20 || pubkey || 0xac]
+  -> PASS: Canonical bounded-directory BUY accepts ONLY xonly P2PK [0x20 || pubkey || 0xac] (34B)!
+
+[Test 4] Sale Close Deadline Semantics: lock_time == sale_deadline & sequence != u64::MAX
+ref_redeem len = 6338, blake2b = 385efde8167a8c699eab466e59de121c9faef1b557e906d7c60f82d823755fbe
+  -> PASS [4A]: Valid deadline close (P=1 < min) with lock_time == sale_deadline & sequence = 0 executed Ok(())!
+  -> PASS [4B]: Deadline close with sequence == MAX_SEQUENCE strictly REJECTED by CLTV!
+  -> PASS [4C]: Deadline close with lock_time == sale_deadline - 1 strictly REJECTED by OpTxLockTime!
+
+[Test 5] Non-Uniform Purchase Range Winner Lookup: counts [3, 1, 7, 2, 5]
+  -> Winner index  0 correctly authenticated to Purchase 0 (range [ 0,  3))
+  -> Winner index  2 correctly authenticated to Purchase 0 (range [ 0,  3))
+  -> Winner index  3 correctly authenticated to Purchase 1 (range [ 3,  4))
+  -> Winner index  4 correctly authenticated to Purchase 2 (range [ 4, 11))
+  -> Winner index 10 correctly authenticated to Purchase 2 (range [ 4, 11))
+  -> Winner index 11 correctly authenticated to Purchase 3 (range [11, 13))
+  -> Winner index 12 correctly authenticated to Purchase 3 (range [11, 13))
+  -> Winner index 17 correctly authenticated to Purchase 4 (range [13, 18))
+  -> PASS: All non-uniform purchase range winner lookups strictly authenticated!
+
+[Test 6] Refunding Deterministic Batch Scheduler across all P in 1..256
+  -> PASS: Deterministic balanced schedule verified 100% across P in 1..256!
+
+[Test 7] CREATE Creator SPK Admission: Strictly Class A Schnorr P2PK Only
+  -> PASS [7A]: Canonical Class A Schnorr P2PK (36B) strictly ACCEPTED!
+  -> PASS [7B]: Class B ECDSA P2PK (37B) strictly REJECTED!
+  -> PASS [7C]: Class C P2SH (37B) strictly REJECTED!
+  -> PASS [7D]: Malformed 36B SPK strictly REJECTED!
+  -> PASS [7E]: Raw 34B script without version prefix strictly REJECTED!
+
+[Test 8] Empty Round (P = 0) Direct Terminal Recovery & Adversarial Negative Tests
+  -> PASS [8A]: Valid Empty Round direct terminal recovery executed Ok(()) with 100% exact deposit return!
+  -> PASS [8B]: P=0 attempting to output REFUNDING successor strictly REJECTED!
+  -> PASS [8C]: Creator deposit theft (-1 sompi) strictly REJECTED by OpEqualVerify!
+  -> PASS [8D]: Creator SPK mismatch strictly REJECTED by OpEqualVerify!
+  -> PASS [8E]: Hidden same-C continuation strictly REJECTED by OpCovOutputCount == 0!
+
+==================================================================
+ALL KASWIN V1 PRODUCTION COVENANTS TESTS PASSED 100%!
+==================================================================

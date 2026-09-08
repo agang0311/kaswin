@@ -1,0 +1,4 @@
+
+thread 'main' (1637996) panicked at src/bin/v1_production_e2e_full_lifecycle_test.rs:379:5:
+REFUND ROUND CREATE: storage mass 801588 exceeds block capacity
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

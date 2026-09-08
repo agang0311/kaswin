@@ -1,5 +1,7 @@
 # Production consensus final gate — BLOCKED checkpoint
 
+最新：[final consensus checkpoint](final-consensus-gate-checkpoint.md)。正常kaspa-consensus依赖下cargo test恢复PASS；真实边界CREATE返回storage=801,588>500,000，整体E2E仍BLOCKED。
+
 最新增量：[1 KAS storage admission 已通过](storage-1kas-closure.md)，最低票价100M sompi、最低押金5M；仅storage准入层。完整connected E2E与全回归仍未完成，下述历史失败记录保留。
 
 历史实现基线：`403cb0467a4edd12e6288fdb46b58c940acd2b33`，分支 `audit/state-deposit-v1`。以下 BLOCKED 状态后来已 checkpoint 并推送于 `97d42155c5f160435ce52abe2b15a535e2c20472`。无节点或广播。后续 storage admission 增量研究见 [storage 报告](storage-mass-admission-report.md)；整体 connected E2E gate 仍未关闭。
