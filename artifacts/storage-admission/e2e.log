@@ -1,0 +1,43 @@
+==================================================================
+KASWIN V1 PRODUCTION E2E FULL LIFECYCLE VERIFICATION SUITE
+==================================================================
+
+------------------------------------------------------------------
+PART 1: REAL CONNECTED PRODUCTION SUCCESS E2E PIPELINE
+------------------------------------------------------------------
+
+[Step 1.1] CREATE: Genesis Output & Covenant ID derivation
+  -> CREATE transaction created: id = b43776f39341a07fdf2b678b987d35ae3e6be9d66e4a6464117c4a994b3c4818
+
+[Step 1.2] BUY #1: Buyer 1 purchases 30 tickets [0..30)
+  -> BUY #1 PASS: pool = 140000000 sompi, actual_fee = 2559600 >= relay_floor 2522800
+
+[Step 1.3] BUY #2: Buyer 2 purchases 10 tickets [30..40)
+  -> BUY #2 PASS: pool = 170000000 sompi, actual_fee = 2566800 >= relay_floor 2530000
+
+[Step 1.4] BUY #3: Buyer 3 purchases 55 tickets [40..95)
+  -> BUY #3 PASS: pool = 335000000 sompi, actual_fee = 2574000 >= relay_floor 2537200
+
+[Step 1.5] CLOSE: Deadline close transitions to SEALED (draw_ticket_count = 95 != ticket_cap = 100)
+  -> CLOSE PASS: transitioned OPEN(95) -> SEALED(95), fee = 2394400 >= relay_floor 2357600
+
+[Step 1.6] SEALED -> DRAW_READY(0): PASS-A Entropy Opening
+  -> SEALED -> DRAW_READY(0) PASS: fee = 826200 >= relay_floor 826200
+
+[Step 1.7] DRAW_READY(0) -> WINNER_READY: ACCEPT with Directory Range Lookup
+  -> DRAW_READY ACCEPT PASS: winner index 45 authenticated to purchase 2, fee = 742400 >= relay_floor 742400
+  -> DRAW_READY REJECT PASS: measured B_min = ComputeBudget(1), relay_floor = 741500
+
+[Step 1.8] WINNER_READY -> PAID: 1-in-3-out Terminal Settlement
+  -> WINNER_READY -> PAID PASS: 1-in-3-out settlement executed Ok(()), B_min = 0 (free allowance)
+
+------------------------------------------------------------------
+PART 2: REAL CONNECTED PRODUCTION REFUND E2E PIPELINE (P=17)
+------------------------------------------------------------------
+  -> CLOSE -> REFUNDING PASS: Output 0 is REFUNDING(cur=0), fee = 2495400 >= relay_floor 2458600
+
+[Step 2.1] Refund Step 0: Refunding purchases 0..9 (K=9, non-terminal)
+
+thread 'main' (1610866) panicked at src/bin/v1_production_e2e_full_lifecycle_test.rs:381:5:
+REFUND Step 0 (K=9): storage mass 1041647 exceeds block capacity
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

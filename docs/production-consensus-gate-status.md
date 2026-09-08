@@ -1,6 +1,6 @@
 # Production consensus final gate — BLOCKED checkpoint
 
-基线：`403cb0467a4edd12e6288fdb46b58c940acd2b33`，分支 `audit/state-deposit-v1`。本轮由主助手接管，无新提交/推送，无节点或广播。
+历史实现基线：`403cb0467a4edd12e6288fdb46b58c940acd2b33`，分支 `audit/state-deposit-v1`。以下 BLOCKED 状态后来已 checkpoint 并推送于 `97d42155c5f160435ce52abe2b15a535e2c20472`。无节点或广播。后续 storage admission 增量研究见 [storage 报告](storage-mass-admission-report.md)；整体 connected E2E gate 仍未关闭。
 
 固定源码：rusty-kaspa `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`。仅授权合成测试交易的内存离线密钥/签名，不读取真实钱包，不输出私钥。
 

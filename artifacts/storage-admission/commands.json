@@ -1,0 +1,50 @@
+[
+  {
+    "name": "core",
+    "command": "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin v1_production_covenants_test",
+    "cwd": "/root/kaswin",
+    "exit": 0
+  },
+  {
+    "name": "e2e",
+    "command": "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin v1_production_e2e_full_lifecycle_test",
+    "cwd": "/root/kaswin",
+    "exit": 101
+  },
+  {
+    "name": "cargo-test",
+    "command": "cargo test --manifest-path tests/rust-vm-validation/Cargo.toml",
+    "cwd": "/root/kaswin",
+    "exit": 101
+  },
+  {
+    "name": "golden",
+    "command": "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin golden_vector_regression_test",
+    "cwd": "/root/kaswin",
+    "exit": 0
+  },
+  {
+    "name": "reject",
+    "command": "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin reject_successor_vm_test",
+    "cwd": "/root/kaswin",
+    "exit": 0
+  },
+  {
+    "name": "examples",
+    "command": "npm --prefix examples test",
+    "cwd": "/root/kaspa",
+    "exit": 0
+  },
+  {
+    "name": "links",
+    "command": "node tools/check-links.mjs",
+    "cwd": "/root/kaspa",
+    "exit": 0
+  },
+  {
+    "name": "npm",
+    "command": "npm test",
+    "cwd": "/root/kaswin",
+    "exit": 0
+  }
+]

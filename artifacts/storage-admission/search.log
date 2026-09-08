@@ -1,0 +1,359 @@
+warning: fields `harmonic`, `subtraction`, `ip`, `sp`, `fee`, and `parts` are never read
+  --> src/bin/storage_mass_admission_test.rs:12:111
+   |
+12 | ...ct Row{p:usize,cursor:usize,k:usize,storage:u64,compute:u64,transient:u64,relay:u64,harmonic:u64,subtraction:u64,ip:u64,sp:u64,fee:u64,parts:Ve...
+   |       --- fields in this struct                                                        ^^^^^^^^     ^^^^^^^^^^^     ^^     ^^     ^^^     ^^^^^
+   |
+   = note: `Row` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `DELTA_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:8:11
+  |
+8 | pub const DELTA_DAA_V1: u64 = 100;
+  |           ^^^^^^^^^^^^
+
+warning: constant `FULL_SALE_RECOVERY_DELAY_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:9:11
+  |
+9 | pub const FULL_SALE_RECOVERY_DELAY_DAA_V1: u64 = 432_000;
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_CAP_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:16:11
+   |
+16 | pub const MAX_TICKET_CAP_V1: u64 = 100_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_PURCHASE_COUNT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:19:11
+   |
+19 | pub const MAX_PURCHASE_COUNT_V1: usize = 256;
+   |           ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:22:11
+   |
+22 | pub const MAX_TICKET_PRICE_V1: u64 = 1_000_000_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_REFUND_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:25:11
+   |
+25 | pub const MAX_REFUND_FEE_V1: u64 = 1_500_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_REFUND_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:28:11
+   |
+28 | pub const MIN_REFUND_PAYOUT_V1: u64 = 10_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:31:11
+   |
+31 | pub const MIN_TICKET_PRICE_V1: u64 = MAX_REFUND_FEE_V1 + MIN_REFUND_PAYOUT_V1;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REFUND_K_MAX_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:34:11
+   |
+34 | pub const REFUND_K_MAX_V1: usize = 16;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `FINALIZER_REWARD_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:37:11
+   |
+37 | pub const FINALIZER_REWARD_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_FINALIZE_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:40:11
+   |
+40 | pub const MAX_FINALIZE_FEE_V1: u64 = 50_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_WINNER_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:43:11
+   |
+43 | pub const MIN_WINNER_PAYOUT_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:46:11
+   |
+46 | pub const TREE_DEPTH_V1: usize = 27;
+   |           ^^^^^^^^^^^^^
+
+warning: constant `DOMAIN_R_56_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:49:11
+   |
+49 | pub const DOMAIN_R_56_V1: i64 = 1i64 << 56;
+   |           ^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:13:11
+   |
+13 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: function `compute_payout_commitment` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:17:8
+   |
+17 | pub fn compute_payout_commitment(payout_spk: &[u8]) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_purchase_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:37:8
+   |
+37 | pub fn compute_purchase_leaf(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `hash_internal_node` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:59:8
+   |
+59 | pub fn hash_internal_node(left: &Hash, right: &Hash) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:72:8
+   |
+72 | pub fn compute_empty_leaf() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_levels` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:82:8
+   |
+82 | pub fn compute_empty_levels() -> [Hash; 28] {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_root_27` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:92:8
+   |
+92 | pub fn compute_empty_root_27() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_root_from_path` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:100:8
+    |
+100 | pub fn compute_root_from_path(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_verify_winner_membership` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:126:8
+    |
+126 | pub fn reference_verify_winner_membership(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_class_a_p2pk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:154:8
+    |
+154 | pub fn is_canonical_class_a_p2pk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_payout_spk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:169:8
+    |
+169 | pub fn is_canonical_payout_spk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_canonical_payout_spk_check` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:211:8
+    |
+211 | pub fn append_canonical_payout_spk_check(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_prefix` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:37:8
+   |
+37 | pub fn build_refunding_prefix(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_refunding_body_len` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:63:8
+   |
+63 | pub fn canonical_refunding_body_len(reserve_payout_spk_len: usize) -> usize {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_covenant` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:75:8
+   |
+75 | pub fn build_refunding_covenant(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_body` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:107:8
+    |
+107 | pub fn build_refunding_body(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_singleton_continuation_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:16:8
+   |
+16 | pub fn append_kaswin_singleton_continuation_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_terminal_lineage_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:75:8
+   |
+75 | pub fn append_kaswin_terminal_lineage_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+PIN cfafeb4c093fa37a303f1b9f19c58f986b870ce3; OFFLINE MASS ONLY; production body, budget40 conservative; no admission PASS
+OLD_MIN fee0 Row { p: 1, cursor: 0, k: 1, storage: 604597, compute: 11323, transient: 26412, relay: 1320600, harmonic: 682251, subtraction: 77654, ip: 2, sp: 0, fee: 0, parts: [662251, 20000] }
+OLD_MIN fee0 Row { p: 17, cursor: 0, k: 9, storage: 5971831, compute: 15314, transient: 30816, relay: 1540800, harmonic: 6024691, subtraction: 52860, ip: 2, sp: 2, fee: 0, parts: [64432, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251] }
+OLD_MIN fee0 Row { p: 256, cursor: 0, k: 16, storage: 10596553, compute: 26865, transient: 66940, relay: 3347000, harmonic: 10605715, subtraction: 9162, ip: 2, sp: 2, fee: 0, parts: [9699, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251] }
+GRID gross=2000000 deposit=1 P=256 cursor=240 k=16 storage=1000008807304 headroom=-1000008307304 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=1 P=256 cursor=240 k=16 storage=1000003289408 headroom=-1000002789408 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=1 P=256 cursor=240 k=16 storage=1000001609112 headroom=-1000001109112 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=1 P=256 cursor=240 k=16 storage=1000000795932 headroom=-1000000295932 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=1 P=256 cursor=240 k=16 storage=1000000528724 headroom=-1000000028724 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=1 P=256 cursor=240 k=16 storage=1000000395846 headroom=-999999895846 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=1 P=256 cursor=240 k=16 storage=1000000316328 headroom=-999999816328 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=1 P=256 cursor=240 k=16 storage=1000000210588 headroom=-999999710588 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=1 P=256 cursor=240 k=16 storage=1000000157820 headroom=-999999657820 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=1 P=256 cursor=240 k=16 storage=1000000078830 headroom=-999999578830 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=10000 P=256 cursor=240 k=16 storage=108807344 headroom=-108307344 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=10000 P=256 cursor=240 k=16 storage=103289416 headroom=-102789416 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=10000 P=256 cursor=240 k=16 storage=101609114 headroom=-101109114 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=10000 P=256 cursor=240 k=16 storage=100795934 headroom=-100295934 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=10000 P=256 cursor=240 k=16 storage=100528724 headroom=-100028724 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=10000 P=256 cursor=240 k=16 storage=100395848 headroom=-99895848 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=10000 P=256 cursor=240 k=16 storage=100316330 headroom=-99816330 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=10000 P=256 cursor=240 k=16 storage=100210588 headroom=-99710588 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=10000 P=256 cursor=240 k=16 storage=100157822 headroom=-99657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=10000 P=256 cursor=240 k=16 storage=100078832 headroom=-99578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=100000 P=256 cursor=240 k=16 storage=18807694 headroom=-18307694 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=100000 P=256 cursor=240 k=16 storage=13289472 headroom=-12789472 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=100000 P=256 cursor=240 k=16 storage=11609128 headroom=-11109128 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=100000 P=256 cursor=240 k=16 storage=10795936 headroom=-10295936 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=100000 P=256 cursor=240 k=16 storage=10528726 headroom=-10028726 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=100000 P=256 cursor=240 k=16 storage=10395848 headroom=-9895848 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=100000 P=256 cursor=240 k=16 storage=10316330 headroom=-9816330 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=100000 P=256 cursor=240 k=16 storage=10210588 headroom=-9710588 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=100000 P=256 cursor=240 k=16 storage=10157822 headroom=-9657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=100000 P=256 cursor=240 k=16 storage=10078832 headroom=-9578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=500000 P=256 cursor=240 k=16 storage=10809228 headroom=-10309228 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=500000 P=256 cursor=240 k=16 storage=5289720 headroom=-4789720 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=500000 P=256 cursor=240 k=16 storage=3609190 headroom=-3109190 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=500000 P=256 cursor=240 k=16 storage=2795952 headroom=-2295952 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=500000 P=256 cursor=240 k=16 storage=2528732 headroom=-2028732 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=500000 P=256 cursor=240 k=16 storage=2395852 headroom=-1895852 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=500000 P=256 cursor=240 k=16 storage=2316332 headroom=-1816332 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=500000 P=256 cursor=240 k=16 storage=2210590 headroom=-1710590 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=500000 P=256 cursor=240 k=16 storage=2157822 headroom=-1657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=500000 P=256 cursor=240 k=16 storage=2078832 headroom=-1578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=1000000 P=256 cursor=240 k=16 storage=9811092 headroom=-9311092 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=1000000 P=256 cursor=240 k=16 storage=4290026 headroom=-3790026 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=1000000 P=256 cursor=240 k=16 storage=2609268 headroom=-2109268 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=1000000 P=256 cursor=240 k=16 storage=1795972 headroom=-1295972 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=1000000 P=256 cursor=240 k=16 storage=1528740 headroom=-1028740 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=1000000 P=256 cursor=240 k=16 storage=1395856 headroom=-895856 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=1000000 P=256 cursor=240 k=16 storage=1316336 headroom=-816336 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=1000000 P=256 cursor=240 k=16 storage=1210590 headroom=-710590 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=1000000 P=256 cursor=240 k=16 storage=1157822 headroom=-657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=1000000 P=256 cursor=240 k=16 storage=1078832 headroom=-578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=2000000 P=256 cursor=240 k=16 storage=9314658 headroom=-8814658 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=2000000 P=256 cursor=240 k=16 storage=3790628 headroom=-3290628 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=2000000 P=256 cursor=240 k=16 storage=2109422 headroom=-1609422 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=2000000 P=256 cursor=240 k=16 storage=1296010 headroom=-796010 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=2000000 P=256 cursor=240 k=16 storage=1028758 headroom=-528758 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=2000000 P=256 cursor=240 k=16 storage=895866 headroom=-395866 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=2000000 P=256 cursor=240 k=16 storage=816342 headroom=-316342 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=2000000 P=256 cursor=240 k=16 storage=710594 headroom=-210594 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=2000000 P=256 cursor=240 k=16 storage=657824 headroom=-157824 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=2000000 P=256 cursor=240 k=16 storage=578832 headroom=-78832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=5000000 P=256 cursor=240 k=16 storage=9024196 headroom=-8524196 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=5000000 P=256 cursor=240 k=16 storage=3492350 headroom=-2992350 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=5000000 P=256 cursor=240 k=16 storage=1809870 headroom=-1309870 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=5000000 P=256 cursor=240 k=16 storage=996126 headroom=-496126 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=5000000 P=256 cursor=240 k=16 storage=728810 headroom=-228810 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=5000000 P=256 cursor=240 k=16 storage=595896 headroom=-95896 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=5000000 P=256 cursor=240 k=16 storage=516360 headroom=-16360 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=5000000 P=256 cursor=240 k=16 storage=410602 headroom=89398 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=5000000 P=256 cursor=240 k=16 storage=357828 headroom=142172 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=5000000 P=256 cursor=240 k=16 storage=278832 headroom=221168 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=10000000 P=256 cursor=224 k=16 storage=8975664 headroom=-8475664 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=10000000 P=256 cursor=240 k=16 storage=3394964 headroom=-2894964 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=10000000 P=256 cursor=240 k=16 storage=1710584 headroom=-1210584 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=10000000 P=256 cursor=240 k=16 storage=896312 headroom=-396312 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=10000000 P=256 cursor=240 k=16 storage=628894 headroom=-128894 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=10000000 P=256 cursor=240 k=16 storage=495944 headroom=4056 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=10000000 P=256 cursor=240 k=16 storage=416390 headroom=83610 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=10000000 P=256 cursor=240 k=16 storage=310616 headroom=189384 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=10000000 P=256 cursor=240 k=16 storage=257836 headroom=242164 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=10000000 P=256 cursor=240 k=16 storage=178834 headroom=321166 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=20000000 P=256 cursor=224 k=16 storage=8963785 headroom=-8463785 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=20000000 P=256 cursor=224 k=16 storage=3357490 headroom=-2857490 compute=26865 transient=66940 relay=3347000
+GRID gross=10000000 deposit=20000000 P=256 cursor=240 k=16 storage=1661890 headroom=-1161890 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=20000000 P=256 cursor=240 k=16 storage=846668 headroom=-346668 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=20000000 P=256 cursor=240 k=16 storage=579056 headroom=-79056 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=20000000 P=256 cursor=240 k=16 storage=446036 headroom=53964 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=20000000 P=256 cursor=240 k=16 storage=366450 headroom=133550 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=20000000 P=256 cursor=240 k=16 storage=260642 headroom=239358 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=20000000 P=256 cursor=240 k=16 storage=207852 headroom=292148 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=20000000 P=256 cursor=240 k=16 storage=128838 headroom=371162 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=50000000 P=256 cursor=224 k=16 storage=8948174 headroom=-8448174 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=50000000 P=256 cursor=224 k=16 storage=3351435 headroom=-2851435 compute=26865 transient=66940 relay=3347000
+GRID gross=10000000 deposit=50000000 P=256 cursor=224 k=16 storage=1642413 headroom=-1142413 compute=26865 transient=66940 relay=3347000
+GRID gross=20000000 deposit=50000000 P=256 cursor=240 k=16 storage=817622 headroom=-317622 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=50000000 P=256 cursor=240 k=16 storage=549510 headroom=-49510 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=50000000 P=256 cursor=240 k=16 storage=416300 headroom=83700 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=50000000 P=256 cursor=240 k=16 storage=336624 headroom=163376 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=50000000 P=256 cursor=240 k=16 storage=230720 headroom=269280 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=50000000 P=256 cursor=240 k=16 storage=177896 headroom=322104 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=50000000 P=256 cursor=240 k=16 storage=98850 headroom=401150 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=100000000 P=256 cursor=224 k=16 storage=8940393 headroom=-8440393 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=100000000 P=256 cursor=224 k=16 storage=3346550 headroom=-2846550 compute=26865 transient=66940 relay=3347000
+GRID gross=10000000 deposit=100000000 P=256 cursor=224 k=16 storage=1640038 headroom=-1140038 compute=26865 transient=66940 relay=3347000
+GRID gross=20000000 deposit=100000000 P=256 cursor=224 k=16 storage=812567 headroom=-312567 compute=26865 transient=66940 relay=3347000
+GRID gross=30000000 deposit=100000000 P=256 cursor=224 k=16 storage=540196 headroom=-40196 compute=26865 transient=66940 relay=3347000
+GRID gross=40000000 deposit=100000000 P=256 cursor=240 k=16 storage=406692 headroom=93308 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=100000000 P=256 cursor=240 k=16 storage=326884 headroom=173116 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=100000000 P=256 cursor=240 k=16 storage=220844 headroom=279156 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=100000000 P=256 cursor=240 k=16 storage=167968 headroom=332032 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=100000000 P=256 cursor=240 k=16 storage=88868 headroom=411132 compute=26820 transient=66800 relay=3340000
+BOUND deposit=5000000 target=500000 gross=52715970 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499990, compute: 26820, transient: 66800, relay: 3340000, harmonic: 504704, subtraction: 4714, ip: 2, sp: 0, fee: 3340000, parts: [19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 200000] })
+BOUND deposit=5000000 target=400000 gross=78961310 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 400000, compute: 26820, transient: 66800, relay: 3340000, harmonic: 403152, subtraction: 3152, ip: 2, sp: 0, fee: 3340000, parts: [12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 200000] })
+BOUND deposit=10000000 target=500000 gross=39595887 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499994, compute: 26820, transient: 66800, relay: 3340000, harmonic: 506208, subtraction: 6214, ip: 2, sp: 0, fee: 3340000, parts: [25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 100000] })
+BOUND deposit=10000000 target=400000 gross=52721485 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 399986, compute: 26820, transient: 66800, relay: 3340000, harmonic: 404672, subtraction: 4686, ip: 2, sp: 0, fee: 3340000, parts: [19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 100000] })
+BOUND deposit=20000000 target=500000 gross=35230114 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499996, compute: 26820, transient: 66800, relay: 3340000, harmonic: 506848, subtraction: 6852, ip: 2, sp: 0, fee: 3340000, parts: [28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 50000] })
+BOUND deposit=20000000 target=400000 gross=45229460 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 399998, compute: 26820, transient: 66800, relay: 3340000, harmonic: 405376, subtraction: 5378, ip: 2, sp: 0, fee: 3340000, parts: [22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 50000] })
+BOUND deposit=50000000 target=500000 gross=33068898 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499990, compute: 26820, transient: 66800, relay: 3340000, harmonic: 506896, subtraction: 6906, ip: 2, sp: 0, fee: 3340000, parts: [30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 20000] })
+BOUND deposit=50000000 target=400000 gross=41704248 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 399992, compute: 26820, transient: 66800, relay: 3340000, harmonic: 405568, subtraction: 5576, ip: 2, sp: 0, fee: 3340000, parts: [24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 20000] })
+DEPOSIT_BOUND gross=50000000 target=500000 deposit=5445467 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 500000, compute: 26820, transient: 66800, relay: 3340000, harmonic: 504966, subtraction: 4966, ip: 2, sp: 0, fee: 3340000, parts: [20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 183638] })
+DEPOSIT_BOUND gross=50000000 target=400000 deposit=11961866 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 400000, compute: 26820, transient: 66800, relay: 3340000, harmonic: 404926, subtraction: 4926, ip: 2, sp: 0, fee: 3340000, parts: [20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 83598] })
+OLD_P256 Some(Row { p: 256, cursor: 0, k: 16, storage: 2763154, compute: 26865, transient: 66940, relay: 3347000, harmonic: 2765676, subtraction: 2522, ip: 2, sp: 2, fee: 3347000, parts: [2684, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687] })
+OLD_P256 Some(Row { p: 256, cursor: 240, k: 16, storage: 2755388, compute: 26820, transient: 66800, relay: 3340000, harmonic: 2782784, subtraction: 27396, ip: 2, sp: 0, fee: 3340000, parts: [172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 20000] })
+CANDIDATE Row { p: 1, cursor: 0, k: 1, storage: 13400, compute: 11323, transient: 26412, relay: 1320600, harmonic: 70542, subtraction: 57142, ip: 2, sp: 0, fee: 1320600, parts: [20542, 50000] }
+CANDIDATE Row { p: 17, cursor: 0, k: 9, storage: 185539, compute: 15314, transient: 30816, relay: 1540800, harmonic: 190135, subtraction: 4596, ip: 2, sp: 2, fee: 1540800, parts: [9523, 20068, 20068, 20068, 20068, 20068, 20068, 20068, 20068, 20068] }
+CANDIDATE Row { p: 17, cursor: 9, k: 8, storage: 201086, compute: 14848, transient: 30432, relay: 1521600, harmonic: 210608, subtraction: 9522, ip: 2, sp: 0, fee: 1521600, parts: [20076, 20076, 20076, 20076, 20076, 20076, 20076, 20076, 50000] }
+CANDIDATE Row { p: 256, cursor: 0, k: 16, storage: 321364, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321676, subtraction: 312, ip: 2, sp: 2, fee: 3347000, parts: [332, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 16, k: 16, storage: 321368, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321700, subtraction: 332, ip: 2, sp: 2, fee: 3347000, parts: [356, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 32, k: 16, storage: 321371, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321727, subtraction: 356, ip: 2, sp: 2, fee: 3347000, parts: [383, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 48, k: 16, storage: 321377, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321759, subtraction: 382, ip: 2, sp: 2, fee: 3347000, parts: [415, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 64, k: 16, storage: 321383, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321797, subtraction: 414, ip: 2, sp: 2, fee: 3347000, parts: [453, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 80, k: 16, storage: 321390, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321842, subtraction: 452, ip: 2, sp: 2, fee: 3347000, parts: [498, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 96, k: 16, storage: 321400, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321898, subtraction: 498, ip: 2, sp: 2, fee: 3347000, parts: [554, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 112, k: 16, storage: 321413, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321967, subtraction: 554, ip: 2, sp: 2, fee: 3347000, parts: [623, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 128, k: 16, storage: 321433, compute: 26865, transient: 66940, relay: 3347000, harmonic: 322055, subtraction: 622, ip: 2, sp: 2, fee: 3347000, parts: [711, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 144, k: 16, storage: 321463, compute: 26865, transient: 66940, relay: 3347000, harmonic: 322173, subtraction: 710, ip: 2, sp: 2, fee: 3347000, parts: [829, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 160, k: 16, storage: 321511, compute: 26865, transient: 66940, relay: 3347000, harmonic: 322339, subtraction: 828, ip: 2, sp: 2, fee: 3347000, parts: [995, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 176, k: 16, storage: 321592, compute: 26865, transient: 66940, relay: 3347000, harmonic: 322586, subtraction: 994, ip: 2, sp: 2, fee: 3347000, parts: [1242, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 192, k: 16, storage: 321754, compute: 26865, transient: 66940, relay: 3347000, harmonic: 322996, subtraction: 1242, ip: 2, sp: 2, fee: 3347000, parts: [1652, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 208, k: 16, storage: 322161, compute: 26865, transient: 66940, relay: 3347000, harmonic: 323813, subtraction: 1652, ip: 2, sp: 2, fee: 3347000, parts: [2469, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 224, k: 16, storage: 323754, compute: 26865, transient: 66940, relay: 3347000, harmonic: 326222, subtraction: 2468, ip: 2, sp: 2, fee: 3347000, parts: [4878, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084, 20084] }
+CANDIDATE Row { p: 256, cursor: 240, k: 16, storage: 366450, compute: 26820, transient: 66800, relay: 3340000, harmonic: 371328, subtraction: 4878, ip: 2, sp: 0, fee: 3340000, parts: [20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 20083, 50000] }
+CONCENTRATED Some(Row { p: 256, cursor: 0, k: 16, storage: 321395, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321707, subtraction: 312, ip: 2, sp: 2, fee: 3347000, parts: [332, 20618, 20618, 20139, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000] })
+PAID_MASS_ONLY deposit=1 storage=1000000004000 creator_plurality=1
+PAID_MASS_ONLY deposit=10000 storage=100004002 creator_plurality=1
+PAID_MASS_ONLY deposit=100000 storage=10004008 creator_plurality=1
+PAID_MASS_ONLY deposit=500000 storage=2004032 creator_plurality=1
+PAID_MASS_ONLY deposit=1000000 storage=1004064 creator_plurality=1
+PAID_MASS_ONLY deposit=2000000 storage=504128 creator_plurality=1
+PAID_MASS_ONLY deposit=5000000 storage=204314 creator_plurality=1
+PAID_MASS_ONLY deposit=10000000 storage=104616 creator_plurality=1
+PAID_MASS_ONLY deposit=20000000 storage=55186 creator_plurality=1
+PAID_MASS_ONLY deposit=50000000 storage=26668 creator_plurality=1
+PAID_MASS_ONLY deposit=100000000 storage=18572 creator_plurality=1
+STORAGE SEARCH COMPLETE; admission/VM/terminal coverage remain BLOCKED
