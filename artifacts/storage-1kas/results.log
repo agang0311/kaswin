@@ -1,0 +1,807 @@
+warning: unused import: `build_directory_draw_ready_covenant as build_production_draw_ready_covenant`
+   --> src/bin/../../../../contracts/winner_selection.rs:814:9
+    |
+814 | pub use build_directory_draw_ready_covenant as build_production_draw_ready_covenant;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `build_directory_sealed_covenant as build_production_sealed_covenant`
+   --> src/bin/../../../../contracts/sealed_covenant.rs:907:9
+    |
+907 | pub use build_directory_sealed_covenant as build_production_sealed_covenant;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `harmonic`, `subtraction`, `ip`, `sp`, `fee`, and `parts` are never read
+  --> src/bin/storage_mass_admission_test.rs:17:111
+   |
+17 | ...ct Row{p:usize,cursor:usize,k:usize,storage:u64,compute:u64,transient:u64,relay:u64,harmonic:u64,subtraction:u64,ip:u64,sp:u64,fee:u64,parts:Ve...
+   |       --- fields in this struct                                                        ^^^^^^^^     ^^^^^^^^^^^     ^^     ^^     ^^^     ^^^^^
+   |
+   = note: `Row` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `DELTA_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:8:11
+  |
+8 | pub const DELTA_DAA_V1: u64 = 100;
+  |           ^^^^^^^^^^^^
+
+warning: constant `FULL_SALE_RECOVERY_DELAY_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:9:11
+  |
+9 | pub const FULL_SALE_RECOVERY_DELAY_DAA_V1: u64 = 432_000;
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_CAP_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:16:11
+   |
+16 | pub const MAX_TICKET_CAP_V1: u64 = 100_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_PURCHASE_COUNT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:19:11
+   |
+19 | pub const MAX_PURCHASE_COUNT_V1: usize = 256;
+   |           ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:22:11
+   |
+22 | pub const MAX_TICKET_PRICE_V1: u64 = 1_000_000_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_REFUND_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:25:11
+   |
+25 | pub const MAX_REFUND_FEE_V1: u64 = 1_500_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_REFUND_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:28:11
+   |
+28 | pub const MIN_REFUND_PAYOUT_V1: u64 = 10_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REFUND_K_MAX_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:39:11
+   |
+39 | pub const REFUND_K_MAX_V1: usize = 16;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `FINALIZER_REWARD_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:42:11
+   |
+42 | pub const FINALIZER_REWARD_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_FINALIZE_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:45:11
+   |
+45 | pub const MAX_FINALIZE_FEE_V1: u64 = 50_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_WINNER_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:48:11
+   |
+48 | pub const MIN_WINNER_PAYOUT_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:51:11
+   |
+51 | pub const TREE_DEPTH_V1: usize = 27;
+   |           ^^^^^^^^^^^^^
+
+warning: constant `DOMAIN_R_56_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:54:11
+   |
+54 | pub const DOMAIN_R_56_V1: i64 = 1i64 << 56;
+   |           ^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:13:11
+   |
+13 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: function `compute_payout_commitment` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:17:8
+   |
+17 | pub fn compute_payout_commitment(payout_spk: &[u8]) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_purchase_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:37:8
+   |
+37 | pub fn compute_purchase_leaf(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_root_from_path` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:100:8
+    |
+100 | pub fn compute_root_from_path(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_verify_winner_membership` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:126:8
+    |
+126 | pub fn reference_verify_winner_membership(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_class_a_p2pk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:154:8
+    |
+154 | pub fn is_canonical_class_a_p2pk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_payout_spk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:169:8
+    |
+169 | pub fn is_canonical_payout_spk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_canonical_payout_spk_check` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:211:8
+    |
+211 | pub fn append_canonical_payout_spk_check(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_prefix` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:37:8
+   |
+37 | pub fn build_refunding_prefix(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_refunding_body_len` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:63:8
+   |
+63 | pub fn canonical_refunding_body_len(reserve_payout_spk_len: usize) -> usize {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_covenant` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:75:8
+   |
+75 | pub fn build_refunding_covenant(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_body` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:107:8
+    |
+107 | pub fn build_refunding_body(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_singleton_continuation_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:16:8
+   |
+16 | pub fn append_kaswin_singleton_continuation_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_terminal_lineage_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:75:8
+   |
+75 | pub fn append_kaswin_terminal_lineage_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `hash_internal_node` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:59:8
+   |
+59 | pub fn hash_internal_node(left: &Hash, right: &Hash) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:72:8
+   |
+72 | pub fn compute_empty_leaf() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_levels` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:82:8
+   |
+82 | pub fn compute_empty_levels() -> [Hash; 28] {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_root_27` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:92:8
+   |
+92 | pub fn compute_empty_root_27() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:53:11
+   |
+53 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:54:11
+   |
+54 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_settlement_suffix` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:65:8
+   |
+65 | pub fn build_winner_ready_settlement_suffix() -> Vec<u8> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_winner_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:357:8
+    |
+357 | pub fn build_production_winner_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:32:11
+   |
+32 | pub const MIN_TICKET_PRICE_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_STATE_DEPOSIT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:36:11
+   |
+36 | pub const MIN_STATE_DEPOSIT_V1: u64 = 5_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:23:11
+   |
+23 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `COUNTER_PUSH_LEN` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:24:11
+   |
+24 | pub const COUNTER_PUSH_LEN: usize = 9; // 0x08 push opcode + 8 bytes LE counter
+   |           ^^^^^^^^^^^^^^^^
+
+warning: constant `DOMAIN_R_56` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:25:11
+   |
+25 | pub const DOMAIN_R_56: i64 = 1i64 << 56; // 72,057,594,037,927,936
+   |           ^^^^^^^^^^^
+
+warning: function `draw_ready_prefix_len` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:27:8
+   |
+27 | pub fn draw_ready_prefix_len(creator_refund_spk_len: usize) -> usize {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `WinnerStepResult` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:40:10
+   |
+40 | pub enum WinnerStepResult {
+   |          ^^^^^^^^^^^^^^^^
+
+warning: function `compute_candidate_hash` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:45:8
+   |
+45 | pub fn compute_candidate_hash(random_seed: &Hash, counter: u64) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extract_candidate_num` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:56:8
+   |
+56 | pub fn extract_candidate_num(candidate_hash: &Hash) -> i64 {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_winner_step` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:64:8
+   |
+64 | pub fn reference_winner_step(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_draw_ready_prefix` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:89:8
+   |
+89 | pub fn build_draw_ready_prefix(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_canonical_reject_successor_bytecode` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:119:8
+    |
+119 | pub fn append_canonical_reject_successor_bytecode(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_draw_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:204:8
+    |
+204 | pub fn build_draw_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_suffix_len` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:243:8
+    |
+243 | pub fn canonical_suffix_len(total_tickets: u64, creator_refund_spk_len: usize) -> usize {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_complete_draw_ready_suffix` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:248:8
+    |
+248 | pub fn build_complete_draw_ready_suffix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compile_suffix_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:267:4
+    |
+267 | fn compile_suffix_body(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_canonical_winner_ready_redeem_script` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:408:8
+    |
+408 | pub fn build_canonical_winner_ready_redeem_script(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_ACCEPT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:434:11
+    |
+434 | pub const ACTION_ACCEPT: i64 = 1;
+    |           ^^^^^^^^^^^^^
+
+warning: constant `ACTION_REJECT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:435:11
+    |
+435 | pub const ACTION_REJECT: i64 = 2;
+    |           ^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_prefix` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:448:8
+    |
+448 | pub fn build_directory_draw_ready_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:478:4
+    |
+478 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:506:8
+    |
+506 | pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_directory_draw_ready_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:772:8
+    |
+772 | pub fn compute_converged_directory_draw_ready_body() -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:784:8
+    |
+784 | pub fn build_directory_draw_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_prefix` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:412:8
+    |
+412 | pub fn build_winner_ready_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_settlement_body` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:442:8
+    |
+442 | pub fn build_winner_ready_settlement_body() -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_winner_ready_3out_covenant` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:652:8
+    |
+652 | pub fn build_production_winner_ready_3out_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_DRAW` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:30:11
+   |
+30 | pub const ACTION_DRAW: i64 = 1;
+   |           ^^^^^^^^^^^
+
+warning: constant `ACTION_FULL_REFUND` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:31:11
+   |
+31 | pub const ACTION_FULL_REFUND: i64 = 2;
+   |           ^^^^^^^^^^^^^^^^^^
+
+warning: function `make_blake3_key` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:33:4
+   |
+33 | fn make_blake3_key(tag: &[u8]) -> [u8; 32] {
+   |    ^^^^^^^^^^^^^^^
+
+warning: function `compute_application_commitment` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:39:8
+   |
+39 | pub fn compute_application_commitment(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_random_seed` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:56:8
+   |
+56 | pub fn compute_random_seed(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_sealed_prefix_v1` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:78:8
+   |
+78 | pub fn build_sealed_prefix_v1(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_sealed_body_v1` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:101:8
+    |
+101 | pub fn build_sealed_body_v1(total_tickets: u64, creator_refund_spk_len: usize) -> ScriptBuilderResult<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_sealed_covenant_v1` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:586:8
+    |
+586 | pub fn build_production_sealed_covenant_v1(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_sealed_prefix` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:624:8
+    |
+624 | pub fn build_directory_sealed_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:647:4
+    |
+647 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_sealed_body` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:675:8
+    |
+675 | pub fn build_directory_sealed_body() -> ScriptBuilderResult<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_sealed_covenant` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:883:8
+    |
+883 | pub fn build_directory_sealed_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `min_k_for_p` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:547:8
+    |
+547 | pub fn min_k_for_p(p: usize) -> usize {
+    |        ^^^^^^^^^^^
+
+warning: function `schedule_next_k` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:563:8
+    |
+563 | pub fn schedule_next_k(remaining: usize, p_total: usize, k_max: usize) -> usize {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `build_directory_refunding_prefix` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:575:8
+    |
+575 | pub fn build_directory_refunding_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:596:4
+    |
+596 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_compact_universal_refunding_body` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:623:8
+    |
+623 | pub fn build_compact_universal_refunding_body(static_body_len: usize) -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_compact_universal_body` is never used
+    --> src/bin/../../../../contracts/refunding_covenant.rs:1110:8
+     |
+1110 | pub fn compute_converged_compact_universal_body() -> Vec<u8> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_compact_universal_refunding_covenant` is never used
+    --> src/bin/../../../../contracts/refunding_covenant.rs:1122:8
+     |
+1122 | pub fn build_compact_universal_refunding_covenant(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:31:11
+   |
+31 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `LOCK_TIME_THRESHOLD` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:32:11
+   |
+32 | pub const LOCK_TIME_THRESHOLD: u64 = 500_000_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_BEGIN_REFUND` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:35:11
+   |
+35 | pub const ACTION_BEGIN_REFUND: i64 = 2;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_RECOVER_EMPTY` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:36:11
+   |
+36 | pub const ACTION_RECOVER_EMPTY: i64 = 3;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_open_prefix` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:38:8
+   |
+38 | pub fn build_open_prefix(
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_open_body_len` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:65:8
+   |
+65 | pub fn canonical_open_body_len(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_initial_open_covenant` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:83:8
+   |
+83 | pub fn build_initial_open_covenant(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_open_covenant` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:105:8
+    |
+105 | pub fn build_open_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_open_covenant_body` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:140:8
+    |
+140 | pub fn build_open_covenant_body(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_initial_directory_open_covenant` is never used
+    --> src/bin/../../../../contracts/open_covenant.rs:1286:8
+     |
+1286 | pub fn build_initial_directory_open_covenant(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_kaswin_create_parameters` is never used
+  --> src/bin/../../../../contracts/genesis.rs:44:8
+   |
+44 | pub fn validate_kaswin_create_parameters(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_canonical_kaswin_genesis_output` is never used
+  --> src/bin/../../../../contracts/genesis.rs:90:8
+   |
+90 | pub fn build_canonical_kaswin_genesis_output(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_canonical_kaswin_create` is never used
+   --> src/bin/../../../../contracts/genesis.rs:143:8
+    |
+143 | pub fn validate_canonical_kaswin_create(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_genesis_output` is never used
+   --> src/bin/../../../../contracts/genesis.rs:288:8
+    |
+288 | pub fn build_directory_genesis_output(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_canonical_directory_create` is never used
+   --> src/bin/../../../../contracts/genesis.rs:341:8
+    |
+341 | pub fn validate_canonical_directory_create(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_canonical_round_id` is never used
+ --> src/bin/../../../../contracts/round_id.rs:6:8
+  |
+6 | pub fn compute_canonical_round_id(funding_outpoint: &TransactionOutpoint) -> Hash {
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_BUY` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:34:11
+   |
+34 | pub const ACTION_BUY: i64 = 1;
+   |           ^^^^^^^^^^
+
+warning: constant `ACTION_CLOSE` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:758:11
+    |
+758 | pub const ACTION_CLOSE: i64 = 2;
+    |           ^^^^^^^^^^^^
+
+warning: function `build_directory_open_prefix` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:771:8
+    |
+771 | pub fn build_directory_open_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:801:4
+    |
+801 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_open_body` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:829:8
+    |
+829 | pub fn build_directory_open_body(static_body_len: usize) -> ScriptBuilderResult<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_directory_open_body` is never used
+    --> src/bin/../../../../contracts/open_covenant.rs:1274:8
+     |
+1274 | pub fn compute_converged_directory_open_body() -> Vec<u8> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_open_covenant` is never used
+    --> src/bin/../../../../contracts/open_covenant.rs:1313:8
+     |
+1313 | pub fn build_directory_open_covenant(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+PIN cfafeb4c093fa37a303f1b9f19c58f986b870ce3; OFFLINE MASS ONLY; production body, budget40 conservative; no admission PASS
+OLD_MIN fee0 Row { p: 1, cursor: 0, k: 1, storage: 604597, compute: 11323, transient: 26412, relay: 1320600, harmonic: 682251, subtraction: 77654, ip: 2, sp: 0, fee: 0, parts: [662251, 20000] }
+OLD_MIN fee0 Row { p: 17, cursor: 0, k: 9, storage: 5971831, compute: 15314, transient: 30816, relay: 1540800, harmonic: 6024691, subtraction: 52860, ip: 2, sp: 2, fee: 0, parts: [64432, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251] }
+OLD_MIN fee0 Row { p: 256, cursor: 0, k: 16, storage: 10596553, compute: 26865, transient: 66940, relay: 3347000, harmonic: 10605715, subtraction: 9162, ip: 2, sp: 2, fee: 0, parts: [9699, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251, 662251] }
+GRID gross=2000000 deposit=1 P=256 cursor=240 k=16 storage=1000008807304 headroom=-1000008307304 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=1 P=256 cursor=240 k=16 storage=1000003289408 headroom=-1000002789408 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=1 P=256 cursor=240 k=16 storage=1000001609112 headroom=-1000001109112 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=1 P=256 cursor=240 k=16 storage=1000000795932 headroom=-1000000295932 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=1 P=256 cursor=240 k=16 storage=1000000528724 headroom=-1000000028724 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=1 P=256 cursor=240 k=16 storage=1000000395846 headroom=-999999895846 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=1 P=256 cursor=240 k=16 storage=1000000316328 headroom=-999999816328 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=1 P=256 cursor=240 k=16 storage=1000000210588 headroom=-999999710588 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=1 P=256 cursor=240 k=16 storage=1000000157820 headroom=-999999657820 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=1 P=256 cursor=240 k=16 storage=1000000078830 headroom=-999999578830 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=10000 P=256 cursor=240 k=16 storage=108807344 headroom=-108307344 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=10000 P=256 cursor=240 k=16 storage=103289416 headroom=-102789416 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=10000 P=256 cursor=240 k=16 storage=101609114 headroom=-101109114 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=10000 P=256 cursor=240 k=16 storage=100795934 headroom=-100295934 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=10000 P=256 cursor=240 k=16 storage=100528724 headroom=-100028724 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=10000 P=256 cursor=240 k=16 storage=100395848 headroom=-99895848 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=10000 P=256 cursor=240 k=16 storage=100316330 headroom=-99816330 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=10000 P=256 cursor=240 k=16 storage=100210588 headroom=-99710588 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=10000 P=256 cursor=240 k=16 storage=100157822 headroom=-99657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=10000 P=256 cursor=240 k=16 storage=100078832 headroom=-99578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=100000 P=256 cursor=240 k=16 storage=18807694 headroom=-18307694 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=100000 P=256 cursor=240 k=16 storage=13289472 headroom=-12789472 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=100000 P=256 cursor=240 k=16 storage=11609128 headroom=-11109128 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=100000 P=256 cursor=240 k=16 storage=10795936 headroom=-10295936 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=100000 P=256 cursor=240 k=16 storage=10528726 headroom=-10028726 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=100000 P=256 cursor=240 k=16 storage=10395848 headroom=-9895848 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=100000 P=256 cursor=240 k=16 storage=10316330 headroom=-9816330 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=100000 P=256 cursor=240 k=16 storage=10210588 headroom=-9710588 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=100000 P=256 cursor=240 k=16 storage=10157822 headroom=-9657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=100000 P=256 cursor=240 k=16 storage=10078832 headroom=-9578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=500000 P=256 cursor=240 k=16 storage=10809228 headroom=-10309228 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=500000 P=256 cursor=240 k=16 storage=5289720 headroom=-4789720 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=500000 P=256 cursor=240 k=16 storage=3609190 headroom=-3109190 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=500000 P=256 cursor=240 k=16 storage=2795952 headroom=-2295952 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=500000 P=256 cursor=240 k=16 storage=2528732 headroom=-2028732 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=500000 P=256 cursor=240 k=16 storage=2395852 headroom=-1895852 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=500000 P=256 cursor=240 k=16 storage=2316332 headroom=-1816332 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=500000 P=256 cursor=240 k=16 storage=2210590 headroom=-1710590 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=500000 P=256 cursor=240 k=16 storage=2157822 headroom=-1657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=500000 P=256 cursor=240 k=16 storage=2078832 headroom=-1578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=1000000 P=256 cursor=240 k=16 storage=9811092 headroom=-9311092 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=1000000 P=256 cursor=240 k=16 storage=4290026 headroom=-3790026 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=1000000 P=256 cursor=240 k=16 storage=2609268 headroom=-2109268 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=1000000 P=256 cursor=240 k=16 storage=1795972 headroom=-1295972 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=1000000 P=256 cursor=240 k=16 storage=1528740 headroom=-1028740 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=1000000 P=256 cursor=240 k=16 storage=1395856 headroom=-895856 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=1000000 P=256 cursor=240 k=16 storage=1316336 headroom=-816336 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=1000000 P=256 cursor=240 k=16 storage=1210590 headroom=-710590 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=1000000 P=256 cursor=240 k=16 storage=1157822 headroom=-657822 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=1000000 P=256 cursor=240 k=16 storage=1078832 headroom=-578832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=2000000 P=256 cursor=240 k=16 storage=9314658 headroom=-8814658 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=2000000 P=256 cursor=240 k=16 storage=3790628 headroom=-3290628 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=2000000 P=256 cursor=240 k=16 storage=2109422 headroom=-1609422 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=2000000 P=256 cursor=240 k=16 storage=1296010 headroom=-796010 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=2000000 P=256 cursor=240 k=16 storage=1028758 headroom=-528758 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=2000000 P=256 cursor=240 k=16 storage=895866 headroom=-395866 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=2000000 P=256 cursor=240 k=16 storage=816342 headroom=-316342 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=2000000 P=256 cursor=240 k=16 storage=710594 headroom=-210594 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=2000000 P=256 cursor=240 k=16 storage=657824 headroom=-157824 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=2000000 P=256 cursor=240 k=16 storage=578832 headroom=-78832 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=5000000 P=256 cursor=240 k=16 storage=9024196 headroom=-8524196 compute=26820 transient=66800 relay=3340000
+GRID gross=5000000 deposit=5000000 P=256 cursor=240 k=16 storage=3492350 headroom=-2992350 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=5000000 P=256 cursor=240 k=16 storage=1809870 headroom=-1309870 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=5000000 P=256 cursor=240 k=16 storage=996126 headroom=-496126 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=5000000 P=256 cursor=240 k=16 storage=728810 headroom=-228810 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=5000000 P=256 cursor=240 k=16 storage=595896 headroom=-95896 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=5000000 P=256 cursor=240 k=16 storage=516360 headroom=-16360 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=5000000 P=256 cursor=240 k=16 storage=410602 headroom=89398 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=5000000 P=256 cursor=240 k=16 storage=357828 headroom=142172 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=5000000 P=256 cursor=240 k=16 storage=278832 headroom=221168 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=10000000 P=256 cursor=224 k=16 storage=8975664 headroom=-8475664 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=10000000 P=256 cursor=240 k=16 storage=3394964 headroom=-2894964 compute=26820 transient=66800 relay=3340000
+GRID gross=10000000 deposit=10000000 P=256 cursor=240 k=16 storage=1710584 headroom=-1210584 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=10000000 P=256 cursor=240 k=16 storage=896312 headroom=-396312 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=10000000 P=256 cursor=240 k=16 storage=628894 headroom=-128894 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=10000000 P=256 cursor=240 k=16 storage=495944 headroom=4056 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=10000000 P=256 cursor=240 k=16 storage=416390 headroom=83610 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=10000000 P=256 cursor=240 k=16 storage=310616 headroom=189384 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=10000000 P=256 cursor=240 k=16 storage=257836 headroom=242164 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=10000000 P=256 cursor=240 k=16 storage=178834 headroom=321166 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=20000000 P=256 cursor=224 k=16 storage=8963785 headroom=-8463785 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=20000000 P=256 cursor=224 k=16 storage=3357490 headroom=-2857490 compute=26865 transient=66940 relay=3347000
+GRID gross=10000000 deposit=20000000 P=256 cursor=240 k=16 storage=1661890 headroom=-1161890 compute=26820 transient=66800 relay=3340000
+GRID gross=20000000 deposit=20000000 P=256 cursor=240 k=16 storage=846668 headroom=-346668 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=20000000 P=256 cursor=240 k=16 storage=579056 headroom=-79056 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=20000000 P=256 cursor=240 k=16 storage=446036 headroom=53964 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=20000000 P=256 cursor=240 k=16 storage=366450 headroom=133550 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=20000000 P=256 cursor=240 k=16 storage=260642 headroom=239358 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=20000000 P=256 cursor=240 k=16 storage=207852 headroom=292148 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=20000000 P=256 cursor=240 k=16 storage=128838 headroom=371162 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=50000000 P=256 cursor=224 k=16 storage=8948174 headroom=-8448174 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=50000000 P=256 cursor=224 k=16 storage=3351435 headroom=-2851435 compute=26865 transient=66940 relay=3347000
+GRID gross=10000000 deposit=50000000 P=256 cursor=224 k=16 storage=1642413 headroom=-1142413 compute=26865 transient=66940 relay=3347000
+GRID gross=20000000 deposit=50000000 P=256 cursor=240 k=16 storage=817622 headroom=-317622 compute=26820 transient=66800 relay=3340000
+GRID gross=30000000 deposit=50000000 P=256 cursor=240 k=16 storage=549510 headroom=-49510 compute=26820 transient=66800 relay=3340000
+GRID gross=40000000 deposit=50000000 P=256 cursor=240 k=16 storage=416300 headroom=83700 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=50000000 P=256 cursor=240 k=16 storage=336624 headroom=163376 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=50000000 P=256 cursor=240 k=16 storage=230720 headroom=269280 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=50000000 P=256 cursor=240 k=16 storage=177896 headroom=322104 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=50000000 P=256 cursor=240 k=16 storage=98850 headroom=401150 compute=26820 transient=66800 relay=3340000
+GRID gross=2000000 deposit=100000000 P=256 cursor=224 k=16 storage=8940393 headroom=-8440393 compute=26865 transient=66940 relay=3347000
+GRID gross=5000000 deposit=100000000 P=256 cursor=224 k=16 storage=3346550 headroom=-2846550 compute=26865 transient=66940 relay=3347000
+GRID gross=10000000 deposit=100000000 P=256 cursor=224 k=16 storage=1640038 headroom=-1140038 compute=26865 transient=66940 relay=3347000
+GRID gross=20000000 deposit=100000000 P=256 cursor=224 k=16 storage=812567 headroom=-312567 compute=26865 transient=66940 relay=3347000
+GRID gross=30000000 deposit=100000000 P=256 cursor=224 k=16 storage=540196 headroom=-40196 compute=26865 transient=66940 relay=3347000
+GRID gross=40000000 deposit=100000000 P=256 cursor=240 k=16 storage=406692 headroom=93308 compute=26820 transient=66800 relay=3340000
+GRID gross=50000000 deposit=100000000 P=256 cursor=240 k=16 storage=326884 headroom=173116 compute=26820 transient=66800 relay=3340000
+GRID gross=75000000 deposit=100000000 P=256 cursor=240 k=16 storage=220844 headroom=279156 compute=26820 transient=66800 relay=3340000
+GRID gross=100000000 deposit=100000000 P=256 cursor=240 k=16 storage=167968 headroom=332032 compute=26820 transient=66800 relay=3340000
+GRID gross=200000000 deposit=100000000 P=256 cursor=240 k=16 storage=88868 headroom=411132 compute=26820 transient=66800 relay=3340000
+BOUND deposit=5000000 target=500000 gross=52715970 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499990, compute: 26820, transient: 66800, relay: 3340000, harmonic: 504704, subtraction: 4714, ip: 2, sp: 0, fee: 3340000, parts: [19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 19044, 200000] })
+BOUND deposit=5000000 target=400000 gross=78961310 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 400000, compute: 26820, transient: 66800, relay: 3340000, harmonic: 403152, subtraction: 3152, ip: 2, sp: 0, fee: 3340000, parts: [12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 12697, 200000] })
+BOUND deposit=10000000 target=500000 gross=39595887 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499994, compute: 26820, transient: 66800, relay: 3340000, harmonic: 506208, subtraction: 6214, ip: 2, sp: 0, fee: 3340000, parts: [25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 25388, 100000] })
+BOUND deposit=10000000 target=400000 gross=52721485 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 399986, compute: 26820, transient: 66800, relay: 3340000, harmonic: 404672, subtraction: 4686, ip: 2, sp: 0, fee: 3340000, parts: [19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 19042, 100000] })
+BOUND deposit=20000000 target=500000 gross=35230114 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499996, compute: 26820, transient: 66800, relay: 3340000, harmonic: 506848, subtraction: 6852, ip: 2, sp: 0, fee: 3340000, parts: [28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 28553, 50000] })
+BOUND deposit=20000000 target=400000 gross=45229460 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 399998, compute: 26820, transient: 66800, relay: 3340000, harmonic: 405376, subtraction: 5378, ip: 2, sp: 0, fee: 3340000, parts: [22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 22211, 50000] })
+BOUND deposit=50000000 target=500000 gross=33068898 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 499990, compute: 26820, transient: 66800, relay: 3340000, harmonic: 506896, subtraction: 6906, ip: 2, sp: 0, fee: 3340000, parts: [30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 30431, 20000] })
+BOUND deposit=50000000 target=400000 gross=41704248 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 399992, compute: 26820, transient: 66800, relay: 3340000, harmonic: 405568, subtraction: 5576, ip: 2, sp: 0, fee: 3340000, parts: [24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 24098, 20000] })
+DEPOSIT_BOUND gross=100000000 target=500000 deposit=2922482 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 500000, compute: 26820, transient: 66800, relay: 3340000, harmonic: 502494, subtraction: 2494, ip: 2, sp: 0, fee: 3340000, parts: [10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 342174] })
+DEPOSIT_BOUND gross=100000000 target=400000 deposit=4129280 worst=Some(Row { p: 256, cursor: 240, k: 16, storage: 400000, compute: 26820, transient: 66800, relay: 3340000, harmonic: 402492, subtraction: 2492, ip: 2, sp: 0, fee: 3340000, parts: [10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 242172] })
+OLD_P256 Some(Row { p: 256, cursor: 0, k: 16, storage: 2763154, compute: 26865, transient: 66940, relay: 3347000, harmonic: 2765676, subtraction: 2522, ip: 2, sp: 2, fee: 3347000, parts: [2684, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687, 172687] })
+OLD_P256 Some(Row { p: 256, cursor: 240, k: 16, storage: 2755388, compute: 26820, transient: 66800, relay: 3340000, harmonic: 2782784, subtraction: 27396, ip: 2, sp: 0, fee: 3340000, parts: [172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 172674, 20000] })
+CANDIDATE Row { p: 1, cursor: 0, k: 1, storage: 172038, compute: 11323, transient: 26412, relay: 1320600, harmonic: 210133, subtraction: 38095, ip: 2, sp: 0, fee: 1320600, parts: [10133, 200000] }
+CANDIDATE Row { p: 17, cursor: 0, k: 9, storage: 92775, compute: 15314, transient: 30816, relay: 1540800, harmonic: 95121, subtraction: 2346, ip: 2, sp: 2, fee: 1540800, parts: [4968, 10017, 10017, 10017, 10017, 10017, 10017, 10017, 10017, 10017] }
+CANDIDATE Row { p: 17, cursor: 9, k: 8, storage: 275184, compute: 14848, transient: 30432, relay: 1521600, harmonic: 280152, subtraction: 4968, ip: 2, sp: 0, fee: 1521600, parts: [10019, 10019, 10019, 10019, 10019, 10019, 10019, 10019, 200000] }
+CANDIDATE Row { p: 256, cursor: 0, k: 16, storage: 160330, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160486, subtraction: 156, ip: 2, sp: 2, fee: 3347000, parts: [166, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 16, k: 16, storage: 160332, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160498, subtraction: 166, ip: 2, sp: 2, fee: 3347000, parts: [178, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 32, k: 16, storage: 160334, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160512, subtraction: 178, ip: 2, sp: 2, fee: 3347000, parts: [192, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 48, k: 16, storage: 160336, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160528, subtraction: 192, ip: 2, sp: 2, fee: 3347000, parts: [208, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 64, k: 16, storage: 160339, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160547, subtraction: 208, ip: 2, sp: 2, fee: 3347000, parts: [227, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 80, k: 16, storage: 160343, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160569, subtraction: 226, ip: 2, sp: 2, fee: 3347000, parts: [249, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 96, k: 16, storage: 160349, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160597, subtraction: 248, ip: 2, sp: 2, fee: 3347000, parts: [277, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 112, k: 16, storage: 160356, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160632, subtraction: 276, ip: 2, sp: 2, fee: 3347000, parts: [312, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 128, k: 16, storage: 160364, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160676, subtraction: 312, ip: 2, sp: 2, fee: 3347000, parts: [356, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 144, k: 16, storage: 160380, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160736, subtraction: 356, ip: 2, sp: 2, fee: 3347000, parts: [416, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 160, k: 16, storage: 160403, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160819, subtraction: 416, ip: 2, sp: 2, fee: 3347000, parts: [499, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 176, k: 16, storage: 160446, compute: 26865, transient: 66940, relay: 3347000, harmonic: 160944, subtraction: 498, ip: 2, sp: 2, fee: 3347000, parts: [624, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 192, k: 16, storage: 160528, compute: 26865, transient: 66940, relay: 3347000, harmonic: 161152, subtraction: 624, ip: 2, sp: 2, fee: 3347000, parts: [832, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 208, k: 16, storage: 160736, compute: 26865, transient: 66940, relay: 3347000, harmonic: 161568, subtraction: 832, ip: 2, sp: 2, fee: 3347000, parts: [1248, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 224, k: 16, storage: 161564, compute: 26865, transient: 66940, relay: 3347000, harmonic: 162812, subtraction: 1248, ip: 2, sp: 2, fee: 3347000, parts: [2492, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020] }
+CANDIDATE Row { p: 256, cursor: 240, k: 16, storage: 357828, compute: 26820, transient: 66800, relay: 3340000, harmonic: 360320, subtraction: 2492, ip: 2, sp: 0, fee: 3340000, parts: [10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 10020, 200000] }
+CONCENTRATED Some(Row { p: 256, cursor: 0, k: 16, storage: 321395, compute: 26865, transient: 66940, relay: 3347000, harmonic: 321707, subtraction: 312, ip: 2, sp: 2, fee: 3347000, parts: [332, 20618, 20618, 20139, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000] })
+PAID_MASS_ONLY deposit=1 storage=1000000004000 creator_plurality=1
+PAID_MASS_ONLY deposit=10000 storage=100004002 creator_plurality=1
+PAID_MASS_ONLY deposit=100000 storage=10004008 creator_plurality=1
+PAID_MASS_ONLY deposit=500000 storage=2004032 creator_plurality=1
+PAID_MASS_ONLY deposit=1000000 storage=1004064 creator_plurality=1
+PAID_MASS_ONLY deposit=2000000 storage=504128 creator_plurality=1
+PAID_MASS_ONLY deposit=5000000 storage=204314 creator_plurality=1
+PAID_MASS_ONLY deposit=10000000 storage=104616 creator_plurality=1
+PAID_MASS_ONLY deposit=20000000 storage=55186 creator_plurality=1
+PAID_MASS_ONLY deposit=50000000 storage=26668 creator_plurality=1
+PAID_MASS_ONLY deposit=100000000 storage=18572 creator_plurality=1
+TERMINAL empty=false deposit=5000000 storage=203552 fee=50000000 relay=302400 ALL_INPUTS_COMMITTED_PASS
+TERMINAL empty=true deposit=5000000 storage=125398 fee=10000000 relay=2328800 ALL_INPUTS_COMMITTED_PASS
+1 KAS STORAGE ADMISSION: production refund and terminal boundary checks PASS (not full lifecycle)

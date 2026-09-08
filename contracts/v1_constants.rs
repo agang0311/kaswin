@@ -27,8 +27,13 @@ pub const MAX_REFUND_FEE_V1: u64 = 1_500_000;
 /// Guaranteed minimum buyer refund payout per purchase record (0.0001 KAS = 10,000 sompi)
 pub const MIN_REFUND_PAYOUT_V1: u64 = 10_000;
 
-/// Minimum allowable ticket price at CREATE (MAX_REFUND_FEE_V1 + MIN_REFUND_PAYOUT_V1 = 1,510,000 sompi = 0.0151 KAS)
-pub const MIN_TICKET_PRICE_V1: u64 = MAX_REFUND_FEE_V1 + MIN_REFUND_PAYOUT_V1;
+/// User-frozen minimum denomination: 1 KAS. With count >= 1, every
+/// purchase can cover bounded refund fees without creating dust-sized refunds.
+pub const MIN_TICKET_PRICE_V1: u64 = 100_000_000;
+
+/// Creator capital floor (0.05 KAS), returned intact at every terminal path.
+/// Bounds the creator output's storage harmonic contribution to 200,000.
+pub const MIN_STATE_DEPOSIT_V1: u64 = 5_000_000;
 
 /// Maximum batch size for sequential refunds (K_MAX = 16)
 pub const REFUND_K_MAX_V1: usize = 16;

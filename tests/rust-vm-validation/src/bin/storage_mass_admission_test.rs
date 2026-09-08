@@ -6,6 +6,11 @@ use kaspa_txscript::{standard::pay_to_script_hash_script,script_builder::ScriptB
 #[path="../../../../contracts/ticket_commitment.rs"] mod ticket_commitment;
 #[path="../../../../contracts/refunding_covenant.rs"] mod refunding_covenant;
 use refunding_covenant::*;
+#[path="../../../../contracts/winner_ready_settlement.rs"] mod winner_ready_settlement;
+#[path="../../../../contracts/winner_selection.rs"] mod winner_selection;
+#[path="../../../../contracts/sealed_covenant.rs"] mod sealed_covenant;
+#[path="../../../../contracts/open_covenant.rs"] mod open_covenant;
+#[path="../../../../contracts/genesis.rs"] mod genesis;
 const C:u64=1_000_000_000_000;
 fn raw()->Vec<u8>{let mut s=vec![0x20];s.extend([0x11;32]);s.push(0xac);s}
 fn output(value:u64,cov:bool,script:ScriptPublicKey)->TransactionOutput{TransactionOutput{value,script_public_key:script,covenant:cov.then_some(CovenantBinding{covenant_id:Hash::from_u64_word(7),authorizing_input:0})}}
@@ -49,9 +54,9 @@ fn main(){
  for p in [1,17,256]{let r=refund(1_510_000,50_000_000,p,0,0).unwrap();println!("OLD_MIN fee0 {:?}",r);assert!(r.storage>500_000);}
  for d in [1,10_000,100_000,500_000,1_000_000,2_000_000,5_000_000,10_000_000,20_000_000,50_000_000,100_000_000]{for g in [2_000_000,5_000_000,10_000_000,20_000_000,30_000_000,40_000_000,50_000_000,75_000_000,100_000_000,200_000_000]{if let Some(r)=worst(g,d){println!("GRID gross={g} deposit={d} P={} cursor={} k={} storage={} headroom={} compute={} transient={} relay={}",r.p,r.cursor,r.k,r.storage,500_000i64-r.storage as i64,r.compute,r.transient,r.relay);}}}
  for d in [5_000_000,10_000_000,20_000_000,50_000_000]{for target in [500_000,400_000]{let(mut lo,mut hi)=(1_510_000,200_000_000);while lo<hi{let mid=lo+(hi-lo)/2;if worst(mid,d).map_or(false,|r|r.storage<=target){hi=mid}else{lo=mid+1}}println!("BOUND deposit={d} target={target} gross={lo} worst={:?}",worst(lo,d));}}
- for target in [500_000,400_000]{let(mut lo,mut hi)=(1,100_000_000);while lo<hi{let mid=lo+(hi-lo)/2;if worst(50_000_000,mid).map_or(false,|r|r.storage<=target){hi=mid}else{lo=mid+1}}println!("DEPOSIT_BOUND gross=50000000 target={target} deposit={lo} worst={:?}",worst(50_000_000,lo));}
+ for target in [500_000,400_000]{let(mut lo,mut hi)=(1,100_000_000);while lo<hi{let mid=lo+(hi-lo)/2;if worst(100_000_000,mid).map_or(false,|r|r.storage<=target){hi=mid}else{lo=mid+1}}println!("DEPOSIT_BOUND gross=100000000 target={target} deposit={lo} worst={:?}",worst(100_000_000,lo));}
  for cursor in [0,240]{println!("OLD_P256 {:?}",refund(6_000_000,50_000_000,256,cursor,1));}
- for p in [1,17,256]{let mut cur=0;while cur<p{let r=refund_inner(50_000_000,20_000_000,p,cur,1,true).unwrap();println!("CANDIDATE {:?}",r);cur+=r.k;}}
+ for p in [1,17,256]{let mut cur=0;while cur<p{let r=refund_inner(100_000_000,5_000_000,p,cur,1,true).unwrap();println!("CANDIDATE {:?}",r);cur+=r.k;}}
  println!("CONCENTRATED {:?}",refund(50_000_000,20_000_000,256,0,2));
  // Terminal output amounts at the successful minimum economic boundary.
  // These rows prove mass only, not that the state/witness executes in VM.
@@ -62,5 +67,31 @@ fn main(){
   let tx=Transaction::new(1,vec![TransactionInput::new_with_mass(TransactionOutpoint::new(Hash::from_u64_word(8),0),vec![],0,ComputeCommit::ComputeBudget(ComputeBudget(0)))],vec![output(100_000_000,false,ScriptPublicKey::from_vec(0,raw())),output(d,false,ScriptPublicKey::from_vec(0,raw())),output(100_000_000,false,ScriptPublicKey::from_vec(0,raw()))],0,SubnetworkId::default(),0,vec![]);
   println!("PAID_MASS_ONLY deposit={d} storage={} creator_plurality={}",calc.calc_contextual_masses(&PopulatedTransaction::new(&tx,vec![entry])).unwrap().storage_mass,tx.outputs[1].plurality());
  }
- println!("STORAGE SEARCH COMPLETE; admission/VM/terminal coverage remain BLOCKED");
+ terminals();
+ println!("1 KAS STORAGE ADMISSION: production refund and terminal boundary checks PASS (not full lifecycle)");
+}
+
+fn terminals(){
+ use v1_constants::*;
+ let mut full=vec![0,0];full.extend(raw());
+ for (price,dep,ok) in [(MIN_TICKET_PRICE_V1-1,MIN_STATE_DEPOSIT_V1,false),(MIN_TICKET_PRICE_V1,MIN_STATE_DEPOSIT_V1-1,false),(MIN_TICKET_PRICE_V1,MIN_STATE_DEPOSIT_V1,true)]{
+  assert_eq!(genesis::validate_directory_create_parameters(price,1000,3,2_000_000,&full,dep).is_ok(),ok);
+ }
+ let d=MIN_STATE_DEPOSIT_V1;let flags=EngineFlags{covenants_enabled:true,sigop_script_units:kaspa_consensus_core::mass::Gram(1000).into()};
+ let calc=MassCalculator::new_with_consensus_params(&MAINNET_PARAMS);
+ for empty in [false,true]{
+  let kp=secp256k1::Keypair::from_seckey_slice(secp256k1::SECP256K1,&[0x34;32]).unwrap();
+  let mut sponsor=vec![0x20];sponsor.extend(kp.x_only_public_key().0.serialize());sponsor.push(0xac);
+  let redeem=if empty{open_covenant::build_directory_open_covenant(Hash::from_u64_word(1),MIN_TICKET_PRICE_V1,1000,3,2_000_000,0,0,ticket_commitment::compute_empty_root_27(),raw(),&[]).unwrap()}else{winner_ready_settlement::build_production_winner_ready_3out_covenant(Hash::from_u64_word(1),MIN_TICKET_PRICE_V1,3,Hash::from_u64_word(2),Hash::from_u64_word(3),Hash::from_u64_word(4),0,0,raw(),raw())};
+  let mut sb=ScriptBuilder::with_flags(flags);if empty{sb.add_i64(open_covenant::ACTION_CLOSE).unwrap();}else{sb.add_data(&raw()).unwrap();}sb.add_data(&redeem).unwrap();
+  let amount=if empty{d}else{d+300_000_000};
+  let mut entries=vec![UtxoEntry::new(amount,pay_to_script_hash_script(&redeem),1_000_000,false,Some(Hash::from_u64_word(7)))];
+  let mut ins=vec![TransactionInput::new_with_mass(TransactionOutpoint::new(Hash::from_u64_word(8),0),sb.drain(),0,ComputeCommit::ComputeBudget(ComputeBudget(10)))];
+  let outs=if empty{entries.push(UtxoEntry::new(100_000_000,ScriptPublicKey::from_vec(0,sponsor.clone()),1_000_000,false,None));ins.push(TransactionInput::new_with_mass(TransactionOutpoint::new(Hash::from_u64_word(9),0),vec![0;66],0,ComputeCommit::ComputeBudget(ComputeBudget(10))));vec![output(d,false,ScriptPublicKey::from_vec(0,raw())),output(90_000_000,false,ScriptPublicKey::from_vec(0,sponsor.clone()))]}else{vec![output(150_000_000,false,ScriptPublicKey::from_vec(0,raw())),output(d,false,ScriptPublicKey::from_vec(0,raw())),output(100_000_000,false,ScriptPublicKey::from_vec(0,raw()))]};
+  let mut tx=Transaction::new(1,ins,outs,if empty{2_000_000}else{0},SubnetworkId::default(),0,vec![]);
+  if empty{let pop=PopulatedTransaction::new(&tx,entries.clone());let reused=kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync::new();let h=kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash(&pop,1,kaspa_consensus_core::hashing::sighash_type::SIG_HASH_ALL,&reused);let sig=kp.sign_schnorr(secp256k1::Message::from_digest_slice(&h.as_bytes()).unwrap());let mut s=vec![65];s.extend(sig.as_ref());s.push(1);tx.inputs[1].signature_script=s;}
+  tx.finalize();let pop=PopulatedTransaction::new(&tx,entries);let cov=kaspa_txscript::covenants::CovenantsContext::from_tx(&pop).unwrap();let cache=kaspa_txscript::caches::Cache::new(10);let reused=kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync::new();let ctx=kaspa_txscript::EngineCtx::new(&cache).with_reused(&reused).with_covenants_ctx(&cov);
+  for i in 0..tx.inputs.len(){let mut vm=kaspa_txscript::TxScriptEngine::from_transaction_input_with_script_units_limit(&pop,&tx.inputs[i],i,&pop.entries[i],ctx,flags,tx.inputs[i].compute_commit.allowed_script_units());assert_eq!(vm.execute(),Ok(()),"terminal empty={empty} input={i}");}
+  let mass=calc.calc_contextual_masses(&pop).unwrap().storage_mass;let m=calc.calc_non_contextual_masses(&tx);let relay=m.compute_mass.max(m.normalized_transient(&MAINNET_PARAMS.block_mass_cofactors().after()))*100;let input_sum=pop.entries.iter().map(|e|e.amount).sum::<u64>();let output_sum=tx.outputs.iter().map(|o|o.value).sum::<u64>();let fee=input_sum.checked_sub(output_sum).unwrap();assert!(fee>=relay);assert!(mass<=400_000);assert_eq!(tx.outputs[if empty{0}else{1}].value,d);assert!(tx.outputs.iter().all(|o|o.covenant.is_none()));println!("TERMINAL empty={empty} deposit={d} storage={mass} fee={fee} relay={relay} ALL_INPUTS_COMMITTED_PASS");
+ }
 }

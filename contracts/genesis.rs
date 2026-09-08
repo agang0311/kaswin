@@ -222,7 +222,7 @@ pub fn validate_canonical_kaswin_create(
 // V1 Bounded Purchase Directory Genesis & CREATE Validation
 // =============================================================================
 
-use v1_constants::{FINALIZER_REWARD_V1, MAX_FINALIZE_FEE_V1, MAX_TICKET_CAP_V1, MAX_TICKET_PRICE_V1, MIN_TICKET_PRICE_V1, MIN_WINNER_PAYOUT_V1};
+use v1_constants::{FINALIZER_REWARD_V1, MAX_FINALIZE_FEE_V1, MAX_TICKET_CAP_V1, MAX_TICKET_PRICE_V1, MIN_TICKET_PRICE_V1, MIN_WINNER_PAYOUT_V1, MIN_STATE_DEPOSIT_V1};
 
 /// Validates admission parameters for creating a new bounded-directory Kaswin V1 round.
 pub fn validate_directory_create_parameters(
@@ -240,13 +240,13 @@ pub fn validate_directory_create_parameters(
         return Err("min_tickets must be between 1 and ticket_cap");
     }
     if ticket_price < MIN_TICKET_PRICE_V1 {
-        return Err("ticket_price must be >= MIN_TICKET_PRICE_V1 (1,510,000 sompi)");
+        return Err("ticket_price must be >= MIN_TICKET_PRICE_V1 (100,000,000 sompi)");
     }
     if ticket_price > MAX_TICKET_PRICE_V1 {
         return Err("ticket_price must be <= MAX_TICKET_PRICE_V1 (10,000 KAS)");
     }
-    if state_deposit < 1 {
-        return Err("state_deposit must be >= 1 sompi (zero-value genesis output invalid)");
+    if state_deposit < MIN_STATE_DEPOSIT_V1 {
+        return Err("state_deposit must be >= MIN_STATE_DEPOSIT_V1 (5,000,000 sompi)");
     }
     if sale_deadline == 0 || sale_deadline >= LOCK_TIME_THRESHOLD {
         return Err("sale_deadline must be > 0 and < LOCK_TIME_THRESHOLD (500_000_000_000)");

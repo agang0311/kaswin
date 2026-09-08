@@ -82,7 +82,8 @@ fn main() {
     assert_eq!(MAX_TICKET_PRICE_V1, 1_000_000_000_000);
     assert_eq!(MAX_REFUND_FEE_V1, 1_500_000);
     assert_eq!(MIN_REFUND_PAYOUT_V1, 10_000);
-    assert_eq!(MIN_TICKET_PRICE_V1, 1_510_000);
+    assert_eq!(MIN_TICKET_PRICE_V1, 100_000_000);
+    assert_eq!(MIN_STATE_DEPOSIT_V1, 5_000_000);
     assert_eq!(REFUND_K_MAX_V1, 16);
     assert_eq!(FINALIZER_REWARD_V1, 100_000_000);
     assert_eq!(MAX_FINALIZE_FEE_V1, 50_000_000);
@@ -148,7 +149,7 @@ fn main() {
     // -------------------------------------------------------------------------
     println!("\n[Test 4] Sale Close Deadline Semantics: lock_time == sale_deadline & sequence != u64::MAX");
     let round_id = Hash::from_u64_word(0x555);
-    let ticket_price = 3_000_000u64;
+    let ticket_price = MIN_TICKET_PRICE_V1;
     let ticket_cap = 100u64;
     let min_tickets = 50u64;
     let sale_deadline = 1_500_000u64;
@@ -472,7 +473,7 @@ fn main() {
     ).unwrap();
     let empty_open_spk = pay_to_script_hash_script(&empty_open_redeem);
 
-    let state_deposit_amount = 50_000_000u64;
+    let state_deposit_amount = MIN_STATE_DEPOSIT_V1;
 
     // 8A: Valid Empty Round Direct Recovery (2-in-2-out)
     // Input 0: Kaswin OPEN state (50M sompi)

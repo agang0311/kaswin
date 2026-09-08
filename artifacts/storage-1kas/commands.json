@@ -1,0 +1,37 @@
+[
+  [
+    "core",
+    "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin v1_production_covenants_test",
+    0
+  ],
+  [
+    "golden",
+    "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin golden_vector_regression_test",
+    0
+  ],
+  [
+    "reject",
+    "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin reject_successor_vm_test",
+    0
+  ],
+  [
+    "e2e",
+    "cargo run --quiet --manifest-path tests/rust-vm-validation/Cargo.toml --bin v1_production_e2e_full_lifecycle_test",
+    101
+  ],
+  [
+    "examples",
+    "npm --prefix examples test",
+    0
+  ],
+  [
+    "links",
+    "node tools/check-links.mjs",
+    0
+  ],
+  [
+    "npm",
+    "npm test",
+    0
+  ]
+]

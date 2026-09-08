@@ -1,0 +1,13 @@
+==================================================================
+KASWIN V1 PRODUCTION E2E FULL LIFECYCLE VERIFICATION SUITE
+==================================================================
+
+------------------------------------------------------------------
+PART 1: REAL CONNECTED PRODUCTION SUCCESS E2E PIPELINE
+------------------------------------------------------------------
+
+[Step 1.1] CREATE: Genesis Output & Covenant ID derivation
+
+thread 'main' (1618197) panicked at src/bin/v1_production_e2e_full_lifecycle_test.rs:443:7:
+called `Result::unwrap()` on an `Err` value: "ticket_price must be >= MIN_TICKET_PRICE_V1 (100,000,000 sompi)"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
