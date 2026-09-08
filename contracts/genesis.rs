@@ -285,6 +285,8 @@ pub fn validate_directory_create_parameters(
 }
 
 /// Deterministically builds the bounded-directory Kaswin Genesis Output 0 and KIP-20 Covenant ID.
+/// This builds Output0 only, NOT an admitted final transaction. Call
+/// validate_final_create_storage on the completed funding/change transaction.
 pub fn build_directory_genesis_output(
     funding_outpoint: TransactionOutpoint,
     ticket_price: u64,
@@ -335,6 +337,18 @@ pub fn build_directory_genesis_output(
     });
 
     Ok((output_0, official_covenant_id))
+}
+
+/// Validates storage admission, not canonical CREATE parameters.
+/// Final CREATE builders must call this with actual populated funding entries
+/// after assembling all outputs. A deposit floor does not admit arbitrary dust change.
+pub fn validate_final_create_storage(
+    tx: &impl kaspa_consensus_core::tx::VerifiableTransaction,
+    calculator: &kaspa_consensus_core::mass::MassCalculator,
+) -> Result<u64, &'static str> {
+    let mass = calculator.calc_contextual_masses(tx).ok_or("CREATE storage mass incomputable")?.storage_mass;
+    if mass > 500_000 { return Err("CREATE storage mass exceeds 500000"); }
+    Ok(mass)
 }
 
 /// Validates whether a transaction is a canonical Kaswin bounded-directory CREATE transaction.

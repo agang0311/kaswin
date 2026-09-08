@@ -281,6 +281,14 @@ fn measure_and_verify_transition(
     mass_calc: &MassCalculator,
     cofactors: &kaspa_consensus_core::mass::MassCofactors,
 ) -> (ResourceRecord, ComputeBudget) {
+    if pop.tx.outputs.first().is_some_and(|o| o.covenant.is_some()) && pop.entries.iter().all(|e| e.covenant_id.is_none()) {
+        genesis::validate_final_create_storage(pop, mass_calc).expect("final CREATE funding/change admission");
+        // Same deposit with a dust change is not universally includable.
+        let mut dust = pop.tx.clone();
+        dust.outputs.last_mut().unwrap().value = 1;
+        let dust_pop = PopulatedTransaction::new(&dust, pop.entries.to_vec());
+        assert!(genesis::validate_final_create_storage(&dust_pop, mass_calc).is_err());
+    }
     // 1. Measure ScriptUnits with a generous covering limit:
     let cov_limit = ScriptUnits(450_000);
     let mut opcode_log = Vec::new();
@@ -356,7 +364,7 @@ fn measure_and_verify_transition(
     validator.validate_tx_in_isolation(pop.tx).expect("transaction isolation rules");
     // The pinned header-context entrypoint is pub(crate), not exported by
     // kaspa-consensus. Do not claim its invocation through this public API.
-    assert!(pop.tx.lock_time == 0 || pop.tx.lock_time < context_daa, "fixture DAA lock is not final");
+    header_source_parity(pop.tx, context_daa, context_daa).expect("source-parity header semantics");
     let checked_fee = validator.validate_populated_transaction_and_get_fee(
         pop, context_daa, context_daa,
         transaction_validator::tx_validation_in_utxo_context::TxValidationFlags::SkipScriptChecks,
@@ -396,12 +404,15 @@ fn measure_and_verify_transition(
         actual_fee,
     };
 
+    println!("TX {} id={} inputs={} fee={} floor={} compute={} transient={} storage={} committed VM PASS", name, pop.tx.id(), pop.tx.inputs.len(), actual_fee, relay_floor, non_ctx.compute_mass, non_ctx.transient_mass, storage_mass);
     (record, b_min)
 }
 
 include!("production_connected_refunds.rs.inc");
+include!("header_source_parity.rs.inc");
 
 fn main() {
+    header_source_parity_tests();
     for p in [0, 1, 17, 256] { connected_refund_round(p); }
     println!("==================================================================");
     println!("KASWIN V1 PRODUCTION E2E FULL LIFECYCLE VERIFICATION SUITE");
@@ -426,7 +437,7 @@ fn main() {
     let ticket_price = MIN_TICKET_PRICE_V1; // 1 KAS production admission
     let ticket_cap = 100u64;
     let min_tickets = 90u64;
-    let state_deposit = 50_000_000u64; // 0.5 KAS
+    let state_deposit = MIN_STATE_DEPOSIT_V1; // frozen 0.2 KAS boundary
     let sale_deadline = 1_000_500u64;
 
     // Ephemeral Creator Keypair (in-memory test only):
@@ -1113,6 +1124,7 @@ fn main() {
     let miner_fee_paid = floor_paid + 10_000;
     let winner_net_payout = gross_pool - finalizer_reward_amount - miner_fee_paid;
     tx_paid.outputs[0].value = winner_net_payout;
+    tx_paid.finalize();
 
     let entries_paid = vec![
         UtxoEntry::new(pool_3, winner_ready_spk.clone(), 1_000_000, false, Some(covenant_id_c)),
@@ -1128,8 +1140,24 @@ fn main() {
     resource_table.push(rec_paid.clone());
     println!("  -> WINNER_READY -> PAID PASS: 1-in-3-out settlement executed Ok(()), B_min = 0 (free allowance)");
 
+    for (previous, current) in [
+        (&tx_create, &pop_buy1), (&tx_buy1, &pop_buy2), (&tx_buy2, &pop_buy3),
+        (&tx_buy3, &pop_close), (&tx_close, &pop_draw), (&tx_draw, &pop_accept), (&tx_accept, &pop_paid),
+    ] {
+        assert_eq!(current.tx.inputs[0].previous_outpoint, TransactionOutpoint::new(previous.id(), 0));
+        assert_eq!(current.entries[0].amount, previous.outputs[0].value);
+        assert_eq!(current.entries[0].script_public_key, previous.outputs[0].script_public_key);
+        assert_eq!(current.entries[0].covenant_id, previous.outputs[0].covenant.as_ref().map(|c| c.covenant_id));
+    }
+    assert_ne!(95, ticket_cap);
+    assert_eq!(tx_paid.outputs[1].value, MIN_STATE_DEPOSIT_V1);
+    assert_eq!(tx_paid.outputs[1].script_public_key, ScriptPublicKey::from_vec(0, creator_refund_script.clone()));
+    assert!(tx_paid.outputs.iter().all(|o| o.covenant.is_none()));
+    println!("CANONICAL SUCCESS connected outpoints/amount/SPK/covenant; N=95 != cap=100; deposit exact; terminal lineage destroyed PASS");
+    // Additional historical component fixtures below are NOT connected lifecycle evidence.
+    println!("HISTORICAL SYNTHETIC COMPONENT REGRESSIONS ONLY (not gate lifecycle evidence)");
     // =========================================================================
-    // PART 2: REAL CONNECTED PRODUCTION REFUND E2E PIPELINE (P=17)
+    // PART 2: HISTORICAL REFUND COMPONENT REGRESSION (P=17)
     // =========================================================================
     println!("\n------------------------------------------------------------------");
     println!("PART 2: REAL CONNECTED PRODUCTION REFUND E2E PIPELINE (P=17)");

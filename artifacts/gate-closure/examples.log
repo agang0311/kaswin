@@ -1,0 +1,140 @@
+
+> kaspa-contract-foundations-examples@0.1.0 test
+> node --test test/*.test.mjs
+
+TAP version 13
+# Subtest: amount: 零、sompi单位、八位小数与u64边界往返
+ok 1 - amount: 零、sompi单位、八位小数与u64边界往返
+  ---
+  duration_ms: 1.077152
+  type: 'test'
+  ...
+# Subtest: amount: 拒绝浮点、符号、空白、指数、非规范/多余精度
+ok 2 - amount: 拒绝浮点、符号、空白、指数、非规范/多余精度
+  ---
+  duration_ms: 0.61772
+  type: 'test'
+  ...
+# Subtest: amount: sompi schema拒绝已丢失精度的Number及超界
+ok 3 - amount: sompi schema拒绝已丢失精度的Number及超界
+  ---
+  duration_ms: 0.243963
+  type: 'test'
+  ...
+# Subtest: amount: JSON bigint保存为字符串，只按schema恢复
+ok 4 - amount: JSON bigint保存为字符串，只按schema恢复
+  ---
+  duration_ms: 0.341313
+  type: 'test'
+  ...
+# Subtest: check-links: 路径、目录、中文/重复/Setext标题、引用、空格与括号
+ok 5 - check-links: 路径、目录、中文/重复/Setext标题、引用、空格与括号
+  ---
+  duration_ms: 24.139905
+  type: 'test'
+  ...
+# Subtest: check-links: 忽略缓存、围栏/行内代码、外链，非Markdown锚点只检查文件
+ok 6 - check-links: 忽略缓存、围栏/行内代码、外链，非Markdown锚点只检查文件
+  ---
+  duration_ms: 5.724442
+  type: 'test'
+  ...
+# Subtest: check-links: 报告断链、缺锚点、缺来源、未定义引用及越界
+ok 7 - check-links: 报告断链、缺锚点、缺来源、未定义引用及越界
+  ---
+  duration_ms: 3.074802
+  type: 'test'
+  ...
+# Subtest: fixtures: contracts/counter.sil 与固定源码核对后的SHA256一致（不是VM测试）
+ok 8 - fixtures: contracts/counter.sil 与固定源码核对后的SHA256一致（不是VM测试）
+  ---
+  duration_ms: 7.897981
+  type: 'test'
+  ...
+# Subtest: fixtures: contracts/UPSTREAM-LICENSE 与固定源码核对后的SHA256一致（不是VM测试）
+ok 9 - fixtures: contracts/UPSTREAM-LICENSE 与固定源码核对后的SHA256一致（不是VM测试）
+  ---
+  duration_ms: 1.021465
+  type: 'test'
+  ...
+# Subtest: fixtures: argent/counter.ag 与固定源码核对后的SHA256一致（不是VM测试）
+ok 10 - fixtures: argent/counter.ag 与固定源码核对后的SHA256一致（不是VM测试）
+  ---
+  duration_ms: 1.451477
+  type: 'test'
+  ...
+# Subtest: fixtures: argent/UPSTREAM-LICENSE 与固定源码核对后的SHA256一致（不是VM测试）
+ok 11 - fixtures: argent/UPSTREAM-LICENSE 与固定源码核对后的SHA256一致（不是VM测试）
+  ---
+  duration_ms: 0.691172
+  type: 'test'
+  ...
+# Subtest: rpc-info: endpoint/network必须显式且不得含凭据
+ok 12 - rpc-info: endpoint/network必须显式且不得含凭据
+  ---
+  duration_ms: 1.204271
+  type: 'test'
+  ...
+# Subtest: rpc-info: 显式默认/非默认端口与IPv6通过，返回规范化URL
+ok 13 - rpc-info: 显式默认/非默认端口与IPv6通过，返回规范化URL
+  ---
+  duration_ms: 0.780887
+  type: 'test'
+  ...
+# Subtest: rpc-info: authority之外的冒号不算端口，缺失/非法端口与凭据仍拒绝
+ok 14 - rpc-info: authority之外的冒号不算端口，缺失/非法端口与凭据仍拒绝
+  ---
+  duration_ms: 0.904974
+  type: 'test'
+  ...
+# Subtest: rpc-info: 正常只读路径和finally关闭
+ok 15 - rpc-info: 正常只读路径和finally关闭
+  ---
+  duration_ms: 0.685785
+  type: 'test'
+  ...
+# Subtest: rpc-info: 连接/读取失败、错网络和未同步均关闭
+ok 16 - rpc-info: 连接/读取失败、错网络和未同步均关闭
+  ---
+  duration_ms: 1.023825
+  type: 'test'
+  ...
+# Subtest: rpc-info: 连接和调用超时均执行disconnect
+ok 17 - rpc-info: 连接和调用超时均执行disconnect
+  ---
+  duration_ms: 30.881511
+  type: 'test'
+  ...
+# Subtest: utxos: 空集、不同index、超Number精度与任意精度总和
+ok 18 - utxos: 空集、不同index、超Number精度与任意精度总和
+  ---
+  duration_ms: 1.367849
+  type: 'test'
+  ...
+# Subtest: utxos: 相同outpoint无论hex大小写或金额都拒绝
+ok 19 - utxos: 相同outpoint无论hex大小写或金额都拒绝
+  ---
+  duration_ms: 0.399235
+  type: 'test'
+  ...
+# Subtest: utxos: 非法结构/index/金额拒绝
+ok 20 - utxos: 非法结构/index/金额拒绝
+  ---
+  duration_ms: 0.309806
+  type: 'test'
+  ...
+# Subtest: utxos: SDK字段适配单元fixture（非真实RPC结果）
+ok 21 - utxos: SDK字段适配单元fixture（非真实RPC结果）
+  ---
+  duration_ms: 0.237424
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 131.844445

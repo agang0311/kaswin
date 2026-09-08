@@ -31,9 +31,10 @@ pub const MIN_REFUND_PAYOUT_V1: u64 = 10_000;
 /// purchase can cover bounded refund fees without creating dust-sized refunds.
 pub const MIN_TICKET_PRICE_V1: u64 = 100_000_000;
 
-/// Creator capital floor (0.05 KAS), returned intact at every terminal path.
-/// Bounds the creator output's storage harmonic contribution to 200,000.
-pub const MIN_STATE_DEPOSIT_V1: u64 = 5_000_000;
+/// Creator capital floor (0.2 KAS), returned intact at every terminal path.
+/// Final CREATE funding/change topology must separately pass MassCalculator admission.
+/// Bounds the initial plurality-2 state output's storage contribution to 200,000.
+pub const MIN_STATE_DEPOSIT_V1: u64 = 20_000_000;
 
 /// Maximum batch size for sequential refunds (K_MAX = 16)
 pub const REFUND_K_MAX_V1: usize = 16;

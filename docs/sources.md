@@ -10,3 +10,8 @@
 | [SilverScript](https://github.com/kaspanet/silverscript/tree/c7d17a15ac88610d013ec9ffffa9520aeb69929b) | c7d17a15ac88610d013ec9ffffa9520aeb69929b | 实验快照，尚未选作本项目编译器 |
 
 旧 Kaswin 依赖不同 SilverScript 提交及自有补丁，不能直接复用其产物。源码核对、基础离线测试、真实编译/VM、目标网络集成分别记录，不混称验证通过。新增 API/语法结论须带固定上游链接和验证范围。
+
+
+## Final-gate compatibility increment
+
+Same rusty-kaspa cfafeb4c093fa37a303f1b9f19c58f986b870ce3 normal consensus dependency; no upstream changes. Kaswin minimum deposit is now 20,000,000 sompi; ticket minimum 100,000,000. Local VM/consensus rules and header source-parity are distinct from real-node TN10 validation. See [closure](gate-closure.md).

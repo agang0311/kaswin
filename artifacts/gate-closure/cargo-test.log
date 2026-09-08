@@ -1,0 +1,1333 @@
+   Compiling kaswin-vm-validation v0.1.0 (/root/kaswin/tests/rust-vm-validation)
+warning: unused import: `kaspa_hashes::Hash`
+ --> src/bin/cert_lineage_spike.rs:1:5
+  |
+1 | use kaspa_hashes::Hash;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `kaspa_consensus_core::subnets::SubnetworkId`
+ --> src/bin/cert_lineage_spike.rs:2:5
+  |
+2 | use kaspa_consensus_core::subnets::SubnetworkId;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ComputeCommit`, `PopulatedTransaction`, `ScriptPublicKey`, `TransactionInput`, `TransactionOutpoint`, `TransactionOutput`, `Transaction`, and `UtxoEntry`
+ --> src/bin/cert_lineage_spike.rs:4:5
+  |
+4 |     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
+  |     ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+5 |     ScriptPublicKey, UtxoEntry, PopulatedTransaction, ComputeCommit,
+  |     ^^^^^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: unused imports: `EngineCtx`, `EngineFlags`, `TxScriptEngine`, `caches::Cache`, `covenants::CovenantsContext`, `opcodes::codes::*`, `script_builder::ScriptBuilder`, and `standard::pay_to_script_hash_script`
+  --> src/bin/cert_lineage_spike.rs:8:5
+   |
+ 8 |     TxScriptEngine, EngineFlags, EngineCtx, caches::Cache,
+   |     ^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^
+ 9 |     script_builder::ScriptBuilder,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+10 |     covenants::CovenantsContext,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |     standard::pay_to_script_hash_script,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 |     opcodes::codes::*,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `kaspa_consensus_core::mass::ComputeBudget`
+  --> src/bin/cert_lineage_spike.rs:14:5
+   |
+14 | use kaspa_consensus_core::mass::ComputeBudget;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync`
+  --> src/bin/cert_lineage_spike.rs:15:5
+   |
+15 | use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `kaswin-vm-validation` (bin "cert_lineage_spike" test) generated 6 warnings (run `cargo fix --bin "cert_lineage_spike" -p kaswin-vm-validation --tests` to apply 6 suggestions)
+warning: unused variable: `empty_leaf`
+  --> src/bin/payout_settlement_test.rs:58:9
+   |
+58 |     let empty_leaf = compute_empty_leaf();
+   |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_empty_leaf`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "payout_settlement_test" test) generated 1 warning (run `cargo fix --bin "payout_settlement_test" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: unused import: `build_directory_draw_ready_covenant as build_production_draw_ready_covenant`
+   --> src/bin/../../../../contracts/winner_selection.rs:814:9
+    |
+814 | pub use build_directory_draw_ready_covenant as build_production_draw_ready_covenant;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `build_directory_sealed_covenant as build_production_sealed_covenant`
+   --> src/bin/../../../../contracts/sealed_covenant.rs:907:9
+    |
+907 | pub use build_directory_sealed_covenant as build_production_sealed_covenant;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `winner_ready_settlement::build_production_winner_ready_covenant`
+  --> src/bin/lineage_provenance_test.rs:61:5
+   |
+61 | use winner_ready_settlement::build_production_winner_ready_covenant;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/bin/lineage_provenance_test.rs:241:10
+    |
+241 |     let (mut initial_output, official_covenant_id) = build_canonical_kaswin_genesis_output(
+    |          ----^^^^^^^^^^^^^^
+    |          |
+    |          help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `empty_leaf`
+   --> src/bin/lineage_provenance_test.rs:229:9
+    |
+229 |     let empty_leaf = compute_empty_leaf();
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_empty_leaf`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `harmonic`, `subtraction`, `ip`, `sp`, `fee`, and `parts` are never read
+  --> src/bin/storage_mass_admission_test.rs:17:111
+   |
+17 | ...ct Row{p:usize,cursor:usize,k:usize,storage:u64,compute:u64,transient:u64,relay:u64,harmonic:u64,subtraction:u64,ip:u64,sp:u64,fee:u64,parts:Ve...
+   |       --- fields in this struct                                                        ^^^^^^^^     ^^^^^^^^^^^     ^^     ^^     ^^^     ^^^^^
+   |
+   = note: `Row` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `DELTA_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:8:11
+  |
+8 | pub const DELTA_DAA_V1: u64 = 100;
+  |           ^^^^^^^^^^^^
+
+warning: constant `FULL_SALE_RECOVERY_DELAY_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:9:11
+  |
+9 | pub const FULL_SALE_RECOVERY_DELAY_DAA_V1: u64 = 432_000;
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_CAP_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:16:11
+   |
+16 | pub const MAX_TICKET_CAP_V1: u64 = 100_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_PURCHASE_COUNT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:19:11
+   |
+19 | pub const MAX_PURCHASE_COUNT_V1: usize = 256;
+   |           ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:22:11
+   |
+22 | pub const MAX_TICKET_PRICE_V1: u64 = 1_000_000_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_REFUND_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:25:11
+   |
+25 | pub const MAX_REFUND_FEE_V1: u64 = 1_500_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_REFUND_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:28:11
+   |
+28 | pub const MIN_REFUND_PAYOUT_V1: u64 = 10_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REFUND_K_MAX_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:40:11
+   |
+40 | pub const REFUND_K_MAX_V1: usize = 16;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `FINALIZER_REWARD_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:43:11
+   |
+43 | pub const FINALIZER_REWARD_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_FINALIZE_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:46:11
+   |
+46 | pub const MAX_FINALIZE_FEE_V1: u64 = 50_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_WINNER_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:49:11
+   |
+49 | pub const MIN_WINNER_PAYOUT_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:52:11
+   |
+52 | pub const TREE_DEPTH_V1: usize = 27;
+   |           ^^^^^^^^^^^^^
+
+warning: constant `DOMAIN_R_56_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:55:11
+   |
+55 | pub const DOMAIN_R_56_V1: i64 = 1i64 << 56;
+   |           ^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:13:11
+   |
+13 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: function `compute_payout_commitment` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:17:8
+   |
+17 | pub fn compute_payout_commitment(payout_spk: &[u8]) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_purchase_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:37:8
+   |
+37 | pub fn compute_purchase_leaf(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_root_from_path` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:100:8
+    |
+100 | pub fn compute_root_from_path(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_verify_winner_membership` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:126:8
+    |
+126 | pub fn reference_verify_winner_membership(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_class_a_p2pk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:154:8
+    |
+154 | pub fn is_canonical_class_a_p2pk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_payout_spk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:169:8
+    |
+169 | pub fn is_canonical_payout_spk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_canonical_payout_spk_check` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:211:8
+    |
+211 | pub fn append_canonical_payout_spk_check(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_prefix` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:37:8
+   |
+37 | pub fn build_refunding_prefix(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_refunding_body_len` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:63:8
+   |
+63 | pub fn canonical_refunding_body_len(reserve_payout_spk_len: usize) -> usize {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_covenant` is never used
+  --> src/bin/../../../../contracts/refunding_covenant.rs:75:8
+   |
+75 | pub fn build_refunding_covenant(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_refunding_body` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:107:8
+    |
+107 | pub fn build_refunding_body(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_singleton_continuation_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:16:8
+   |
+16 | pub fn append_kaswin_singleton_continuation_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_terminal_lineage_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:75:8
+   |
+75 | pub fn append_kaswin_terminal_lineage_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `hash_internal_node` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:59:8
+   |
+59 | pub fn hash_internal_node(left: &Hash, right: &Hash) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:72:8
+   |
+72 | pub fn compute_empty_leaf() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_levels` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:82:8
+   |
+82 | pub fn compute_empty_levels() -> [Hash; 28] {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_root_27` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:92:8
+   |
+92 | pub fn compute_empty_root_27() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:53:11
+   |
+53 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:54:11
+   |
+54 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_settlement_suffix` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:65:8
+   |
+65 | pub fn build_winner_ready_settlement_suffix() -> Vec<u8> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_winner_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:357:8
+    |
+357 | pub fn build_production_winner_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:32:11
+   |
+32 | pub const MIN_TICKET_PRICE_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_STATE_DEPOSIT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:37:11
+   |
+37 | pub const MIN_STATE_DEPOSIT_V1: u64 = 20_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:23:11
+   |
+23 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `COUNTER_PUSH_LEN` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:24:11
+   |
+24 | pub const COUNTER_PUSH_LEN: usize = 9; // 0x08 push opcode + 8 bytes LE counter
+   |           ^^^^^^^^^^^^^^^^
+
+warning: constant `DOMAIN_R_56` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:25:11
+   |
+25 | pub const DOMAIN_R_56: i64 = 1i64 << 56; // 72,057,594,037,927,936
+   |           ^^^^^^^^^^^
+
+warning: function `draw_ready_prefix_len` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:27:8
+   |
+27 | pub fn draw_ready_prefix_len(creator_refund_spk_len: usize) -> usize {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `WinnerStepResult` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:40:10
+   |
+40 | pub enum WinnerStepResult {
+   |          ^^^^^^^^^^^^^^^^
+
+warning: function `compute_candidate_hash` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:45:8
+   |
+45 | pub fn compute_candidate_hash(random_seed: &Hash, counter: u64) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extract_candidate_num` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:56:8
+   |
+56 | pub fn extract_candidate_num(candidate_hash: &Hash) -> i64 {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_winner_step` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:64:8
+   |
+64 | pub fn reference_winner_step(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_draw_ready_prefix` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:89:8
+   |
+89 | pub fn build_draw_ready_prefix(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_canonical_reject_successor_bytecode` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:119:8
+    |
+119 | pub fn append_canonical_reject_successor_bytecode(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_draw_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:204:8
+    |
+204 | pub fn build_draw_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_suffix_len` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:243:8
+    |
+243 | pub fn canonical_suffix_len(total_tickets: u64, creator_refund_spk_len: usize) -> usize {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_complete_draw_ready_suffix` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:248:8
+    |
+248 | pub fn build_complete_draw_ready_suffix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compile_suffix_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:267:4
+    |
+267 | fn compile_suffix_body(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_canonical_winner_ready_redeem_script` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:408:8
+    |
+408 | pub fn build_canonical_winner_ready_redeem_script(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_ACCEPT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:434:11
+    |
+434 | pub const ACTION_ACCEPT: i64 = 1;
+    |           ^^^^^^^^^^^^^
+
+warning: constant `ACTION_REJECT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:435:11
+    |
+435 | pub const ACTION_REJECT: i64 = 2;
+    |           ^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_prefix` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:448:8
+    |
+448 | pub fn build_directory_draw_ready_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:478:4
+    |
+478 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:506:8
+    |
+506 | pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_directory_draw_ready_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:772:8
+    |
+772 | pub fn compute_converged_directory_draw_ready_body() -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:784:8
+    |
+784 | pub fn build_directory_draw_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_prefix` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:412:8
+    |
+412 | pub fn build_winner_ready_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_settlement_body` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:442:8
+    |
+442 | pub fn build_winner_ready_settlement_body() -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_winner_ready_3out_covenant` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:652:8
+    |
+652 | pub fn build_production_winner_ready_3out_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_DRAW` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:30:11
+   |
+30 | pub const ACTION_DRAW: i64 = 1;
+   |           ^^^^^^^^^^^
+
+warning: constant `ACTION_FULL_REFUND` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:31:11
+   |
+31 | pub const ACTION_FULL_REFUND: i64 = 2;
+   |           ^^^^^^^^^^^^^^^^^^
+
+warning: function `make_blake3_key` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:33:4
+   |
+33 | fn make_blake3_key(tag: &[u8]) -> [u8; 32] {
+   |    ^^^^^^^^^^^^^^^
+
+warning: function `compute_application_commitment` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:39:8
+   |
+39 | pub fn compute_application_commitment(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_random_seed` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:56:8
+   |
+56 | pub fn compute_random_seed(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_sealed_prefix_v1` is never used
+  --> src/bin/../../../../contracts/sealed_covenant.rs:78:8
+   |
+78 | pub fn build_sealed_prefix_v1(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_sealed_body_v1` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:101:8
+    |
+101 | pub fn build_sealed_body_v1(total_tickets: u64, creator_refund_spk_len: usize) -> ScriptBuilderResult<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_sealed_covenant_v1` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:586:8
+    |
+586 | pub fn build_production_sealed_covenant_v1(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_sealed_prefix` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:624:8
+    |
+624 | pub fn build_directory_sealed_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:647:4
+    |
+647 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_sealed_body` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:675:8
+    |
+675 | pub fn build_directory_sealed_body() -> ScriptBuilderResult<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_sealed_covenant` is never used
+   --> src/bin/../../../../contracts/sealed_covenant.rs:883:8
+    |
+883 | pub fn build_directory_sealed_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `min_k_for_p` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:547:8
+    |
+547 | pub fn min_k_for_p(p: usize) -> usize {
+    |        ^^^^^^^^^^^
+
+warning: function `schedule_next_k` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:563:8
+    |
+563 | pub fn schedule_next_k(remaining: usize, p_total: usize, k_max: usize) -> usize {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `build_directory_refunding_prefix` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:575:8
+    |
+575 | pub fn build_directory_refunding_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:596:4
+    |
+596 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_compact_universal_refunding_body` is never used
+   --> src/bin/../../../../contracts/refunding_covenant.rs:623:8
+    |
+623 | pub fn build_compact_universal_refunding_body(static_body_len: usize) -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_compact_universal_body` is never used
+    --> src/bin/../../../../contracts/refunding_covenant.rs:1110:8
+     |
+1110 | pub fn compute_converged_compact_universal_body() -> Vec<u8> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_compact_universal_refunding_covenant` is never used
+    --> src/bin/../../../../contracts/refunding_covenant.rs:1122:8
+     |
+1122 | pub fn build_compact_universal_refunding_covenant(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:31:11
+   |
+31 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `LOCK_TIME_THRESHOLD` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:32:11
+   |
+32 | pub const LOCK_TIME_THRESHOLD: u64 = 500_000_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_BEGIN_REFUND` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:35:11
+   |
+35 | pub const ACTION_BEGIN_REFUND: i64 = 2;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_RECOVER_EMPTY` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:36:11
+   |
+36 | pub const ACTION_RECOVER_EMPTY: i64 = 3;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_open_prefix` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:38:8
+   |
+38 | pub fn build_open_prefix(
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_open_body_len` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:65:8
+   |
+65 | pub fn canonical_open_body_len(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_initial_open_covenant` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:83:8
+   |
+83 | pub fn build_initial_open_covenant(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_open_covenant` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:105:8
+    |
+105 | pub fn build_open_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_open_covenant_body` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:140:8
+    |
+140 | pub fn build_open_covenant_body(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_initial_directory_open_covenant` is never used
+    --> src/bin/../../../../contracts/open_covenant.rs:1286:8
+     |
+1286 | pub fn build_initial_directory_open_covenant(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_kaswin_create_parameters` is never used
+  --> src/bin/../../../../contracts/genesis.rs:44:8
+   |
+44 | pub fn validate_kaswin_create_parameters(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_canonical_kaswin_genesis_output` is never used
+  --> src/bin/../../../../contracts/genesis.rs:90:8
+   |
+90 | pub fn build_canonical_kaswin_genesis_output(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_canonical_kaswin_create` is never used
+   --> src/bin/../../../../contracts/genesis.rs:143:8
+    |
+143 | pub fn validate_canonical_kaswin_create(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_genesis_output` is never used
+   --> src/bin/../../../../contracts/genesis.rs:290:8
+    |
+290 | pub fn build_directory_genesis_output(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_final_create_storage` is never used
+   --> src/bin/../../../../contracts/genesis.rs:345:8
+    |
+345 | pub fn validate_final_create_storage(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_canonical_directory_create` is never used
+   --> src/bin/../../../../contracts/genesis.rs:354:8
+    |
+354 | pub fn validate_canonical_directory_create(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_canonical_round_id` is never used
+ --> src/bin/../../../../contracts/round_id.rs:6:8
+  |
+6 | pub fn compute_canonical_round_id(funding_outpoint: &TransactionOutpoint) -> Hash {
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_BUY` is never used
+  --> src/bin/../../../../contracts/open_covenant.rs:34:11
+   |
+34 | pub const ACTION_BUY: i64 = 1;
+   |           ^^^^^^^^^^
+
+warning: constant `ACTION_CLOSE` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:758:11
+    |
+758 | pub const ACTION_CLOSE: i64 = 2;
+    |           ^^^^^^^^^^^^
+
+warning: function `build_directory_open_prefix` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:771:8
+    |
+771 | pub fn build_directory_open_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:801:4
+    |
+801 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_open_body` is never used
+   --> src/bin/../../../../contracts/open_covenant.rs:829:8
+    |
+829 | pub fn build_directory_open_body(static_body_len: usize) -> ScriptBuilderResult<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_directory_open_body` is never used
+    --> src/bin/../../../../contracts/open_covenant.rs:1274:8
+     |
+1274 | pub fn compute_converged_directory_open_body() -> Vec<u8> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_open_covenant` is never used
+    --> src/bin/../../../../contracts/open_covenant.rs:1313:8
+     |
+1313 | pub fn build_directory_open_covenant(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `daa_start`
+   --> src/bin/exact_enumerator.rs:101:13
+    |
+101 |         let daa_start = blue_score_start - 8;
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_daa_start`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "exact_enumerator" test) generated 1 warning (run `cargo fix --bin "exact_enumerator" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: `kaswin-vm-validation` (bin "lineage_provenance_test" test) generated 3 warnings (run `cargo fix --bin "lineage_provenance_test" -p kaswin-vm-validation --tests` to apply 3 suggestions)
+warning: unused import: `std::fs`
+ --> src/bin/dual_parsing_audit.rs:1:5
+  |
+1 | use std::fs;
+  |     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::str::FromStr`
+ --> src/bin/dual_parsing_audit.rs:2:5
+  |
+2 | use std::str::FromStr;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `kaspa_hashes::Hash`
+ --> src/bin/dual_parsing_audit.rs:3:5
+  |
+3 | use kaspa_hashes::Hash;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `kaspa_consensus_core::header::Header`
+ --> src/bin/dual_parsing_audit.rs:4:5
+  |
+4 | use kaspa_consensus_core::header::Header;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::Value`
+ --> src/bin/dual_parsing_audit.rs:5:5
+  |
+5 | use serde_json::Value;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: function `parse_header_json` is never used
+ --> src/bin/exact_enumerator.rs:7:4
+  |
+7 | fn parse_header_json(path: &str) -> Header {
+  |    ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `serialize_full_header` is never used
+  --> src/bin/exact_enumerator.rs:52:4
+   |
+52 | fn serialize_full_header(h: &Header) -> Vec<u8> {
+   |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `enumerate_valid_w` is never used
+  --> src/bin/exact_enumerator.rs:83:4
+   |
+83 | fn enumerate_valid_w(header_bytes: &[u8]) -> Vec<usize> {
+   |    ^^^^^^^^^^^^^^^^^
+
+warning: function `main` is never used
+   --> src/bin/exact_enumerator.rs:122:4
+    |
+122 | fn main() {
+    |    ^^^^
+
+warning: `kaswin-vm-validation` (bin "dual_parsing_audit" test) generated 10 warnings (1 duplicate) (run `cargo fix --bin "dual_parsing_audit" -p kaswin-vm-validation --tests` to apply 5 suggestions)
+warning: unused import: `ScriptPublicKey`
+ --> src/bin/bounded_dynamic_parser_test.rs:9:5
+  |
+9 |     ScriptPublicKey, UtxoEntry, PopulatedTransaction,
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ComputeBudget`
+  --> src/bin/bounded_dynamic_parser_test.rs:19:34
+   |
+19 | use kaspa_consensus_core::mass::{ComputeBudget, SCRIPT_UNITS_PER_COMPUTE_BUDGET_UNIT};
+   |                                  ^^^^^^^^^^^^^
+
+warning: `kaswin-vm-validation` (bin "bounded_dynamic_parser_test" test) generated 2 warnings (run `cargo fix --bin "bounded_dynamic_parser_test" -p kaswin-vm-validation --tests` to apply 2 suggestions)
+warning: variable does not need to be mutable
+   --> src/bin/kip21_access_window_isolated_test.rs:120:9
+    |
+120 |     let mut tx_c = Transaction::new(
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "kip21_access_window_isolated_test" test) generated 1 warning (run `cargo fix --bin "kip21_access_window_isolated_test" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: `kaswin-vm-validation` (bin "storage_mass_admission_test" test) generated 651 warnings (543 duplicates) (run `cargo fix --bin "storage_mass_admission_test" -p kaswin-vm-validation --tests` to apply 2 suggestions)
+warning: function `append_kaswin_terminal_lineage_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:75:8
+   |
+75 | pub fn append_kaswin_terminal_lineage_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "bounded_directory_buy_append_spike" test) generated 8 warnings (7 duplicates)
+warning: unused import: `transaction_estimated_serialized_size`
+  --> src/bin/pass_a_directory_integration_spike.rs:12:56
+   |
+12 |     mass::{ComputeBudget, MassCalculator, ScriptUnits, transaction_estimated_serialized_size},
+   |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/bin/pass_a_directory_integration_spike.rs:615:9
+    |
+615 |     let mut append_item = |sb: &mut ScriptBuilder, d: i64, w: usize| {
+    |         ----^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `sealed_spk_full`
+    --> src/bin/pass_a_directory_integration_spike.rs:1094:9
+     |
+1094 |     let sealed_spk_full = pay_to_script_hash_script(&sealed_redeem_full);
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sealed_spk_full`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "pass_a_directory_integration_spike" test) generated 11 warnings (8 duplicates) (run `cargo fix --bin "pass_a_directory_integration_spike" -p kaswin-vm-validation --tests` to apply 3 suggestions)
+warning: unused imports: `BlockHash` and `HasherBase`
+ --> src/bin/hash_audit.rs:1:26
+  |
+1 | use kaspa_hashes::{Hash, BlockHash, HasherBase};
+  |                          ^^^^^^^^^  ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "hash_audit" test) generated 1 warning (run `cargo fix --bin "hash_audit" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: unused import: `ScriptPublicKey`
+ --> src/bin/canonical_daa_position_test.rs:9:5
+  |
+9 |     ScriptPublicKey, UtxoEntry, PopulatedTransaction,
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "canonical_daa_position_test" test) generated 1 warning (run `cargo fix --bin "canonical_daa_position_test" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: unused import: `kaspa_hashes::Hash`
+ --> src/bin/debug_phase_d.rs:1:5
+  |
+1 | use kaspa_hashes::Hash;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "debug_phase_d" test) generated 1 warning (run `cargo fix --bin "debug_phase_d" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: unused import: `ScriptUnits`
+ --> src/bin/bounded_directory_refund_spike.rs:5:43
+  |
+5 |     mass::{ComputeBudget, MassCalculator, ScriptUnits, transaction_estimated_serialized_size},
+  |                                           ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/bin/bounded_directory_refund_spike.rs:780:10
+    |
+780 |     let (mut tx0_final, redeem0_final) = build_tx(p17, &records17, 0, 9, initial_amount17, &real_fees0, bmin0, TICKET_PRICE);
+    |          ----^^^^^^^^^
+    |          |
+    |          help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `is_term`
+   --> src/bin/bounded_directory_refund_spike.rs:886:17
+    |
+886 |             let is_term = (cur_b + k_step) == p_bound;
+    |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_term`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `redeem_final`
+   --> src/bin/bounded_directory_refund_spike.rs:929:32
+    |
+929 |             let (mut tx_final, redeem_final) = build_tx(p_bound, &recs_b, cur_b, k_step, sim_amt_b, &real_fees, bmin, min_price);
+    |                                ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_redeem_final`
+
+warning: unused variable: `redeem_final`
+    --> src/bin/bounded_directory_refund_spike.rs:1055:32
+     |
+1055 |             let (mut tx_final, redeem_final) = build_tx(p, &records, cursor, k_step, sim_amount, &real_fees, bmin, TICKET_PRICE);
+     |                                ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_redeem_final`
+
+warning: `kaswin-vm-validation` (bin "bounded_directory_refund_spike" test) generated 5 warnings (run `cargo fix --bin "bounded_directory_refund_spike" -p kaswin-vm-validation --tests` to apply 5 suggestions)
+warning: constant `DOMAIN_R_56` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:25:11
+   |
+25 | pub const DOMAIN_R_56: i64 = 1i64 << 56; // 72,057,594,037,927,936
+   |           ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "reject_successor_vm_test" test) generated 56 warnings (55 duplicates)
+warning: unused variable: `dir_before`
+   --> src/bin/bounded_purchase_directory_spike.rs:259:17
+    |
+259 |             let dir_before = serialize_directory(&records_before, u64_end);
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dir_before`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:13:11
+   |
+13 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "bounded_purchase_directory_spike" test) generated 10 warnings (8 duplicates) (run `cargo fix --bin "bounded_purchase_directory_spike" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: unused import: `ZERO_HASH`
+ --> src/bin/unsold_refund_lifecycle_test.rs:1:26
+  |
+1 | use kaspa_hashes::{Hash, ZERO_HASH};
+  |                          ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Mass` and `ScriptUnits`
+  --> src/bin/unsold_refund_lifecycle_test.rs:14:49
+   |
+14 | use kaspa_consensus_core::mass::{ComputeBudget, Mass, ScriptUnits};
+   |                                                 ^^^^  ^^^^^^^^^^^
+
+warning: unused import: `kaspa_consensus_core::config::params::TESTNET_PARAMS`
+  --> src/bin/unsold_refund_lifecycle_test.rs:16:5
+   |
+16 | use kaspa_consensus_core::config::params::TESTNET_PARAMS;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `compute_empty_root_27`
+  --> src/bin/unsold_refund_lifecycle_test.rs:30:5
+   |
+30 |     compute_empty_root_27,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `validate_canonical_kaswin_create`
+  --> src/bin/unsold_refund_lifecycle_test.rs:48:54
+   |
+48 | use genesis::{build_canonical_kaswin_genesis_output, validate_canonical_kaswin_create};
+   |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `empty_leaf`
+  --> src/bin/unsold_refund_lifecycle_test.rs:94:9
+   |
+94 |     let empty_leaf = compute_empty_leaf();
+   |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_empty_leaf`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `genesis_output_0`
+  --> src/bin/unsold_refund_lifecycle_test.rs:97:10
+   |
+97 |     let (genesis_output_0, covenant_id_c) = build_canonical_kaswin_genesis_output(
+   |          ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_genesis_output_0`
+
+warning: unused variable: `default_reserve_spk`
+   --> src/bin/unsold_refund_lifecycle_test.rs:107:9
+    |
+107 |     let default_reserve_spk = reserve_payout_spk.clone();
+    |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_default_reserve_spk`
+
+warning: unused variable: `default_refund_lock_daa`
+   --> src/bin/unsold_refund_lifecycle_test.rs:108:9
+    |
+108 |     let default_refund_lock_daa = refund_lock_daa;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_default_refund_lock_daa`
+
+warning: unused import: `ScriptPublicKey`
+   --> src/bin/forward_daa_parser_test.rs:162:9
+    |
+162 |         ScriptPublicKey, UtxoEntry, PopulatedTransaction,
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "forward_daa_parser_test" test) generated 1 warning (run `cargo fix --bin "forward_daa_parser_test" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: `kaswin-vm-validation` (bin "unsold_refund_lifecycle_test" test) generated 9 warnings (run `cargo fix --bin "unsold_refund_lifecycle_test" -p kaswin-vm-validation --tests` to apply 9 suggestions)
+warning: constant `ACTION_ACCEPT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:434:11
+    |
+434 | pub const ACTION_ACCEPT: i64 = 1;
+    |           ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "winner_selection_test" test) generated 39 warnings (38 duplicates)
+warning: unused import: `transaction_estimated_serialized_size`
+  --> src/bin/sale_close_semantics_spike.rs:10:43
+   |
+10 |     mass::{ComputeBudget, MassCalculator, transaction_estimated_serialized_size},
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MAX_PURCHASE_COUNT` is never used
+  --> src/bin/sale_close_semantics_spike.rs:32:7
+   |
+32 | const MAX_PURCHASE_COUNT: usize = 256;
+   |       ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "sale_close_semantics_spike" test) generated 10 warnings (8 duplicates) (run `cargo fix --bin "sale_close_semantics_spike" -p kaswin-vm-validation --tests` to apply 1 suggestion)
+warning: enum `WinnerStepResult` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:40:10
+   |
+40 | pub enum WinnerStepResult {
+   |          ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kaswin-vm-validation` (bin "draw_ready_immutability_test" test) generated 47 warnings (46 duplicates)
+warning: unused imports: `BlockHash` and `HasherBase`
+ --> src/bin/vm_header_binding_test.rs:4:26
+  |
+4 | use kaspa_hashes::{Hash, BlockHash, HasherBase};
+  |                          ^^^^^^^^^  ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `TransactionOutput`
+ --> src/bin/vm_header_binding_test.rs:8:36
+  |
+8 |     Transaction, TransactionInput, TransactionOutput, TransactionOutpoint,
+  |                                    ^^^^^^^^^^^^^^^^^
+
+warning: `kaswin-vm-validation` (bin "vm_header_binding_test" test) generated 2 warnings (run `cargo fix --bin "vm_header_binding_test" -p kaswin-vm-validation --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.56s
+     Running unittests src/bin/audit_physical_resources.rs (tests/rust-vm-validation/target/debug/deps/audit_physical_resources-f401dac674df5937)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/bin2num_test.rs (tests/rust-vm-validation/target/debug/deps/bin2num_test-8308b4cf8455f886)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/bounded_directory_buy_append_spike.rs (tests/rust-vm-validation/target/debug/deps/bounded_directory_buy_append_spike-2acf9a22231842cc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/bounded_directory_refund_spike.rs (tests/rust-vm-validation/target/debug/deps/bounded_directory_refund_spike-069aafda430a6f08)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/bounded_dynamic_parser_test.rs (tests/rust-vm-validation/target/debug/deps/bounded_dynamic_parser_test-432e63fda2aec670)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/bounded_purchase_directory_spike.rs (tests/rust-vm-validation/target/debug/deps/bounded_purchase_directory_spike-cad6fa6f4c928574)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/canonical_daa_position_test.rs (tests/rust-vm-validation/target/debug/deps/canonical_daa_position_test-f2ca520367fe0f06)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/cert_lineage_spike.rs (tests/rust-vm-validation/target/debug/deps/cert_lineage_spike-153179abfb32148a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/create_param_admission_test.rs (tests/rust-vm-validation/target/debug/deps/create_param_admission_test-327e1fcf4d313d78)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/debug_phase_d.rs (tests/rust-vm-validation/target/debug/deps/debug_phase_d-8cad27b45f80ce0f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/draw_ready_immutability_test.rs (tests/rust-vm-validation/target/debug/deps/draw_ready_immutability_test-107e298bcc81f0fc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dual_parsing_audit.rs (tests/rust-vm-validation/target/debug/deps/dual_parsing_audit-f8575335cbb8dac2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dynamic_suffix_test.rs (tests/rust-vm-validation/target/debug/deps/dynamic_suffix_test-408589b59892fb94)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/exact_enumerator.rs (tests/rust-vm-validation/target/debug/deps/exact_enumerator-cc323b5644a0d07c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/export_preimage.rs (tests/rust-vm-validation/target/debug/deps/export_preimage-ad926c5270968f13)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/forward_daa_parser_test.rs (tests/rust-vm-validation/target/debug/deps/forward_daa_parser_test-c8dbc478aad21f66)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/full_sale_liveness_recovery_test.rs (tests/rust-vm-validation/target/debug/deps/full_sale_liveness_recovery_test-00ebe78cfd832fb9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/golden_vector_regression_test.rs (tests/rust-vm-validation/target/debug/deps/golden_vector_regression_test-43ac80ad24771859)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/hash_audit.rs (tests/rust-vm-validation/target/debug/deps/hash_audit-f35d25580644a23e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/header_hash_test.rs (tests/rust-vm-validation/target/debug/deps/header_hash_test-867e5fa6b4df0b32)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (tests/rust-vm-validation/target/debug/deps/kaswin_vm_validation-7078ab7d5ab67ef2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/kip21_access_window_isolated_test.rs (tests/rust-vm-validation/target/debug/deps/kip21_access_window_isolated_test-e719902f8d8d57df)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/lineage_provenance_test.rs (tests/rust-vm-validation/target/debug/deps/lineage_provenance_test-d293ec5e35091c03)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/measure_script_units.rs (tests/rust-vm-validation/target/debug/deps/measure_script_units-7219b05f1e7ba40c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pass_a_directory_integration_spike.rs (tests/rust-vm-validation/target/debug/deps/pass_a_directory_integration_spike-337a4b28f6d3db75)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/payout_settlement_test.rs (tests/rust-vm-validation/target/debug/deps/payout_settlement_test-440b125f2d74450a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prod_candidate_test.rs (tests/rust-vm-validation/target/debug/deps/prod_candidate_test-5ab623c6033ac56f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/refund_claims_covenant_spike.rs (tests/rust-vm-validation/target/debug/deps/refund_claims_covenant_spike-aa93d405bcc479e9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/reject_successor_vm_test.rs (tests/rust-vm-validation/target/debug/deps/reject_successor_vm_test-b0877b33402abf8d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/repartition_attack_test.rs (tests/rust-vm-validation/target/debug/deps/repartition_attack_test-0216cf5468876fe7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sale_close_semantics_spike.rs (tests/rust-vm-validation/target/debug/deps/sale_close_semantics_spike-5c70352664a83f86)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sealed_to_draw_ready_test.rs (tests/rust-vm-validation/target/debug/deps/sealed_to_draw_ready_test-264cfdb53958ce1d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/state_deposit_e2e_test.rs (tests/rust-vm-validation/target/debug/deps/state_deposit_e2e_test-26a93458f4b21b5f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/storage_mass_admission_test.rs (tests/rust-vm-validation/target/debug/deps/storage_mass_admission_test-b8a0108c43d288c5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ticket_ownership_test.rs (tests/rust-vm-validation/target/debug/deps/ticket_ownership_test-d9770c9aae953fee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/unsold_refund_lifecycle_test.rs (tests/rust-vm-validation/target/debug/deps/unsold_refund_lifecycle_test-cba348099129a64a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/v1_production_covenants_test.rs (tests/rust-vm-validation/target/debug/deps/v1_production_covenants_test-cfa64e8e7460d507)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/v1_production_e2e_full_lifecycle_test.rs (tests/rust-vm-validation/target/debug/deps/v1_production_e2e_full_lifecycle_test-e5a924269dfce7e4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/vm_header_binding_test.rs (tests/rust-vm-validation/target/debug/deps/vm_header_binding_test-e945c27c66e4db86)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/vm_phase_d_test.rs (tests/rust-vm-validation/target/debug/deps/vm_phase_d_test-e15030155f10be08)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/winner_ready_paid_economics_spike.rs (tests/rust-vm-validation/target/debug/deps/winner_ready_paid_economics_spike-cae379cefbabdbc4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/winner_selection_test.rs (tests/rust-vm-validation/target/debug/deps/winner_selection_test-42ef09843db947aa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

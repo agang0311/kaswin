@@ -1,0 +1,5 @@
+
+> kaspa-contract-foundations-examples@0.1.0 check:sdk
+> node sdk-check.mjs
+
+SDK 2.0.1 import / exports / constructor / disconnected cleanup: PASS (no connection)

@@ -1,4 +1,8 @@
-# Production consensus final gate — BLOCKED checkpoint
+# Production consensus final gate — local PASS
+
+当前结论：[0.2 KAS final gate closure](gate-closure.md)。真实 CREATE 起点的 SUCCESS、EMPTY、REFUND P=1/17/256 已闭合；header 为明确标注的 source-parity。真实节点 acceptance 留待审计后 TN10。
+
+## 以下为历史 BLOCKED 证据（不代表当前状态）
 
 最新：[final consensus checkpoint](final-consensus-gate-checkpoint.md)。正常kaspa-consensus依赖下cargo test恢复PASS；真实边界CREATE返回storage=801,588>500,000，整体E2E仍BLOCKED。
 

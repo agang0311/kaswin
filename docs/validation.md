@@ -39,3 +39,8 @@
 ## 实际执行
 
 2026-09-05 UTC：创建本地设计骨架与 GitHub 空仓库。无依赖安装、无实现、无私钥操作、无签名/广播、无节点启动、无 git commit/push。一次性本地文件链接检查：4 个引用，0 个缺失；此检查不验证外链、Markdown 全语义或协议安全性。研究底座按其工作约定运行 21/21 基础测试、链接检查和固定 SDK 离线加载；这些并非新 Kaswin 的测试或安全证据。未运行合约编译/VM 或网络验证。
+
+
+## Final local gate closure
+
+See [gate closure](gate-closure.md): 0.2 KAS deposit, genuine connected lifecycles, committed VM/resources and explicitly scoped header source-parity. Raw command statuses in artifacts/gate-closure/commands.json. Not live-node acceptance.

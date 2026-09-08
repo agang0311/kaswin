@@ -1114,7 +1114,7 @@ pub fn build_directory_open_body(static_body_len: usize) -> ScriptBuilderResult<
         sb.add_i64(3)?; sb.add_op(OpPick)?; sb.add_op(OpBin2Num)?; // purchase_count
         sb.add_i64(256)?;
         sb.add_op(OpEqual)?;
-        sb.add_op(OpOr)?; // condition A: capacity reached
+        sb.add_op(OpBoolOr)?; // logical OR: false is empty, true is [1] (unequal byte lengths)
 
         // 3) Deadline check (Requirement 四):
         // If not capacity reached, strictly enforce tx.lock_time == sale_deadline AND sequence != MAX_SEQUENCE

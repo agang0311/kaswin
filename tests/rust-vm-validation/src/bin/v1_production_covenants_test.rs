@@ -83,7 +83,7 @@ fn main() {
     assert_eq!(MAX_REFUND_FEE_V1, 1_500_000);
     assert_eq!(MIN_REFUND_PAYOUT_V1, 10_000);
     assert_eq!(MIN_TICKET_PRICE_V1, 100_000_000);
-    assert_eq!(MIN_STATE_DEPOSIT_V1, 5_000_000);
+    assert_eq!(MIN_STATE_DEPOSIT_V1, 20_000_000);
     assert_eq!(REFUND_K_MAX_V1, 16);
     assert_eq!(FINALIZER_REWARD_V1, 100_000_000);
     assert_eq!(MAX_FINALIZE_FEE_V1, 50_000_000);

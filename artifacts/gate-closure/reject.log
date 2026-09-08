@@ -1,0 +1,354 @@
+warning: unused import: `build_directory_draw_ready_covenant as build_production_draw_ready_covenant`
+   --> src/bin/../../../../contracts/winner_selection.rs:814:9
+    |
+814 | pub use build_directory_draw_ready_covenant as build_production_draw_ready_covenant;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `DOMAIN_R_56` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:25:11
+   |
+25 | pub const DOMAIN_R_56: i64 = 1i64 << 56; // 72,057,594,037,927,936
+   |           ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: enum `WinnerStepResult` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:40:10
+   |
+40 | pub enum WinnerStepResult {
+   |          ^^^^^^^^^^^^^^^^
+
+warning: function `compute_candidate_hash` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:45:8
+   |
+45 | pub fn compute_candidate_hash(random_seed: &Hash, counter: u64) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extract_candidate_num` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:56:8
+   |
+56 | pub fn extract_candidate_num(candidate_hash: &Hash) -> i64 {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_winner_step` is never used
+  --> src/bin/../../../../contracts/winner_selection.rs:64:8
+   |
+64 | pub fn reference_winner_step(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_draw_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:204:8
+    |
+204 | pub fn build_draw_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `canonical_suffix_len` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:243:8
+    |
+243 | pub fn canonical_suffix_len(total_tickets: u64, creator_refund_spk_len: usize) -> usize {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_complete_draw_ready_suffix` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:248:8
+    |
+248 | pub fn build_complete_draw_ready_suffix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compile_suffix_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:267:4
+    |
+267 | fn compile_suffix_body(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_canonical_winner_ready_redeem_script` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:408:8
+    |
+408 | pub fn build_canonical_winner_ready_redeem_script(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTION_ACCEPT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:434:11
+    |
+434 | pub const ACTION_ACCEPT: i64 = 1;
+    |           ^^^^^^^^^^^^^
+
+warning: constant `ACTION_REJECT` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:435:11
+    |
+435 | pub const ACTION_REJECT: i64 = 2;
+    |           ^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_prefix` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:448:8
+    |
+448 | pub fn build_directory_draw_ready_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_runtime_directory_push` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:478:4
+    |
+478 | fn append_runtime_directory_push(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:506:8
+    |
+506 | pub fn build_directory_draw_ready_body(static_body_len: usize) -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_converged_directory_draw_ready_body` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:772:8
+    |
+772 | pub fn compute_converged_directory_draw_ready_body() -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_directory_draw_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_selection.rs:784:8
+    |
+784 | pub fn build_directory_draw_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_singleton_continuation_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:16:8
+   |
+16 | pub fn append_kaswin_singleton_continuation_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_kaswin_terminal_lineage_guard` is never used
+  --> src/bin/../../../../contracts/lineage.rs:75:8
+   |
+75 | pub fn append_kaswin_terminal_lineage_guard(sb: &mut ScriptBuilder) -> ScriptBuilderResult<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:53:11
+   |
+53 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: constant `MAX_TOTAL_TICKETS` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:54:11
+   |
+54 | pub const MAX_TOTAL_TICKETS: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_settlement_suffix` is never used
+  --> src/bin/../../../../contracts/winner_ready_settlement.rs:65:8
+   |
+65 | pub fn build_winner_ready_settlement_suffix() -> Vec<u8> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_winner_ready_covenant` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:357:8
+    |
+357 | pub fn build_production_winner_ready_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_prefix` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:412:8
+    |
+412 | pub fn build_winner_ready_prefix(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_winner_ready_settlement_body` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:442:8
+    |
+442 | pub fn build_winner_ready_settlement_body() -> Vec<u8> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_production_winner_ready_3out_covenant` is never used
+   --> src/bin/../../../../contracts/winner_ready_settlement.rs:652:8
+    |
+652 | pub fn build_production_winner_ready_3out_covenant(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:13:11
+   |
+13 | pub const TREE_DEPTH: usize = 27;
+   |           ^^^^^^^^^^
+
+warning: function `compute_payout_commitment` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:17:8
+   |
+17 | pub fn compute_payout_commitment(payout_spk: &[u8]) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_purchase_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:37:8
+   |
+37 | pub fn compute_purchase_leaf(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `hash_internal_node` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:59:8
+   |
+59 | pub fn hash_internal_node(left: &Hash, right: &Hash) -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_leaf` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:72:8
+   |
+72 | pub fn compute_empty_leaf() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_levels` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:82:8
+   |
+82 | pub fn compute_empty_levels() -> [Hash; 28] {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_empty_root_27` is never used
+  --> src/bin/../../../../contracts/ticket_commitment.rs:92:8
+   |
+92 | pub fn compute_empty_root_27() -> Hash {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compute_root_from_path` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:100:8
+    |
+100 | pub fn compute_root_from_path(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reference_verify_winner_membership` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:126:8
+    |
+126 | pub fn reference_verify_winner_membership(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_class_a_p2pk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:154:8
+    |
+154 | pub fn is_canonical_class_a_p2pk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_canonical_payout_spk` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:169:8
+    |
+169 | pub fn is_canonical_payout_spk(bytes: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `append_canonical_payout_spk_check` is never used
+   --> src/bin/../../../../contracts/ticket_commitment.rs:211:8
+    |
+211 | pub fn append_canonical_payout_spk_check(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `DELTA_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:8:11
+  |
+8 | pub const DELTA_DAA_V1: u64 = 100;
+  |           ^^^^^^^^^^^^
+
+warning: constant `FULL_SALE_RECOVERY_DELAY_DAA_V1` is never used
+ --> src/bin/../../../../contracts/v1_constants.rs:9:11
+  |
+9 | pub const FULL_SALE_RECOVERY_DELAY_DAA_V1: u64 = 432_000;
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_CAP_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:16:11
+   |
+16 | pub const MAX_TICKET_CAP_V1: u64 = 100_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_PURCHASE_COUNT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:19:11
+   |
+19 | pub const MAX_PURCHASE_COUNT_V1: usize = 256;
+   |           ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:22:11
+   |
+22 | pub const MAX_TICKET_PRICE_V1: u64 = 1_000_000_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_REFUND_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:25:11
+   |
+25 | pub const MAX_REFUND_FEE_V1: u64 = 1_500_000;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_REFUND_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:28:11
+   |
+28 | pub const MIN_REFUND_PAYOUT_V1: u64 = 10_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_TICKET_PRICE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:32:11
+   |
+32 | pub const MIN_TICKET_PRICE_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_STATE_DEPOSIT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:37:11
+   |
+37 | pub const MIN_STATE_DEPOSIT_V1: u64 = 20_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REFUND_K_MAX_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:40:11
+   |
+40 | pub const REFUND_K_MAX_V1: usize = 16;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `FINALIZER_REWARD_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:43:11
+   |
+43 | pub const FINALIZER_REWARD_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_FINALIZE_FEE_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:46:11
+   |
+46 | pub const MAX_FINALIZE_FEE_V1: u64 = 50_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_WINNER_PAYOUT_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:49:11
+   |
+49 | pub const MIN_WINNER_PAYOUT_V1: u64 = 100_000_000;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TREE_DEPTH_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:52:11
+   |
+52 | pub const TREE_DEPTH_V1: usize = 27;
+   |           ^^^^^^^^^^^^^
+
+warning: constant `DOMAIN_R_56_V1` is never used
+  --> src/bin/../../../../contracts/v1_constants.rs:55:11
+   |
+55 | pub const DOMAIN_R_56_V1: i64 = 1i64 << 56;
+   |           ^^^^^^^^^^^^^^
+
+warning: `kaswin-vm-validation` (bin "reject_successor_vm_test") generated 56 warnings (2 duplicates) (run `cargo fix --bin "reject_successor_vm_test" -p kaswin-vm-validation` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running `tests/rust-vm-validation/target/debug/reject_successor_vm_test`
+==================================================================
+KASWIN REJECT SUCCESSOR BYTECODE & EXACT AMOUNT REGRESSION TEST
+==================================================================
+
+--- TEST 1: H_0 -> H_1 Transition ---
+H_0 redeem len: 286 bytes
+H_1 redeem len: 286 bytes
+  -> PASS: H_0 -> H_1 executed successfully in VM!
+
+--- TEST 2: c -> c + 2 Attack (H_0 attempting to output H_2) ---
+  -> PASS: c -> c+2 skip attack strictly BLOCKED by OpEqualVerify!
+
+--- TEST 3: Chained Multi-Step Execution H_0 -> H_1 -> H_2 -> H_3 ---
+  Step 0: H_0 -> H_1 verified Ok(())!
+  Step 1: H_1 -> H_2 verified Ok(())!
+  Step 2: H_2 -> H_3 verified Ok(())!
+
+--- TEST 4 [AMOUNT-R]: REJECT Path Output 0 Amount Inflation (+1 sompi) ---
+  -> PASS [AMOUNT-R]: Output 0 Amount = Input 0 + 1 sompi strictly BLOCKED by OpEqualVerify!
+
+==================================================================
+ALL 4 REJECT SUCCESSOR REGRESSION TESTS PASSED 100%!
+==================================================================

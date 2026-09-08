@@ -1,0 +1,17 @@
+   Compiling kaswin-vm-validation v0.1.0 (/root/kaswin/tests/rust-vm-validation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s
+     Running `tests/rust-vm-validation/target/debug/golden_vector_regression_test`
+==================================================================
+KASWIN V1 CANONICAL GOLDEN VECTOR REGRESSION TEST
+==================================================================
+Computed Artifacts:
+  round_id:                    1bd3a9f6a597c8eaffd40c6d40faf221bdbe0d486bd80852a7f227efeb2db4f2
+  initial_open_redeem_len:     9822 bytes
+  initial_open_redeem_blake2b: 15ef554925cd019d207ddab630214aa5d3fb395202ceedbbb61c90f49317b6dc
+  genesis_spk_version:         0
+  genesis_raw_script_hex:      aa2015ef554925cd019d207ddab630214aa5d3fb395202ceedbbb61c90f49317b6dc87
+  genesis_full_spk_bytes:      0000aa2015ef554925cd019d207ddab630214aa5d3fb395202ceedbbb61c90f49317b6dc87
+  covenant_id_c:               c9111abbf5410215c787576bc497a81008e71ff33be21a03b6dc52f4f774c128
+
+  -> PASS: All Golden Vector invariants strictly verified 100% byte-for-byte!
+==================================================================
