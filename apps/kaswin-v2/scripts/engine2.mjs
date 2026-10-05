@@ -79,7 +79,7 @@ export async function verifyAtHint(link, record, accepting, claimedBlue = null) 
 }
 
 export class EngineV2 extends Engine {
-  constructor({restQuery = queryRest, ...options}) { super(options); this.restQuery = restQuery; }
+  constructor({restQuery = queryRest, legacyUrls = LEGACY_NODE_URLS, ...options}) { super(options); this.restQuery = restQuery; this.legacyUrls = legacyUrls; }
   /** Unlike a generic STALE_INPUT error, actual outpoint absence establishes that it is no longer live.
    * Amount/SPK mismatch or a failed request is not permission to release. CAS preserves concurrent updates. */
   async archive(txid) {
@@ -118,7 +118,7 @@ export class EngineV2 extends Engine {
       // 2026-10-04 endpoint change: resume from a search cursor saved under a retired URL of the same service instead of
       // restarting at the submit anchor. A cursor is only a chain-block hash: it is re-checked below (selected-chain
       // test / bounded ancestor walk) and again by the original search, so it can never establish acceptance by itself.
-      const legacy = r.cursors?.[rpc.url] ? null : LEGACY_NODE_URLS.map(u => r.cursors?.[u]).find(h => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h));
+      const legacy = r.cursors?.[rpc.url] ? null : this.legacyUrls.map(u => r.cursors?.[u]).find(h => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h));
       if (legacy) { cur = await store.compareAndSet(k, cur.revision, {...r, cursors: {...r.cursors, [rpc.url]: legacy}}); r = cur.value; }
       const cursor = r.cursors?.[rpc.url] ?? r.anchors?.find(a => a.url === rpc.url)?.sink ?? r.anchors?.[0]?.sink;
       const hash = r.accepting ?? cursor;

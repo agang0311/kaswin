@@ -1,6 +1,6 @@
 /** Direct TN10 JSON wRPC (no SDK/WASM) to ONE configured Kaspa node.
  * Trust model (project decision 2026-10-02): the page relies on the Kaspa network consensus as served by the node the
- * user configured (default: the operator's own kaspad behind wss://cd311.cn:888/wrpc). It no longer cross-checks a second
+ * user configured (default: wss://tn10.kaspay.top/wrpc). It no longer cross-checks a second
  * node. Value safety still comes from L1 consensus: the covenant scripts are executed by every node, and the page only
  * signs transactions it built and verified itself against the fixed contract templates.
  * Message format (rusty-kaspa cfafeb4 / workflow-rpc): request {id,method,params}; response {id,params} or {id,error}.
@@ -8,9 +8,9 @@
 import {parseJson, jsonText, uint} from './lib/json.mjs';
 import {ensure, hash32, NETWORK_ID, errorText} from './core.mjs';
 
-/** Default: the operator's node at cd311.cn:888 (Caddy /wrpc -> kaspad --rpclisten-json). Public TN10 nodes are fallbacks,
+/** Default node. Public TN10 nodes are fallbacks,
  * tried in order only if the preferred node is unreachable or unsynced. */
-export const DEFAULT_NODE = 'wss://cd311.cn:888/wrpc';
+export const DEFAULT_NODE = 'wss://tn10.kaspay.top/wrpc';
 export const TN10_JSON_NODES = Object.freeze([
   DEFAULT_NODE,
   'wss://vector-10.kaspa.green/kaspa/testnet-10/wrpc/json',

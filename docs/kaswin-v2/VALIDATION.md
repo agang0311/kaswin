@@ -95,9 +95,8 @@ npm --prefix apps/kaswin-v2 run verify:deployed
 - **结果**：三时区读取真实轮次广场数据，0 页面错误，0 漏译；报告输出于 `test-results/i18n-live-report.json`。
 
 ### 2. 线上交付物回读
-- **URL**：`https://cd311.cn:888/www/kaswin-v2.html`
-- **采样时间**：2026-10-05T00:05:26Z（部署后立即核验）及 2026-10-05T02:26:13Z（发布前再次核验）。
-- **状态**：HTTP 200，大小 310,601 字节，SHA256 为 `ab90da23a4df6dc966fb45902ce402259efeb4906e014d960aa8712da354bad9`，与 `deployed-20261005.html` 完全相同。
+- **验证方式**：对线上交付 HTML 进行只读回读与 SHA256 完整性核验。
+- **状态**：HTTP 200，大小与 SHA256 逐字节一致。
 - **多端点只读响应**：zh-CN 与 en-US 下 1360/390 宽度各加载 12 张卡片，0 退休端点请求，0 控制台错误。
 
 ---

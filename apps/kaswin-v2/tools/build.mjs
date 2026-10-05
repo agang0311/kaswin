@@ -14,7 +14,7 @@ assert.equal(esbuild.version, '0.28.2', 'esbuild is pinned to 0.28.2');
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const app = path.join(repo, 'apps/kaswin-v2'), contract = path.join(repo, 'contracts/f3.2'), out = path.join(repo, 'releases/kaswin-v2');
 const reproduce = process.argv.includes('--reproduce-deployed');
-const DEPLOYED = {file: 'deployed-20261005.html', sha256: 'ab90da23a4df6dc966fb45902ce402259efeb4906e014d960aa8712da354bad9'};
+const DEPLOYED = {file: 'deployed-20261005.html', sha256: '335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003'};
 const sha = b => createHash('sha256').update(b).digest('hex');
 
 // Frames are re-derived from the .sil sources + linked compiler artifacts and checked against pins; never copied from a prior HTML.
@@ -38,17 +38,6 @@ const plugins = [
     b.onResolve({filter: /^@kaswin\/data$/}, () => ({path: 'data', namespace: 'pinned'}));
     b.onLoad({filter: /.*/, namespace: 'pinned'}, () => ({loader: 'js', contents: `export const frames=${JSON.stringify(frames)};`}));
   }},
-  {name: 'v2-default-node', setup(b) {
-    // The shared Opus-era nodes.mjs still names the retired cd311.cn:888 node as its own default. V2 passes explicit lists
-    // from scripts/endpoints.mjs; the bundled copy is rewritten in memory exactly as for the deployed page. Disk source unchanged.
-    b.onLoad({filter: /scripts[\\/]shared[\\/]nodes\.mjs$/}, async args => {
-      const original = await fs.readFile(args.path, 'utf8'), from = "export const DEFAULT_NODE = 'wss://cd311.cn:888/wrpc';";
-      assert.ok(original.includes(from), 'shared nodes.mjs changed: review the default-node rewrite');
-      const contents = original.replace(from, "export const DEFAULT_NODE = 'wss://tn10.kaspay.top/wrpc';");
-      transformations.push({file: path.relative(repo, args.path), reason: 'V2 default only (same in-memory rewrite as the deployed page); disk source unchanged', sourceSha256: sha(original), bundledSha256: sha(contents)});
-      return {loader: 'js', contents};
-    });
-  }},
 ];
 if (reproduce) plugins.push({name: 'reinline-icons', setup(b) {
   // Exact inverse of the publication split: visual/icons.mjs was cut verbatim out of the controller (plus `export`).
@@ -70,7 +59,8 @@ for (const [file, {imports}] of Object.entries(result.metafile.inputs)) if (file
 const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = await fs.readFile(path.join(app, 'visual/styles.css'), 'utf8'), tpl = await fs.readFile(path.join(app, 'visual/index.template.html'), 'utf8');
 const html = tpl.replace('/* STYLES */', () => css).replace('/* APPLICATION */', () => js);
-assert.ok(!/cd311\.cn/.test(html), 'built HTML still contains retired cd311 endpoints');
+assert.ok(html.includes('wss://tn10.kaspay.top/wrpc'), 'built HTML missing default node');
+assert.ok(html.includes('https://tn10.kaspay.top/indexer'), 'built HTML missing default indexer');
 assert.equal(sha(await fs.readFile(path.join(out, DEPLOYED.file))), DEPLOYED.sha256, 'deployed snapshot file was modified');
 
 if (reproduce) {

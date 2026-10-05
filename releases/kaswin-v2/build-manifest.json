@@ -1,7 +1,7 @@
 {
   "artifact": "index.html",
-  "bytes": 315155,
-  "sha256": "644777656ec578bf6f419c4cf62ac478159ee8c295121e2cbed94e3fa3e4cb50",
+  "bytes": 316073,
+  "sha256": "a65e7736f36ad627d92144b8a7d4d275f173de39eb8b7e9eed10eb754cb73a1e",
   "esbuild": "0.28.2",
   "profileId": "7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863",
   "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
@@ -25,14 +25,7 @@
       "tailBytes": 8072
     }
   },
-  "transformations": [
-    {
-      "file": "apps/kaswin-v2/scripts/shared/nodes.mjs",
-      "reason": "V2 default only (same in-memory rewrite as the deployed page); disk source unchanged",
-      "sourceSha256": "5c5c8e62cc73d7bb72aa556afda500d5cbdfefbbc04cae619776c499106d22d0",
-      "bundledSha256": "26dda2156b8274ad5c6a70a1453f0c306a58fe7289180fbb877e67e83cb84a0d"
-    }
-  ],
+  "transformations": [],
   "inputSha256": {
     "packages/f3.2-core/lib/bytes.js": "1733e47c30dcefd4689f56f27829dc0fa6f51a2c9e4c58c87e5f3f6748fc8080",
     "packages/f3.2-core/lib/hashes.js": "7f0a6395b528e53df2c19b0ca62975cd3bb04a65479e1d3117e3154905297b13",
@@ -48,8 +41,8 @@
     "packages/f3.2-core/lib/persistence.js": "0dc757d1f6b47c55b8feb393b00eded7ffbb99978394077bae7d64615b29ad0d",
     "apps/kaswin-v2/scripts/shared/core.mjs": "0183710324cceb7e10d964afd6b17ad34fe8bf00faf9fb127819bba1069c3a70",
     "apps/kaswin-v2/scripts/shared/lib/json.mjs": "d444df58db8cdd30ad192e787ee95af8bcf8a2bde5b367ffb75caf6bebbeb88d",
-    "apps/kaswin-v2/scripts/shared/nodes.mjs": "5c5c8e62cc73d7bb72aa556afda500d5cbdfefbbc04cae619776c499106d22d0",
-    "apps/kaswin-v2/scripts/endpoints.mjs": "f68937f6ed709cef9feb4bab27ad80aec93ab3388beaa8a95aa1c15c44174894",
+    "apps/kaswin-v2/scripts/shared/nodes.mjs": "c0f52b2c49a825a262a7c52be5cb17e544469c210e86645698dceef2a8eeb080",
+    "apps/kaswin-v2/scripts/endpoints.mjs": "c68b006e2cf49d74ab0a5e2208935c3e5814b86b36c48f3700c5defbacee0292",
     "apps/kaswin-v2/scripts/shared/mass.mjs": "995837d86537940ba0aaa9094def507a570953dfe10db5f75c99923b53d9a0e2",
     "apps/kaswin-v2/scripts/shared/lib/address.mjs": "f1c71eda09e53c8aa4c8aa3b8866ec524a693988a8873785e056ffa448af147d",
     "apps/kaswin-v2/scripts/shared/chain.mjs": "1fbe2272a5b5744c8133e02a116cd48706e67088016a0b93d73dcedc4ad308ec",
@@ -61,17 +54,17 @@
     "apps/kaswin-v2/scripts/shared/rounds.mjs": "c239be6c4fe4327ccaac7bc745989650e417e7f50a98a7db22a1324abc89ed4a",
     "apps/kaswin-v2/scripts/shared/engine.mjs": "44d0353512281d5a988948d1b720cc5a43c94e3b11701299bd87ce075d910e79",
     "apps/kaswin-v2/scripts/rest.mjs": "92dbe0c57713eb2cefaddff5ef306838ecc7e1d8b445c9e7e8212b765cfbbddc",
-    "apps/kaswin-v2/scripts/engine2.mjs": "735fe191e4af72b473a21cc65e100dea2ce7bd7f1a7a2fdd8e8a660ea4176284",
+    "apps/kaswin-v2/scripts/engine2.mjs": "8b13e6daccaa6c74a4c51b43e25b67dd45ae7126597d1727db7f92ee0902d8f4",
     "apps/kaswin-v2/visual/view.mjs": "166049eb85f2906109063c35b6cee21acef546366f2799382d1e71584ffb44bf",
     "packages/f3.2-core/lib/genesis-discovery.js": "242956633d768d72740d1e43cc4806c97ad4f9f422329e2b33bded9d7e209bdf",
     "apps/kaswin-v2/scripts/shared/replay.mjs": "1f9cdfba88c1905dc637c8999baf108d59ff591541a8180865d6a261c1b9c66e",
     "apps/kaswin-v2/scripts/shared/catalog.mjs": "55ca135830dd1b9fb9b12cebbcf7d93b4d16d8c05ae57fd7d9230d8a3f828152",
-    "apps/kaswin-v2/visual/messages-en.mjs": "b867fafaa857ef862708544fa63c3a415c2f785730edbe5d3ba4c8df9fdad03d",
+    "apps/kaswin-v2/visual/messages-en.mjs": "ac7558eff7fecb86142a99b436d9163b05085f7b5281e0357995c99bd196bff4",
     "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
-    "apps/kaswin-v2/visual/icons.mjs": "8599f492a3856630161c80481d108e8b68907021264bd46104de8f9929c64e26",
-    "apps/kaswin-v2/scripts/app.mjs": "cc00b3cd10add9d71bde9c985ff4e04747cf536c8abe0619805dc53403aa87f8",
-    "apps/kaswin-v2/visual/styles.css": "e57c305d33598771a69a912448ac80c5fa66dde532921764b96270be73a467c4",
-    "apps/kaswin-v2/visual/index.template.html": "9c61d9c1d67ef988f1011fbdd468ffd6a011fd9dda647928d238cf8dcaa7600c",
+    "apps/kaswin-v2/visual/icons.mjs": "12ff0be47df4f5bdca0b9d0fe21300200ffaf0d663e11b27721cee131d516fd2",
+    "apps/kaswin-v2/scripts/app.mjs": "222ebeb2cbd008668526f6ea7bf79c40a2fe66990148a5e5b2dea45448bee166",
+    "apps/kaswin-v2/visual/styles.css": "3a38c326373467fd8d20f2117df90c87e766afc9fd83648390828e92bf6b4d9e",
+    "apps/kaswin-v2/visual/index.template.html": "e133fb3c2e6efb902eff273c588b49329522f7cbb9f9ef4dfad773209cd67372",
     "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8",
     "contracts/f3.2/pins.json": "c2e6a5120d37891448e7956e87d4735a4055a55bb5105ca0f0471a40a3c5fc82"
   },
@@ -85,7 +78,7 @@
   "embeddedSdk": false,
   "deployedSnapshot": {
     "file": "deployed-20261005.html",
-    "sha256": "ab90da23a4df6dc966fb45902ce402259efeb4906e014d960aa8712da354bad9",
+    "sha256": "335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003",
     "relation": "Same sources except visual/icons.mjs is a separate module here; `npm run verify:deployed` re-inlines it in memory and must reproduce these exact bytes."
   }
 }

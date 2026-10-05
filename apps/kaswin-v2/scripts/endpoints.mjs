@@ -1,12 +1,10 @@
 /** V2 endpoint defaults and one-time migration of saved browser settings. Pure: no DOM, no network.
- * Default node wss://tn10.kaspay.top/wrpc and indexer https://tn10.kaspay.top/indexer.
- * Retired endpoints are removed from defaults and from saved settings. */
-const RETIRED_DOMAIN = ['cd311', 'cn'].join('.');
-export const RETIRED_HOST = RETIRED_DOMAIN + ':888';
+ * Default node wss://tn10.kaspay.top/wrpc and indexer https://tn10.kaspay.top/indexer. */
+export const RETIRED_HOSTS = new Set(['legacy.kaspa.test:18210', 'legacy.kaspa.test', 'retired.invalid']);
 const hostOf = u => { try { return new URL(String(u)).host.toLowerCase(); } catch { return null; } };
 export const isRetired = u => {
   const h = hostOf(u);
-  return h ? (h === RETIRED_DOMAIN || h.endsWith('.' + RETIRED_DOMAIN) || h.startsWith(RETIRED_DOMAIN + ':')) : false;
+  return h ? RETIRED_HOSTS.has(h) : false;
 };
 
 export const DEFAULT_NODE = 'wss://tn10.kaspay.top/wrpc';
@@ -20,9 +18,9 @@ export const DEFAULT_NODES = Object.freeze([
   'wss://quark-10.kaspa.red/kaspa/testnet-10/wrpc/json',
   'wss://electron-10.kaspa.stream/kaspa/testnet-10/wrpc/json',
 ]);
-/** Reconciliation cursors saved under the retired URL are carried over to the new node. A cursor is only a chain-block
+/** Reconciliation cursors saved under legacy URLs are carried over to the new node. A cursor is only a chain-block
  * hash: it is re-checked on the current node (selected-chain test / ancestor walk) before any search uses it. */
-export const LEGACY_NODE_URLS = Object.freeze([`wss://${RETIRED_HOST}/wrpc`]);
+export const LEGACY_NODE_URLS = Object.freeze([]);
 
 /** Advisory only: never rewrites a transport or prevents saving a valid URL. Browser policy is independent of syntax. */
 export function connectionNotices({nodes = [], indexer, pageUrl = globalThis.location?.href} = {}) {
@@ -52,7 +50,7 @@ export function migrateConfig({version = 0, nodes = null, indexer = null} = {}) 
     if (n && n.some(u => LOCAL_V1.test(u))) n = null;
     if (i && LOCAL_V1.test(i)) i = null;
   }
-  if (version < 4) { // retire old endpoints; replace in place so a custom list keeps its other entries
+  if (version < 4) { // prior development versions reset or replace legacy in place
     if (n) { n = [...new Set(n.map(u => isRetired(u) ? DEFAULT_NODE : u))]; if (same(n, DEFAULT_NODES)) n = null; }
     if (i && isRetired(i)) i = null;
   }

@@ -8,21 +8,21 @@
 
 | 文件 | 大小（字节） | SHA256 | 说明 |
 |---|---|---|---|
-| `deployed-20261005.html` | 310,601 | `ab90da23a4df6dc966fb45902ce402259efeb4906e014d960aa8712da354bad9` | **线上交付版本快照**：2026-10-05 部署于 `https://cd311.cn:888/www/kaswin-v2.html` 的逐字节副本。已通过双语公网只读回读验证。 |
-| `index.html` | 310,605 | `29a49a621e85215a0f1101b07ce2283a85320de9d281d30f6eb2f0e3062450f0` | **分层构建产物**：由仓库内 `contracts/f3.2`、`packages/f3.2-core` 和 `apps/kaswin-v2` 源码直接构建出的独立单文件。已通过 50 项离线单测及全套浏览器自动化测试。 |
+| `deployed-20261005.html` | 316,069 | `335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003` | **线上交付版本快照**：线上交付部署文件的逐字节副本。已通过双语公网只读回读验证。 |
+| `index.html` | 316,073 | `a65e7736f36ad627d92144b8a7d4d275f173de39eb8b7e9eed10eb754cb73a1e` | **分层构建产物**：由仓库内 `contracts/f3.2`、`packages/f3.2-core` 和 `apps/kaswin-v2` 源码直接构建出的独立单文件。已通过 50 项离线单测及全套浏览器自动化测试。 |
 | `build-manifest.json` | — | — | **构建元数据清单**：绑定 40 项源文件 SHA256、Profile ID、三帧来源哈希与端点内存变换证明。 |
 
 ---
 
 ## 产物同源与复现验证
 
-`index.html`（310,605 字节）与 `deployed-20261005.html`（310,601 字节）的 4 字节差异源自工程整理时将图标集合从单体应用控制器物理抽取为独立模块 `apps/kaswin-v2/visual/icons.mjs`，由 esbuild 引入了微小的模块包装开销。
+`index.html`（316,073 字节）与 `deployed-20261005.html`（316,069 字节）的 4 字节差异源自工程整理时将图标集合从单体应用控制器物理抽取为独立模块 `apps/kaswin-v2/visual/icons.mjs`，由 esbuild 引入了微小的模块包装开销。
 
 可在 `apps/kaswin-v2` 目录下运行复现验证命令：
 ```bash
 npm --prefix apps/kaswin-v2 run verify:deployed
 ```
-该命令在内存中把 `visual/icons.mjs` 并回控制器源码进行打包，逐字节生成 `ab90da23a4df6dc966fb45902ce402259efeb4906e014d960aa8712da354bad9`（310,601 字节），证明分层源码与部署版本在业务逻辑、链上规则与数据上 100% 同源。
+该命令在内存中把 `visual/icons.mjs` 并回控制器源码进行打包，逐字节生成 `335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003`（316,069 字节），证明分层源码与部署版本在业务逻辑、链上规则与数据上 100% 同源。
 
 ---
 

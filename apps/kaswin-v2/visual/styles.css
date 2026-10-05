@@ -47,7 +47,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .dot.ok{background:var(--kas);box-shadow:0 0 0 3px var(--kas-soft)}.dot.warn{background:var(--amber)}.dot.bad{background:var(--rose)}
 .wbtn{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:11px;font-weight:700;font-size:13px;background:linear-gradient(135deg,var(--kas),var(--kas2));color:#03140f;box-shadow:0 6px 18px -6px var(--kas-glow)}
 .wbtn.on{background:var(--panel2);color:var(--text);border:1px solid var(--line2);box-shadow:none}
-.icon-btn{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--muted);border:1px solid var(--line);background:var(--panel)}
+.icon-btn{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--muted);border:1px solid var(--line);background:var(--panel);text-decoration:none}
 .icon-btn:hover{color:var(--text)}
 .icon-btn{flex-shrink:0}.language-btn{width:38px;font-size:11px;font-weight:750;white-space:nowrap;padding:0}
 html[lang=en] .kpi small{white-space:normal;line-height:1.4}

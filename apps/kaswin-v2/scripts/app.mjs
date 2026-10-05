@@ -935,6 +935,11 @@ function renderPreferences() {
   $('settingsBtn').innerHTML = icon('settings');
   $('settingsBtn').title = text('数据源设置');
   $('settingsBtn').setAttribute('aria-label', text('数据源设置'));
+  if ($('githubBtn')) {
+    $('githubBtn').innerHTML = icon('github');
+    $('githubBtn').title = text('GitHub 源码仓库');
+    $('githubBtn').setAttribute('aria-label', text('GitHub 源码仓库'));
+  }
   const target = state.theme === 'dark' ? 'sun' : 'moon';
   const label = state.theme === 'dark' ? '切换为浅色模式' : '切换为深色模式';
   for (const b of [$('themeBtn'), $('pTheme')].filter(Boolean)) {
