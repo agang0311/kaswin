@@ -325,7 +325,9 @@ async function openRound(cid, {push = true} = {}) {
     state.details.set(cid, d);
     void catalog.remember(cid, {view: d, source: d._src === 'live' ? 'indexer' : d._src === 'local' ? 'local' : 'opened', mine: d.state?.ownerKey === state.session?.key || undefined}).catch(() => {});
     if (state.round?.cid !== cid) return;
-    state.round.detail = d; state.round.loading = false; state.round.staleNote = d._src !== 'live' && idxErr ? errorText(idxErr) : null; render();
+    state.round.detail = d; state.round.loading = false; state.round.staleNote = d._src !== 'live' && idxErr ? errorText(idxErr) : null;
+    void engine.records().then(recs => { state.records = recs; if (state.round?.cid === cid && state.view === 'round') render(); }).catch(() => {});
+    render();
     if (!d.terminal) {
       const current = state.round;
       void pair.currentDaa().then(daa => { state.daa = daa; if (state.round === current && state.view === 'round') render(); }).catch(() => {});
@@ -391,8 +393,7 @@ function renderRound(v) {
       <div class="panel">
         <h3>${icon('ticket')} 购买目录 · 票号分布</h3>
         ${ledgerErr ? `<div class="notice warn">账本无法按固定 Profile 解析：${e(ledgerErr)}</div>` : ''}
-        ${recs.length ? matrix(recs, st.sold, draw) : '<p class="muted">还没有购买记录。</p>'}
-        ${recs.length ? `<div class="tablewrap"><table><thead><tr><th>#</th><th>票号</th><th>张数</th><th>买家</th><th>状态</th></tr></thead><tbody>${recs.map((r, i) => `<tr class="${draw && i === draw.record ? 'win' : r.key === me ? 'me' : ''}"><td>${i + 1}</td><td class="mono">${r.end - r.count + 1}${r.count > 1 ? '–' + r.end : ''}</td><td>${r.count}</td><td>${hashHtml(pubkeyToAddress(r.key), {link: explorerAddress(pubkeyToAddress(r.key)), n: 10, isAddr: true})}</td><td class="small">${draw && i === draw.record ? '🏆 中奖' : st.phase === 5 && i < st.cursor ? '已退款' : d.terminal === 'REFUNDED' ? '已退款' : ''}${r.key === me ? ' · 我' : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${recs.length ? matrix(recs, st.sold, draw, d, me) : '<p class="muted">还没有购买记录。</p>'}
         ${me ? `<p class="small muted" style="margin-top:8px">你在本轮持有 <b>${myTickets}</b> 张票${st.sold ? `，中奖概率约 ${(myTickets / st.sold * 100).toFixed(2)}%` : ''}。</p>` : ''}
       </div>
       <div class="panel">
@@ -429,18 +430,92 @@ function renderRound(v) {
   $('verifyLive') && ($('verifyLive').onclick = () => verifyLive(d));
   v.querySelectorAll('[data-act]').forEach(b => b.onclick = () => actionDialog(b.dataset.act, d));
   if ($('refreshRound')) $('refreshRound').onclick = async () => { try { state.daa=await pair.currentDaa(); } catch {} await openRound(d.cid,{push:false}); };
+  bindMatrixEvents(v, recs, d, draw, me, price);
 }
-function matrix(recs, sold, draw) {
-  const per = Math.max(1, Math.ceil(sold / 1024)), cells = Math.ceil(sold / per), out = [];
-  let r = 0;
-  for (let i = 0; i < cells; i++) {
-    const ticket = i * per + 1; while (r < recs.length && recs[r].end < ticket) r++;
-    const rec = recs[r], win = draw && ticket <= draw.ticket && draw.ticket < ticket + per;
-    out.push(`<i class="f${win ? ' w' : ''}" style="--c:${keyColor(rec.key)}" title="票 #${ticket}${per > 1 ? '–' + Math.min(sold, ticket + per - 1) : ''} · 记录 ${r + 1}"></i>`);
-  }
+function matrix(recs, sold, draw, d, me) {
+  const price = d?.state?.config?.ticketPrice ? BigInt(d.state.config.ticketPrice) : null;
+  const drawRec = draw ? draw.record : null;
+  const myBuys = (state.records || []).filter(x => x.cid === d?.cid && x.action === 'BUY' && !['REJECTED', 'ARCHIVED'].includes(x.status));
+  let myBuyIdx = 0;
+
+  const cells = recs.map((r, i) => {
+    const isMe = r.key === me;
+    const isWin = drawRec !== null && drawRec === i;
+    const isRefunded = (d?.state?.phase === 5 && i < d?.state?.cursor) || d?.terminal === 'REFUNDED';
+    const start = r.end - r.count + 1;
+    const addr = pubkeyToAddress(r.key);
+
+    let txid = r.txid || d?.purchases?.[i]?.txid || null;
+    if (!txid && recs.length === 1 && d?.state?.phase === 1 && d?.latestTxid) {
+      txid = d.latestTxid;
+    }
+    if (!txid && isMe && myBuys[myBuyIdx]?.txid) {
+      txid = myBuys[myBuyIdx++].txid;
+    }
+
+    const href = txid ? explorerTx(txid) : explorerAddress(addr);
+    const rangeText = `${start}${r.count > 1 ? '–' + r.end : ''}`;
+    const statusText = isWin ? ' · 🏆 中奖' : isRefunded ? ' · 已退款' : '';
+    const title = `第 ${i + 1} 笔购买 · 票号 #${rangeText} (${r.count} 张) · 买家: ${shortHash(addr, 8, 6)}${isMe ? ' (我)' : ''}${statusText}${txid ? ' · TXID: ' + shortHash(txid, 8, 6) : ''} · 点击在 kaspa.stream 查看`;
+    const label = isWin ? '🏆' : String(i + 1);
+
+    return `<a class="cell${isWin ? ' w' : ''}${isMe ? ' me' : ''}" style="--c:${keyColor(r.key)}" href="${e(href)}" target="_blank" rel="noopener noreferrer" data-idx="${i}" aria-label="第 ${i + 1} 笔购买" title="${e(title)}">${label}</a>`;
+  });
+
   const owners = [...new Set(recs.map(x => x.key))];
-  return `<div class="matrix" role="img" aria-label="票号分布">${out.join('')}</div>
+  const placeholder = `<div class="tip-placeholder">${icon('search')}<span>鼠标悬停在上方方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
+
+  return `<div class="matrix" role="region" aria-label="购买分布">${cells.join('')}</div>
+  <div class="matrix-tip" id="matrixTip">${placeholder}</div>
   <div class="legend">${owners.slice(0, 8).map(k => `<span><i style="--c:${keyColor(k)}"></i><span class="mono">${e(shortHash(k, 6, 4))}</span> ${recs.filter(x => x.key === k).reduce((a, x) => a + x.count, 0)} 张</span>`).join('')}${owners.length > 8 ? `<span>…共 ${owners.length} 位买家</span>` : ''}${draw ? `<span><i style="--c:var(--gold)"></i>中奖票 #${draw.ticket !== undefined ? draw.ticket : (draw.firstTicket + (draw.firstTicket !== draw.lastTicket ? '–' + draw.lastTicket : ''))}</span>` : ''}</div>`;
+}
+
+function bindMatrixEvents(v, recs, d, draw, me, price) {
+  const tip = $('matrixTip');
+  if (!tip || !recs.length) return;
+  const placeholder = `<div class="tip-placeholder">${icon('search')}<span>鼠标悬停在上方方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
+  const myBuys = (state.records || []).filter(x => x.cid === d.cid && x.action === 'BUY' && !['REJECTED', 'ARCHIVED'].includes(x.status));
+  v.querySelectorAll('.matrix .cell').forEach(cell => {
+    cell.onmouseenter = cell.onfocus = () => {
+      const i = Number(cell.dataset.idx);
+      if (Number.isInteger(i) && recs[i]) {
+        const r = recs[i];
+        const isMe = r.key === me;
+        const isWin = draw && draw.record === i;
+        const isRefunded = (d.state?.phase === 5 && i < d.state?.cursor) || d.terminal === 'REFUNDED';
+        const start = r.end - r.count + 1;
+        const rangeText = `${start}${r.count > 1 ? '–' + r.end : ''}`;
+        const addr = pubkeyToAddress(r.key);
+        const cost = price ? kas(price * BigInt(r.count)) + ' TKAS' : '';
+        let txid = r.txid || d.purchases?.[i]?.txid || null;
+        if (!txid && recs.length === 1 && d.state?.phase === 1 && d.latestTxid) txid = d.latestTxid;
+        if (!txid && isMe) {
+          const myIdx = recs.slice(0, i).filter(x => x.key === me).length;
+          if (myBuys[myIdx]?.txid) txid = myBuys[myIdx].txid;
+        }
+        const tone = isWin ? 't-gold' : isMe ? 't-pri' : '';
+        const badgeLabel = isWin ? '🏆 中奖记录' : isRefunded ? '已退款' : '第 ' + (i + 1) + ' 笔购买';
+        tip.innerHTML = `
+          <div class="tip-head">
+            <span class="badge ${tone}">${badgeLabel}</span>
+            <strong>票号 #${rangeText}</strong>
+            <span class="tag">${r.count} 张</span>
+            ${cost ? `<span class="muted">${cost}</span>` : ''}
+            <span class="spacer"></span>
+            ${isMe ? '<span class="tag kas">我</span>' : ''}
+          </div>
+          <div class="tip-body">
+            <span>买家：<span class="mono">${hashHtml(addr, {link: explorerAddress(addr), isAddr: true, n: 10})}</span></span>
+            <span class="spacer"></span>
+            ${txid ? `<span>TXID: <a class="mono" href="${explorerTx(txid)}" target="_blank" rel="noopener noreferrer">${shortHash(txid, 8, 6)} ↗</a></span>` : `<a class="muted" href="${explorerAddress(addr)}" target="_blank" rel="noopener noreferrer">在 kaspa.stream 查看买家 ↗</a>`}
+          </div>`;
+      }
+    };
+  });
+  const matrixEl = v.querySelector('.matrix');
+  if (matrixEl) {
+    matrixEl.onmouseleave = () => { tip.innerHTML = placeholder; };
+  }
 }
 function actionsHtml(d, ledger) {
   if (d.terminal) return `<div class="notice ok">本轮已结束（${d.terminal === 'PAID' ? '已派奖' : d.terminal === 'EMPTY' ? '空轮，押金已退回创建者' : '全部购买记录已退款'}）。资金已以普通 UTXO 形式离开合约，不再需要任何操作。</div>`;
