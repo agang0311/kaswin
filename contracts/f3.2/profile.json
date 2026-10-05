@@ -1,0 +1,25 @@
+{
+  "id": "7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863",
+  "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
+  "compilerCommit": "3ed973335b59269293564805cc2c58a14595ec03",
+  "frames": {
+    "open": {
+      "templateHash": "f8181e6021fbaafbd8e4fa7607edcf31b854f1f4628cb0ecacad976ca09d6d3a",
+      "dispatchTag": "8176bd72",
+      "sourceSha256": "d535e6956f5171288bb193fdf4f9cdc8ae2c13b35341d967d8c25e78b4ec70d4",
+      "tailBytes": 3384
+    },
+    "sealed": {
+      "templateHash": "d3b264c1172622613a26c10f0d934399e29561c870252eaabb82c333116dfe7c",
+      "dispatchTag": "8176bd72",
+      "sourceSha256": "a522496ab7e5b5ff40c963cd93eae136c2a732477e15395194d0470f94167d91",
+      "tailBytes": 4830
+    },
+    "refunding": {
+      "templateHash": "715945960dbe95909b5dff9e404ed4e3426faa63236677ea754a6cd391c84483",
+      "dispatchTag": "8176bd72",
+      "sourceSha256": "467c8c91f1259414843f6aedc2d450b2a705fd154a8d2af76824aa5cd74f0e3a",
+      "tailBytes": 8072
+    }
+  }
+}

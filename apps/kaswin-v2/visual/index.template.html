@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src https: wss: http: ws:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="description" content="Kaswin V2：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa Testnet 10 交易。">
+<title>Kaswin V2 · 每一步，都看得清</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%237be8bf'/%3E%3Ctext x='16' y='24' font-size='23' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%230d211c'%3EK%3C/text%3E%3C/svg%3E">
+<style>/* STYLES */</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <button class="brand" data-go="explore" aria-label="Kaswin 首页"><span class="logo"><b>K</b></span>kaswin<span class="tag kas">V2</span></button>
+  <nav class="nav" aria-label="主导航">
+    <button data-go="explore"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>广场</span></button>
+    <button data-go="create"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>创建</span></button>
+    <button data-go="mine"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h10M4 20h7"/></svg><span>我的</span></button>
+    <button data-go="protocol"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><span>规则</span></button>
+  </nav>
+  <span class="spacer"></span>
+  <span class="network-label">Testnet 10</span>
+  <button class="chip net" id="nodeChip" title="连接并查看节点状态"><span class="dot"></span>节点未连接</button>
+  <button class="icon-btn" id="settingsBtn" aria-label="数据源设置" title="数据源设置"></button>
+  <button class="icon-btn" id="themeBtn" aria-label="切换为浅色模式" title="切换为浅色模式"></button>
+  <button class="icon-btn language-btn" id="languageBtn" data-no-i18n aria-label="Switch language / 切换语言">EN</button>
+  <button class="wbtn" id="walletBtn">连接 KasWare</button>
+</div></header>
+<main><div id="view" class="view"><noscript><div class="notice warn">需要启用 JavaScript 才能查看与操作轮次。</div></noscript></div></main>
+<footer><b>kaswin <span class="muted">/ V2</span></b><span>Testnet 10 · TKAS 测试币<br>索引辅助发现 · 节点核对共识 · 钱包逐笔批准<br><span id="localZone" data-no-i18n></span></span></footer>
+<dialog class="modal" id="modal" aria-labelledby="mTitle"><div class="mbox"><div class="mhead"><h2 id="mTitle"></h2><button class="icon-btn" id="mClose" aria-label="关闭"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class="mbody" id="mBody"></div><div class="mfoot" id="mFoot" hidden></div></div></dialog>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<script>/* APPLICATION */</script>
+</body>
+</html>

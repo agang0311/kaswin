@@ -1,0 +1,24 @@
+{
+  "name": "kaswin-v2-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "verify:deployed": "node tools/build.mjs --reproduce-deployed",
+    "check:core": "node tools/check-core.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:ui": "node -e \"require('fs').mkdirSync('test-results/screenshots',{recursive:true})\" && node test/browser-check.mjs && node test/browser-i18n.mjs && node test/browser-plaintext.mjs && node test/browser-endpoints.mjs",
+    "test:e2e": "node -e \"require('fs').mkdirSync('test-results/screenshots',{recursive:true})\" && node test/browser-e2e.mjs && node test/browser-e2e.mjs --en && node test/browser-rest.mjs && node test/browser-rest.mjs --en",
+    "test:live": "node -e \"require('fs').mkdirSync('test-results/screenshots',{recursive:true})\" && node test/browser-i18n.mjs --live"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "typescript": "5.8.3",
+    "ws": "8.21.3"
+  }
+}
