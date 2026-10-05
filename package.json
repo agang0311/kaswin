@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Kaswin bounded offline protocol workbench",
   "scripts": {
-    "build": "node tools/build.js",
-    "test": "node --test tests/*.test.js"
+    "build": "npm --prefix apps/kaswin-v2 ci --ignore-scripts && npm --prefix apps/kaswin-v2 run build && node -e \"const fs=require('fs'); fs.mkdirSync('dist',{recursive:true}); fs.copyFileSync('releases/kaswin-v2/index.html','dist/index.html');\"",
+    "test": "node --test tests/*.test.js",
+    "build:v1": "node tools/build.js"
   }
 }
