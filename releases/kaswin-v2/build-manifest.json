@@ -1,7 +1,7 @@
 {
   "artifact": "index.html",
-  "bytes": 316073,
-  "sha256": "a65e7736f36ad627d92144b8a7d4d275f173de39eb8b7e9eed10eb754cb73a1e",
+  "bytes": 317096,
+  "sha256": "b359a46e768521f898f518d41e53ce9d8e9fa5725bf5105333483154392554c7",
   "esbuild": "0.28.2",
   "profileId": "7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863",
   "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
@@ -63,8 +63,8 @@
     "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
     "apps/kaswin-v2/visual/icons.mjs": "12ff0be47df4f5bdca0b9d0fe21300200ffaf0d663e11b27721cee131d516fd2",
     "apps/kaswin-v2/scripts/app.mjs": "222ebeb2cbd008668526f6ea7bf79c40a2fe66990148a5e5b2dea45448bee166",
-    "apps/kaswin-v2/visual/styles.css": "3a38c326373467fd8d20f2117df90c87e766afc9fd83648390828e92bf6b4d9e",
-    "apps/kaswin-v2/visual/index.template.html": "e133fb3c2e6efb902eff273c588b49329522f7cbb9f9ef4dfad773209cd67372",
+    "apps/kaswin-v2/visual/styles.css": "9260e2b93bb8730106723dd376d9f570ede2c40c3ffba7965d486a8b6097de38",
+    "apps/kaswin-v2/visual/index.template.html": "1ee3565014f23e2d9ab7fde95e7c9f169f0887cc99027b3a84427a1540ba0c14",
     "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8",
     "contracts/f3.2/pins.json": "c2e6a5120d37891448e7956e87d4735a4055a55bb5105ca0f0471a40a3c5fc82"
   },

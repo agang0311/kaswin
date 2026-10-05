@@ -8,7 +8,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src https: wss: http: ws:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="description" content="Kaswin V2：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa Testnet 10 交易。">
 <title>Kaswin V2 · 每一步，都看得清</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%237be8bf'/%3E%3Ctext x='16' y='24' font-size='23' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%230d211c'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2500 2500'%3E%3Cpath fill='%2370C7BA' d='M2500,1237.5c0,167.2-68.9,328.2-129.4,474.5c-62.6,150.5-154.5,290.6-267.2,403.4 c-112.8,112.9-250.6,211.1-400.9,273.8c-146.2,60.6-309,110.8-476,110.8s-334.1-41.8-480.2-102.4 c-150.3-62.7-252.6-198.6-367.5-311.5C266,1973.3,138.6,1866.6,76,1714.1c-60.5-146.3-73.1-309.4-73.1-476.6 s-18.8-344.9,39.7-491.2c62.6-150.5,194.2-271.7,309-384.6C464.3,248.8,591.7,129.6,742,66.9C888.2,6.3,1059.4,0,1226.4,0 s329.9,29.3,474,89.9c150.3,62.7,296.5,148.4,409.2,261.3c112.8,112.9,213,252.9,273.5,403.4C2443.6,903,2500,1070.2,2500,1237.5 L2500,1237.5z'/%3E%3Cpolygon fill='%23FFFFFF' points='1575.1,524.7 1309.9,564.4 1387.2,1078.6 831.8,650.1 668.9,863.3 1155.4,1237.5 668.9,1613.7 831.8,1826.9 1387.2,1398.4 1309.9,1912.6 1575.1,1952.3 1681.6,1237.5'/%3E%3C/svg%3E">
 <style>:root{
   --bg:#101715;--bg2:#121e19;--panel:#19231f;--panel2:#1d2a24;--panel3:#293a31;--line:#2a3a31;--line2:#3e5548;
   --text:#f0f3eb;--muted:#adbdaf;--dim:#95a697;
@@ -44,8 +44,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .top{position:sticky;top:0;z-index:50;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--line);width:100%;box-sizing:border-box}
 .top-in{max-width:1320px;width:100%;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:18px;box-sizing:border-box}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:-.6px;white-space:nowrap}
-.logo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:conic-gradient(from 200deg,var(--kas),#3b82f6,var(--violet),var(--kas));box-shadow:0 0 22px var(--kas-glow)}
-.logo b{width:26px;height:26px;border-radius:8px;background:var(--bg);display:grid;place-items:center;color:var(--kas);font:italic 800 17px Georgia,serif}
+.logo{width:34px;height:34px;flex-shrink:0;display:block}
 .tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 7px;border-radius:6px;border:1px solid var(--line2);color:var(--muted)}
 .tag.kas{color:var(--kas);border-color:color-mix(in srgb,var(--kas) 50%,transparent);background:var(--kas-soft)}
 .nav{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);padding:3px;border-radius:12px;margin-left:8px;overflow-x:auto;scrollbar-width:none}
@@ -244,7 +243,7 @@ footer{max-width:1320px;margin:0 auto;padding:22px 24px 40px;color:var(--dim);fo
 /* V2: quiet hierarchy; common actions first, advanced proof/details still available. */
 body{background-image:radial-gradient(ellipse at 75% 0%,var(--kas-soft),transparent 45%)}
 .top{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg)}
-.top-in{max-width:1280px;gap:12px;height:76px}.brand{letter-spacing:-1px;font-size:25px;padding:0}.logo{background:var(--kas);box-shadow:none;border-radius:11px}.logo b{background:none;color:#12281c;font:800 25px var(--sans)}
+.top-in{max-width:1280px;gap:12px;height:76px}.brand{letter-spacing:-1px;font-size:25px;padding:0}.logo{width:34px;height:34px;background:none;box-shadow:none;border-radius:0}
 .nav{border:0;background:none;margin-left:26px;gap:10px}.nav button{padding:9px 13px;font-weight:600}.nav button[aria-current=page]{background:var(--kas-soft);color:var(--kas);box-shadow:none}.network-label{color:var(--muted);font:11px var(--mono);white-space:nowrap}.chip.net{max-width:170px;overflow:hidden;text-overflow:ellipsis;font-size:10px}.wbtn,.btn.pri{background:var(--kas);box-shadow:none;color:#10281b}
 main{max-width:1240px;padding-top:34px}.hero{grid-template-columns:1.45fr 1fr;align-items:center;gap:54px;margin:10px 0 36px;padding:12px 0 24px}.eyebrow{font:600 10px var(--mono);letter-spacing:2px;color:var(--kas)}.hero h1{font-size:44px;letter-spacing:-1.6px;line-height:1.27;margin:17px 0}.hero h1 em{display:block;background:none;color:var(--kas)}.hero p{max-width:460px;font-size:14px;line-height:1.9;margin-bottom:23px}.flow{box-shadow:none;padding:21px;border-radius:18px;background:var(--panel)}.flow h3{color:var(--text);font-size:17px;margin:9px 0 14px}.flow li{background:none;border:0;padding:8px 0;gap:12px}.flow .n{font-size:11px;background:var(--kas-soft);border-radius:50%;color:var(--kas)}.flow li b{font-size:13px}.flow li span{font-size:11px;color:var(--muted)}
 .section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}.section-title h2{margin:0;font-size:23px;letter-spacing:-.5px}.kpis{gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:22px}.kpis .kpi{border:0;border-right:1px solid var(--line);border-radius:0;padding:16px 19px}.kpis .kpi:last-child{border-right:0}.kpi strong{font-size:23px}.kpi small{color:var(--muted)}.kpi span{color:var(--muted)}
@@ -259,7 +258,7 @@ main{max-width:1240px;padding-top:34px}.hero{grid-template-columns:1.45fr 1fr;al
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <button class="brand" data-go="explore" aria-label="Kaswin 首页"><span class="logo"><b>K</b></span>kaswin<span class="tag kas">V2</span></button>
+  <button class="brand" data-go="explore" aria-label="Kaswin 首页"><svg class="logo" viewBox="0 0 2500 2500" aria-hidden="true"><path fill="#70C7BA" d="M2500,1237.5c0,167.2-68.9,328.2-129.4,474.5c-62.6,150.5-154.5,290.6-267.2,403.4 c-112.8,112.9-250.6,211.1-400.9,273.8c-146.2,60.6-309,110.8-476,110.8s-334.1-41.8-480.2-102.4 c-150.3-62.7-252.6-198.6-367.5-311.5C266,1973.3,138.6,1866.6,76,1714.1c-60.5-146.3-73.1-309.4-73.1-476.6 s-18.8-344.9,39.7-491.2c62.6-150.5,194.2-271.7,309-384.6C464.3,248.8,591.7,129.6,742,66.9C888.2,6.3,1059.4,0,1226.4,0 s329.9,29.3,474,89.9c150.3,62.7,296.5,148.4,409.2,261.3c112.8,112.9,213,252.9,273.5,403.4C2443.6,903,2500,1070.2,2500,1237.5 L2500,1237.5z"/><polygon fill="#FFFFFF" points="1575.1,524.7 1309.9,564.4 1387.2,1078.6 831.8,650.1 668.9,863.3 1155.4,1237.5 668.9,1613.7 831.8,1826.9 1387.2,1398.4 1309.9,1912.6 1575.1,1952.3 1681.6,1237.5"/></svg>kaswin<span class="tag kas">V2</span></button>
   <nav class="nav" aria-label="主导航">
     <button data-go="explore"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>广场</span></button>
     <button data-go="create"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>创建</span></button>
