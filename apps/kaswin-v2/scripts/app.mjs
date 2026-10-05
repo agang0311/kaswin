@@ -463,7 +463,7 @@ function matrix(recs, sold, draw, d, me) {
   });
 
   const owners = [...new Set(recs.map(x => x.key))];
-  const placeholder = `<div class="tip-placeholder">${icon('search')}<span>鼠标悬停在上方方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
+  const placeholder = `<div class="tip-placeholder">${icon('search')}<span>点击或悬停方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
 
   return `<div class="matrix" role="region" aria-label="购买分布">${cells.join('')}</div>
   <div class="matrix-tip" id="matrixTip">${placeholder}</div>
@@ -473,48 +473,73 @@ function matrix(recs, sold, draw, d, me) {
 function bindMatrixEvents(v, recs, d, draw, me, price) {
   const tip = $('matrixTip');
   if (!tip || !recs.length) return;
-  const placeholder = `<div class="tip-placeholder">${icon('search')}<span>鼠标悬停在上方方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
+  const placeholder = `<div class="tip-placeholder">${icon('search')}<span>点击或悬停方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
   const myBuys = (state.records || []).filter(x => x.cid === d.cid && x.action === 'BUY' && !['REJECTED', 'ARCHIVED'].includes(x.status));
-  v.querySelectorAll('.matrix .cell').forEach(cell => {
+  let activeIdx = null;
+
+  function renderTip(i) {
+    const r = recs[i];
+    if (!r) return;
+    const isMe = r.key === me;
+    const isWin = draw && draw.record === i;
+    const isRefunded = (d.state?.phase === 5 && i < d.state?.cursor) || d.terminal === 'REFUNDED';
+    const start = r.end - r.count + 1;
+    const rangeText = `${start}${r.count > 1 ? '–' + r.end : ''}`;
+    const addr = pubkeyToAddress(r.key);
+    const cost = price ? kas(price * BigInt(r.count)) + ' TKAS' : '';
+    let txid = r.txid || d.purchases?.[i]?.txid || null;
+    if (!txid && recs.length === 1 && d.state?.phase === 1 && d.latestTxid) txid = d.latestTxid;
+    if (!txid && isMe) {
+      const myIdx = recs.slice(0, i).filter(x => x.key === me).length;
+      if (myBuys[myIdx]?.txid) txid = myBuys[myIdx].txid;
+    }
+    const tone = isWin ? 't-gold' : isMe ? 't-pri' : '';
+    const badgeLabel = isWin ? '🏆 中奖记录' : isRefunded ? '已退款' : '第 ' + (i + 1) + ' 笔购买';
+    tip.innerHTML = `
+      <div class="tip-head">
+        <span class="badge ${tone}">${badgeLabel}</span>
+        <strong>票号 #${rangeText}</strong>
+        <span class="tag">${r.count} 张</span>
+        ${cost ? `<span class="muted">${cost}</span>` : ''}
+        <span class="spacer"></span>
+        ${isMe ? '<span class="tag kas">我</span>' : ''}
+      </div>
+      <div class="tip-body">
+        <span>买家：<span class="mono">${hashHtml(addr, {link: explorerAddress(addr), isAddr: true, n: 10})}</span></span>
+        <span class="spacer"></span>
+        ${txid ? `<a class="btn sm mono" href="${explorerTx(txid)}" target="_blank" rel="noopener noreferrer">${shortHash(txid, 8, 6)} ↗</a>` : `<a class="btn sm" href="${explorerAddress(addr)}" target="_blank" rel="noopener noreferrer">在 kaspa.stream 查看买家 ↗</a>`}
+      </div>`;
+  }
+
+  const cells = v.querySelectorAll('.matrix .cell');
+  cells.forEach(cell => {
+    const i = Number(cell.dataset.idx);
+
     cell.onmouseenter = cell.onfocus = () => {
-      const i = Number(cell.dataset.idx);
-      if (Number.isInteger(i) && recs[i]) {
-        const r = recs[i];
-        const isMe = r.key === me;
-        const isWin = draw && draw.record === i;
-        const isRefunded = (d.state?.phase === 5 && i < d.state?.cursor) || d.terminal === 'REFUNDED';
-        const start = r.end - r.count + 1;
-        const rangeText = `${start}${r.count > 1 ? '–' + r.end : ''}`;
-        const addr = pubkeyToAddress(r.key);
-        const cost = price ? kas(price * BigInt(r.count)) + ' TKAS' : '';
-        let txid = r.txid || d.purchases?.[i]?.txid || null;
-        if (!txid && recs.length === 1 && d.state?.phase === 1 && d.latestTxid) txid = d.latestTxid;
-        if (!txid && isMe) {
-          const myIdx = recs.slice(0, i).filter(x => x.key === me).length;
-          if (myBuys[myIdx]?.txid) txid = myBuys[myIdx].txid;
-        }
-        const tone = isWin ? 't-gold' : isMe ? 't-pri' : '';
-        const badgeLabel = isWin ? '🏆 中奖记录' : isRefunded ? '已退款' : '第 ' + (i + 1) + ' 笔购买';
-        tip.innerHTML = `
-          <div class="tip-head">
-            <span class="badge ${tone}">${badgeLabel}</span>
-            <strong>票号 #${rangeText}</strong>
-            <span class="tag">${r.count} 张</span>
-            ${cost ? `<span class="muted">${cost}</span>` : ''}
-            <span class="spacer"></span>
-            ${isMe ? '<span class="tag kas">我</span>' : ''}
-          </div>
-          <div class="tip-body">
-            <span>买家：<span class="mono">${hashHtml(addr, {link: explorerAddress(addr), isAddr: true, n: 10})}</span></span>
-            <span class="spacer"></span>
-            ${txid ? `<span>TXID: <a class="mono" href="${explorerTx(txid)}" target="_blank" rel="noopener noreferrer">${shortHash(txid, 8, 6)} ↗</a></span>` : `<a class="muted" href="${explorerAddress(addr)}" target="_blank" rel="noopener noreferrer">在 kaspa.stream 查看买家 ↗</a>`}
-          </div>`;
+      if (matchMedia('(hover: hover)').matches) {
+        renderTip(i);
       }
     };
+
+    cell.addEventListener('click', ev => {
+      const isTouch = ev.pointerType === 'touch' || !matchMedia('(hover: hover)').matches;
+      if (isTouch && activeIdx !== i) {
+        ev.preventDefault();
+        activeIdx = i;
+        cells.forEach(c => c.classList.remove('active'));
+        cell.classList.add('active');
+        renderTip(i);
+      }
+    });
   });
+
   const matrixEl = v.querySelector('.matrix');
   if (matrixEl) {
-    matrixEl.onmouseleave = () => { tip.innerHTML = placeholder; };
+    matrixEl.onmouseleave = () => {
+      if (matchMedia('(hover: hover)').matches && activeIdx === null) {
+        tip.innerHTML = placeholder;
+      }
+    };
   }
 }
 function actionsHtml(d, ledger) {

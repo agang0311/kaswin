@@ -156,6 +156,7 @@ main{max-width:1320px;width:100%;margin:0 auto;padding:22px 24px 90px;box-sizing
 .matrix{display:grid;grid-template-columns:repeat(auto-fill,minmax(30px,1fr));gap:5px;margin:10px 0}
 .matrix .cell{aspect-ratio:1;border-radius:5px;background:var(--c);display:flex;align-items:center;justify-content:center;color:#04120f;font-size:11px;font-weight:700;font-family:var(--mono);text-decoration:none;position:relative;cursor:pointer;transition:transform .12s,box-shadow .12s;user-select:none}
 .matrix .cell:hover{transform:scale(1.18);z-index:5;box-shadow:0 3px 10px rgba(0,0,0,.35)}
+.matrix .cell.active{outline:2px solid var(--text);outline-offset:2px;transform:scale(1.18);z-index:6;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 .matrix .cell.w{outline:2px solid var(--gold);outline-offset:1px;background:var(--gold)!important;color:#1a1300;box-shadow:0 0 8px var(--gold)}
 .matrix .cell.me{box-shadow:inset 0 0 0 2px rgba(255,255,255,.7)}
 .matrix-tip{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 13px;margin:8px 0 10px;min-height:50px;display:flex;flex-direction:column;justify-content:center;gap:4px;font-size:13px;line-height:1.4}

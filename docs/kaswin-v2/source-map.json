@@ -54,7 +54,7 @@
       "source": "web/kaswin-v2/src/app.mjs",
       "destination": "apps/kaswin-v2/scripts/app.mjs",
       "sourceSha256": "ecf74fccf84503bcf7bb945a67ab3691a51ebd4c07a1ab6a68160344edaaccf8",
-      "publishedSha256": "2b3c7ee0d9fef64a8ba6fefe884fcc5efc1528884000be957fd9f6d97f806ebe",
+      "publishedSha256": "0187a859a48013a96b065a72faa99376f3a676a74538938ae1f4ae6c06c246b8",
       "change": "module paths relocated; exact static icon block extracted to visual/icons.mjs"
     },
     {
@@ -355,14 +355,14 @@
       "source": "web/kaswin-v2/src/messages-en.mjs",
       "destination": "apps/kaswin-v2/visual/messages-en.mjs",
       "sourceSha256": "3252355c3bd2c46b4173a3a0e19b56aa3801df79e1d9694934b549fd084831ad",
-      "publishedSha256": "f6e0ed39ffe9e073e933e6caa5f163a3a24dab7d73ab9ac2c133f7aaa19ccdca",
+      "publishedSha256": "b867fafaa857ef862708544fa63c3a415c2f785730edbe5d3ba4c8df9fdad03d",
       "change": "byte-identical"
     },
     {
       "source": "web/kaswin-v2/src/styles.css",
       "destination": "apps/kaswin-v2/visual/styles.css",
       "sourceSha256": "b0ef0373a67dca2defdfa40c41e8422069e3023c720ab163ab2ebb6fc5c3999f",
-      "publishedSha256": "adc57acadd03a3ffffa3c75c76ea8dbbb6f470f6fbcbf3398502abf1f63c16bc",
+      "publishedSha256": "e57c305d33598771a69a912448ac80c5fa66dde532921764b96270be73a467c4",
       "change": "byte-identical"
     },
     {
@@ -509,7 +509,7 @@
       "source": "docs/kaswin-v2/source-map.json",
       "destination": "docs/kaswin-v2/source-map.json",
       "sourceSha256": "6772850412173525aed03d3411538f73c51ca6b9824c4198836c24c6dff18832",
-      "publishedSha256": "89f756537e06f00db2f8e0536156326b8e2be1f2f69b320552ddc57f7ef8508d",
+      "publishedSha256": "5f4f7f50e9a025c73f5d5954eb809fc2ca651c5d08913e618a71b8a355faf573",
       "change": "new publication asset"
     },
     {
@@ -915,7 +915,7 @@
       "source": "web/kaswin-v2/build-manifest.json",
       "destination": "releases/kaswin-v2/build-manifest.json",
       "sourceSha256": "917b55ae941b41c1cbeb1e51ac6993296fea1dd2bdc207c16c4f1bd17d856116",
-      "publishedSha256": "287bf64259d844088b3515e94966d03c08db890d7bd3a6b7ba0ab0bb20e5ceba",
+      "publishedSha256": "f79d8bc1f4ca943d3178cbc7a51032ec9633e34a56e10641d71753611302d73d",
       "change": "updated build manifest reflecting the layered repository paths and 40 input hashes"
     },
     {
@@ -929,7 +929,7 @@
       "source": "web/kaswin-v2/kaswin-v2.html",
       "destination": "releases/kaswin-v2/index.html",
       "sourceSha256": "ab90da23a4df6dc966fb45902ce402259efeb4906e014d960aa8712da354bad9",
-      "publishedSha256": "37eb9e819adac6e90dd7de397ec6ae40c16056a613b4e2a406008822e3305a26",
+      "publishedSha256": "2ce09e0fd7a95421d224ca057d9671a7966f7466c42958c933c32d7a98ea989b",
       "change": "offline layered build output; proven同源 with deployed version via npm run verify:deployed"
     }
   ]
