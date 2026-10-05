@@ -15,8 +15,8 @@
 
 直接下载单HTML可离线打开界面；读取实时轮次/交易仍需节点、Indexer和相应浏览器权限。默认：
 
-- 节点 `wss://la.cd311.cn/wrpc`（JSON wRPC）。
-- Indexer `https://la.cd311.cn/indexer`。
+- 节点 `wss://tn10.kaspay.top/wrpc`（JSON wRPC）。
+- Indexer `https://tn10.kaspay.top/indexer`。
 - 设置允许自定义 `ws/wss`、`http/https`，有效地址可保存，不强改协议；“测试连接”不等于“保存”。
 - 顶部齿轮为设置；太阳切浅色、月亮切深色；EN/中文保留手动语言选择。
 - 真实时间戳按浏览器/设备时区显示GMT偏移，页脚给IANA时区；切语言不换时区。

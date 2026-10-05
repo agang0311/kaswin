@@ -10,7 +10,7 @@
 |---|---|---|
 | **S (Source / Spec)** | 固定规范与源码核对 | SilverScript v1.0.0 (`3ed97333`)、rusty-kaspa (`cfafeb4c`)、固定 Profile (`7ca61d81`)、三帧 pins 与构造参数 |
 | **L (Local Build & Harness)** | 本地编译、离线模拟与单机回归 | TypeScript 5.8.3 源码一致性核对、esbuild 0.28.2 单文件构建、50 项离线单测、4 项 UI 浏览器测试、E2E 双语与 LAN 模拟、REST 备用生命周期模拟、编译重放工具 |
-| **R (Read-Only Public Services)** | 外部公网服务只读复核 | 公共 LA 节点 (`wss://la.cd311.cn/wrpc`) 与 Indexer (`https://la.cd311.cn/indexer`) 真实数据读取，公网已部署 HTML 逐字节回读 |
+| **R (Read-Only Public Services)** | 外部公网服务只读复核 | 公共节点 (`wss://tn10.kaspay.top/wrpc`) 与 Indexer (`https://tn10.kaspay.top/indexer`) 真实数据读取，公网已部署 HTML 逐字节回读 |
 | **N (Negative / Non-Scope)** | 明确未验证 / 禁止项 | 无真实私钥、无主网/真实资金广播、无未经授权的测试网签名交易、无未核验的第三方 npm 包 |
 
 ---
@@ -89,9 +89,9 @@ npm --prefix apps/kaswin-v2 run verify:deployed
 
 ## 外部服务与公网回读（Level R）
 
-### 1. 真实 LA 端点只读复核（`npm run test:live`）
+### 1. 真实默认端点只读复核（`npm run test:live`）
 - **命令**：`node test/browser-i18n.mjs --live`。
-- **目标**：LA 节点 (`wss://la.cd311.cn/wrpc`)、Indexer (`https://la.cd311.cn/indexer`)。
+- **目标**：默认节点 (`wss://tn10.kaspay.top/wrpc`)、Indexer (`https://tn10.kaspay.top/indexer`)。
 - **结果**：三时区读取真实轮次广场数据，0 页面错误，0 漏译；报告输出于 `test-results/i18n-live-report.json`。
 
 ### 2. 线上交付物回读

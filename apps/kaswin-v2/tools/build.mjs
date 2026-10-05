@@ -44,7 +44,7 @@ const plugins = [
     b.onLoad({filter: /scripts[\\/]shared[\\/]nodes\.mjs$/}, async args => {
       const original = await fs.readFile(args.path, 'utf8'), from = "export const DEFAULT_NODE = 'wss://cd311.cn:888/wrpc';";
       assert.ok(original.includes(from), 'shared nodes.mjs changed: review the default-node rewrite');
-      const contents = original.replace(from, "export const DEFAULT_NODE = 'wss://la.cd311.cn/wrpc';");
+      const contents = original.replace(from, "export const DEFAULT_NODE = 'wss://tn10.kaspay.top/wrpc';");
       transformations.push({file: path.relative(repo, args.path), reason: 'V2 default only (same in-memory rewrite as the deployed page); disk source unchanged', sourceSha256: sha(original), bundledSha256: sha(contents)});
       return {loader: 'js', contents};
     });
@@ -70,7 +70,7 @@ for (const [file, {imports}] of Object.entries(result.metafile.inputs)) if (file
 const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = await fs.readFile(path.join(app, 'visual/styles.css'), 'utf8'), tpl = await fs.readFile(path.join(app, 'visual/index.template.html'), 'utf8');
 const html = tpl.replace('/* STYLES */', () => css).replace('/* APPLICATION */', () => js);
-assert.ok(!/cd311\.cn:888/.test(html), 'built HTML still contains the retired cd311.cn:888 endpoint');
+assert.ok(!/cd311\.cn/.test(html), 'built HTML still contains retired cd311 endpoints');
 assert.equal(sha(await fs.readFile(path.join(out, DEPLOYED.file))), DEPLOYED.sha256, 'deployed snapshot file was modified');
 
 if (reproduce) {
@@ -86,7 +86,7 @@ const inputs = Object.keys(result.metafile.inputs).filter(p => !p.startsWith('pi
 const inputSha256 = Object.fromEntries(await Promise.all(inputs.map(async p => [p, sha(await fs.readFile(path.join(repo, p)))])));
 const manifest = {artifact: 'index.html', bytes: Buffer.byteLength(html), sha256: sha(html), esbuild: esbuild.version,
   profileId: profile.id, networkGenesis: pins.networkGenesis, frames: provenance, transformations, inputSha256,
-  externalRuntime: ['user-configured indexer (GET /v1/rounds*), default https://la.cd311.cn/indexer', 'one configured TN10 JSON wRPC node (ws/wss, ordered fallback), default wss://la.cd311.cn/wrpc',
+  externalRuntime: ['user-configured indexer (GET /v1/rounds*), default https://tn10.kaspay.top/indexer', 'one configured TN10 JSON wRPC node (ws/wss, ordered fallback), default wss://tn10.kaspay.top/wrpc',
     'public TN10 REST GET /transactions/{txid} (https://api-tn10.kaspa.org) for old UNKNOWN records', 'KasWare provider (window.kasware)'],
   noRuntimeDownloads: true, embeddedSdk: false,
   deployedSnapshot: {...DEPLOYED, relation: 'Same sources except visual/icons.mjs is a separate module here; `npm run verify:deployed` re-inlines it in memory and must reproduce these exact bytes.'}};

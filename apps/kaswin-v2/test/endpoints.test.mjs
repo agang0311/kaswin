@@ -34,8 +34,8 @@ test('connection notices cover both transports, distinguish loopback, never chan
   assert.deepEqual(connectionNotices({nodes: [DEFAULT_NODE], indexer: DEFAULT_INDEXER, pageUrl: values.pageUrl}), []);
 });
 
-test('defaults: LA node first, LA indexer, no cd311.cn:888 anywhere', () => {
-  assert.equal(DEFAULT_NODE, 'wss://la.cd311.cn/wrpc'); assert.equal(DEFAULT_INDEXER, 'https://la.cd311.cn/indexer');
+test('defaults: kaspay node first, kaspay indexer, no retired endpoint anywhere', () => {
+  assert.equal(DEFAULT_NODE, 'wss://tn10.kaspay.top/wrpc'); assert.equal(DEFAULT_INDEXER, 'https://tn10.kaspay.top/indexer');
   assert.equal(DEFAULT_NODES[0], DEFAULT_NODE); assert.equal(DEFAULT_NODES.some(isRetired), false);
   assert.equal(new Set(DEFAULT_NODES).size, DEFAULT_NODES.length);
   for (const u of DEFAULT_NODES) assert.match(u, /^wss:\/\//);
@@ -49,9 +49,9 @@ test('migration: retired endpoint removed from saved settings; custom entries ke
   assert.deepEqual(migrateConfig({version: 2, nodes: [OLD_NODE], indexer: null}).nodes, [DEFAULT_NODE]);
   // Custom list: old entry replaced in place, other entries and order preserved, duplicates collapsed.
   assert.deepEqual(migrateConfig({version: 2, nodes: ['ws://192.168.1.50:18210/', OLD_NODE, DEFAULT_NODE, PUBLIC]}).nodes, ['ws://192.168.1.50:18210/', DEFAULT_NODE, PUBLIC]);
-  // Host match is exact: cd311.cn:890 / la.cd311.cn and other paths are not retired.
-  assert.deepEqual(migrateConfig({version: 2, nodes: ['wss://cd311.cn:890/wrpc'], indexer: 'http://cd311.cn:890/indexer'}), {version: CONFIG_VERSION, nodes: ['wss://cd311.cn:890/wrpc'], indexer: 'http://cd311.cn:890/indexer'});
-  assert.equal(isRetired('wss://CD311.cn:888/other'), true); assert.equal(isRetired('wss://la.cd311.cn/wrpc'), false); assert.equal(isRetired('not a url'), false);
+  // Non-retired external paths are preserved.
+  assert.deepEqual(migrateConfig({version: 2, nodes: ['wss://example.org:890/wrpc'], indexer: 'http://example.org:890/indexer'}), {version: CONFIG_VERSION, nodes: ['wss://example.org:890/wrpc'], indexer: 'http://example.org:890/indexer'});
+  assert.equal(isRetired('wss://CD311.cn:888/other'), true); assert.equal(isRetired('wss://tn10.kaspay.top/wrpc'), false); assert.equal(isRetired('not a url'), false);
   // Custom indexer kept; v1 local lists still dropped.
   assert.equal(migrateConfig({version: 2, indexer: 'https://example.org/indexer'}).indexer, 'https://example.org/indexer');
   assert.deepEqual(migrateConfig({version: 1, nodes: ['ws://127.0.0.1:18210', OLD_NODE], indexer: 'http://192.168.1.201:8788'}), {version: CONFIG_VERSION, nodes: null, indexer: null});

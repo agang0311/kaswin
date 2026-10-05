@@ -1,7 +1,7 @@
 {
   "artifact": "index.html",
-  "bytes": 315073,
-  "sha256": "2ce09e0fd7a95421d224ca057d9671a7966f7466c42958c933c32d7a98ea989b",
+  "bytes": 315155,
+  "sha256": "644777656ec578bf6f419c4cf62ac478159ee8c295121e2cbed94e3fa3e4cb50",
   "esbuild": "0.28.2",
   "profileId": "7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863",
   "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
@@ -30,7 +30,7 @@
       "file": "apps/kaswin-v2/scripts/shared/nodes.mjs",
       "reason": "V2 default only (same in-memory rewrite as the deployed page); disk source unchanged",
       "sourceSha256": "5c5c8e62cc73d7bb72aa556afda500d5cbdfefbbc04cae619776c499106d22d0",
-      "bundledSha256": "410d95d7a687799002239f3e2f7f26577c509c58b205c2fd9d0fc321be63ee24"
+      "bundledSha256": "26dda2156b8274ad5c6a70a1453f0c306a58fe7289180fbb877e67e83cb84a0d"
     }
   ],
   "inputSha256": {
@@ -49,7 +49,7 @@
     "apps/kaswin-v2/scripts/shared/core.mjs": "0183710324cceb7e10d964afd6b17ad34fe8bf00faf9fb127819bba1069c3a70",
     "apps/kaswin-v2/scripts/shared/lib/json.mjs": "d444df58db8cdd30ad192e787ee95af8bcf8a2bde5b367ffb75caf6bebbeb88d",
     "apps/kaswin-v2/scripts/shared/nodes.mjs": "5c5c8e62cc73d7bb72aa556afda500d5cbdfefbbc04cae619776c499106d22d0",
-    "apps/kaswin-v2/scripts/endpoints.mjs": "06c98d404d160032cb9787219a87163be23d88312267e74318ab38016b1cf484",
+    "apps/kaswin-v2/scripts/endpoints.mjs": "f68937f6ed709cef9feb4bab27ad80aec93ab3388beaa8a95aa1c15c44174894",
     "apps/kaswin-v2/scripts/shared/mass.mjs": "995837d86537940ba0aaa9094def507a570953dfe10db5f75c99923b53d9a0e2",
     "apps/kaswin-v2/scripts/shared/lib/address.mjs": "f1c71eda09e53c8aa4c8aa3b8866ec524a693988a8873785e056ffa448af147d",
     "apps/kaswin-v2/scripts/shared/chain.mjs": "1fbe2272a5b5744c8133e02a116cd48706e67088016a0b93d73dcedc4ad308ec",
@@ -69,15 +69,15 @@
     "apps/kaswin-v2/visual/messages-en.mjs": "b867fafaa857ef862708544fa63c3a415c2f785730edbe5d3ba4c8df9fdad03d",
     "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
     "apps/kaswin-v2/visual/icons.mjs": "8599f492a3856630161c80481d108e8b68907021264bd46104de8f9929c64e26",
-    "apps/kaswin-v2/scripts/app.mjs": "0187a859a48013a96b065a72faa99376f3a676a74538938ae1f4ae6c06c246b8",
+    "apps/kaswin-v2/scripts/app.mjs": "cc00b3cd10add9d71bde9c985ff4e04747cf536c8abe0619805dc53403aa87f8",
     "apps/kaswin-v2/visual/styles.css": "e57c305d33598771a69a912448ac80c5fa66dde532921764b96270be73a467c4",
     "apps/kaswin-v2/visual/index.template.html": "9c61d9c1d67ef988f1011fbdd468ffd6a011fd9dda647928d238cf8dcaa7600c",
     "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8",
     "contracts/f3.2/pins.json": "c2e6a5120d37891448e7956e87d4735a4055a55bb5105ca0f0471a40a3c5fc82"
   },
   "externalRuntime": [
-    "user-configured indexer (GET /v1/rounds*), default https://la.cd311.cn/indexer",
-    "one configured TN10 JSON wRPC node (ws/wss, ordered fallback), default wss://la.cd311.cn/wrpc",
+    "user-configured indexer (GET /v1/rounds*), default https://tn10.kaspay.top/indexer",
+    "one configured TN10 JSON wRPC node (ws/wss, ordered fallback), default wss://tn10.kaspay.top/wrpc",
     "public TN10 REST GET /transactions/{txid} (https://api-tn10.kaspa.org) for old UNKNOWN records",
     "KasWare provider (window.kasware)"
   ],

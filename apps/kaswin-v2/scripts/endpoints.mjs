@@ -1,17 +1,16 @@
 /** V2 endpoint defaults and one-time migration of saved browser settings. Pure: no DOM, no network.
- * 2026-10-04 user decision: default node wss://la.cd311.cn/wrpc and indexer https://la.cd311.cn/indexer; the former
- * cd311.cn:888 entries are removed from defaults and from saved settings.
- * Read-only observation the same day: the LA node reports the same kaspad p2pId (622cd420…) as the former endpoint
- * (TN10, synced, UTXO index, 2.1.0, getSeqCommitLaneProof available); the LA indexer is a separate instance that also
- * lists four terminal rounds of an older Profile (shown as unsupported, never used for actions). */
-// Assembled so the retired endpoint never appears as a literal in the delivered HTML (build check enforces it).
-const RETIRED_PORT = 888;
-export const RETIRED_HOST = ['cd311', 'cn'].join('.') + ':' + RETIRED_PORT;
+ * Default node wss://tn10.kaspay.top/wrpc and indexer https://tn10.kaspay.top/indexer.
+ * Retired endpoints are removed from defaults and from saved settings. */
+const RETIRED_DOMAIN = ['cd311', 'cn'].join('.');
+export const RETIRED_HOST = RETIRED_DOMAIN + ':888';
 const hostOf = u => { try { return new URL(String(u)).host.toLowerCase(); } catch { return null; } };
-export const isRetired = u => hostOf(u) === RETIRED_HOST;
+export const isRetired = u => {
+  const h = hostOf(u);
+  return h ? (h === RETIRED_DOMAIN || h.endsWith('.' + RETIRED_DOMAIN) || h.startsWith(RETIRED_DOMAIN + ':')) : false;
+};
 
-export const DEFAULT_NODE = 'wss://la.cd311.cn/wrpc';
-export const DEFAULT_INDEXER = 'https://la.cd311.cn/indexer';
+export const DEFAULT_NODE = 'wss://tn10.kaspay.top/wrpc';
+export const DEFAULT_INDEXER = 'https://tn10.kaspay.top/indexer';
 /** Explicit V2 list (not derived from the shared Opus constant, so Opus changes cannot silently alter V2 defaults).
  * Public TN10 JSON wRPC nodes are ordered fallbacks, used only if the ones before them are unreachable or unsynced. */
 export const DEFAULT_NODES = Object.freeze([
@@ -41,7 +40,7 @@ export function connectionNotices({nodes = [], indexer, pageUrl = globalThis.loc
   return notices;
 }
 
-export const CONFIG_VERSION = 3;
+export const CONFIG_VERSION = 4;
 const LOCAL_V1 = /\/\/(127\.0\.0\.1|localhost|192\.168\.1\.201)(:|\/|$)/;
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -53,7 +52,7 @@ export function migrateConfig({version = 0, nodes = null, indexer = null} = {}) 
     if (n && n.some(u => LOCAL_V1.test(u))) n = null;
     if (i && LOCAL_V1.test(i)) i = null;
   }
-  if (version < 3) { // 2026-10-04: retire cd311.cn:888; replace it in place so a custom list keeps its other entries
+  if (version < 4) { // retire old endpoints; replace in place so a custom list keeps its other entries
     if (n) { n = [...new Set(n.map(u => isRetired(u) ? DEFAULT_NODE : u))]; if (same(n, DEFAULT_NODES)) n = null; }
     if (i && isRetired(i)) i = null;
   }

@@ -20,8 +20,8 @@ const profile = makeProfile(NETWORK_GENESIS, Object.fromEntries(Object.entries(F
 if (profile.id !== PROFILE_ID) throw new Error('嵌入的合约帧与固定 Profile 不一致，页面拒绝运行');
 const $ = id => document.getElementById(id);
 const LS = {get(k, d) { try { const v = localStorage.getItem('kaswin-v2:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem('kaswin-v2:' + k, JSON.stringify(v)); } catch {} }};
-/** Endpoint configuration (see endpoints.mjs). Defaults since 2026-10-04: wss://la.cd311.cn/wrpc + https://la.cd311.cn/indexer.
- * Both are editable in Settings and stored per browser; saved settings are migrated once (cd311.cn:888 removed). */
+/** Endpoint configuration (see endpoints.mjs). Defaults: wss://tn10.kaspay.top/wrpc + https://tn10.kaspay.top/indexer.
+ * Both are editable in Settings and stored per browser; saved settings are migrated automatically. */
 function loadConfig() {
   const v = LS.get('configVersion', 0);
   if (v < CONFIG_VERSION) {
