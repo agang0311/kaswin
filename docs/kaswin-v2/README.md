@@ -1,6 +1,6 @@
 # Kaswin F3.2 / V2 资料入口
 
-本次整理的是 **Testnet 10 固定F3.2合约 + V2单文件网页**，不是旧V1与新F3.2的混合发布，也不是生产安全认证。
+当前为 **Testnet 10 V2协议源码候选**，尚未编译、测试或发布。先读 [V2源码状态与门槛](V2-SOURCE-STATUS.md)。保留的lib/artifacts/pins/单HTML仍是历史F3.2构建，不是新V2产物；旧V1审计资料也独立保留，不混用。
 
 ## 阅读顺序
 
@@ -35,5 +35,5 @@ python3 -m http.server 8000 --bind 127.0.0.1
 - Submitted ≠ Accepted，区块包含 ≠ selected-chain接受。Indexer是发现/候选/缓存，不是资金与接受裁判。
 - REST在旧UNKNOWN且节点未查明时备查：完整节点复验通过才写ACCEPTED；裁剪等情况下最多标“已接受·REST”，底层UNKNOWN及输入占用不变，不授权后续动作。
 - 历史裁剪/PASS-A材料缺失仍会阻断某些构建；换端点或英文UI不能解除。
-- 同origin保留原journal/锁。换GitHub Pages或其他域名会隔离本机记录，不能因此重发旧UNKNOWN；不要清除站点数据。
+- 同origin保留原journal/锁。协议记录和对账限当前Profile；输入占用读取同库同网络所有Profile的未释放tx记录，不迁移旧ABI或轮次。换域名/端口/记录库会隔离保护，不能因此重发旧UNKNOWN；不要清除站点数据。
 - 发布源码并不等于已经部署GitHub Pages，本次没有创建新站点、节点或代理。

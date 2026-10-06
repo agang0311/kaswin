@@ -1,13 +1,13 @@
-/** Deterministic action preparation. Chain facts must come from the verified snapshot/provider. */
+/** Deterministic action preparation (V2, on-chain actions only; no networkGenesis). */
 import {ascii,cat,check,fromLe,hex,integer,le,unhex} from './bytes.js';
 import {blake2b256} from './hashes.js';
 import {domainHash} from './blake3.js';
-import {p2pk,p2sh,type Spk} from './covenant-id.js';
+import {p2pk,type Spk} from './covenant-id.js';
 import * as S from './state.js';
-export const ACTIONS={BUY:1,CLOSE:2,DRAW:3,DRAW_AND_PAY:4,ACCEPT:5,ADVANCE_SAMPLE:6,ACCEPT_AND_PAY:7,PAY:8,TIMEOUT_REFUND:9,REFUND:10} as const;
+export const ACTIONS={BUY:1,CLOSE:2,DRAW_AND_PAY:4,TIMEOUT_REFUND:9,REFUND:10} as const;
 export type Action=keyof typeof ACTIONS;
-export type Operation={action:Action;actorKey:string;quantity?:number;config?:S.Config;beaconSpk?:Spk;opening?:Uint8Array;accessor?:{blockHash:string;sequenceCommitment:string};};
-export interface Payment {value:bigint;spk:Spk;role:'WINNER'|'CREATOR'|'EXECUTOR'|'BUYER_REFUND'|'BEACON'|'CHANGE';}
+export type Operation={action:Action;actorKey:string;quantity?:number;opening?:Uint8Array;accessor?:{blockHash:string;sequenceCommitment:string};};
+export interface Payment {value:bigint;spk:Spk;role:'WINNER'|'CREATOR'|'EXECUTOR'|'BUYER_REFUND'|'CHANGE';}
 export interface Transition {next:S.Ledger|null;terminal:'PAID'|'EMPTY'|'REFUNDED'|null;payments:Payment[];data:Uint8Array;lockTime:bigint;sequence:bigint;requiredExternal:bigint;foreignTail:Uint8Array;}
 const Z=new Uint8Array();
 function openingNumber(proof:Uint8Array,offset:number):bigint {const n=fromLe(proof.slice(offset,offset+8));check(n<1n<<63n,'PASS_A_INTEGER');return n;}
@@ -18,12 +18,12 @@ export function authenticateDraw(x:S.Snapshot,s:S.Ledger,proof:Uint8Array,access
  const pd=openingNumber(proof,224),td=openingNumber(proof,104);check(pd<boundary&&td>=boundary&&td<S.DAA_LIMIT,'PASS_A_FIRST_CROSSING');check(openingNumber(proof,112)>openingNumber(proof,232),'PASS_A_BLUE_ORDER');openingNumber(proof,96);openingNumber(proof,216);
  check(hex(proof.slice(0,32))===accessor.blockHash,'PASS_A_TARGET_HASH');const p=openSeq(proof,152,proof.slice(120,152)),t=openSeq(proof,32,p);check(hex(t)===accessor.sequenceCommitment,'PASS_A_COMMITMENT');
  const raw=S.encodeLedger(s),frozen=blake2b256(cat(raw.slice(8,44),s.directory));
- const seed=hex(blake2b256(cat(ascii('KASWIN_FOUR_DRAW_V1'),unhex(s.networkGenesis,32),unhex(x.covenantId,32),unhex(x.tip.transactionId,32),le(BigInt(x.tip.index),4),frozen,le(boundary,8),proof.slice(0,32),t)));
+ const seed=hex(blake2b256(cat(ascii('KASWIN_V2_DRAW'),unhex(x.covenantId,32),unhex(x.tip.transactionId,32),le(BigInt(x.tip.index),4),frozen,le(boundary,8),proof.slice(0,32),t)));
  return {...s,phase:S.Phase.DRAW_READY,anchorDaa:x.utxoDaa,anchorTxId:x.tip.transactionId,anchorIndex:x.tip.index,seed,targetHash:hex(proof.slice(0,32)),targetSeq:hex(t)};
 }
 export function sample(s:S.Ledger):{value:bigint;limit:bigint;ticket:number|null} {
  integer(s.sold,3,S.MAX_TICKETS);integer(s.counter,0,0x7fffffff);
- const digest=blake2b256(cat(ascii('KASWIN_FOUR_SAMPLE_V1'),unhex(s.seed,32),le(BigInt(s.counter),8)));
+ const digest=blake2b256(cat(ascii('KASWIN_V2_SAMPLE'),unhex(s.seed,32),le(BigInt(s.counter),8)));
  const value=fromLe(digest.slice(0,7)),space=1n<<56n,limit=space-space%BigInt(s.sold);
  return {value,limit,ticket:value<limit?Number(value%BigInt(s.sold)):null};
 }
@@ -33,10 +33,13 @@ export function timeoutDaa(x:S.Snapshot,s:S.Ledger):bigint {const d=s.phase===S.
 export function availableActions(x:S.Snapshot,p:S.Profile):Action[] {
  const s=S.verifySnapshot(x,p);
  if(s.phase===1){const a:Action[]=[];if(s.sold<s.config.ticketCap&&s.purchaseCount<s.config.purchaseCap)a.push('BUY');if(s.sold===s.config.ticketCap||s.purchaseCount===s.config.purchaseCap||x.currentDaa>=s.config.closeEligibleDaa)a.push('CLOSE');return a;}
- if(s.phase===5)return ['REFUND'];const a:Action[]=[];
- if(s.phase===2&&x.currentDaa>=x.utxoDaa+S.DRAW_DELAY)a.push('DRAW','DRAW_AND_PAY');
- if(s.phase===3)a.push(...(sample(s).ticket===null?['ADVANCE_SAMPLE'] as Action[]:['ACCEPT','ACCEPT_AND_PAY'] as Action[]));
- if(s.phase===4)a.push('PAY');if(x.currentDaa>=timeoutDaa(x,s))a.push('TIMEOUT_REFUND');return a;
+ if(s.phase===5)return ['REFUND'];
+ const a:Action[]=[];
+ if(s.phase===2){
+  if(x.currentDaa>=x.utxoDaa+S.DRAW_DELAY)a.push('DRAW_AND_PAY');
+  if(x.currentDaa>=timeoutDaa(x,s))a.push('TIMEOUT_REFUND');
+ }
+ return a;
 }
 /** The supplied network fee must later equal actual input-output difference. */
 export function transition(x:S.Snapshot,p:S.Profile,op:Operation,fee:bigint,external=0n):Transition {
@@ -51,16 +54,12 @@ export function transition(x:S.Snapshot,p:S.Profile,op:Operation,fee:bigint,exte
   if(s.sold<s.config.ticketCap&&s.purchaseCount<s.config.purchaseCap)lockTime=s.config.closeEligibleDaa-1n;
   if(s.sold===0){terminal='EMPTY';pay(S.DEPOSIT,s.ownerKey,'CREATOR');}
   else {next={...s,phase:s.sold>=s.config.minTickets?S.Phase.SEALED:S.Phase.REFUNDING};foreignTail=p.frames[S.phaseModule(next.phase)].tail;}break;}
- case 'DRAW':case 'DRAW_AND_PAY':{
+ case 'DRAW_AND_PAY':{
   check(op.opening&&op.accessor,'DRAW_PROOF_MISSING');const drawn=authenticateDraw(x,s,op.opening,op.accessor);sequence=S.DRAW_DELAY;
-  if(op.action==='DRAW'){next=drawn;data=op.opening;}else {payout(acceptState(drawn));data=cat(op.opening,data);}break;}
- case 'ACCEPT':next=acceptState(s);break;
- case 'ADVANCE_SAMPLE':check(sample(s).ticket===null,'CANNOT_SKIP_ACCEPTED_SAMPLE');check(s.counter<0x7fffffff,'COUNTER_EXHAUSTED');next={...s,counter:s.counter+1};break;
- case 'ACCEPT_AND_PAY':payout(acceptState(s));break;
- case 'PAY':payout(s);break;
+  payout(acceptState(drawn));data=cat(op.opening,data);break;}
  case 'TIMEOUT_REFUND':{
   const deadline=timeoutDaa(x,s);check(x.currentDaa>=deadline,'TIMEOUT_EARLY');
-  if(s.phase===S.Phase.SEALED)sequence=S.TIMEOUT_DELAY;else lockTime=deadline-1n;
+  sequence=S.TIMEOUT_DELAY;
   next={...s,phase:S.Phase.REFUNDING,anchorDaa:deadline-S.TIMEOUT_DELAY};foreignTail=p.frames.refunding.tail;break;}
  case 'REFUND':{
   const remaining=s.purchaseCount-s.cursor,k=Math.min(32,remaining),end=s.cursor+k,r=S.records(s),last=end===s.purchaseCount;
@@ -68,18 +67,14 @@ export function transition(x:S.Snapshot,p:S.Profile,op:Operation,fee:bigint,exte
   if(last){terminal='REFUNDED';pay(S.DEPOSIT,s.ownerKey,'CREATOR');}else next={...s,cursor:end};
   const pool=BigInt(k)*S.REFUND_FEE;check(external+pool>fee,'REFUND_FEE_POOL');pay(external+pool-fee,op.actorKey,'EXECUTOR');requiredExternal=fee>=pool?fee-pool+1n:0n;break;}
  }
- const paidAction=['PAY','DRAW_AND_PAY','ACCEPT_AND_PAY'].includes(op.action);
+ const paidAction=op.action==='DRAW_AND_PAY';
  if(!paidAction&&op.action!=='REFUND'){check(external>=requiredExternal,'INSUFFICIENT_FUNDING');if(external>requiredExternal)pay(external-requiredExternal,op.actorKey,'CHANGE');}
  if(next)S.validateLedger(next);
  return {next,terminal,payments,data,lockTime,sequence,requiredExternal,foreignTail};
 }
 
-/** Script-unit envelopes (upper bounds) for input 0, fitted 2026-10-01 on 3,446 offline VM cases
- * (rusty-kaspa cfafeb4 TxScriptEngine via references/silverscript-v1.0.0 tests/f3_2_vm.rs):
- * every purchaseCount 0..256, every REFUND cursor, 1/8 funding inputs, prices up to the VALUE_LIMIT
- * cap, and DRAW_AND_PAY winners at record 0/1/last. Units are deterministic for identical inputs.
- * The 2026-09-30 constants (CLOSE 116, TIMEOUT_REFUND 31, REFUND 24+1.1k) UNDER-budgeted
- * TIMEOUT_REFUND (pc>=29), REFUND (pc>=33) and CLOSE->REFUNDING at 256 records. */
+/** Provisional sizing envelope only. V2 VM calibration is pending; the web build must
+ * bind a new budgetProfileId before release. Old measurements are NOT V2 evidence. */
 export function actionUnits(action:Action,s:S.Ledger):number {
  const pc=s.purchaseCount;
  switch(action){
@@ -92,8 +87,6 @@ export function actionUnits(action:Action,s:S.Ledger):number {
  default:check(false,'NO_CALIBRATED_BUDGET');return 0;
  }
 }
-/** Consensus: allowed units = budget*10000 + 9999 free per input (consensus/core mass/units.rs).
- * BUDGET_MARGIN=3 extra units on top of the fitted envelope; each unit costs 100 grams (~0.0001 KAS at 1 sompi/gram). */
 export const BUDGET_MARGIN=3,GENESIS_INPUT_BUDGET=10,FUNDING_INPUT_BUDGET=10;
 export function actionBudget(action:Action|'GENESIS',s?:S.Ledger|null):number {
  if(action==='GENESIS')return GENESIS_INPUT_BUDGET;
@@ -101,4 +94,3 @@ export function actionBudget(action:Action|'GENESIS',s?:S.Ledger|null):number {
  const units=actionUnits(action,s);return Math.max(0,Math.ceil((units-9999)/10000))+BUDGET_MARGIN;
 }
 export const budgetOf = actionBudget;
-

@@ -1,36 +1,26 @@
 // Offline single-HTML bundler for Kaswin V2. No downloads, wallet, RPC, signing or deployment.
 //   node tools/build.mjs                       -> releases/kaswin-v2/index.html + build-manifest.json
-//   node tools/build.mjs --reproduce-deployed  -> in-memory proof that these sources rebuild the deployed
-//                                                 2026-10-05 bytes (icons re-inlined); writes nothing.
+// Historical F3.2 deployed-byte reproduction is not an entry point for V2 sources.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 import * as esbuild from 'esbuild';
-import {parseCompiledFrame, makeProfile} from '../../../packages/f3.2-core/lib/artifacts.js';
+import {loadV2Bundle} from '../../../contracts/f3.2/tools/linking.mjs';
 
 assert.equal(esbuild.version, '0.28.2', 'esbuild is pinned to 0.28.2');
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const app = path.join(repo, 'apps/kaswin-v2'), contract = path.join(repo, 'contracts/f3.2'), out = path.join(repo, 'releases/kaswin-v2');
-const reproduce = process.argv.includes('--reproduce-deployed');
+if (process.argv.length !== 2) throw Error('V2 build takes no flags; historical --reproduce-deployed requires its historical source revision');
 const DEPLOYED = {file: 'deployed-20261005.html', sha256: '335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003'};
 const sha = b => createHash('sha256').update(b).digest('hex');
 
-// Frames are re-derived from the .sil sources + linked compiler artifacts and checked against pins; never copied from a prior HTML.
-const pins = JSON.parse(await fs.readFile(path.join(contract, 'pins.json'), 'utf8'));
-const frames = {}, provenance = {};
-for (const m of ['open', 'sealed', 'refunding']) {
-  const src = await fs.readFile(path.join(contract, `src/${m}.sil`)), art = await fs.readFile(path.join(contract, `artifacts/${m}-linked.json`));
-  assert.equal(sha(src), pins.frames[m].sourceSha256, `${m}.sil differs from pins.json`);
-  assert.equal(sha(art), pins.frames[m].artifactSha256, `${m}-linked.json differs from pins.json`);
-  const f = parseCompiledFrame(m, JSON.parse(art.toString('utf8')), sha(src));
-  assert.equal(f.templateHash, pins.frames[m].templateHash, `${m} template hash differs from pins.json`);
-  frames[m] = {...f, tail: Buffer.from(f.tail).toString('hex')};
-  provenance[m] = {sourceSha256: sha(src), artifactSha256: sha(art), templateHash: f.templateHash, tailBytes: f.tail.length};
-}
-const profile = makeProfile(pins.networkGenesis, Object.fromEntries(Object.entries(frames).map(([k, v]) => [k, {...v, tail: Uint8Array.from(Buffer.from(v.tail, 'hex'))}])));
-assert.equal(profile.id, pins.profileId, 'Profile ID differs from pins.json');
+// Never bundle stale lib/ or mix template sources, linked sources, ABI and Profile.
+await import('./check-core.mjs');
+const {pins, frames: loadedFrames, profile, provenance} = await loadV2Bundle(contract);
+assert.equal(pins.budgetProfileId, profile.id, 'V2 budgets have not been calibrated/reviewed for this Profile');
+const frames = Object.fromEntries(Object.entries(loadedFrames).map(([m, f]) => [m, {...f, tail: Buffer.from(f.tail).toString('hex')}]));
 
 const transformations = [];
 const plugins = [
@@ -39,15 +29,6 @@ const plugins = [
     b.onLoad({filter: /.*/, namespace: 'pinned'}, () => ({loader: 'js', contents: `export const frames=${JSON.stringify(frames)};`}));
   }},
 ];
-if (reproduce) plugins.push({name: 'reinline-icons', setup(b) {
-  // Exact inverse of the publication split: visual/icons.mjs was cut verbatim out of the controller (plus `export`).
-  b.onLoad({filter: /scripts[\\/]app\.mjs$/}, async args => {
-    const controller = await fs.readFile(args.path, 'utf8'), marker = "import {icon} from '../visual/icons.mjs';";
-    const icons = (await fs.readFile(path.join(app, 'visual/icons.mjs'), 'utf8')).replace(/\n$/, '');
-    assert.ok(controller.includes(marker) && icons.includes('export const icon ='), 'icon split changed: reproduction no longer applies');
-    return {loader: 'js', contents: controller.replace(marker, () => icons.replace('export const icon =', 'const icon ='))};
-  });
-}});
 
 const result = await esbuild.build({absWorkingDir: repo, entryPoints: ['apps/kaswin-v2/scripts/app.mjs'], bundle: true, metafile: true, write: false,
   platform: 'browser', format: 'iife', target: ['es2022'], minify: true, legalComments: 'none', charset: 'utf8', plugins});
@@ -63,13 +44,6 @@ assert.ok(html.includes('wss://tn10.kaspay.top/wrpc'), 'built HTML missing defau
 assert.ok(html.includes('https://tn10.kaspay.top/indexer'), 'built HTML missing default indexer');
 assert.equal(sha(await fs.readFile(path.join(out, DEPLOYED.file))), DEPLOYED.sha256, 'deployed snapshot file was modified');
 
-if (reproduce) {
-  const ok = sha(html) === DEPLOYED.sha256;
-  console.log(`${ok ? 'PASS' : 'FAIL'}: sources with icons re-inlined -> ${Buffer.byteLength(html)} bytes sha256 ${sha(html)}; deployed ${DEPLOYED.sha256}`);
-  if (!ok) console.log('Expected after any source change: the deployed snapshot is a fixed 2026-10-05 record, not a moving target.');
-  process.exit(ok ? 0 : 1);
-}
-
 // esbuild applies `strict` from packages/f3.2-core/tsconfig.json to lib/*.js ("use strict"), so that file is a build input.
 const inputs = Object.keys(result.metafile.inputs).filter(p => !p.startsWith('pinned:'))
   .concat(['apps/kaswin-v2/visual/styles.css', 'apps/kaswin-v2/visual/index.template.html', 'packages/f3.2-core/tsconfig.json', 'contracts/f3.2/pins.json']);
@@ -79,7 +53,7 @@ const manifest = {artifact: 'index.html', bytes: Buffer.byteLength(html), sha256
   externalRuntime: ['user-configured indexer (GET /v1/rounds*), default https://tn10.kaspay.top/indexer', 'one configured TN10 JSON wRPC node (ws/wss, ordered fallback), default wss://tn10.kaspay.top/wrpc',
     'public TN10 REST GET /transactions/{txid} (https://api-tn10.kaspa.org) for old UNKNOWN records', 'KasWare provider (window.kasware)'],
   noRuntimeDownloads: true, embeddedSdk: false,
-  deployedSnapshot: {...DEPLOYED, relation: 'Same sources except visual/icons.mjs is a separate module here; `npm run verify:deployed` re-inlines it in memory and must reproduce these exact bytes.'}};
+  deployedSnapshot: {...DEPLOYED, relation: 'Historical F3.2 deployment; preserved unchanged, not reproducible from or evidence for current V2 sources.'}};
 await fs.writeFile(path.join(out, 'index.html'), html);
 await fs.writeFile(path.join(out, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 console.log(`index.html ${manifest.bytes} bytes sha256 ${manifest.sha256}`);

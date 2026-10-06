@@ -1,31 +1,26 @@
-# F3.2 链上合约（Testnet 10 固定快照）
+# Kaswin V2 链上源码候选（目录暂保留 f3.2）
 
-这里是链上 SilverScript 源码，不是网页脚本。三份源码与既有 V2 构建输入逐字节相同；本次未变更协议、编译器或经济参数。
+**未编译、未测试、未发布。** 当前 `src/` 是V2；`artifacts/`、`pins.json`、`profile.json`仍是旧F3.2产物，故意不能通过V2构建门禁。旧Profile `7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863`不是新V2 Profile。
 
 | 文件 | 责任 |
 |---|---|
-| [src/open.sil](src/open.sil) | 售票期 BUY、CLOSE 及后继/空轮终止约束 |
-| [src/sealed.sil](src/sealed.sil) | 封存后 PASS-A 开奖派奖、超时转退款 |
-| [src/refunding.sil](src/refunding.sil) | 分批退款、后继游标和最终退出 |
-| [profile.json](profile.json) | 网络/Profile、三模板哈希及dispatch tag |
-| [pins.json](pins.json) | 源码与linked artifact完整SHA256，供网页构建拒绝漂移 |
-| `artifacts/*-linked.json` | 原始编译器输出（ABI、bytecode、state span、template hash） |
-| `artifacts/*-linked.args.json` | 生成该编译样例使用的公开构造参数，不是真实钱包 |
-| `artifacts/build-report.json` | 原始编译阶段报告，不是本次VM或链上通过证明 |
+| [src/open.sil](src/open.sil) | BUY/CLOSE；唯一链上规范零票初态CID认证；写死SEALED/REFUNDING模板哈希 |
+| [src/sealed.sil](src/sealed.sil) | 原子开奖派奖或300 DAA超时转REFUNDING；只含REFUNDING前向哈希 |
+| [src/refunding.sil](src/refunding.sil) | 分批退款/终局退押金；无foreign依赖 |
+| [tools/linking.mjs](tools/linking.mjs) | 本地V2依赖/源码/artifact/ABI/Profile溯源加载，拒绝旧产物贴标签 |
+| [tools/build-v2.mjs](tools/build-v2.mjs) | REFUNDING→SEALED→OPEN链接，只写新候选目录，不安装或发布 |
+| [tools/check-compile.mjs](tools/check-compile.mjs) | 对已安装本地V2 bundle做逆拓扑重编比对，不支持旧部署 |
 
-固定 Profile：`7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863`。
-固定 SilverScript v1.0.0：`3ed973335b59269293564805cc2c58a14595ec03`。
+Header=228B、Magic=KW20、目录从228起；OPEN 8参数，SEALED/REFUNDING 6参数。零票初态使用PUSHDATA1 `4c e4`，首条记录264B使用PUSHDATA2。全零模板哈希仅为待注入占位；不能直接用silverc编译模板后发布。
 
-网页构建从源文件哈希及linked artifacts重新加载三帧，重算Profile；不从上一份HTML拷贝帧。目录旁旧的 `contracts/*.rs` 等属于V1，不能与本目录拼装。
+固定SilverScript v1.0.0：`3ed973335b59269293564805cc2c58a14595ec03`，binary SHA256 `81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00`。不升级工具链。
 
-## 可选离线编译复核
+## 获准后的顺序（当前禁止执行）
 
-先按[固定来源](../../docs/kaswin-v2/SOURCES.md)自行取得固定编译器，二进制必须与原编译报告SHA一致。以下只运行编译器，不签名、不连接网络；输出保留到指定的新目录，拒绝覆盖原文件：
+1. 固定TypeScript 5.8.3重新生成核心lib，不手改生成物。
+2. `node contracts/f3.2/tools/build-v2.mjs /absolute/silverc /absolute/new-bundle-directory`。
+3. 人工审查源码、依赖、ABI、产物与Profile，再安装候选bundle；脚本不自动安装。
+4. V2真实VM正负例、mass/fee/预算校准；评审后才可设置对应的budgetProfileId。
+5. 网页构建与最小回归。网络实验另行授权。
 
-```bash
-node contracts/f3.2/tools/check-compile.mjs /absolute/path/to/silverc /absolute/path/to/new-output-directory
-```
-
-编译器构建受Rust/系统工具链影响；二进制SHA不一致时必须先复核差异，不自动放宽pin。即使重新编译成功，也不代表通过TxScript VM、真实节点acceptance或安全审计。此次GitHub整理只核对既有编译产物并重建网页，未重跑合约编译/VM。
-
-完整业务拓扑、25问、14材料、8项审查沿用[架构材料](../../docs/kaswin-v2/ARCHITECTURE.md)，生产安全与历史裁剪限制保持不变。
+只有编译成功不代表VM、最大目录或TN10 acceptance通过。[源码状态与验证计划](../../docs/kaswin-v2/V2-SOURCE-STATUS.md)优先于旧整理文档中的历史结论。

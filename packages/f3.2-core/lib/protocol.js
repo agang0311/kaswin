@@ -1,10 +1,10 @@
-/** Deterministic action preparation. Chain facts must come from the verified snapshot/provider. */
+/** Deterministic action preparation (V2, on-chain actions only; no networkGenesis). */
 import { ascii, cat, check, fromLe, hex, integer, le, unhex } from './bytes.js';
 import { blake2b256 } from './hashes.js';
 import { domainHash } from './blake3.js';
 import { p2pk } from './covenant-id.js';
 import * as S from './state.js';
-export const ACTIONS = { BUY: 1, CLOSE: 2, DRAW: 3, DRAW_AND_PAY: 4, ACCEPT: 5, ADVANCE_SAMPLE: 6, ACCEPT_AND_PAY: 7, PAY: 8, TIMEOUT_REFUND: 9, REFUND: 10 };
+export const ACTIONS = { BUY: 1, CLOSE: 2, DRAW_AND_PAY: 4, TIMEOUT_REFUND: 9, REFUND: 10 };
 const Z = new Uint8Array();
 function openingNumber(proof, offset) { const n = fromLe(proof.slice(offset, offset + 8)); check(n < 1n << 63n, 'PASS_A_INTEGER'); return n; }
 function openSeq(proof, base, parent) { const ctx = domainHash('SeqCommitMergesetContext', proof.slice(base + 64, base + 88)); const pc = domainHash('SeqCommitmentMerkleBranchHash', cat(ctx, proof.slice(base + 32, base + 64))); const root = domainHash('SeqCommitmentMerkleBranchHash', cat(proof.slice(base, base + 32), pc)); return domainHash('SeqCommitmentMerkleBranchHash', cat(parent, root)); }
@@ -23,13 +23,13 @@ export function authenticateDraw(x, s, proof, accessor) {
     const p = openSeq(proof, 152, proof.slice(120, 152)), t = openSeq(proof, 32, p);
     check(hex(t) === accessor.sequenceCommitment, 'PASS_A_COMMITMENT');
     const raw = S.encodeLedger(s), frozen = blake2b256(cat(raw.slice(8, 44), s.directory));
-    const seed = hex(blake2b256(cat(ascii('KASWIN_FOUR_DRAW_V1'), unhex(s.networkGenesis, 32), unhex(x.covenantId, 32), unhex(x.tip.transactionId, 32), le(BigInt(x.tip.index), 4), frozen, le(boundary, 8), proof.slice(0, 32), t)));
+    const seed = hex(blake2b256(cat(ascii('KASWIN_V2_DRAW'), unhex(x.covenantId, 32), unhex(x.tip.transactionId, 32), le(BigInt(x.tip.index), 4), frozen, le(boundary, 8), proof.slice(0, 32), t)));
     return { ...s, phase: S.Phase.DRAW_READY, anchorDaa: x.utxoDaa, anchorTxId: x.tip.transactionId, anchorIndex: x.tip.index, seed, targetHash: hex(proof.slice(0, 32)), targetSeq: hex(t) };
 }
 export function sample(s) {
     integer(s.sold, 3, S.MAX_TICKETS);
     integer(s.counter, 0, 0x7fffffff);
-    const digest = blake2b256(cat(ascii('KASWIN_FOUR_SAMPLE_V1'), unhex(s.seed, 32), le(BigInt(s.counter), 8)));
+    const digest = blake2b256(cat(ascii('KASWIN_V2_SAMPLE'), unhex(s.seed, 32), le(BigInt(s.counter), 8)));
     const value = fromLe(digest.slice(0, 7)), space = 1n << 56n, limit = space - space % BigInt(s.sold);
     return { value, limit, ticket: value < limit ? Number(value % BigInt(s.sold)) : null };
 }
@@ -49,14 +49,12 @@ export function availableActions(x, p) {
     if (s.phase === 5)
         return ['REFUND'];
     const a = [];
-    if (s.phase === 2 && x.currentDaa >= x.utxoDaa + S.DRAW_DELAY)
-        a.push('DRAW', 'DRAW_AND_PAY');
-    if (s.phase === 3)
-        a.push(...(sample(s).ticket === null ? ['ADVANCE_SAMPLE'] : ['ACCEPT', 'ACCEPT_AND_PAY']));
-    if (s.phase === 4)
-        a.push('PAY');
-    if (x.currentDaa >= timeoutDaa(x, s))
-        a.push('TIMEOUT_REFUND');
+    if (s.phase === 2) {
+        if (x.currentDaa >= x.utxoDaa + S.DRAW_DELAY)
+            a.push('DRAW_AND_PAY');
+        if (x.currentDaa >= timeoutDaa(x, s))
+            a.push('TIMEOUT_REFUND');
+    }
     return a;
 }
 /** The supplied network fee must later equal actual input-output difference. */
@@ -91,42 +89,18 @@ export function transition(x, p, op, fee, external = 0n) {
             }
             break;
         }
-        case 'DRAW':
         case 'DRAW_AND_PAY': {
             check(op.opening && op.accessor, 'DRAW_PROOF_MISSING');
             const drawn = authenticateDraw(x, s, op.opening, op.accessor);
             sequence = S.DRAW_DELAY;
-            if (op.action === 'DRAW') {
-                next = drawn;
-                data = op.opening;
-            }
-            else {
-                payout(acceptState(drawn));
-                data = cat(op.opening, data);
-            }
+            payout(acceptState(drawn));
+            data = cat(op.opening, data);
             break;
         }
-        case 'ACCEPT':
-            next = acceptState(s);
-            break;
-        case 'ADVANCE_SAMPLE':
-            check(sample(s).ticket === null, 'CANNOT_SKIP_ACCEPTED_SAMPLE');
-            check(s.counter < 0x7fffffff, 'COUNTER_EXHAUSTED');
-            next = { ...s, counter: s.counter + 1 };
-            break;
-        case 'ACCEPT_AND_PAY':
-            payout(acceptState(s));
-            break;
-        case 'PAY':
-            payout(s);
-            break;
         case 'TIMEOUT_REFUND': {
             const deadline = timeoutDaa(x, s);
             check(x.currentDaa >= deadline, 'TIMEOUT_EARLY');
-            if (s.phase === S.Phase.SEALED)
-                sequence = S.TIMEOUT_DELAY;
-            else
-                lockTime = deadline - 1n;
+            sequence = S.TIMEOUT_DELAY;
             next = { ...s, phase: S.Phase.REFUNDING, anchorDaa: deadline - S.TIMEOUT_DELAY };
             foreignTail = p.frames.refunding.tail;
             break;
@@ -151,7 +125,7 @@ export function transition(x, p, op, fee, external = 0n) {
             break;
         }
     }
-    const paidAction = ['PAY', 'DRAW_AND_PAY', 'ACCEPT_AND_PAY'].includes(op.action);
+    const paidAction = op.action === 'DRAW_AND_PAY';
     if (!paidAction && op.action !== 'REFUND') {
         check(external >= requiredExternal, 'INSUFFICIENT_FUNDING');
         if (external > requiredExternal)
@@ -161,12 +135,8 @@ export function transition(x, p, op, fee, external = 0n) {
         S.validateLedger(next);
     return { next, terminal, payments, data, lockTime, sequence, requiredExternal, foreignTail };
 }
-/** Script-unit envelopes (upper bounds) for input 0, fitted 2026-10-01 on 3,446 offline VM cases
- * (rusty-kaspa cfafeb4 TxScriptEngine via references/silverscript-v1.0.0 tests/f3_2_vm.rs):
- * every purchaseCount 0..256, every REFUND cursor, 1/8 funding inputs, prices up to the VALUE_LIMIT
- * cap, and DRAW_AND_PAY winners at record 0/1/last. Units are deterministic for identical inputs.
- * The 2026-09-30 constants (CLOSE 116, TIMEOUT_REFUND 31, REFUND 24+1.1k) UNDER-budgeted
- * TIMEOUT_REFUND (pc>=29), REFUND (pc>=33) and CLOSE->REFUNDING at 256 records. */
+/** Provisional sizing envelope only. V2 VM calibration is pending; the web build must
+ * bind a new budgetProfileId before release. Old measurements are NOT V2 evidence. */
 export function actionUnits(action, s) {
     const pc = s.purchaseCount;
     switch (action) {
@@ -183,8 +153,6 @@ export function actionUnits(action, s) {
             return 0;
     }
 }
-/** Consensus: allowed units = budget*10000 + 9999 free per input (consensus/core mass/units.rs).
- * BUDGET_MARGIN=3 extra units on top of the fitted envelope; each unit costs 100 grams (~0.0001 KAS at 1 sompi/gram). */
 export const BUDGET_MARGIN = 3, GENESIS_INPUT_BUDGET = 10, FUNDING_INPUT_BUDGET = 10;
 export function actionBudget(action, s) {
     if (action === 'GENESIS')

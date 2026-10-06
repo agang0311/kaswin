@@ -1,30 +1,17 @@
-// Optional offline compiler replay for the three F3.2 contracts. Never touches tracked files; no VM or network.
-//   node contracts/f3.2/tools/check-compile.mjs /absolute/path/to/silverc /absolute/path/to/new-output-directory
-import fs from 'node:fs/promises';
+// V2-only reproducibility check. RUN ONLY AFTER explicit compilation permission.
+// Rebuilds REFUNDING -> SEALED -> OPEN into a NEW candidate directory; never compiles zero placeholders directly.
+// node contracts/f3.2/tools/check-compile.mjs /absolute/silverc /absolute/new-bundle-directory
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
-import {parseCompiledFrame} from '../../../packages/f3.2-core/lib/artifacts.js';
-
+import {loadV2Bundle} from './linking.mjs';
 const [exe, dest] = process.argv.slice(2);
-if (!exe || !dest || !path.isAbsolute(exe) || !path.isAbsolute(dest)) throw Error('Usage: node check-compile.mjs /absolute/silverc /absolute/new-output-directory');
+if (!exe || !dest || process.argv.length !== 4 || !path.isAbsolute(exe) || !path.isAbsolute(dest)) throw Error('Usage: node check-compile.mjs /absolute/silverc /absolute/new-bundle-directory');
 const root = fileURLToPath(new URL('../', import.meta.url));
-const pins = JSON.parse(await fs.readFile(path.join(root, 'pins.json'), 'utf8'));
-const report = JSON.parse(await fs.readFile(path.join(root, 'artifacts/build-report.json'), 'utf8'));
-const sha = b => createHash('sha256').update(b).digest('hex');
-const exeSha = sha(await fs.readFile(exe));
-console.log(exeSha === report.compilerBinarySha256 ? `Compiler binary sha256 ${exeSha} equals the historical build.`
-  : `Note: compiler binary sha256 ${exeSha} differs from the historical ${report.compilerBinarySha256}; outputs must still be byte-identical.`);
-await fs.mkdir(dest); // Intentionally fails if the target already exists: never overwrite.
-for (const m of ['open', 'sealed', 'refunding']) {
-  const source = path.join(root, `src/${m}.sil`), output = path.join(dest, `${m}-linked.json`);
-  const log = execFileSync(exe, [source, '--constructor-args', path.join(root, `artifacts/${m}-linked.args.json`), '-o', output], {encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024});
-  await fs.writeFile(path.join(dest, `${m}.log`), log);
-  const json = await fs.readFile(output);
-  assert.equal(sha(json), pins.frames[m].artifactSha256, `${m}: compiled artifact differs from the pinned linked artifact`);
-  const f = parseCompiledFrame(m, JSON.parse(json.toString('utf8')), sha(await fs.readFile(source)));
-  assert.deepEqual({...f, tail: Buffer.from(f.tail).toString('hex')}, report.frames[m], `${m}: compiled frame differs from the historical report`);
-}
-console.log('PASS: three linked artifacts are byte-identical to the pinned files. Compilation only; no VM, network or audit claim.');
+const pinned = await loadV2Bundle(root); // Old F3.2 pins are not a V2 reproduction target.
+execFileSync(process.execPath, [fileURLToPath(new URL('./build-v2.mjs', import.meta.url)), exe, dest], {stdio: 'inherit', timeout: 600000});
+const rebuilt = await loadV2Bundle(dest);
+assert.equal(rebuilt.profile.id, pinned.profile.id, 'Rebuilt V2 Profile differs');
+assert.deepEqual(rebuilt.pins.frames, pinned.pins.frames, 'V2 source/constructor/artifact/template pins differ');
+console.log('PASS: V2 linked build matches local pins. Compilation only; no VM, budget, acceptance or publication claim.');

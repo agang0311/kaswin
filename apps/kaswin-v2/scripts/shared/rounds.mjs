@@ -12,7 +12,7 @@ import {spkToAddress} from './lib/address.mjs';
 const MAX_BODY = 4 * 1024 * 1024;
 
 /** Indexer endpoint. Any http(s) URL is accepted: the indexer is a discovery hint, never a source of value, and every
- * action re-verifies on two nodes. Plain http is fine for localhost/LAN/same-origin setups; the UI shows a warning
+ * action re-verifies on the configured node. Plain http is fine for localhost/LAN/same-origin setups; the UI shows a warning
  * when it would cross the public Internet (a network attacker could then hide rounds or feed bogus candidates —
  * which the node checks reject — but cannot redirect funds). Browsers still block http fetches from an https page
  * (mixed content); in that case serve the page over http too, or proxy the indexer under the page's origin. */
@@ -70,18 +70,16 @@ export async function roundDetail(base, cid, {signal} = {}) {
 
 /** Rebuild the consensus ledger bytes from an indexer detail (the ledger is then re-validated by the core library). */
 export function ledgerFromDetail(r, profile) {
-  ensure(r.contract === CONTRACT_TAG, `不是固定的 F3.2 Profile（${r.contract}）`);
+  ensure(r.contract === CONTRACT_TAG, `不是固定的 V2 Profile（${r.contract}）`);
   ensure(r.state && Array.isArray(r.purchases) && r.purchases.length <= S.MAX_PURCHASES, '索引详情缺少账本或购买目录');
   const st = r.state, c = st.config;
   let prev = 0;
   const dir = cat(...r.purchases.map(p => { ensure(Number.isInteger(p.end) && p.end > prev && p.count === p.end - prev, '购买目录不连续'); prev = p.end; return cat(le(BigInt(p.end), 4), unhex(hash32(p.key, '买家公钥'), 32)); }));
-  const s = {phase: st.phase, ownerKey: st.ownerKey, networkGenesis: st.networkGenesis, routes: st.routes,
+  const s = {phase: st.phase, ownerKey: st.ownerKey,
     config: {ticketPrice: uint(c.ticketPrice), ticketCap: c.ticketCap, purchaseCap: c.purchaseCap, minTickets: c.minTickets, closeEligibleDaa: uint(c.closeEligibleDaa)},
     sold: st.sold, purchaseCount: st.purchaseCount, cursor: st.cursor, anchorDaa: uint(st.anchorDaa), anchorTxId: st.anchorTxId, anchorIndex: st.anchorIndex,
     seed: st.seed, counter: st.counter, winnerPlusOne: st.winnerPlusOne, targetHash: st.targetHash, targetSeq: st.targetSeq, directory: dir};
   S.validateLedger(s);
-  ensure(s.networkGenesis === NETWORK_GENESIS, '账本网络不是 TN10');
-  for (const m of S.MODULES) ensure(s.routes[m] === profile.frames[m].templateHash, '账本模板路由与固定 Profile 不一致');
   return s;
 }
 
@@ -108,7 +106,7 @@ export async function liveRound(pair, base, profile, cid, currentDaa, local = nu
   }
   hash32(cand.origin?.transactionId, 'origin'); ensure(cand.accepting, '缺少接受块提示');
   const snapshot = {ledger: S.encodeLedger(cand.ledger), tip: cand.tip, origin: cand.origin, scriptPublicKey: cand.spk, covenantId: cid, value: cand.value, utxoDaa: cand.utxoDaa, currentDaa};
-  S.verifySnapshot(snapshot, profile); // template routes + genesis CID + P2SH + exact locked value
+  S.verifySnapshot(snapshot, profile); // pinned frame + canonical OPEN CID + P2SH + exact locked value
   const addr = spkToAddress(snapshot.scriptPublicKey);
   const live = await commonUtxos(pair, addr);
   const u = live.find(x => x.outpoint.transactionId === cand.tip.transactionId && x.outpoint.index === cand.tip.index);

@@ -16,7 +16,7 @@ import {frames as FRAMES} from '@kaswin/data';
 import {chooseLanguage, getLanguage, setLanguage, installLocalization, formatLocalTime, localTimeZone, text} from '../visual/i18n.mjs';
 
 /* ------------------------------------------------------------------ boot */
-const profile = makeProfile(NETWORK_GENESIS, Object.fromEntries(Object.entries(FRAMES).map(([m, f]) => [m, {...f, tail: unhex(f.tail)}])));
+const profile = makeProfile(Object.fromEntries(Object.entries(FRAMES).map(([m, f]) => [m, {...f, tail: unhex(f.tail)}])));
 if (profile.id !== PROFILE_ID) throw new Error('嵌入的合约帧与固定 Profile 不一致，页面拒绝运行');
 const $ = id => document.getElementById(id);
 const LS = {get(k, d) { try { const v = localStorage.getItem('kaswin-v2:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem('kaswin-v2:' + k, JSON.stringify(v)); } catch {} }};
@@ -130,7 +130,7 @@ async function mergedRows() {
   const rank = s => ({cache: 1, local: 2, live: 3})[s] ?? 0;
   const remembered = await catalog.list();
   state.cached = remembered.length;
-  for (const c of remembered) put(c.view ?? {cid: c.cid, contract: 'kaswin-f3@' + PROFILE_ID.slice(0, 16), indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: c.updatedAt}, 'cache');
+  for (const c of remembered) put(c.view ?? {cid: c.cid, contract: CONTRACT_TAG, indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: c.updatedAt}, 'cache');
   for (const cid of await localCids()) { const d = await localDetail(cid); if (d) put(d, 'local'); }
   for (const r of state.live ?? []) put(r, 'live');
   for (const r of map.values()) if (r.state && !state.details.has(r.cid)) state.details.set(r.cid, r);
@@ -282,7 +282,7 @@ function card(r) {
     <div class="row"><span class="badge t-muted">其他 Profile</span></div>
     <div class="mono dim small">CID ${shortHash(r.cid, 12, 8)}</div>
     <div class="small muted">合约 <span class="mono">${e(r.contract ?? '未知')}</span></div>
-    <div class="card-next">${r.terminal ? `索引报告：${e(({PAID: '已派奖', REFUNDED: '已退款', EMPTY: '空轮结束'})[r.terminal] ?? r.terminal)}` : '索引报告：进行中'} · 本页只支持固定 F3.2 Profile，不读取账本、不复验、不提供操作</div>
+    <div class="card-next">${r.terminal ? `索引报告：${e(({PAID: '已派奖', REFUNDED: '已退款', EMPTY: '空轮结束'})[r.terminal] ?? r.terminal)}` : '索引报告：进行中'} · 本页只支持固定 V2 Profile，不读取账本、不复验、不提供操作</div>
     <div class="src">${({live: '索引数据', local: '本机记录', cache: '本机缓存 · 非实时'})[r._src] ?? '来源待核对'} · ${timeHtml(r.updatedAt)}</div>
   </article>`;
   const p = phaseInfo(r), candidate = state.details.get(r.cid), d = candidate?.latestTxid === r.latestTxid ? candidate : null, st = d?.state, saved = state.saved.has(r.cid);
@@ -335,7 +335,7 @@ async function openRound(cid, {push = true} = {}) {
   } catch (err) { if (state.round?.cid === cid) { state.round.loading = false; state.round.error = errorText(err); render(); } }
 }
 /** Build a detail view from this browser's own accepted records (indexer not caught up yet). Values are re-verified
- * against both nodes before any action (liveRound), so this is only a display convenience. */
+ * against the configured active node before any action (liveRound), so this is only a display convenience. */
 async function localDetail(cid) {
   const tip = await engine.localTip(cid).catch(() => null);
   if (!tip) return null;
@@ -345,7 +345,7 @@ async function localDetail(cid) {
   const bytes = tip.nextLedger ?? previous?.nextLedger;
   if (!bytes) return null;
   const s = S.decodeLedger(unhex(bytes));
-  return {cid, genesisTxid: tip.genesisTxid, contract: 'kaswin-f3@' + PROFILE_ID.slice(0, 16), status: tip.terminal ? 'close' : 'open', phase: s.phase, terminal: tip.terminal, indexStatus: 'LOCAL', tip: tip.terminal ? null : {transactionId: tip.txid, index: 0},
+  return {cid, genesisTxid: tip.genesisTxid, contract: CONTRACT_TAG, status: tip.terminal ? 'close' : 'open', phase: s.phase, terminal: tip.terminal, indexStatus: 'LOCAL', tip: tip.terminal ? null : {transactionId: tip.txid, index: 0},
     value: tip.terminal ? '0' : String(tip.value), latestTxid: tip.txid, accepting: tip.accepting, utxoDaa: tip.terminal ? null : String(tip.utxoDaa), updatedAt: tip.at ?? Date.now(), origin: tip.origin, scriptPublicKey: tip.spk, _src: 'local',
     state: {...s, config: {...s.config, ticketPrice: s.config.ticketPrice.toString(), closeEligibleDaa: s.config.closeEligibleDaa.toString()}, anchorDaa: s.anchorDaa.toString()}, purchases: S.records(s)};
 }
@@ -360,7 +360,7 @@ function renderRound(v) {
   const R = state.round;
   if (!R) { v.innerHTML = `<div class="empty">没有选择轮次。<button class="link" data-back>返回广场</button></div>`; v.querySelector('[data-back]').onclick = () => go('explore'); return; }
   if (R.loading && !R.detail) { v.innerHTML = `<div class="panel">读取轮次 <span class="mono">${e(R.cid)}</span>…</div>`; return; }
-  if (R.error && !R.detail) { v.innerHTML = `<div class="panel"><div class="notice warn">${e(R.error)}</div><p class="muted">CID：<span class="mono">${e(R.cid)}</span>。${/不是固定的 F3.2 Profile/.test(R.error) ? '这是索引收录的其他（旧版）合约轮次；本页只支持固定 F3.2 Profile，不读取账本、不复验、不提供操作。' : '可在设置中切换 Indexer，或确认 CID 是否正确。'}</p><button class="btn" id="back">${icon('arrow')}返回</button></div>`; $('back').onclick = () => go('explore'); return; }
+  if (R.error && !R.detail) { v.innerHTML = `<div class="panel"><div class="notice warn">${e(R.error)}</div><p class="muted">CID：<span class="mono">${e(R.cid)}</span>。${/不是固定的 V2 Profile/.test(R.error) ? '这是索引收录的其他（旧版）合约轮次；本页只支持固定 V2 Profile，不读取账本、不复验、不提供操作。' : '可在设置中切换 Indexer，或确认 CID 是否正确。'}</p><button class="btn" id="back">${icon('arrow')}返回</button></div>`; $('back').onclick = () => go('explore'); return; }
   const d = R.detail, st = d.state, c = st.config, p = phaseInfo(d);
   let ledger = null, ledgerErr = null; try { ledger = ledgerFromDetail(d, profile); } catch (err) { ledgerErr = errorText(err); }
   const recs = ledger ? S.records(ledger) : [];
@@ -557,7 +557,7 @@ function actionsHtml(d, ledger) {
 }
 function replayHtml(x) {
   const lab = {STATE: '状态后继', WINNER: '中奖者', CREATOR: '创建者', EXECUTOR: '执行者', BUYER_REFUND: '买家退款', CHANGE: '找零', REGISTRY: 'Registry 登记'};
-  return `<div class="notice ok"><b>${e(ACTION_LABEL[x.action] ?? x.action)}</b> 已被选中链接受（接受块 DAA ${x.acceptingDaa}，确认深度约 ${x.confirmations}），${x.action === 'GENESIS' ? '创建公告、初始账本、模板路由、0.2 TKAS 状态输出与 Covenant ID 推导均与固定 Profile 一致。' : `全部 ${x.outputs.length} 个输出与固定合约规则重算结果逐字节一致。`}</div>
+  return `<div class="notice ok"><b>${e(ACTION_LABEL[x.action] ?? x.action)}</b> 已被选中链接受（接受块 DAA ${x.acceptingDaa}，确认深度约 ${x.confirmations}），${x.action === 'GENESIS' ? '创建公告、初始账本、固定 OPEN 模板、0.2 TKAS 状态输出与 Covenant ID 推导均与固定 Profile 一致。' : `全部 ${x.outputs.length} 个输出与固定合约规则重算结果逐字节一致。`}</div>
   ${x.winner ? `<div class="notice" style="border-color:var(--gold);background:var(--gold-soft)">🏆 中奖记录 #${x.winner.record + 1}（票 ${x.winner.firstTicket}–${x.winner.lastTicket}），奖金 <b>${kas(x.winner.prize)} TKAS</b> → ${hashHtml(pubkeyToAddress(x.winner.key), {link: explorerAddress(pubkeyToAddress(x.winner.key)), n: 12})}</div>` : ''}
   <div class="outs">${x.outputs.map((o, i) => `<div class="out"><span class="r">${i} · ${e(lab[o.role] ?? o.role)}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>
   <dl class="kv small" style="margin-top:8px"><dt>交易</dt><dd>${hashHtml(x.txid, {link: explorerTx(x.txid)})}</dd><dt>网络费</dt><dd>${kas(x.fee)} TKAS · compute mass ${x.computeMass ?? '—'} · budget ${x.budget}</dd>${x.draw ? `<dt>PASS-A 目标块</dt><dd>${hashHtml(x.draw.target, {link: explorerBlock(x.draw.target)})} · DAA ${x.draw.targetDaa} ≥ 边界 ${x.draw.boundaryDaa}；节点区块头的序列承诺与证明一致</dd>` : ''}</dl>`;
@@ -574,7 +574,7 @@ function prunedHint(err) {
 }
 async function verifyLatest(d) {
   const R = state.round; const box = $('verifyBox'); box.innerHTML = '<div class="notice">从节点取回已接受交易…</div>';
-  try { R.replay = await replayAccepted(pair, profile, d.latestTxid, d.accepting); R.replayError = null; }
+  try { R.replay = await replayAccepted(pair, profile, d.latestTxid, d.accepting, {origin: d.origin, cid: d.cid}); R.replayError = null; }
   catch (err) { R.replay = null; R.replayError = prunedHint(err) ?? `复验未完成：${errorText(err)}`; }
   if (state.round === R) render();
 }
@@ -776,7 +776,7 @@ function renderCreate(v) {
   v.querySelectorAll('input').forEach(i => i.addEventListener('input', preview));
   v.querySelectorAll('[data-dur]').forEach(b => b.onclick = () => { f.dur = b.dataset.dur; v.querySelectorAll('[data-dur]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('cCustom').hidden = f.dur !== 'custom'; preview(); });
   preview();
-  $('cExport').onclick = () => { try { const {cfg, minutes} = read(); download({kind: 'KASWIN_F32_UNSIGNED_CONFIGURATION', profileId: PROFILE_ID, network: 'testnet-10', durationMinutes: minutes, config: {...cfg, closeEligibleDaa: '（创建时由节点 DAA 计算）'}, note: '仅参数，不是交易'}, 'kaswin-config.json'); } catch (err) { $('cErr').textContent = errorText(err); } };
+  $('cExport').onclick = () => { try { const {cfg, minutes} = read(); download({kind: 'KASWIN_V2_UNSIGNED_CONFIGURATION', profileId: PROFILE_ID, network: 'testnet-10', durationMinutes: minutes, config: {...cfg, closeEligibleDaa: '（创建时由节点 DAA 计算）'}, note: '仅参数，不是交易'}, 'kaswin-config.json'); } catch (err) { $('cErr').textContent = errorText(err); } };
   $('cGo').onclick = async () => {
     try {
       const {cfg, minutes} = read();
@@ -794,7 +794,7 @@ function renderCreate(v) {
 /* ================================================================== MINE */
 async function renderMine(v) {
   v.innerHTML = `<div class="section-title"><div><span class="eyebrow">MY ACTIVITY</span><h2>我的交易与轮次</h2></div><button class="btn" id="checkAll">核对所有待确认交易</button></div>
-  <div class="notice small">这里是<b>当前站点、当前浏览器</b>保存的交易，不是钱包完整历史。同源 Opus / 使用相同记录库的 Gemini 记录可见；其他域名、端口或 Astra 不共享。核对只查询、不重发，也不会自动归档。提交超过 10 分钟、节点仍查不明时，会把<b>交易 ID</b>发给公共 REST 索引 <b>api-tn10.kaspa.org</b> 备查（对方可见你的 IP）。REST 给出的接受块会再交给节点复验：复验通过标为「已接受」；节点已裁剪该段历史标为「已接受 · REST」；节点与 REST 矛盾则以节点为准，保持未知。</div>
+  <div class="notice small">这里是<b>当前站点、当前浏览器</b>保存的当前 Profile 交易，不是钱包完整历史。其他 Profile 的记录不会迁移或在此对账，但同网络、同记录库中的未释放输入仍会阻止重复使用；请用对应版本处理原记录。其他域名、端口或记录库不共享此保护。核对只查询、不重发，也不会自动归档。提交超过 10 分钟、节点仍查不明时，会把<b>交易 ID</b>发给公共 REST 索引 <b>api-tn10.kaspa.org</b> 备查（对方可见你的 IP）。REST 给出的接受块会再交给节点复验：复验通过标为「已接受」；节点已裁剪该段历史标为「已接受 · REST」；节点与 REST 矛盾则以节点为准，保持未知。</div>
   <div class="panel"><div id="mineSummary"></div><div id="mineList">读取中…</div><p id="checkProgress" class="small muted"></p></div>
   <div class="panel"><h3>我参与的轮次（已读取详情的范围内）</h3><p id="mineRoundsNote" class="small muted"></p><div id="mineRounds" class="grid"></div></div>`;
   try {

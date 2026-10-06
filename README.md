@@ -2,6 +2,8 @@
 
 任何人可创建、规则与资金流向可由链上证据核验的 Kaspa 抽奖协议与单网页应用。
 
+> **2026-10-06：V2源码候选，未编译/测试/发布。** 当前源码已改为228B、8/6 ABI及固定前向模板哈希；旧lib/artifacts/pins/release尚未重建。不要运行下方历史命令或把历史通过数当作本轮结果。当前状态、架构差异和获准后的验证顺序见 [V2-SOURCE-STATUS](docs/kaswin-v2/V2-SOURCE-STATUS.md)。
+
 ---
 
 ## 目录分层架构
@@ -55,7 +57,7 @@
 
 ---
 
-## 快速构建与验证
+## 历史构建流程（当前暂停，先阅读V2门槛）
 
 本项目无需从网络下载任何运行时 SDK、字体或 CDN 库，构建与核心核验完全离线进行：
 
@@ -69,10 +71,9 @@ npm --prefix apps/kaswin-v2 run check:core
 # 3. 构建发布单文件 HTML
 npm --prefix apps/kaswin-v2 run build
 
-# 4. 证明分层源码与 2026-10-05 线上交付版本完全同源（逐字节重现 ab90da23...）
-npm --prefix apps/kaswin-v2 run verify:deployed
+# 4. 旧部署复现只属于历史源码版本；当前已移除 verify:deployed
 
-# 5. 运行全部单元测试（50 项单测通过）
+# 5. 获准后运行单元测试；历史50项结果不是当前V2结果
 npm --prefix apps/kaswin-v2 test
 ```
 

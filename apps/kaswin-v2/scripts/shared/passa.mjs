@@ -1,4 +1,4 @@
-/** PASS-A draw proof (F3.2 SEALED -> DRAW_AND_PAY), built with the audited core acquirePassA() over JSON wRPC from the
+/** PASS-A draw proof (V2 SEALED -> DRAW_AND_PAY), built with the pinned core acquirePassA() over JSON wRPC from the
  * configured node. The proof is self-checking (SMT lane proof + header sequencing commitments), and at spend time
  * every node re-checks it on-chain with OpChainblockSeqCommit, so a wrong proof cannot produce a valid payout; it would
  * only make the transaction fail. The winner is predicted with the same transition the contract enforces

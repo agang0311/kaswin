@@ -13,12 +13,11 @@ export interface Store {
         record: Stored<T>;
     }>>;
 }
-export function namespace(networkGenesis: string, profile: string, genesisTxId?: string): string {
-    unhex(networkGenesis, 32);
+export function namespace(profile: string, genesisTxId?: string): string {
     unhex(profile, 32);
     if (genesisTxId !== undefined)
         unhex(genesisTxId, 32);
-    return [networkGenesis, profile, genesisTxId ?? ''].join('/') + '/';
+    return [profile, genesisTxId ?? ''].join('/') + '/';
 }
 export class IndexedStore implements Store {
     private constructor(private db: IDBDatabase) { }

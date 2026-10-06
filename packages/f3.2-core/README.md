@@ -1,4 +1,6 @@
-# F3.2 链外核心库
+# V2 链外核心源码（目录暂保留 f3.2-core）
+
+**源码候选，未编译或测试。** `src/`已改为V2，`lib/`仍是旧生成物，不能混用或手改补齐。[当前状态](../../docs/kaswin-v2/V2-SOURCE-STATUS.md)优先；以下命令须等待编译/测试授权。
 
 这是 V2 **实际使用的13个模块的依赖闭包**，不是链上合约、完整通用SDK或钱包。`src/*.ts` 为源码，`lib/*.js`（及类型/映射）为 TypeScript 5.8.3 生成文件。
 
@@ -18,4 +20,4 @@ npm --prefix apps/kaswin-v2 ci --ignore-scripts
 npm --prefix apps/kaswin-v2 run check:core
 ```
 
-检查器在内存中用固定TypeScript编译并逐字节核对提交的JS，拒绝源码/产物漂移。新增核心逻辑须重新审查合约/客户端一致性，不直接编辑`lib`。本次没有升级协议或修改这些源码的行为。
+检查器在内存中用固定TypeScript编译并逐字节核对提交的JS，拒绝源码/产物漂移。新增核心逻辑须重新审查合约/客户端一致性，不直接编辑`lib`。本次协议身份与ABI已变更：`newOpen(owner, config)`、`makeProfile(frames)`，Header228B；生成物须获准后统一重建。

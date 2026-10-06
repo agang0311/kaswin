@@ -1,4 +1,5 @@
-/** Kaswin Opus core: pinned F3.2 constants and re-exports of the audited core package (no new protocol logic here). */
+/** Kaswin V2 constants and core exports. Build pins are local, never supplied by an indexer. */
+import pins from '../../../../contracts/f3.2/pins.json' with {type: 'json'};
 export {hex, unhex, cat, le, fromLe, ascii, stable, check, kasToSompi, sompiToKas, same} from '../../../../packages/f3.2-core/lib/bytes.js';
 export * as S from '../../../../packages/f3.2-core/lib/state.js';
 export {transition, availableActions, sample, authenticateDraw, winnerRecord, timeoutDaa, actionBudget, actionUnits, ACTIONS, BUDGET_MARGIN} from '../../../../packages/f3.2-core/lib/protocol.js';
@@ -11,12 +12,12 @@ export {blake2b256} from '../../../../packages/f3.2-core/lib/hashes.js';
 export {DEFAULT_REGISTRY_SPK, DEFAULT_REGISTRY_ADDRESS, REGISTRATION_SOMPI} from '../../../../packages/f3.2-core/lib/registry.js';
 export {IndexedStore} from '../../../../packages/f3.2-core/lib/persistence.js';
 
-export const PROFILE_ID = '7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863';
+export const PROFILE_ID = pins.profileId; // generated only after REFUNDING -> SEALED -> OPEN linking
 export const NETWORK_GENESIS = 'f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370';
 export const NETWORK_ID = 'testnet-10';
 export const ADDRESS_PREFIX = 'kaspatest';
 export const KASWARE_NETWORK = 'kaspa_testnet_10';
-export const CONTRACT_TAG = 'kaswin-f3@' + PROFILE_ID.slice(0, 16);
+export const CONTRACT_TAG = 'kaswin-v2@' + PROFILE_ID.slice(0, 16);
 export const EXPLORER = 'https://tn10.kaspa.stream';
 /** rusty-kaspa cfafeb4 TESTNET_PARAMS: 10 blocks/s target; DAA score advances ~10/s. Approximation for UI timing only. */
 export const DAA_PER_SECOND = 10;

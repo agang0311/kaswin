@@ -1,5 +1,5 @@
 import { check, unhex } from './bytes.js';
-/** F3.1 client/indexer policy, NOT a change to the F3 covenant profile. */
+/** Optional ordinary registration payment: client/indexer policy, never covenant authorization. */
 export const DEFAULT_REGISTRY_ADDRESS = 'kaspatest:qztrjpfpuf6g9jw76e6ay909z43hndpv5maqkker6ur4enz7llarsh82ezggl';
 export const REGISTRATION_SOMPI = 5000000n;
 // Decoded from the above address using pinned official kaspa-wasm 2.0.1

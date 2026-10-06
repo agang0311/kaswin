@@ -1,4 +1,16 @@
-# Kaswin V2 应用增量 Preflight
+# Kaswin V2 架构入口
+
+## 2026-10-06 V2协议源码候选（优先于下方历史应用增量）
+
+当前源码采用228B Header、OPEN 8参数/后继6参数、REFUNDING→SEALED→OPEN固定哈希、仅OPEN链上checkRoot。`networkGenesis/routes/genesisTail`不再是账本/ABI字段；本地网络隔离仍存在。完整获批25问/14材料/8反模式保存在工作空间 `/root/kaspa/docs/kaswin/chained-hash-open-preflight.zh.md`；当前实现边界与测试计划见 [V2-SOURCE-STATUS](V2-SOURCE-STATUS.md)。不是下方旧Profile规则的兼容扩展。
+
+本次消费者增量逐项预检：Q1–16、18–20、22–25沿用已批准V2设计；Q17同网络同库的输入占用横跨Profile，但协议解释与对账仍按Profile隔离；Q21独立V2插件只消费本地pins、保存origin/CID、拒绝错ABI/输出。14项材料1–10、13沿用获批V2；11补V2 adapter和API/SQL分类，12补跨Profile占用范围，14逐项检查：无全局链上state、无仅签名信任、无仅CID信任、Indexer非裁判、无EVM式状态、无新增共享UTXO、退出不变、完整模板/SPK/lineage不退化。
+
+关键边界未被隐藏：origin缺失拒绝；UNKNOWN不释放；旧记录不迁移；旧插件不改绑；资源预算/256上限尚未验证，发布BLOCKED。当前仅S，无任何新执行证据。
+
+## 历史：2026-10-04网页V2 / F3.2应用增量
+
+以下保留当时记录，其中旧Profile、routes和networkGenesis不是当前V2规范。
 
 日期：2026-10-04；范围：独立单文件 UI、信息呈现、只读对账游标修复。用户要求：操作简便、功能明确、信息透明。状态：本应用增量可实施；生产合约发布、协议变更、历史裁剪后的降级交易路径仍 BLOCKED。本文件不解除旧 DRAFT/BLOCKED 协议材料。
 

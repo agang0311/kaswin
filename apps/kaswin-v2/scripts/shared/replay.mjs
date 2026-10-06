@@ -1,6 +1,7 @@
-/** Independent replay of an ACCEPTED Kaswin F3.2 state transition.
- * From the accepted transaction (fetched from the configured node) we read the witness of input 0 (ABI order of builders.witness):
- *   action, originTxId, originIndex, tailBytes, genesisTail, nextTail, data, actorPk, fee, dispatchTag, redeemScript
+/** Independent replay of an ACCEPTED Kaswin V2 state transition.
+ * OPEN: action, originTxId, originIndex, tailBytes, nextTail, data, actorPk, fee, dispatchTag, redeemScript.
+ * SEALED/REFUNDING: action, tailBytes, nextTail, data, actorPk, fee, dispatchTag, redeemScript.
+ * Non-OPEN origin is an external candidate, authenticated by canonical OPEN CID recomputation; never zero-filled.
  * The redeem script contains the spent ledger. We rebuild the spent snapshot, re-run the fixed core transition()
  * and require the actual outputs to equal the recomputed ones exactly. Acceptance already means the node executed
  * the covenant; the replay explains WHAT happened (winner, refunds, successor) without trusting the indexer.
@@ -10,6 +11,7 @@ import {acceptedPair} from './chain.mjs';
 import {parseSpk} from './nodes.mjs';
 import {domainHash} from '../../../../packages/f3.2-core/lib/blake3.js';
 import {verifyGenesisAnnouncement} from '../../../../packages/f3.2-core/lib/genesis-discovery.js';
+import {witness} from '../../../../packages/f3.2-core/lib/builders.js';
 import {DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI} from './core.mjs';
 
 const ACTION_BY_ID = Object.fromEntries(Object.entries(ACTIONS).map(([k, v]) => [v, k]));
@@ -22,9 +24,11 @@ export function scriptPushes(bytes) {
     if (op === 0x00) { out.push(new Uint8Array()); continue; }
     if (op >= 0x51 && op <= 0x60) { out.push(new Uint8Array([op - 0x50])); continue; }
     if (op <= 75) n = op;
-    else if (op === 0x4c) { n = bytes[i]; i += 1; }
-    else if (op === 0x4d) { n = bytes[i] | bytes[i + 1] << 8; i += 2; }
-    else if (op === 0x4e) { n = (bytes[i] | bytes[i + 1] << 8 | bytes[i + 2] << 16) + bytes[i + 3] * 16777216; i += 4; }
+    else if (op >= 0x4c && op <= 0x4e) {
+      const width = op === 0x4c ? 1 : op === 0x4d ? 2 : 4;
+      ensure(i + width <= bytes.length, '见证 push 长度字段截断');
+      n = 0; for (let j = 0; j < width; j++) n += bytes[i++] * 2 ** (8 * j);
+    }
     else throw new Error(`见证脚本含非 push 操作码 0x${op.toString(16)}`);
     ensure(i + n <= bytes.length, '见证脚本截断');
     out.push(bytes.slice(i, i + n)); i += n;
@@ -43,29 +47,41 @@ const openSeq = (opening, base, parent) => {
 };
 export const targetSeqOf = opening => hex(openSeq(opening, 32, openSeq(opening, 152, opening.slice(120, 152))));
 
-export async function replayAccepted(pair, profile, txid, accepting) {
+export async function replayAccepted(pair, profile, txid, accepting, context = {}) {
   const ev = await acceptedPair(pair, txid, accepting);
   const tx = ev.tx, in0 = ev.inputs[0];
-  if (!in0?.covenantId) return replayGenesis(profile, ev);
+  if (!in0?.covenantId) {
+    const genesis = replayGenesis(profile, ev);
+    ensure(context.cid === undefined || context.cid === genesis.cid, '接受交易不属于所选轮次');
+    if (context.origin) ensure(stable(context.origin) === stable(tx.inputs[0].previousOutpoint), '见证 origin 与轮次资料不一致');
+    return genesis;
+  }
   const pushes = scriptPushes(unhex(tx.inputs[0].signatureScript));
-  ensure(pushes.length === 11, `见证字段数量不是 11（${pushes.length}）`);
-  const action = ACTION_BY_ID[Number(scriptNum(pushes[0]))];
-  ensure(action, '未知动作编号');
-  const redeem = pushes[10];
+  const redeem = pushes[pushes.length - 1];
+  ensure(redeem && redeem[0] === 0x6b, '赎回脚本格式');
   // Redeem script = 0x6b || push(ledger) || tail; the tail is one of the three pinned frames.
   const module = S.MODULES.find(m => { const t = profile.frames[m].tail; return redeem.length > t.length && hex(redeem.slice(redeem.length - t.length)) === hex(t); });
   ensure(module, '赎回脚本尾部不是固定 Profile 的任何模板');
-  ensure(redeem[0] === 0x6b, '赎回脚本格式');
+  const expectedPushes = module === 'open' ? 10 : 8;
+  ensure(pushes.length === expectedPushes, `见证字段数量不是 ${expectedPushes}（${pushes.length}）`);
+  const action = ACTION_BY_ID[Number(scriptNum(pushes[0]))];
+  ensure(action, '未知动作编号');
   const ledger = scriptPushes(redeem.slice(1, redeem.length - profile.frames[module].tail.length))[0];
   const spent = S.decodeLedger(ledger);
-  const origin = {transactionId: hex(pushes[1]), index: Number(scriptNum(pushes[2]))};
+  const origin = module === 'open' ? {transactionId: hex(pushes[1]), index: Number(scriptNum(pushes[2]))} : context.origin;
+  ensure(origin, '复验缺少 OPEN 创世 origin，不能以零值或跳过根认证替代');
+  ensure(context.cid === undefined || context.cid === in0.covenantId, '接受交易不属于所选轮次');
+  if (module === 'open' && context.origin) ensure(stable(origin) === stable(context.origin), '见证 origin 与轮次资料不一致');
   const snapshot = {ledger, tip: tx.inputs[0].previousOutpoint, origin, scriptPublicKey: parseSpk(in0.spk), covenantId: in0.covenantId, value: in0.value, utxoDaa: in0.daa, currentDaa: ev.acceptingDaa};
-  S.verifySnapshot(snapshot, profile); // same template routes, same genesis CID, same P2SH, exact locked value
-  const actorKey = hex(pushes[7]), fee = scriptNum(pushes[8]), data = pushes[6];
+  S.verifySnapshot(snapshot, profile); // includes canonical OPEN CID for EVERY phase
+  ensure(module === S.phaseModule(spent.phase), '账本阶段与见证模板不一致');
+  const actorKey = hex(module === 'open' ? pushes[6] : pushes[4]);
+  const fee = scriptNum(module === 'open' ? pushes[7] : pushes[5]);
+  const data = module === 'open' ? pushes[5] : pushes[3];
   const op = {action, actorKey};
   let draw = null;
   if (action === 'BUY') op.quantity = Number(data[0] | data[1] << 8 | data[2] << 16) + data[3] * 16777216;
-  if (action === 'DRAW_AND_PAY' || action === 'DRAW') {
+  if (action === 'DRAW_AND_PAY') {
     const opening = data.slice(0, 240), seq = targetSeqOf(opening), target = hex(opening.slice(0, 32));
     op.opening = opening; op.accessor = {blockHash: target, sequenceCommitment: seq};
     // Display-only cross-check: the node's header of T carries the same sequencing commitment as the opening.
@@ -78,6 +94,7 @@ export async function replayAccepted(pair, profile, txid, accepting) {
   }
   const external = ev.inputs.slice(1).reduce((a, u) => a + (u?.value ?? 0n), 0n);
   const t = transition(snapshot, profile, op, fee, external);
+  ensure(witness(snapshot, profile, op, t, fee) === tx.inputs[0].signatureScript, '见证与 V2 ABI / 数据 / 模板重算不一致');
   // Expected outputs exactly as builders.buildAction would produce them.
   const expected = [];
   if (t.next) expected.push({value: S.valueOf(t.next), scriptPublicKey: p2sh(hex(blake2b256(S.scriptOf(t.next, profile)))), covenant: {covenantId: snapshot.covenantId, authorizingInput: 0}, role: 'STATE'});
@@ -106,7 +123,7 @@ export async function replayAccepted(pair, profile, txid, accepting) {
     outputs: expected.map((e, i) => ({...e, value: tx.outputs[i].value})), draw, winner, computeMass: ev.computeMass, storageMass: tx.storageMass, budget: tx.inputs[0].computeBudget};
 }
 
-/** GENESIS: no covenant input. Verify the KASWIN_F3_GENESIS payload, canonical initial ledger, template routes,
+/** GENESIS: no covenant input. Verify the KASWIN_GENESIS_V2 payload, canonical initial ledger, pinned OPEN template,
  * output 0 (0.2 TKAS, P2SH of the OPEN script, CID derived from input 0's outpoint) and the optional Registry output. */
 function replayGenesis(profile, ev) {
   const tx = ev.tx, o0 = tx.outputs[0];

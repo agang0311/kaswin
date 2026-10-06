@@ -1,25 +1,42 @@
 {
-  "profileId": "7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863",
+  "protocolVersion": 2,
+  "profileId": "206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3",
   "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
   "compilerCommit": "3ed973335b59269293564805cc2c58a14595ec03",
+  "compilerBinarySha256": "81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00",
+  "budgetProfileId": "206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3",
   "frames": {
-    "open": {
-      "sourceSha256": "d535e6956f5171288bb193fdf4f9cdc8ae2c13b35341d967d8c25e78b4ec70d4",
-      "artifactSha256": "a7586c99d6fe3482ecf6757748fd4b6fca9eac79b942f39a0dd5036c1661d2d4",
-      "templateHash": "f8181e6021fbaafbd8e4fa7607edcf31b854f1f4628cb0ecacad976ca09d6d3a",
-      "tailBytes": 3384
+    "refunding": {
+      "templateSourceSha256": "f0cc1c6956fa1c4019e0bcf865b0348367ecc1a44d23174a72fa329cd589c5af",
+      "sourceSha256": "f0cc1c6956fa1c4019e0bcf865b0348367ecc1a44d23174a72fa329cd589c5af",
+      "artifactSha256": "d256d07e592104a0e27962526b958e91e6e7a793fb65688f852b4e79a0330aa8",
+      "constructorArgsSha256": "831643e4f9c845a62d198b8dddb062a355551617e3c8dceb05745300ebcada5b",
+      "templateHash": "8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6",
+      "tailBytes": 7229,
+      "dependencies": {}
     },
     "sealed": {
-      "sourceSha256": "a522496ab7e5b5ff40c963cd93eae136c2a732477e15395194d0470f94167d91",
-      "artifactSha256": "d8ca9722baea53d315b50fce91ad1d6a1aed4dd6cd13542a130922b9b1db8395",
-      "templateHash": "d3b264c1172622613a26c10f0d934399e29561c870252eaabb82c333116dfe7c",
-      "tailBytes": 4830
+      "templateSourceSha256": "3deacf2464fd918a886a8d95c0111cc1179fe8c147d86b5276d7e5f350c6621d",
+      "sourceSha256": "b89d116409da7b3b9099eccbb6e449fed59b38f271b0bbbf27b87c57662e153d",
+      "artifactSha256": "042f25a200aea9c6851a804f7956e2a3fbe614dff50e6977b7af3d52547c2984",
+      "constructorArgsSha256": "35b49acfb5fd29c81de3407b86414ee8566dae84347e65e5b9a0028e91c8b744",
+      "templateHash": "ba2f1118738c0c9b0a0d9c4adcfedffacace8f075984912fe7df1bd15aedc546",
+      "tailBytes": 3937,
+      "dependencies": {
+        "refunding": "8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6"
+      }
     },
-    "refunding": {
-      "sourceSha256": "467c8c91f1259414843f6aedc2d450b2a705fd154a8d2af76824aa5cd74f0e3a",
-      "artifactSha256": "efbac741d0f6e8fde31415158a11bf1795907a5b81e72d3f062681b5c2979e14",
-      "templateHash": "715945960dbe95909b5dff9e404ed4e3426faa63236677ea754a6cd391c84483",
-      "tailBytes": 8072
+    "open": {
+      "templateSourceSha256": "9130306157269cbfebf75e8f51c74826cbf9cd393e2b19d731c8ffb8f3b2e3ee",
+      "sourceSha256": "765eb7492677c8f53b67b7db49f57bb042d4645a136f2fa3c80575a09a7619ac",
+      "artifactSha256": "51efd7ddab66716a20bc682f6f64a3d8d8613d9d11401a1f22b80f92875e7fdf",
+      "constructorArgsSha256": "696b0f17e36a8670c849465b48fe10ad619d01b3f1768bedbc6c18d4e5616ffd",
+      "templateHash": "09e1a6aea947b3cf5cda353ef822f45180df5fa2cf0f4b5fdafd4f759c67547e",
+      "tailBytes": 3224,
+      "dependencies": {
+        "sealed": "ba2f1118738c0c9b0a0d9c4adcfedffacace8f075984912fe7df1bd15aedc546",
+        "refunding": "8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6"
+      }
     }
   }
 }

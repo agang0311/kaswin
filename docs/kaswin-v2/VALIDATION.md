@@ -1,5 +1,41 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+## 2026-10-06 V2 三流程执行测试（正常开奖派奖、零买退款、不达最低票数退款；超时退款未测）
+
+- 用户明确授权执行测试，同时明确指令：“派奖超时退款不要测”。
+- 真实构建产生：
+  - TypeScript 5.8.3 编译核心库，`check-core.mjs` 验证通过。
+  - silverc 固定二进制逆拓扑编译生成 V2 Profile：`206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3`。
+  - `check-compile.mjs` 离线重编逐字节一致。
+- **Level L（本地模拟链与重放）**：
+  - `apps/kaswin-v2/test/user-flows.test.mjs`：3 项流程全部 PASS。
+  - 1. 正常开奖派奖：GENESIS -> BUY 3 -> CLOSE (SEALED) -> DRAW_AND_PAY (PAID 终局)，赢家/押金/赏金三输出校验无误，reconcile ACCEPTED，`replayAccepted` 独立重放通过。
+  - 2. 零买退款：GENESIS -> 0 票 -> 截盘 CLOSE (EMPTY 终局)，押金 0.2 TKAS 原路退回创建者，reconcile ACCEPTED，`replayAccepted` 独立重放通过。
+  - 3. 不达最低票数退款：GENESIS (min 5) -> BUY 2 -> 截盘 CLOSE (进入 REFUNDING) -> REFUND (REFUNDED 终局)，买家退款、押金返还及执行者补贴校验无误，reconcile ACCEPTED，`replayAccepted` 独立重放通过。
+  - 4. 派奖超时退款：严格遵守指令，未运行任何测试。
+- **Level V（真实 Kaspa TxScriptEngine 虚拟机）**：
+  - 运行 `silverscript-lang/tests/v2_user_flows_vm.rs`：
+    - `DRAW_AND_PAY_NORMAL_WINNER`：`true` (115,829 units)
+    - `CLOSE_EMPTY_DEPOSIT_RETURN`：`true` (90,733 units)
+    - `CLOSE_SUB_MINIMUM_TO_REFUNDING`：`true` (211,018 units)
+    - `REFUND_SUB_MINIMUM_TERMINAL`：`true` (107,321 units)
+    - 派奖超时退款：未运行。
+- **Level N（真实 Testnet 10 链上实验，11/11 交易全部 selected chain accepted）**：
+  - 用户指令：“链上测试”。专用测试钱包，单笔费用均 ≤ 0.023 TKAS（远低于 0.5 TKAS 上限）。
+  - 连接节点：`wss://tn10.kaspay.top/wrpc`。
+  - 1. **零买退款全流程**：GENESIS (`15237815...`) -> 等待截盘 -> CLOSE_EMPTY (`6b1d0799...`) -> 终局 EMPTY，0.2 TKAS 押金原路全额退还。
+  - 2. **不达最低票数退款全流程**：GENESIS (`9e1f94a0...`) -> BUY 1 (`90929ef0...`) -> 等待截盘 -> CLOSE_TO_REFUNDING (`0da1d715...`) -> REFUND_TERMINAL (`f6dc65dd...`) -> 终局 REFUNDED，买家退款 0.99 TKAS，创建者退押金 0.2 TKAS。
+  - 3. **正常开奖派奖全流程**：GENESIS (`72dc6763...`) -> BUY 2 (`a419cb29...`) -> BUY 1 (`d192d959...`) -> 满票 CLOSE_TO_SEALED (`68d73f24...`) -> 封存等待 100 DAA -> 节点采集真实 PASS-A 证明 -> DRAW_AND_PAY (`dd850362...`) -> 终局 PAID，发放赢家奖金 1.990318 TKAS、退创建者押金 0.2 TKAS、发放执行者赏金 1.0 TKAS。
+  - 4. **派奖超时退款（TIMEOUT_REFUND）**：严格排除，**未在链上运行**。
+  - 证据落盘：`/root/kaswin/research/tn10/v2-live-experiment-evidence.json`。
+- **Level N 边界**：仅限 Testnet 10 专用测试钱包，禁止主网。
+
+## 2026-10-06 V2源码修复：仅S，未执行
+
+当前修复见 [V2-SOURCE-STATUS](V2-SOURCE-STATUS.md)。只完成源码编辑与人工阅读：228B/8与6参数、逆拓扑链接、origin认证、跨Profile输入占用、独立Indexer、测试与工具入口修订。未编译、未运行单测/VM/浏览器/SDK/check-links，未访问网络、签名广播、提交或发布。旧3446例预算与f256开奖不能转作新Profile证据。
+
+本轮等级采用S=源码、L=本地编译/模拟、V=VM、N=网络；只有S。下方旧报告的R与N是历史自定义分类，特别是旧N表示未验证项，**不是本轮网络证据**。下方通过数、产物哈希和旧复现命令均属于当时快照；当前 `verify:deployed` 已移除，不能据此声称V2同源或通过。
+
 日期：2026-10-05。记录分层重构后的实际验证范围、执行命令、输出哈希与不可逾越的边界。本记录遵循最小必要测试原则，严格区分离线模拟、只读公网复验、已部署产物回读与未验证项，不将模拟通过伪称为真实链上或安全审计通过。
 
 ---

@@ -1,4 +1,4 @@
-/** Kaswin Opus operation engine: GENESIS / BUY / CLOSE / DRAW_AND_PAY / TIMEOUT_REFUND / REFUND.
+/** Kaswin V2 operation engine: GENESIS / BUY / CLOSE / DRAW_AND_PAY / TIMEOUT_REFUND / REFUND.
  * plan():   live snapshot from the configured node -> core builder -> consensus mass -> fee fixed point -> frozen plan.
  * execute(): user approval -> recheck session + inputs on the node -> wallet signs ordinary inputs only ->
  *            signatures verified -> intent persisted in IndexedDB -> ONE submit -> record outcome.
@@ -13,12 +13,13 @@ import {txToRpc} from './nodes.mjs';
 import {spkToAddress} from './lib/address.mjs';
 import {acquireDrawProof} from './passa.mjs';
 import {liveRound} from './rounds.mjs';
+import {reservedInputs} from './reservations.mjs';
 
 export const STORE = 'kaswin-opus-f32';
 const PREFIX = `${NETWORK_GENESIS}/${PROFILE_ID}/tx/`;
 const PLAN_TTL_MS = 90_000;
 export const ACTION_LABEL = {GENESIS: '创建轮次', BUY: '购买', CLOSE: '封盘', DRAW_AND_PAY: '开奖并派奖', TIMEOUT_REFUND: '超时转退款', REFUND: '退款批次'};
-const ROLE_LABEL = {WINNER: '中奖者奖金', CREATOR: '创建者押金返还', EXECUTOR: '执行者', BUYER_REFUND: '买家退款', CHANGE: '找零', STATE: '轮次状态（covenant 后继）', REGISTRY: 'Registry 登记', BEACON: '信标'};
+const ROLE_LABEL = {WINNER: '中奖者奖金', CREATOR: '创建者押金返还', EXECUTOR: '执行者', BUYER_REFUND: '买家退款', CHANGE: '找零', STATE: '轮次状态（covenant 后继）', REGISTRY: 'Registry 登记'};
 const key = o => `${o.transactionId}:${o.index}`;
 // crypto.randomUUID / navigator.locks are secure-context only; plain-http LAN pages need fallbacks.
 const planId = () => { const b = new Uint8Array(16); crypto.getRandomValues(b); return Array.from(b, x => x.toString(16).padStart(2, '0')).join(''); };
@@ -39,8 +40,8 @@ export function leaseLocks(openStore, ttlMs = 120_000) {
 }
 
 export class Engine {
-  constructor({pair, profile, indexer, onStatus = () => {}, openStore = () => IndexedStore.open(STORE), locks = null}) {
-    Object.assign(this, {pair, profile, indexer, onStatus, openStore}); this.plans = new Map(); this.storeP = null;
+  constructor({pair, profile, indexer, onStatus = () => {}, openStore = () => IndexedStore.open(STORE), locks = null, drawProof = acquireDrawProof}) {
+    Object.assign(this, {pair, profile, indexer, onStatus, openStore, drawProof}); this.plans = new Map(); this.storeP = null;
     this.locks = locks ?? globalThis.navigator?.locks ?? leaseLocks(() => this.store());
   }
   store() { return this.storeP ??= this.openStore(); }
@@ -56,7 +57,8 @@ export class Engine {
     await store.compareAndSet('lock/kaswin-opus-submit', cur.revision, {owner: null, until: 0});
     return {released: true};
   }
-  async reserved() { return new Set((await this.records()).filter(r => !['REJECTED', 'ARCHIVED'].includes(r.status)).flatMap(r => r.inputs.map(key))); }
+  // Other Profiles contribute only outpoint reservations, never ledger/ABI or reconciliation context.
+  async reserved() { return reservedInputs(await this.store(), NETWORK_GENESIS); }
   /** Newest locally-known ACCEPTED state of a round (lets the creator/buyer continue before the indexer catches up). */
   async localTip(cid) {
     const recs = (await this.records()).filter(r => r.cid === cid && r.status === 'ACCEPTED');
@@ -102,7 +104,7 @@ export class Engine {
       if (action === 'BUY') { ensure(Number.isSafeInteger(request.quantity) && request.quantity >= 1, '购买张数无效'); op.quantity = request.quantity; }
       if (action === 'DRAW_AND_PAY') {
         this.onStatus('采集并验证 PASS-A 随机证明（约 5–30 秒）…');
-        proof = await acquireDrawProof(this.pair, this.profile, live, s => this.onStatus(s));
+        proof = await this.drawProof(this.pair, this.profile, live, s => this.onStatus(s));
         op.opening = proof.opening; op.accessor = {blockHash: proof.target.hash, sequenceCommitment: proof.target.seqCommit};
       }
     }
@@ -144,7 +146,7 @@ export class Engine {
       terminal: draft.transition?.terminal ?? null,
       winner: action === 'DRAW_AND_PAY' ? proof.winner : null,
       origin: action === 'GENESIS' ? draft.inputUtxos[0].outpoint : live.snapshot.origin, genesisTxid: live?.row?.genesisTxid ?? null,
-      nextLedger: action === 'GENESIS' ? hex(S.encodeLedger(S.newOpen(session.key, this.profile.networkGenesis, Object.fromEntries(S.MODULES.map(m => [m, this.profile.frames[m].templateHash])), request.config))) : draft.transition.next ? hex(S.encodeLedger(draft.transition.next)) : null,
+      nextLedger: action === 'GENESIS' ? hex(S.encodeLedger(S.newOpen(session.key, request.config))) : draft.transition.next ? hex(S.encodeLedger(draft.transition.next)) : null,
       nextValue: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].value : null, nextSpk: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].scriptPublicKey : null,
     };
     this.plans.set(plan.id, plan);
@@ -199,7 +201,7 @@ export class Engine {
     });
   }
 
-  /** Re-check acceptance on both nodes. Never resubmits. */
+  /** Re-check acceptance on the configured active node. Never resubmits. */
   async reconcile(txid, onProgress = () => {}) {
     const store = await this.store(), k = PREFIX + hash32(txid);
     let stored = await store.get(k); ensure(stored, '本浏览器没有这笔交易的记录');
@@ -241,7 +243,7 @@ export class Engine {
     ensure(stored.value.status !== 'ACCEPTED', '已接受的交易不能归档释放');
     const inputs = stored.value.draft.inputUtxos;
     await this.pair.connect();
-    // Release only if at least one input is provably no longer live on both nodes (cannot double-spend anymore),
+    // Release only if at least one input is provably no longer live on the configured node (cannot double-spend anymore),
     // or the record is a definite rejection.
     let spent = false;
     try { await verifyInputsLive(this.pair, inputs); } catch (e) { spent = e?.code === 'STALE_INPUT'; }

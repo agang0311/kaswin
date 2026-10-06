@@ -7,6 +7,20 @@ const names = { open: 'KaswinOpen', sealed: 'KaswinSealed', refunding: 'KaswinRe
 function object(x) { check(x !== null && typeof x === 'object' && !Array.isArray(x), 'ARTIFACT_OBJECT'); return x; }
 function bytes(x) { if (typeof x === 'string')
     return unhex(x.replace(/^0x/, '')); check(Array.isArray(x) && x.every(b => Number.isInteger(b) && b >= 0 && b <= 255), 'ARTIFACT_BYTES'); return new Uint8Array(x); }
+const ABI_SPECS = {
+    open: {
+        names: ['action', 'originTxId', 'originIndex', 'programTailBytes', 'nextTail', 'data', 'actorPk', 'fee'],
+        types: [{ kind: 'int' }, { kind: 'fixed_bytes', len: 32 }, { kind: 'int' }, { kind: 'int' }, { kind: 'bytes' }, { kind: 'bytes' }, { kind: 'pubkey' }, { kind: 'int' }]
+    },
+    sealed: {
+        names: ['action', 'programTailBytes', 'nextTail', 'data', 'actorPk', 'fee'],
+        types: [{ kind: 'int' }, { kind: 'int' }, { kind: 'bytes' }, { kind: 'bytes' }, { kind: 'pubkey' }, { kind: 'int' }]
+    },
+    refunding: {
+        names: ['action', 'programTailBytes', 'nextTail', 'data', 'actorPk', 'fee'],
+        types: [{ kind: 'int' }, { kind: 'int' }, { kind: 'bytes' }, { kind: 'bytes' }, { kind: 'pubkey' }, { kind: 'int' }]
+    }
+};
 export function parseCompiledFrame(module, doc, sourceSha256) {
     unhex(sourceSha256, 32);
     const d = object(doc);
@@ -22,23 +36,21 @@ export function parseCompiledFrame(module, doc, sourceSha256) {
     const hash = templateHash(tail);
     check(hash === hex(bytes(a.template_hash)), 'ARTIFACT_HASH');
     const entry = object(object(c.entries).spend), params = entry.params;
-    const expected = ['action', 'originTxId', 'originIndex', 'programTailBytes', 'genesisTail', 'nextTail', 'data', 'actorPk', 'fee'];
-    check(Array.isArray(params) && params.length === expected.length && params.every((x, i) => object(x).name === expected[i]), 'ENTRY_ABI_CHANGED');
-    const types = [{ kind: 'int' }, { kind: 'fixed_bytes', len: 32 }, { kind: 'int' }, { kind: 'int' }, { kind: 'bytes' }, { kind: 'bytes' }, { kind: 'bytes' }, { kind: 'pubkey' }, { kind: 'int' }];
-    check(params.every((x, i) => { const t = object(object(x).type), e = types[i]; return t.kind === e.kind && (e.kind !== 'fixed_bytes' || t.len === e.len); }), 'ENTRY_ABI_TYPE_CHANGED');
+    const spec = ABI_SPECS[module];
+    check(Array.isArray(params) && params.length === spec.names.length && params.every((x, i) => object(x).name === spec.names[i]), 'ENTRY_ABI_CHANGED');
+    check(params.every((x, i) => { const t = object(object(x).type), e = spec.types[i]; return t.kind === e.kind && (e.kind !== 'fixed_bytes' || t.len === e.len); }), 'ENTRY_ABI_TYPE_CHANGED');
     check(typeof entry.dispatch_tag === 'string', 'ARTIFACT_TAG');
     unhex(entry.dispatch_tag, 4);
     return { tail, templateHash: hash, dispatchTag: entry.dispatch_tag, sourceSha256 };
 }
-export function makeProfile(networkGenesis, frames) {
-    unhex(networkGenesis, 32);
+export function makeProfile(frames) {
     for (const m of MODULES)
         check(templateHash(frames[m].tail) === frames[m].templateHash, 'ARTIFACT_HASH');
     check(new Set(MODULES.map(m => frames[m].templateHash)).size === 3, 'FRAME_COLLISION');
-    const id = hex(blake2b256(cat(ascii('KASWIN_F3_PROFILE_V1'), unhex(networkGenesis, 32), ...MODULES.flatMap(m => [unhex(frames[m].sourceSha256, 32), unhex(frames[m].templateHash, 32), unhex(frames[m].dispatchTag, 4)]))));
-    return { id, networkGenesis, frames, compilerCommit: COMPILER_COMMIT };
+    const id = hex(blake2b256(cat(ascii('KASWIN_PROFILE_V2'), ...MODULES.flatMap(m => [unhex(frames[m].sourceSha256, 32), unhex(frames[m].templateHash, 32), unhex(frames[m].dispatchTag, 4)]))));
+    return { id, frames, compilerCommit: COMPILER_COMMIT };
 }
-export async function loadTrustedProfile(networkGenesis, inputs) {
+export async function loadTrustedProfile(inputs) {
     const frames = {};
     for (const m of MODULES) {
         const x = inputs[m];
@@ -47,6 +59,6 @@ export async function loadTrustedProfile(networkGenesis, inputs) {
         check(actual === x.expectedArtifactSha256, 'ARTIFACT_NOT_TRUSTED');
         frames[m] = parseCompiledFrame(m, JSON.parse(x.text), x.sourceSha256);
     }
-    return makeProfile(networkGenesis, frames);
+    return makeProfile(frames);
 }
 //# sourceMappingURL=artifacts.js.map

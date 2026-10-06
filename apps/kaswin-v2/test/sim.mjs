@@ -1,10 +1,11 @@
-/** Test harness (Node only, never bundled): an in-memory two-node TN10 "chain" speaking the JSON wRPC subset,
+/** Test harness (Node only, never bundled): simulated TN10 endpoints speaking the JSON wRPC subset,
  * an in-memory indexer, and a KasWare-like wallet that signs with the PUBLIC test key sk=1 via the pinned SDK.
  * The chain applies transactions by the same core transition the contract encodes; it is a simulator, not consensus.
  */
 import {createRequire} from 'node:module';
-import fs from 'node:fs';
-import {S, makeProfile, referenceTxId, hex, unhex, stable, NETWORK_GENESIS, PROFILE_ID, CONTRACT_TAG} from '../scripts/shared/core.mjs';
+import {fileURLToPath} from 'node:url';
+import {loadV2Bundle} from '../../../contracts/f3.2/tools/linking.mjs';
+import {S, referenceTxId, hex, unhex, stable, PROFILE_ID, CONTRACT_TAG} from '../scripts/shared/core.mjs';
 import {parseJson, jsonText} from '../scripts/shared/lib/json.mjs';
 import {txFromRpc, spkText} from '../scripts/shared/nodes.mjs';
 import {spkToAddress, pubkeyToAddress} from '../scripts/shared/lib/address.mjs';
@@ -16,16 +17,17 @@ export const TEST_SK = '00000000000000000000000000000000000000000000000000000000
 export const TEST_KEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 export const TEST_ADDRESS = pubkeyToAddress(TEST_KEY);
 
+// Fail closed on stale F3.2 artifacts; simulation must not silently relabel an old Profile as V2.
+const bundle = await loadV2Bundle(fileURLToPath(new URL('../../../contracts/f3.2/', import.meta.url)));
 export function loadProfile() {
-  const report = JSON.parse(fs.readFileSync(new URL('../../../contracts/f3.2/artifacts/build-report.json', import.meta.url), 'utf8'));
-  const frames = Object.fromEntries(Object.entries(report.frames).map(([k, v]) => [k, {...v, tail: Uint8Array.from(Buffer.from(v.tail, 'hex'))}]));
-  const p = makeProfile(NETWORK_GENESIS, frames); if (p.id !== PROFILE_ID) throw Error('PROFILE'); return p;
+  if (bundle.profile.id !== PROFILE_ID) throw Error('PROFILE');
+  return structuredClone(bundle.profile);
 }
 
 /** Shared ledger of UTXOs and accepted txs; each "node" is a view with its own p2pId. */
 export class SimChain {
-  constructor() {
-    this.daa = 600_000_000n; this.blue = 590_000_000n; this.utxos = new Map(); this.accepted = new Map(); this.blocks = new Map();
+  constructor({daa = 600_000_000n, blue = 590_000_000n} = {}) {
+    this.daa = daa; this.blue = blue; this.utxos = new Map(); this.accepted = new Map(); this.blocks = new Map();
     this.chain = []; this.mempool = new Map(); this.submits = 0; this.rejectNext = null; this.dropResponse = false; this.serial = 1;
     this.addBlock();
   }
@@ -54,12 +56,25 @@ export class SimChain {
     for (const i of tx.inputs) this.utxos.delete(`${i.previousOutpoint.transactionId}:${i.previousOutpoint.index}`);
     const block = this.addBlock([id]);
     tx.outputs.forEach((o, index) => this.utxos.set(`${id}:${index}`, {outpoint: {transactionId: id, index}, value: o.value, spk: o.scriptPublicKey, daa: block.daa, covenantId: o.covenant?.covenantId ?? null, address: spkToAddress(o.scriptPublicKey)}));
-    this.accepted.set(id, {tx, rpc: rpcTx, block: block.hash, inputs});
+    const enrichedRpc = structuredClone(rpcTx);
+    enrichedRpc.inputs.forEach((inp, idx) => {
+      const u = inputs[idx];
+      inp.verboseData = {
+        utxoEntry: {
+          amount: u.value.toString(),
+          scriptPublicKey: spkText(u.spk),
+          blockDaaScore: u.daa.toString(),
+          covenantId: u.covenantId ?? null,
+          isCoinbase: false,
+        }
+      };
+    });
+    this.accepted.set(id, {tx, rpc: enrichedRpc, block: block.hash, inputs});
     return id;
   }
   rpcFor(p2pId) {
     const chain = this;
-    const header = b => ({hash: b.hash, daaScore: Number(b.daa), blueScore: Number(b.blue), parentsByLevel: [[b.parent ?? '00'.repeat(32)]], acceptedIdMerkleRoot: '00'.repeat(32), blueWork: '01', timestamp: 1});
+    const header = b => ({hash: b.hash, daaScore: Number(b.daa), blueScore: Number(b.blue), parentsByLevel: [[b.parent ?? '00'.repeat(32)]], acceptedIdMerkleRoot: b.seqCommit ?? '00'.repeat(32), blueWork: '01', timestamp: 1});
     const methods = {
       getServerInfo: () => ({networkId: 'testnet-10', isSynced: true, hasUtxoIndex: true, virtualDaaScore: Number(chain.daa), serverVersion: 'sim'}),
       getInfo: () => ({p2pId}),

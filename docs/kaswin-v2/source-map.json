@@ -1,6 +1,15 @@
 {
   "date": "2026-10-05",
-  "scope": "Exhaustive mapping from F3.2/V2 workspace snapshot to layered publication repository.",
+  "scope": "Historical 2026-10-05 F3.2/web-V2 publication mapping only; hashes below are NOT current V2 source pins.",
+  "currentSourceStatus": {
+    "date": "2026-10-06",
+    "protocolVersion": 2,
+    "status": "SOURCE_ONLY_NOT_COMPILED_OR_TESTED",
+    "details": "docs/kaswin-v2/V2-SOURCE-STATUS.md",
+    "generatedArtifacts": "STALE_F32_RETAINED_UNCHANGED",
+    "historicalFixtures": ["BUY1-public.json", "BUY2-public.json", "f256-draw.json", "min-budgets.json"],
+    "fixturePolicy": "Historical bytes retained; not V2 Profile, seed, budget or network acceptance evidence"
+  },
   "summary": {
     "totalFiles": 132,
     "byteIdentical": 97,

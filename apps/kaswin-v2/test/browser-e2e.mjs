@@ -102,7 +102,7 @@ try {
   await approveAndSubmit('genesis');
   // The new round: track it in the simulated indexer from the chain's accepted genesis (as the real indexer would via Registry).
   const g = [...chain.accepted.values()].at(-1), cid = g.tx.outputs[0].covenant.covenantId;
-  const cfg = S.decodeLedger(S.encodeLedger(S.newOpen(TEST_KEY, profile.networkGenesis, Object.fromEntries(S.MODULES.map(m => [m, profile.frames[m].templateHash])), {ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: 1n}))).config;
+  const cfg = S.decodeLedger(S.encodeLedger(S.newOpen(TEST_KEY, {ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: 1n}))).config;
   void cfg;
   const tipLedger = txid => { const a = chain.accepted.get(txid); return a; };
   void tipLedger;

@@ -1,8 +1,8 @@
-/** Exact F4-1 transaction DTOs and ABI witness. Native SDK finalization/mass is separate. */
-import {ascii,cat,check,hex,integer,le,unhex,same,stable} from './bytes.js';
+/** Kaswin transaction DTOs and ABI witness (V2, 8/6 param ABI; no routes, no networkGenesis). */
+import {ascii,cat,check,hex,integer,unhex,stable} from './bytes.js';
 import {blake2b256} from './hashes.js';
-import {p2pk,p2sh,spkBytes,type Spk,type Outpoint} from './covenant-id.js';
-import {type Transaction,type Output,validateTransaction,outpointKey} from './transaction.js';
+import {p2pk,p2sh,type Spk,type Outpoint} from './covenant-id.js';
+import {type Transaction,validateTransaction,outpointKey} from './transaction.js';
 import * as S from './state.js';
 import {ACTIONS,transition,actionBudget,type Operation,type Transition} from './protocol.js';
 import {REGISTRATION_SOMPI,checkRegistrySpk} from './registry.js';
@@ -14,7 +14,9 @@ export function pushInt(n:bigint):Uint8Array {
 }
 export function witness(x:S.Snapshot,p:S.Profile,op:Operation,t:Transition,fee:bigint):string {
  const s=S.decodeLedger(x.ledger),m=S.phaseModule(s.phase),f=p.frames[m];
- const bytes=cat(pushInt(BigInt(ACTIONS[op.action])),S.pushBytes(unhex(x.origin.transactionId,32)),pushInt(BigInt(x.origin.index)),pushInt(BigInt(f.tail.length)),S.pushBytes(m==='open'?new Uint8Array():p.frames.open.tail),S.pushBytes(t.foreignTail),S.pushBytes(t.data),S.pushBytes(unhex(op.actorKey,32)),pushInt(fee),S.pushBytes(unhex(f.dispatchTag,4)),S.pushBytes(S.scriptOf(s,p)));
+ const bytes = m === 'open'
+  ? cat(pushInt(BigInt(ACTIONS[op.action])),S.pushBytes(unhex(x.origin.transactionId,32)),pushInt(BigInt(x.origin.index)),pushInt(BigInt(f.tail.length)),S.pushBytes(t.foreignTail),S.pushBytes(t.data),S.pushBytes(unhex(op.actorKey,32)),pushInt(fee),S.pushBytes(unhex(f.dispatchTag,4)),S.pushBytes(S.scriptOf(s,p)))
+  : cat(pushInt(BigInt(ACTIONS[op.action])),pushInt(BigInt(f.tail.length)),S.pushBytes(t.foreignTail),S.pushBytes(t.data),S.pushBytes(unhex(op.actorKey,32)),pushInt(fee),S.pushBytes(unhex(f.dispatchTag,4)),S.pushBytes(S.scriptOf(s,p)));
  check(bytes.length<=250000,'SIGNATURE_SCRIPT_LIMIT');return hex(bytes);
 }
 function fundingInputs(funds:readonly Funding[],key:string):void {
@@ -33,15 +35,13 @@ export function buildAction(x:S.Snapshot,p:S.Profile,op:Operation,fee:bigint,fun
  tx.outputs.push(...t.payments.map(v=>({value:v.value,scriptPublicKey:v.spk,covenant:null})));
  const input0:Funding={outpoint:x.tip,value:x.value,spk:{...x.scriptPublicKey},daa:x.utxoDaa,covenantId:x.covenantId};
  const draft:Draft={transaction:tx,inputUtxos:[input0,...funds],authorizedInputIndices:funds.map((_,i)=>i+1),transition:t,origin:x.origin,action:op.action,walletDebit:0n,fee};
- // An executor return includes its own sponsor principal; only net debit is authorized.
  const change=t.payments.filter(v=>v.role==='CHANGE'||(op.action==='REFUND'&&v.role==='EXECUTOR')).reduce((a,v)=>a+v.value,0n);
  draft.walletDebit=total>change?total-change:0n;assertDraft(draft);return draft;
 }
 export function buildOpenGenesis(p:S.Profile,owner:string,config:S.Config,funds:Funding[],fee:bigint,registrySpk?:Spk|null):Draft {
  check(funds.length>=1,'FUNDING_REQUIRED');fundingInputs(funds,owner);const total=funds.reduce((a,f)=>a+f.value,0n),registration=registrySpk?REGISTRATION_SOMPI:0n;check(fee>0n&&total>=S.DEPOSIT+registration+fee,'GENESIS_FUNDS');
- const routes=Object.fromEntries(S.MODULES.map(m=>[m,p.frames[m].templateHash])) as unknown as S.Routes;
- const s=S.newOpen(owner,p.networkGenesis,routes,config);S.validateLedger(s);const script=S.scriptOf(s,p),origin=funds[0]!.outpoint,cid=S.rootId(origin,script);
- const tx=txBase();tx.payload=hex(cat(ascii('KASWIN_F3_GENESIS'),unhex(p.id,32),S.encodeLedger(s)));tx.inputs=funds.map(f=>({previousOutpoint:f.outpoint,signatureScript:'',sequence:0n,computeBudget:0}));tx.outputs=[{value:S.DEPOSIT,scriptPublicKey:p2sh(hex(blake2b256(script))),covenant:{covenantId:cid,authorizingInput:0}}];
+ const s=S.newOpen(owner,config);S.validateLedger(s);const script=S.scriptOf(s,p),origin=funds[0]!.outpoint,cid=S.rootId(origin,script);
+ const tx=txBase();tx.payload=hex(cat(ascii('KASWIN_GENESIS_V2'),unhex(p.id,32),S.encodeLedger(s)));tx.inputs=funds.map(f=>({previousOutpoint:f.outpoint,signatureScript:'',sequence:0n,computeBudget:0}));tx.outputs=[{value:S.DEPOSIT,scriptPublicKey:p2sh(hex(blake2b256(script))),covenant:{covenantId:cid,authorizingInput:0}}];
  if(registrySpk)tx.outputs.push({value:REGISTRATION_SOMPI,scriptPublicKey:checkRegistrySpk(registrySpk),covenant:null});
  if(total>S.DEPOSIT+registration+fee)tx.outputs.push({value:total-S.DEPOSIT-registration-fee,scriptPublicKey:p2pk(owner),covenant:null});
  const d:Draft={transaction:tx,inputUtxos:[...funds],authorizedInputIndices:funds.map((_,i)=>i),transition:null,origin,action:'CREATE_ROUND',walletDebit:S.DEPOSIT+registration+fee,fee};assertDraft(d);return d;
@@ -52,19 +52,4 @@ export function assertDraft(d:Draft):void {
  for(let i=0;i<d.inputUtxos.length;i++)check(outpointKey(d.inputUtxos[i]!.outpoint)===outpointKey(d.transaction.inputs[i]!.previousOutpoint),'UTXO_MISMATCH');
  const input=d.inputUtxos.reduce((a,v)=>a+v.value,0n),output=d.transaction.outputs.reduce((a,v)=>a+v.value,0n);check(input-output===d.fee&&d.fee>0n,'FEE_MISMATCH');
  check(d.transaction.outputs.every(v=>v.value>0n),'NONPOSITIVE_OUTPUT');
-}
-/** Receipt marker recipe: per-owner/tag address, permissionless spending to FIXED owner.
- * It is NOT an arbitrary pre-existing shared OP_TRUE registry address. */
-export function beaconRedeem(owner:string,tag='KASWIN_BEACON_F4'):Uint8Array {
- const b=ascii(tag);check(b.length<=64,'BEACON_TAG');unhex(owner,32);
- return cat(S.pushBytes(b),unhex('75b35188b4518800be'),pushInt(S.DEPOSIT),unhex('8800cf'),S.pushBytes(unhex(S.ZERO)),unhex('8800c2'),pushInt(19_800_000n),unhex('8800d5'),S.pushBytes(unhex(S.ZERO)),unhex('8800c3'),S.pushBytes(spkBytes(p2pk(owner))),unhex('87'));
-}
-export function buildBeaconReclaim(outpoint:Outpoint,owner:string,tag:string,daa:bigint,budget:number):Draft {
- const redeem=beaconRedeem(owner,tag),spk=p2sh(hex(blake2b256(redeem)));const tx=txBase();
- tx.inputs=[{previousOutpoint:outpoint,signatureScript:hex(S.pushBytes(redeem)),sequence:0n,computeBudget:integer(budget,0,65535)}];tx.outputs=[{value:19_800_000n,scriptPublicKey:p2pk(owner),covenant:null}];
- const d:Draft={transaction:tx,inputUtxos:[{outpoint,value:S.DEPOSIT,spk,daa,covenantId:null}],authorizedInputIndices:[],transition:null,origin:outpoint,action:'BEACON_RECLAIM',walletDebit:0n,fee:200_000n};assertDraft(d);return d;
-}
-export function createAnnouncement(p:S.Profile,origin:Outpoint,tag:string):string {
- // B's own txid is NOT embedded. The announcement points to output 0 locally.
- const t=ascii(tag);check(t.length<=64,'BEACON_TAG');return hex(cat(ascii('KASWIN_F4_CREATE'),unhex(p.id,32),unhex(p.networkGenesis,32),unhex(origin.transactionId,32),le(BigInt(origin.index),4),le(0n,4),le(BigInt(t.length),1),t));
 }

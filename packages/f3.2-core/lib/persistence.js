@@ -1,11 +1,10 @@
 /** Transactional browser persistence. Imports are data, never trusted verification evidence. */
 import { check, unhex, integer } from './bytes.js';
-export function namespace(networkGenesis, profile, genesisTxId) {
-    unhex(networkGenesis, 32);
+export function namespace(profile, genesisTxId) {
     unhex(profile, 32);
     if (genesisTxId !== undefined)
         unhex(genesisTxId, 32);
-    return [networkGenesis, profile, genesisTxId ?? ''].join('/') + '/';
+    return [profile, genesisTxId ?? ''].join('/') + '/';
 }
 export class IndexedStore {
     db;

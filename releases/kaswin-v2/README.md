@@ -1,6 +1,6 @@
 # Kaswin V2 发布产物
 
-本目录存放 Kaswin V2 的自包含单文件 HTML 产物与构建清单。
+本目录保留历史网页V2/F3.2的自包含HTML和构建清单，**尚未重建为2026-10-06的V2协议候选**。以下文件/哈希/通过数是历史记录，不代表当前源码。源码与产物不一致是当前明确的发布阻断；不手改HTML或manifest贴标签。
 
 ---
 
@@ -18,7 +18,7 @@
 
 `index.html`（316,073 字节）与 `deployed-20261005.html`（316,069 字节）的 4 字节差异源自工程整理时将图标集合从单体应用控制器物理抽取为独立模块 `apps/kaswin-v2/visual/icons.mjs`，由 esbuild 引入了微小的模块包装开销。
 
-可在 `apps/kaswin-v2` 目录下运行复现验证命令：
+以下复现命令只属于对应历史源码版本。当前V2已移除此npm入口，不得在当前工作树执行或据此声称同源：
 ```bash
 npm --prefix apps/kaswin-v2 run verify:deployed
 ```

@@ -14,7 +14,7 @@ contract KaswinSealed(byte[] initialLedger) {
     
     // Hardcoded forward target template hash:
     // Placed upon compiling refunding.sil.
-    byte[32] constant REFUNDING_TEMPLATE_HASH = byte[32](0x0000000000000000000000000000000000000000000000000000000000000000);
+    byte[32] constant REFUNDING_TEMPLATE_HASH = byte[32](0x8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6);
 
     int constant MAX_PURCHASES = 256;
     int constant DEPOSIT = 20000000;

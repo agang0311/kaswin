@@ -1,24 +1,30 @@
 // Offline engine lifecycle: GENESIS -> BUY x3 -> CLOSE -> (sim) ... ; REFUNDING path; failure modes.
-// Simulated two-node chain + simulated KasWare (public test key). No network.
+// One active simulated node + simulated KasWare (public test key). No network or consensus execution.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {SimChain, wsFactory, fakeKasware, simIndexer, loadProfile, MemoryStore, testLocks, TEST_ADDRESS, TEST_KEY} from './sim.mjs';
 import {NodeLink} from '../scripts/shared/nodes.mjs';
 import {EngineV2 as Engine, chainAncestor} from '../scripts/engine2.mjs';
 import {readSession} from '../scripts/shared/wallet.mjs';
-import {S} from '../scripts/shared/core.mjs';
+import {S, unhex, authenticateDraw, sample, winnerRecord} from '../scripts/shared/core.mjs';
+import {replayAccepted} from '../scripts/shared/replay.mjs';
 import {liveRound} from '../scripts/shared/rounds.mjs';
 
 const profile = loadProfile();
+const passA = JSON.parse(fs.readFileSync('/root/kaspa/references/kaswin-f3-open-genesis/evidence/tn10/payout/PASS_A.json', 'utf8'));
+const PASS_A_OPENING = unhex(passA.openingHex);
+const PASS_A_TARGET = {blockHash: passA.target.hash, sequenceCommitment: passA.target.seqCommit};
+
 function harness(opts = {}) {
-  const chain = new SimChain();
+  const chain = new SimChain(opts.chain);
   const pair = new NodeLink(opts.nodes ?? ['wss://alpha.sim/kaspa/testnet-10/wrpc/json'], {WebSocketImpl: wsFactory(chain)});
   const idx = simIndexer(chain, profile);
   globalThis.fetch = idx.fetch;
   const wallet = fakeKasware(opts.wallet);
   globalThis.kasware = wallet;
   const store = new MemoryStore();
-  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks});
+  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, drawProof: opts.drawProof});
   return {chain, pair, idx, wallet, engine, store};
 }
 const config = (daa, extra = {}) => ({ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: daa + 1000n, ...extra});
@@ -29,7 +35,7 @@ async function genesis(h, cfg) {
   const rec = await h.engine.execute(plan, {approved: true});
   assert.equal(rec.status, 'SUBMITTED');
   const tx = h.chain.accepted.get(rec.txid);
-  h.idx.track(plan.cid, {genesisTxid: rec.txid, origin: plan.draft.inputUtxos[0].outpoint, tip: {transactionId: rec.txid, index: 0}, ledger: S.encodeLedger(plan.draft.transaction && S.decodeLedger(S.encodeLedger(S.newOpen(TEST_KEY, profile.networkGenesis, Object.fromEntries(S.MODULES.map(m => [m, profile.frames[m].templateHash])), cfg))))});
+  h.idx.track(plan.cid, {genesisTxid: rec.txid, origin: plan.draft.inputUtxos[0].outpoint, tip: {transactionId: rec.txid, index: 0}, ledger: S.encodeLedger(S.newOpen(TEST_KEY, cfg))});
   return {plan, rec, session, tx};
 }
 async function step(h, cid, request, session) {
@@ -101,51 +107,132 @@ test('v2: ancestor walk bounded; no upgrade on a repeatedly off-chain ancestor',
  assert.equal(await chainAncestor({call:async()=>{calls++;return {block:b};}},b,4),null);assert.equal(calls,4);
 });
 
-test('engine: full payout-free path GENESIS -> BUY x3 -> CLOSE(SEALED) -> TIMEOUT_REFUND -> REFUND (terminal), reconcile ACCEPTED', async () => {
-  const h = harness();
+test('engine: normal draw and payout GENESIS -> BUY x3 -> CLOSE(SEALED) -> DRAW_AND_PAY (PAID terminal), reconcile ACCEPTED', async () => {
+  const drawProof = async (_link, _p, live) => {
+    const s = live.ledger, x = live.snapshot;
+    const drawn = authenticateDraw(x, s, PASS_A_OPENING, PASS_A_TARGET);
+    const smp = sample(drawn);
+    assert.notEqual(smp.ticket, null);
+    const accepted = {...drawn, phase: S.Phase.WINNER_READY, winnerPlusOne: smp.ticket + 1};
+    const idx = winnerRecord(accepted), rec = S.records(accepted)[idx];
+    return {
+      opening: PASS_A_OPENING, openingHex: passA.openingHex,
+      target: {hash: passA.target.hash, seqCommit: passA.target.seqCommit},
+      parent: {hash: passA.parent.hash, daa: passA.parent.daa},
+      boundaryDaa: passA.boundaryDaa, nodes: ['sim'], seed: drawn.seed,
+      winner: {ticket: smp.ticket + 1, record: idx, key: rec.key, recordTickets: rec.count, sampleValue: smp.value.toString(), limit: smp.limit.toString()}
+    };
+  };
+  const h = harness({chain: {daa: 580025200n}, drawProof});
   h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
-  const {plan: g, session} = await genesis(h, config(h.chain.daa));
-  assert.equal(g.outputs[0].role, 'STATE'); assert.equal(g.outputs[1].role, 'REGISTRY');
-  assert.equal(g.draft.authorizedInputIndices.length, 1);
+  const {plan: g, session} = await genesis(h, config(h.chain.daa, {ticketPrice: 100_000_000n, ticketCap: 3, minTickets: 3}));
+  assert.equal(g.outputs[0].role, 'STATE');
+  assert.equal(g.outputs[1].role, 'REGISTRY');
   for (let i = 0; i < 3; i++) {
     const {plan} = await step(h, g.cid, {action: 'BUY', quantity: 1}, session);
-    assert.equal(plan.budget, S.decodeLedger(S.encodeLedger(plan.draft.transition.next)).purchaseCount - 1 >= 0 ? plan.budget : -1);
     assert.equal(plan.after.sold, i + 1);
   }
-  const close = await step(h, g.cid, {action: 'CLOSE'}, session); // sold == cap -> early close allowed
+  // Align the accepting block of CLOSE to exactly match the PASS_A boundary condition: utxoDaa + 100 = 580025326
+  h.chain.daa = 580025225n;
+  const close = await step(h, g.cid, {action: 'CLOSE'}, session);
   assert.equal(close.plan.after.phase, S.Phase.SEALED);
-  // DRAW_AND_PAY needs real PASS-A data (not simulated here); exercise the timeout exit instead.
-  await assert.rejects(h.engine.plan({action: 'TIMEOUT_REFUND', cid: g.cid}, session), /300 DAA|不允许/);
-  h.chain.advance(301);
-  const t = await step(h, g.cid, {action: 'TIMEOUT_REFUND'}, session);
-  assert.equal(t.plan.after.phase, S.Phase.REFUNDING);
-  const rf = await step(h, g.cid, {action: 'REFUND'}, session);
-  assert.equal(rf.plan.terminal, 'REFUNDED');
-  const roles = rf.plan.outputs.map(o => o.role);
-  assert.deepEqual(roles.filter(r => r === 'BUYER_REFUND').length, 3);
-  assert.ok(roles.includes('CREATOR') && roles.includes('EXECUTOR'));
-  // every buyer refund = price - 0.01 TKAS
-  for (const o of rf.plan.outputs.filter(o => o.role === 'BUYER_REFUND')) assert.equal(o.value, 99_000_000n);
-  const r = await h.engine.reconcile(rf.rec.txid);
-  assert.equal(r.status, 'ACCEPTED', r.error); assert.equal(r.actualFee, rf.plan.fee);
+  const sealedUtxoDaa = h.chain.utxos.get(`${close.rec.txid}:0`).daa;
+  assert.equal(sealedUtxoDaa, 580025226n);
+
+  // Advance chain beyond 100 DAA after sealing (boundary = 580025326)
+  h.chain.advance(101);
+  assert.ok(h.chain.daa >= 580025327n);
+
+  // Register the target block in simulated chain so header verification succeeds
+  h.chain.blocks.set(passA.target.hash, {
+    hash: passA.target.hash, daa: 580025327n, blue: 590000100n, parent: passA.parent.hash, txs: [], seqCommit: passA.target.seqCommit
+  });
+
+  const pay = await step(h, g.cid, {action: 'DRAW_AND_PAY'}, session);
+  assert.equal(pay.plan.action, 'DRAW_AND_PAY');
+  assert.equal(pay.plan.terminal, 'PAID');
+  assert.equal(pay.rec.status, 'SUBMITTED');
+
+  // Verify payout structure: Output 0 is Winner Prize, Output 1 is Creator Deposit return, Output 2 is Executor Finalizer Bounty
+  const roles = pay.plan.outputs.map(o => o.role);
+  assert.deepEqual(roles, ['WINNER', 'CREATOR', 'EXECUTOR']);
+  assert.equal(pay.plan.outputs[1].value, S.DEPOSIT); // 20,000,000 (0.2 TKAS)
+  assert.equal(pay.plan.outputs[2].value, S.FINALIZER); // 100,000,000 (1 TKAS)
+  assert.equal(pay.plan.outputs[0].value, 300_000_000n - S.FINALIZER - pay.plan.fee); // 3 TKAS - 1 TKAS - fee
+
+  const rec = await h.engine.reconcile(pay.rec.txid);
+  assert.equal(rec.status, 'ACCEPTED');
+
+  // Independent replay verification of the ACCEPTED DRAW_AND_PAY transition
+  const replayed = await replayAccepted(h.pair, profile, pay.rec.txid, rec.accepting, {origin: g.origin, cid: g.cid});
+  assert.equal(replayed.action, 'DRAW_AND_PAY');
+  assert.equal(replayed.terminal, 'PAID');
+  assert.equal(replayed.winner.ticket, pay.plan.winner.ticket);
+  assert.equal(replayed.outputs[0].value, pay.plan.outputs[0].value);
 });
 
-test('engine: CLOSE below minimum routes to REFUNDING; empty round CLOSE returns deposit (EMPTY)', async () => {
+test('engine: empty round (zero ticket sales) CLOSE returns deposit (EMPTY terminal), reconcile ACCEPTED', async () => {
+  const h = harness();
+  h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
+  const {plan: g, session} = await genesis(h, config(h.chain.daa, {ticketCap: 3, minTickets: 3}));
+  // Trying to close before eligible closing time must be rejected
+  await assert.rejects(h.engine.plan({action: 'CLOSE', cid: g.cid}, session), /封盘时间/);
+  h.chain.advance(1001);
+  const e = await step(h, g.cid, {action: 'CLOSE'}, session);
+  assert.equal(e.plan.terminal, 'EMPTY');
+  assert.equal(e.plan.outputs.find(o => o.role === 'CREATOR').value, S.DEPOSIT); // 0.2 TKAS full refund
+
+  const r = await h.engine.reconcile(e.rec.txid);
+  assert.equal(r.status, 'ACCEPTED');
+
+  const replayed = await replayAccepted(h.pair, profile, e.rec.txid, r.accepting, {origin: g.origin, cid: g.cid});
+  assert.equal(replayed.terminal, 'EMPTY');
+  assert.equal(replayed.outputs[0].value, S.DEPOSIT);
+});
+
+test('engine: sales below minimum tickets route to REFUNDING -> REFUND batches (REFUNDED terminal), reconcile ACCEPTED', async () => {
   const h = harness();
   h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
   const {plan: g, session} = await genesis(h, config(h.chain.daa, {ticketCap: 10, minTickets: 5}));
-  await step(h, g.cid, {action: 'BUY', quantity: 2}, session);
+  // Buy 2 tickets (2 < 5, does not meet minimum tickets)
+  await step(h, g.cid, {action: 'BUY', quantity: 1}, session);
+  await step(h, g.cid, {action: 'BUY', quantity: 1}, session);
+
+  // Before closeEligibleDaa, CLOSE is not allowed
   await assert.rejects(h.engine.plan({action: 'CLOSE', cid: g.cid}, session), /封盘时间/);
   h.chain.advance(1001);
+
+  // CLOSE under minTickets transitions to REFUNDING
   const c = await step(h, g.cid, {action: 'CLOSE'}, session);
   assert.equal(c.plan.after.phase, S.Phase.REFUNDING);
-  const h2 = harness();
-  h2.chain.fund(TEST_ADDRESS, 50_000_000_000n);
-  const g2 = await genesis(h2, config(h2.chain.daa));
-  h2.chain.advance(1001);
-  const e = await step(h2, g2.plan.cid, {action: 'CLOSE'}, g2.session);
-  assert.equal(e.plan.terminal, 'EMPTY');
-  assert.equal(e.plan.outputs.find(o => o.role === 'CREATOR').value, 20_000_000n);
+  assert.equal(c.plan.after.value, S.DEPOSIT + 2n * 100_000_000n); // 2.2 TKAS intact
+
+  const rc = await h.engine.reconcile(c.rec.txid);
+  assert.equal(rc.status, 'ACCEPTED');
+
+  const repClose = await replayAccepted(h.pair, profile, c.rec.txid, rc.accepting, {origin: g.origin, cid: g.cid});
+  assert.equal(repClose.next.phase, S.Phase.REFUNDING);
+
+  // Execute REFUND batch (all 2 records refunded in a single batch)
+  const rf = await step(h, g.cid, {action: 'REFUND'}, session);
+  assert.equal(rf.plan.terminal, 'REFUNDED');
+  const roles = rf.plan.outputs.map(o => o.role);
+  assert.deepEqual(roles.filter(r => r === 'BUYER_REFUND').length, 2);
+  assert.ok(roles.includes('CREATOR') && roles.includes('EXECUTOR'));
+
+  // Each buyer gets ticketPrice - 0.01 TKAS
+  for (const o of rf.plan.outputs.filter(o => o.role === 'BUYER_REFUND')) {
+    assert.equal(o.value, 100_000_000n - S.REFUND_FEE);
+  }
+  // Creator deposit returned
+  assert.equal(rf.plan.outputs.find(o => o.role === 'CREATOR').value, S.DEPOSIT);
+
+  const rrf = await h.engine.reconcile(rf.rec.txid);
+  assert.equal(rrf.status, 'ACCEPTED');
+
+  const repRefund = await replayAccepted(h.pair, profile, rf.rec.txid, rrf.accepting, {origin: g.origin, cid: g.cid});
+  assert.equal(repRefund.terminal, 'REFUNDED');
+  assert.equal(repRefund.outputs.find(o => o.role === 'CREATOR').value, S.DEPOSIT);
 });
 
 test('engine: wallet that mutates committed fields or signs with another key is rejected before submission', async () => {
@@ -234,7 +321,7 @@ test('liveRound: indexer data that disagrees with the nodes is rejected', async 
   await assert.rejects(liveRound(h.pair, 'http://localhost/indexer', profile, g.cid, daa), /CID|SPK|MISMATCH|不一致/);
 });
 
-test('engine: continues from its own ACCEPTED successor when the indexer lags (still verified on both nodes)', async () => {
+test('engine: continues from its own ACCEPTED successor when the indexer lags (checked on the active simulated node)', async () => {
   const h = harness();
   h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
   const {plan: g, session, rec: gr} = await genesis(h, config(h.chain.daa, {ticketCap: 10}));
@@ -285,22 +372,43 @@ test('NodeLink: uses the first reachable synced node in order; reports why earli
   await assert.rejects(none.connect(), /没有可用的 TN10 节点/);
 });
 
-test('replay: DRAW_AND_PAY winner ticket is recomputed exactly as the contract does (archived f256 draw -> #164)', async () => {
-  const fs = await import('node:fs');
-  const {S, sample, authenticateDraw, unhex, p2sh, hex, blake2b256} = await import('../scripts/shared/core.mjs');
-  const {ledgerFromDetail} = await import('../scripts/shared/rounds.mjs');
-  const a = JSON.parse(fs.readFileSync(new URL('./fixtures/f256-draw.json', import.meta.url), 'utf8')), D = a.notes.f256.draw;
-  const item = a.details.find(d => d.item.cid === D.cid).item;
-  const spent = ledgerFromDetail({...item, state: {...item.state, phase: 2}}, profile);
-  const snapshot = {ledger: S.encodeLedger(spent), tip: D.sealedTip, origin: item.origin, scriptPublicKey: p2sh(hex(blake2b256(S.scriptOf(spent, profile)))),
-    covenantId: D.cid, value: BigInt(spent.sold) * spent.config.ticketPrice + S.DEPOSIT, utxoDaa: BigInt(D.sealedUtxoDaa), currentDaa: BigInt(D.acceptingDaa)};
+test('V2 seed/sample preimage and non-OPEN origin authentication (synthetic JS vector, NOT VM or TN10)', async () => {
+  const {sample, authenticateDraw, unhex, p2sh, hex, blake2b256, cat, le, ascii, fromLe} = await import('../scripts/shared/core.mjs');
+  const {targetSeqOf} = await import('../scripts/shared/replay.mjs');
+  const spent = {...S.appendPurchase(S.newOpen(TEST_KEY, config(100n)), 3, TEST_KEY), phase: S.Phase.SEALED};
+  const origin = {transactionId: '11'.repeat(32), index: 1}, tip = {transactionId: '22'.repeat(32), index: 0};
+  const snapshot = {ledger: S.encodeLedger(spent), tip, origin, covenantId: S.rootId(origin, S.rootScript(spent, profile)),
+    scriptPublicKey: p2sh(hex(blake2b256(S.scriptOf(spent, profile)))), value: S.valueOf(spent), utxoDaa: 2000n, currentDaa: 2100n};
   S.verifySnapshot(snapshot, profile);
-  const smp = sample(authenticateDraw(snapshot, spent, unhex(D.opening), {blockHash: D.target.hash, sequenceCommitment: D.target.seqCommit}));
-  assert.equal(smp.ticket + 1, 164);
-  const rec = S.records(spent)[D.hint];
-  assert.ok(smp.ticket + 1 > rec.end - rec.count && smp.ticket + 1 <= rec.end);
-  // The broken call shape introduced on 2026-10-02 must not come back: sample() takes a ledger, not (commitment, sold).
-  assert.throws(() => sample(D.target.seqCommit, spent.sold));
-  const src = fs.readFileSync(new URL('../scripts/shared/replay.mjs', import.meta.url), 'utf8');
-  assert.ok(!/sample\(op\.accessor\.sequenceCommitment/.test(src));
+  assert.throws(() => S.verifySnapshot({...snapshot, origin: undefined}, profile), /ORIGIN_REQUIRED/);
+  assert.throws(() => S.verifySnapshot({...snapshot, origin: {...origin, index: 2}}, profile), /OPEN_GENESIS_CID_MISMATCH/);
+  const opening = new Uint8Array(240); opening.set(unhex('44'.repeat(32)));
+  opening.set(le(2100n, 8), 104); opening.set(le(2099n, 8), 224);
+  opening.set(le(2n, 8), 112); opening.set(le(1n, 8), 232);
+  const seq = targetSeqOf(opening), drawn = authenticateDraw(snapshot, spent, opening, {blockHash: '44'.repeat(32), sequenceCommitment: seq});
+  const frozen = blake2b256(cat(snapshot.ledger.slice(8, 44), spent.directory));
+  const expectedSeed = blake2b256(cat(ascii('KASWIN_V2_DRAW'), unhex(snapshot.covenantId), unhex(tip.transactionId), le(0n, 4), frozen, le(2100n, 8), opening.slice(0, 32), unhex(seq)));
+  assert.equal(drawn.seed, hex(expectedSeed));
+  const digest = blake2b256(cat(ascii('KASWIN_V2_SAMPLE'), expectedSeed, le(0n, 8)));
+  const value = fromLe(digest.slice(0, 7)), space = 1n << 56n, limit = space - space % 3n;
+  assert.deepEqual(sample(drawn), {value, limit, ticket: value < limit ? Number(value % 3n) : null});
+  assert.throws(() => sample(seq, spent.sold)); // sample takes a ledger, never (commitment, sold).
+});
+
+test('engine: another Profile reserves funding before signing while records and reconcile stay isolated', async () => {
+  const {NETWORK_GENESIS, PROFILE_ID} = await import('../scripts/shared/core.mjs');
+  const h = harness(); h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
+  const session = await readSession(globalThis.kasware, {request: true});
+  const request = {action: 'GENESIS', config: config(h.chain.daa)};
+  const plan = await h.engine.plan(request, session);
+  const other = PROFILE_ID === 'aa'.repeat(32) ? 'bb'.repeat(32) : 'aa'.repeat(32), txid = 'cc'.repeat(32);
+  const k = `${NETWORK_GENESIS}/${other}/tx/${txid}`;
+  await h.store.compareAndSet(k, null, {status: 'UNKNOWN', inputs: plan.draft.inputUtxos.map(f => f.outpoint)});
+  const before = await h.store.get(k);
+  assert.deepEqual(await h.engine.records(), []);
+  await assert.rejects(h.engine.execute(plan, {approved: true}), /输入已被/);
+  await assert.rejects(h.engine.plan(request, session), /资金不足/);
+  await assert.rejects(h.engine.reconcile(txid), /没有.*记录/);
+  assert.deepEqual(await h.store.get(k), before);
+  assert.equal(h.chain.submits, 0);
 });

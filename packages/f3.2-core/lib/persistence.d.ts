@@ -11,7 +11,7 @@ export interface Store {
         record: Stored<T>;
     }>>;
 }
-export declare function namespace(networkGenesis: string, profile: string, genesisTxId?: string): string;
+export declare function namespace(profile: string, genesisTxId?: string): string;
 export declare class IndexedStore implements Store {
     private db;
     private constructor();
