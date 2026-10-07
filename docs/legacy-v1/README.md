@@ -1,38 +1,47 @@
-# V1 审计快照 README（2026-09 归档，非 F3.2 / V2 状态）
+# V1 历史归档（2026-09 现场审计快照，非 V2 / F3.2 现行代码）
 
-来自基线commit `617e3e80438df95cd2c8aed637ffb64c52f3a333`。仅将相对文档链接适配本目录；原结论是历史文本，本次整理不复验或扩大其含义。
+本目录完整保留 Kaswin 早期 V1 协议与研发探索的历史资产，以确保协议可溯源性与非破坏性保留（Non-destructive Retention）。当前 V2 协议不依赖本目录下的任何文件。
 
 ---
 
-# Kaswin
+## 归档目录结构
 
-任何人可创建、规则与资金变化可由链上证据验证的 Kaspa 抽奖协议，以单网页提供操作入口。
+```text
+docs/legacy-v1/
+├── README.md               # 本文档（V1 阶段说明与历史结论）
+├── src/                    # V1 早期单页应用静态源码（离线设计原型）
+├── tools/                  # V1 旧版构建工具与只读测试脚本
+├── tests/                  # V1 针对早期原型的测试套件与 Rust VM 验证代码
+├── contracts/              # V1 早期纯 Rust 模拟 Covenant 原型（14 个 .rs 文件）与旧实验脚本
+├── artifacts/              # V1 阶段的各门禁执行日志（gate-closure、storage-admission 等）
+├── research/               # V1 早期 TN10 节点交互记录、领水日志与状态快照
+└── reports/                # V1 阶段的 58 份可行性、攻关与审计报告
+```
 
-**状态：现场审计快照阶段。**
+---
+
+## 历史设计报告索引（归档至 reports/）
+
+- [A 型最小协议草案](reports/type-a.md)
+- [决策与实施门槛](reports/decisions.md)
+- [最小必要验证计划](reports/validation.md)
+- [固定来源与兼容边界](reports/sources.md)
+- [可行性 01：时间与链锚有效窗口](reports/feasibility-01.md)
+- [随机证据恢复：旧目标与近期验证锚](reports/randomness-recovery.md)
+- [原子派奖结算报告](reports/atomic-payout-settlement-report.md)
+- [批量退款可行性审计报告](reports/batched-refund-feasibility-audit-report.md)
+- [有界购买目录方案](reports/bounded-purchase-directory-preflight.md)
+- [存储质量门禁分析报告](reports/storage-mass-admission-report.md)
+- [无许可结算竞争分析](reports/permissionless-settlement-race.md)
+
+---
+
+## 历史验证状态（V1 现场审计快照基线）
 
 - **Real TN10 P2SH Covenant**: **PASS**
 - **Real OpTxInputDaaScore**: **PASS**
 - **Real OpChainblockSeqCommit**: **PASS**
 - **Header-bound first-crossing**: **UNDER INDEPENDENT AUDIT**
 
-## 固定目标
+注：以上结论仅属于 2026-09 的 V1 早期原型阶段，不代表当前 V2 链式模板哈希架构的验证状态。当前 V2 状态请参阅 [docs/kaswin-v2/](../../docs/kaswin-v2/)。
 
-- 无许可创建与推进，没有管理员改规则、指定赢家或提取本金的权限。
-- 公平开奖：不能依靠创建者诚实，也不能用公开开发 oracle 替代不可操纵性论证。
-- 所有生效业务操作有链上已接受交易及可验证状态证据。
-- 单网页静态分发，读取节点与历史服务不是业务裁判。
-- 首版 A 型：固定总票数，满额原子封盘后开奖；未满满足退出条件后退款。
-- 后续类型独立增加，不在首版建设通用玩法引擎。
-
-## 设计入口
-
-- [A 型最小协议草案](../type-a.md)
-- [决策与实施门槛](../decisions.md)
-- [最小必要验证计划](../validation.md)
-- [固定来源与兼容边界](../sources.md)
-- [可行性 01：时间与链锚有效窗口](../feasibility-01.md)
-- [随机证据恢复：旧目标与近期验证锚](../randomness-recovery.md)
-
-最终交付为单个自包含 `index.html`，保留全部源码、设计与中间产物。主助手持续负责设计和重大决策；实现可委派指定模型，不以页面完成代替协议成立。
-
-本仓库是全新实现起点，不继承 [kaswin-archived](https://github.com/agang0311/kaswin-archived) 的 artifact、协议身份或部署结论。暂不选择前端框架与编译器组合，不复制旧工程，也不承诺已解决链上随机性和资金退出。
