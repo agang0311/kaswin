@@ -2,7 +2,7 @@
 
 独立单文件 Testnet 10 界面：浏览轮次、创建、活动记录、规则说明；中英切换、明暗主题、本地时区，逐笔报价和钱包批准。源码只支持本地固定的V2 Profile；其他Profile不能操作。
 
-**当前是V2源码候选，未编译/测试/发布。** 旧lib/artifacts/pins/HTML仍保留，构建与依赖真实bundle的测试应拒绝混用。先读 [源码状态与执行禁令](../../docs/kaswin-v2/V2-SOURCE-STATUS.md)；下方命令仅在明确获准并完成V2链接/预算门槛后使用。
+**2026-10-07安全整改：源码与核心lib已编译核对，未测试／未发布。** 合约Profile `206d4ec7…`不变，现有HTML保留整改前快照，**不含本轮安全修复**。先读[整改决策与边界](../../docs/kaswin-v2/REMEDIATION-20261007.md)；预算完整证据未闭合，正式build禁止放行。
 
 ## 源码分工
 
@@ -19,12 +19,13 @@ Node.js 22+。从仓库根目录：
 ```bash
 npm --prefix apps/kaswin-v2 ci --ignore-scripts
 npm --prefix apps/kaswin-v2 run check:core
-npm --prefix apps/kaswin-v2 run build
+npm --prefix apps/kaswin-v2 run check:bundle  # 只在内存编译，不写HTML
+# npm --prefix apps/kaswin-v2 run build      # 当前预算门槛BLOCKED
 ```
 
 输出 `releases/kaswin-v2/index.html` 和构建manifest。构建仅需锁定开发依赖和仓库内合约产物；不下载SDK/WASM、不访问节点、不运行上游setup、不签名提交。
 
-## 测试
+## 测试（本轮没有执行，以下仅供后续获准使用）
 
 模拟钱包单测/E2E需要**单独取得的官方SDK2.0.1**。按[固定来源](../../docs/kaswin-v2/SOURCES.md)验证release资产，不安装猜测的npm包。默认SDK路径为仓库下被忽略的 `references/kaspa-wasm32-sdk/nodejs/kaspa/kaspa.js`；也可设 `KASPA_SDK_PATH=/absolute/path/to/kaspa.js`。SDK仅用于测试，不打包。
 

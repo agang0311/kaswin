@@ -1,6 +1,14 @@
-# V2 源码与三流程验证状态（2026-10-06）
+# V2 源码与验证状态
 
-**L、V 与 N 级三流程验证已执行，派奖超时退款明确排除未测试；11 笔 Testnet 10 交易全部 selected chain accepted。**
+## 2026-10-07 当前状态：安全整改、编译核对、发布BLOCKED
+
+[完整整改Preflight与结果](REMEDIATION-20261007.md)。Profile `206d4ec7…`、228B和8/6 ABI不变；三份SIL及固定artifact未改。TypeScript核心新增accepted解释器，14源文件生成42个lib文件；前端和本机Indexer源码已接入。输入占用改为同一IDB事务扫描/验证/插入，HTTP租约续期，普通资金预算和费用策略修复。HTML注入入口及渲染已加固，正式构建采用脚本hash CSP。
+
+本轮只做静态审查、TypeScript编译与内存打包，没有单元／浏览器／VM／链上测试，没有部署服务。`budgetProfileId:null`：完整V2预算证据未闭合；正式build会在写发布文件前拒绝。`releases/kaswin-v2/index.html`及dist仍为整改前SHA `6509ee14…`，不含本轮修复，不能继续当作安全整改交付。历史执行结果不自动覆盖改后代码。
+
+## 历史：2026-10-06三流程记录
+
+以下为当时记录：L、V、N三流程执行，超时退款排除，11笔TN10交易reported selected-chain accepted。2026-10-07没有重新查询或执行，不用此记录证明完整默认预算、256目录或本轮客户端修复。
 
 ## 真实构建与产物
 
@@ -46,7 +54,7 @@
 - Ledger：`KW20`，Header **228B**，目录从228开始，每条36B，最多256条；256上限的可执行性仍待新 VM/mass 校准。
 - ABI：OPEN **8参数 / 10见证栈项**，SEALED/REFUNDING **6参数 / 8见证栈项**。没有 `genesisTail`、状态 routes 或 networkGenesis。
 - 客户端始终需要 origin：非 OPEN 轮次资料仅提供候选值，须通过规范 OPEN CID 重算。不会补零或绕过认证。
-- 动作仅 BUY=1、CLOSE=2、DRAW_AND_PAY=4、TIMEOUT_REFUND=9、REFUND=10。phase3/4只在原子开奖内部使用，不是可花费的 live 状态。源码无调用者的旧beacon构建/回收/公告函数与Operation中的旧配置字段已删除，不新建V2兼容信标协议。旧生成lib保持原样，须获准后重建才能反映这些API删除。
+- 动作仅 BUY=1、CLOSE=2、DRAW_AND_PAY=4、TIMEOUT_REFUND=9、REFUND=10。phase3/4只在原子开奖内部使用，不是可花费的 live 状态。源码无调用者的旧beacon构建/回收/公告函数与Operation中的旧配置字段已删除，不新建V2兼容信标协议。这些API删除已进入当前lib；2026-10-07进一步重建lib加入安全整改。
 - 域：`KASWIN_V2_DRAW`、`KASWIN_V2_SAMPLE`、`KASWIN_GENESIS_V2`、`KASWIN_PROFILE_V2`。源码已对照 seed 前像及56-bit抽样，不是确定性向量执行或VM结果。
 - 网络配置仍固定 TN10。去掉共识账本内 networkGenesis 不等于去掉客户端网络隔离或节点网络检查。
 
@@ -58,7 +66,7 @@
 
 不清库、不迁移、不载入旧 ABI，不在V2页面对账旧Profile。原记录需用其对应版本处理。保护只覆盖此新版代码在同源、同记录库的执行；未升级旧页面、其他数据库/origin/设备不获得反向保护，不能并行提交同一资金。
 
-### Indexer（另一工作空间中的源码候选）
+### Indexer（2026-10-06历史消费者说明；本轮仅修改本机源码）
 
 `/root/kaspa/workers/kaswin-event-indexer/contracts/kaswin-v2.mjs` 和 `v2-rounds.mjs` 是独立V2实现，不委托F3 adapter。使用显式本地仓库路径和完整Profile pin，调用本地 `loadV2Bundle`；缺pin或旧artifact直接拒绝。只读索引不因预算未校准而伪称可提交。
 
@@ -68,7 +76,7 @@ Registry仍只认output1的5,000,000 sompi普通付款、2/3个规范输出及ow
 
 ## 产物与工具
 
-- `lib/`、`artifacts/`、`pins.json`、`profile.json`、release HTML和manifest仍为旧构建。不能改标签冒充V2；本轮不手改生成物。
+- `artifacts/`与`profile.json`是已固定的V2 `206d4ec7…`；lib于2026-10-07重新生成，pins只撤回预算批准标记。release HTML/manifest仍对应整改前源码，不手工改hash或标签冒充更新。
 - `build-v2.mjs`只在**明确获准编译后**运行，目标必须为新绝对路径目录。绑定compiler binary SHA、模板源/链接源/constructor/artifact SHA、模板依赖和Profile。
 - `check-compile.mjs`已改为复用上述链接器，再与本地V2 pins比对；不再直接编译带零占位模板。
 - 发布仓库当前没有 `compile_three.py`；外部references中的旧脚本是历史工具，不是V2入口。
@@ -76,7 +84,7 @@ Registry仍只认output1的5,000,000 sompi普通付款、2/3个规范输出及ow
 - 删除当前npm `verify:deployed`入口；`--reproduce-deployed`明确拒绝。旧快照留存，需在其历史源码版本复现，不能要求V2源码产生旧协议字节。
 - `source-map.json`保存历史整理映射及当时哈希，不是当前源码完整性证明；本次只加范围标记，不伪造新生成物哈希。
 
-## 最小必要验证计划（全部待授权，未运行）
+## 验证计划（历史源码计划；本轮整改测试未运行）
 
 | 测试/门槛 | 保护价值、具体失败与遗漏后果 | 最低验证层及非重复性 |
 |---|---|---|
@@ -88,4 +96,4 @@ Registry仍只认output1的5,000,000 sompi普通付款、2/3个规范输出及ow
 | 单HTML与最小浏览器回归 | 生成物漂移、依赖越层、钱包/持久化接线可能破坏保护 | L；不能代替真实钱包或网络acceptance |
 | TN10真实accepted/mass/fee | VM不证明relay与selected-chain acceptance | N，须另行明确授权，逐笔真实txid记录 |
 
-`protocol.test.mjs`保留unsupported-action负例，旧预算断言改成明确TODO；旧f256数据保留但不再作为V2中奖票号oracle。现在不能给出新Profile、预算、通过数或上线状态。Node22.23.2/esbuild0.28.2对JSON import attributes的完整构建链也未执行验证，须在获准后的core/网页构建中确认。
+`protocol.test.mjs`保留unsupported-action负例，旧预算断言改成明确TODO；旧f256数据保留但不再作为V2中奖票号oracle。Profile已由实际pins确定；2026-10-07固定TypeScript/esbuild内存编译链可完成，但不构成运行验证。预算校准、整改后测试与发布仍待授权和证据闭合。

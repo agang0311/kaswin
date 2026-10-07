@@ -14,7 +14,7 @@ import {S, unhex, authenticateDraw, sample, winnerRecord, kas} from '../scripts/
 import {replayAccepted} from '../scripts/shared/replay.mjs';
 
 const profile = loadProfile();
-const passA = JSON.parse(fs.readFileSync('/root/kaspa/references/kaswin-f3-open-genesis/evidence/tn10/payout/PASS_A.json', 'utf8'));
+const passA = JSON.parse(fs.readFileSync(new URL('./fixtures/pass-a-public.json', import.meta.url), 'utf8'));
 const PASS_A_OPENING = unhex(passA.openingHex);
 const PASS_A_TARGET = {blockHash: passA.target.hash, sequenceCommitment: passA.target.seqCommit};
 

@@ -1,5 +1,9 @@
 # Kaswin V2 架构入口
 
+## 2026-10-07 安全整改增量（当前入口）
+
+[完整Preflight：25问／14材料／8反模式与决策](REMEDIATION-20261007.md)。采用现有Profile `206d4ec7…` 不改SIL/schema；将自家builder策略与已接受交易解释分离，辅助输出不冒充合约保证收款；忽略的fee见证不作为真实费用。新增同网络跨Profile原子输入占用与可续期租约。外部元数据严格校验、统一安全链接，正式构建改为脚本hash CSP。预算门槛恢复BLOCKED；仅源码／编译，未测试或部署。下方旧文档中“全部字段／全部输出一致”的表述仅指历史严格builder路径，不能代表实际共识允许集合。
+
 ## 2026-10-06 V2协议源码候选（优先于下方历史应用增量）
 
 当前源码采用228B Header、OPEN 8参数/后继6参数、REFUNDING→SEALED→OPEN固定哈希、仅OPEN链上checkRoot。`networkGenesis/routes/genesisTail`不再是账本/ABI字段；本地网络隔离仍存在。完整获批25问/14材料/8反模式保存在工作空间 `/root/kaspa/docs/kaswin/chained-hash-open-preflight.zh.md`；当前实现边界与测试计划见 [V2-SOURCE-STATUS](V2-SOURCE-STATUS.md)。不是下方旧Profile规则的兼容扩展。

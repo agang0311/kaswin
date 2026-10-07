@@ -1,0 +1,19 @@
+{
+  "fixturePurpose": "Historical public PASS-A bytes used only as a local synthetic-vector input; not evidence that a V2 round was accepted",
+  "sourceObservedAt": "2026-09-25T11:14:24.846Z",
+  "sourceProfileId": "1dc418097f31655000dc779cd2c68d17812b981ab9868f25e7266d14fe70ba61",
+  "sourceCloseTxid": "0d8cdc1a6b18af4d91afd6e1371eae978b55adade2b0016461d223a8dd39c62c",
+  "consensusSourceCommit": "cfafeb4c093fa37a303f1b9f19c58f986b870ce3",
+  "boundaryDaa": "580025326",
+  "parent": {
+    "hash": "266262dfdf74fd835bfb8ba526db956eedba1c7bf8420e6c98487a4413d415af",
+    "daa": "580025325",
+    "seqCommit": "3a4d0f7084ce32ab17fef8b38bb5a4a25cb8c38439b1fc922f1c236296793fbb"
+  },
+  "target": {
+    "hash": "c24c6e588d058d9069ad355fd86d0a616ffa1e548634cb68c46a951bcd875c82",
+    "daa": "580025327",
+    "seqCommit": "33e65b6b1ccd6dd32a24ff75d7ffb92574648918a83a331c9fd84388bfde951f"
+  },
+  "openingHex": "c24c6e588d058d9069ad355fd86d0a616ffa1e548634cb68c46a951bcd875c822ff649b20a0fe37a414b0d20449eed88d5b009214459190d38e84cd55b0e646cbce08881e359d20d8a5bc06342bde7390660bb0327a7ecd948a6ec29ff322528598538d8a0010000ef7b922200000000a4c6e221000000000fd7c28138cc2a1c31e9ed74327839667268a82c8386c71be9d3dc4e9ce3a306f0bbffd19d6f03b63e8d6ed72948d31ce6fcc9ff8d4b61c48aa0b5079b4d0ee4da574c245195dc73d636d61519f1d0dc8bd6a3fce32240670e4400c24211bd022b8438d8a0010000ed7b922200000000a2c6e22100000000"
+}

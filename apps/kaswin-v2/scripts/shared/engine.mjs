@@ -2,18 +2,18 @@
  * plan():   live snapshot from the configured node -> core builder -> consensus mass -> fee fixed point -> frozen plan.
  * execute(): user approval -> recheck session + inputs on the node -> wallet signs ordinary inputs only ->
  *            signatures verified -> intent persisted in IndexedDB -> ONE submit -> record outcome.
- * reconcile(): acceptance on the node vs the approved plan (every field). Unknown stays unknown; no resubmission.
+ * reconcile(): acceptance + approved economic/consensus fields. Only ignored fee witness changes are tolerated after acceptance.
  */
 import {S, ensure, hash32, hex, buildAction, buildOpenGenesis, availableActions, actionBudget, referenceTxId, stable, kas, errorText,
-  DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI, PROFILE_ID, NETWORK_GENESIS, IndexedStore, FEE_CAP, UserError} from './core.mjs';
+  DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI, PROFILE_ID, NETWORK_GENESIS, IndexedStore, UserError} from './core.mjs';
 import {convergeFee, MassLimitError} from './mass.mjs';
 import {commonUtxos, verifyInputsLive, acceptedPair, searchAccepted, inMempool, matchesDraft} from './chain.mjs';
-import {readSession, signWithWallet} from './wallet.mjs';
+import {signWithWallet} from './wallet.mjs';
 import {txToRpc} from './nodes.mjs';
 import {spkToAddress} from './lib/address.mjs';
 import {acquireDrawProof} from './passa.mjs';
 import {liveRound} from './rounds.mjs';
-import {reservedInputs} from './reservations.mjs';
+import {reservedInputs, persistIntent} from './reservations.mjs';
 
 export const STORE = 'kaswin-opus-f32';
 const PREFIX = `${NETWORK_GENESIS}/${PROFILE_ID}/tx/`;
@@ -23,18 +23,35 @@ const ROLE_LABEL = {WINNER: '中奖者奖金', CREATOR: '创建者押金返还',
 const key = o => `${o.transactionId}:${o.index}`;
 // crypto.randomUUID / navigator.locks are secure-context only; plain-http LAN pages need fallbacks.
 const planId = () => { const b = new Uint8Array(16); crypto.getRandomValues(b); return Array.from(b, x => x.toString(16).padStart(2, '0')).join(''); };
-/** Same-origin cross-tab mutex for insecure contexts: an IndexedDB-backed lease (CAS) with expiry.
- * The durable txid record (CAS on the txid key) remains the actual duplicate-submit guard. */
+/** A renewable HTTP/LAN lease is advisory. The atomic input-reserving journal insert
+ * is the durable side-effect guard, even after tab suspension or an expired lease. */
 export function leaseLocks(openStore, ttlMs = 120_000) {
+  ensure(Number.isSafeInteger(ttlMs) && ttlMs >= 30, '租约时长无效');
   return {
     async request(name, _opts, fn) {
       const store = await openStore(), k = `lock/${name}`, me = planId(), now = Date.now();
       const cur = await store.get(k);
       if (cur && cur.value.owner && cur.value.until > now) return fn(null);
-      let held;
-      try { held = await store.compareAndSet(k, cur?.revision ?? null, {owner: me, until: now + ttlMs}); } catch { return fn(null); }
-      try { return await fn({name}); }
-      finally { try { const c = await store.get(k); if (c?.value.owner === me) await store.compareAndSet(k, c.revision, {owner: null, until: 0}); } catch {} void held; }
+      try { await store.compareAndSet(k, cur?.revision ?? null, {owner: me, until: now + ttlMs}); } catch { return fn(null); }
+      let stopped = false, lost = false, renewal = null;
+      const assertHeld = async () => {
+        const c = await store.get(k);
+        ensure(!lost && !stopped && c?.value.owner === me && c.value.until > Date.now(), '提交租约已失效，已停止提交', 'SUBMIT_LEASE_LOST');
+      };
+      const renew = async () => {
+        const c = await store.get(k);
+        ensure(!stopped && c?.value.owner === me && c.value.until > Date.now(), 'SUBMIT_LEASE_LOST');
+        await store.compareAndSet(k, c.revision, {owner: me, until: Date.now() + ttlMs});
+      };
+      const timer = setInterval(() => {
+        if (!stopped && !lost && !renewal) renewal = renew().catch(() => { lost = true; }).finally(() => { renewal = null; });
+      }, Math.max(10, Math.floor(ttlMs / 3)));
+      timer.unref?.();
+      try { return await fn({name, lease: {key: k, owner: me}, assertHeld}); }
+      finally {
+        stopped = true; clearInterval(timer); if (renewal) await renewal;
+        try { const c = await store.get(k); if (c?.value.owner === me) await store.compareAndSet(k, c.revision, {owner: null, until: 0}); } catch {}
+      }
     },
   };
 }
@@ -67,11 +84,11 @@ export class Engine {
     return head ? {txid: head.txid, terminal: head.terminal, nextLedger: head.nextLedger, value: head.nextValue, spk: head.nextSpk, utxoDaa: head.acceptingDaa, accepting: head.accepting, origin: head.origin, genesisTxid: head.genesisTxid, inputs: head.inputs, at: head.verifiedAt} : null;
   }
 
-  /** Wallet funding UTXOs live on the node, not reserved by an unresolved local submission, mature, non-covenant. */
-  async funding(session, currentDaa) {
+  /** Only ordinary, non-coinbase UTXOs; coinbase spending is deliberately unsupported. */
+  async funding(session) {
     const reserved = await this.reserved();
     const all = await commonUtxos(this.pair, session.address);
-    return all.filter(u => !u.covenantId && u.spk.script === session.spk.script && !reserved.has(key(u.outpoint)) && !(u.isCoinbase && currentDaa - u.daa < 1000n))
+    return all.filter(u => !u.covenantId && !u.isCoinbase && stable(u.spk) === stable(session.spk) && !reserved.has(key(u.outpoint)))
       .sort((a, b) => (a.value < b.value ? 1 : a.value > b.value ? -1 : 0));
   }
   /** Greedy: largest UTXOs first, at most 8 (contract funding loop bound). */
@@ -115,7 +132,7 @@ export class Engine {
     const pool = action === 'REFUND' ? BigInt(Math.min(32, s.purchaseCount - s.cursor)) * S.REFUND_FEE : 0n;
     const reservedSet = await this.reserved();
     for (const i of live ? [live.snapshot.tip] : []) ensure(!reservedSet.has(key(i)), '本浏览器已有一笔花费此轮状态的提交尚未对账，请先在「交易记录」中对账', 'PENDING_LOCAL');
-    const available = needsFunds || action === 'REFUND' ? await this.funding(session, currentDaa) : [];
+    const available = needsFunds || action === 'REFUND' ? await this.funding(session) : [];
     const make = funds => fee => action === 'GENESIS' ? buildOpenGenesis(this.profile, session.key, request.config, funds, fee, registry) : buildAction(live.snapshot, this.profile, op, fee, funds, actionBudget(action, s));
     let funds = needsFunds ? this.pick(available, principal + 3_000_000n) : [], priced, sponsored = false;
     const attempt = f => convergeFee(make(f), feerate, {mode: request.feeMode ?? 'standard'});
@@ -163,6 +180,8 @@ export class Engine {
     return this.locks.request('kaswin-opus-submit', {ifAvailable: true}, async lock => {
       ensure(lock, '另一个标签页正在提交交易，请稍后在交易记录中对账');
       const store = await this.store(), k = PREFIX + plan.draft.txid;
+      ensure(typeof store.insertIfAbsentWithCheck === 'function', '记录库不支持原子输入占用，不能提交', 'ATOMIC_INTENT_STORE_REQUIRED');
+      await lock.assertHeld?.();
       ensure(!(await store.get(k)), '这笔交易已有本地记录，只能对账，不能重复提交');
       const reserved = await this.reserved();
       ensure(!plan.draft.inputUtxos.some(f => reserved.has(key(f.outpoint))), '输入已被另一笔未对账的本地提交占用');
@@ -170,7 +189,9 @@ export class Engine {
       await this.pair.currentDaa();
       await verifyInputsLive(this.pair, plan.draft.inputUtxos);
       onProgress(plan.draft.authorizedInputIndices.length ? '请在 KasWare 中核对并签名（手机端请查看后台标签页或菜单底部的 KasWare）…' : '此动作无需钱包签名（无外部资金输入）…');
+      await lock.assertHeld?.();
       const sigs = await signWithWallet(plan.draft, plan.session, {onWaiting: s => onProgress(s || '等待 KasWare 签名…')});
+      await lock.assertHeld?.();
       const tx = structuredClone(plan.draft.transaction);
       for (const [i, sig] of sigs) tx.inputs[i].signatureScript = sig;
       ensure(referenceTxId(tx) === plan.draft.txid, '签名后交易 ID 变化，已拒绝');
@@ -184,9 +205,11 @@ export class Engine {
         outputs: plan.outputs, terminal: plan.terminal, winner: plan.winner, proof: plan.proof,
         origin: plan.origin, genesisTxid: plan.action === 'GENESIS' ? plan.draft.txid : plan.genesisTxid, nextLedger: plan.nextLedger, nextValue: plan.nextValue, nextSpk: plan.nextSpk, walletEchoDiffers: sigs.echoDiffers === true,
       };
-      let stored = await store.compareAndSet(k, null, record); // durable intent BEFORE the network side effect
+      await lock.assertHeld?.();
+      let stored = await persistIntent(store, NETWORK_GENESIS, k, record, lock.lease); // atomic outpoint check + durable intent
       onProgress('意图已持久化，正在单次提交…');
       try {
+        await lock.assertHeld?.(); // failure preserves the durable intent as UNKNOWN, never silently releases
         const res = await this.pair.nodes[0].call('submitTransaction', {transaction: txToRpc(tx), allowOrphan: false});
         ensure(res?.transactionId === plan.draft.txid, `节点返回的交易 ID 不一致：${res?.transactionId}`);
         record = {...record, status: 'SUBMITTED', submittedAt: Date.now(), submittedTo: this.pair.nodes[0].url};
@@ -227,7 +250,8 @@ export class Engine {
       } else {
         const ev = await acceptedPair(this.pair, txid, accepting);
         const fee = matchesDraft(ev, r.draft);
-        r = {...r, status: 'ACCEPTED', accepted: true, accepting, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations, actualFee: fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(), note: '节点当前选中链已接受，且全部字段与批准计划一致（不是不可逆最终性）'};
+        r = {...r, status: 'ACCEPTED', accepted: true, accepting, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations, actualFee: fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(), ignoredFeeWitnessChanged: ev.tx.inputs[0].signatureScript !== r.draft.transaction.inputs[0].signatureScript && !r.draft.authorizedInputIndices.includes(0),
+          note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（只容忍合约忽略的费用见证参数变化；不是不可逆最终性）'};
       }
     } catch (e) {
       r = {...r, status: r.status === 'REJECTED' ? 'REJECTED' : 'UNKNOWN', accepted: false, error: errorText(e), note: '本次核验未完成；保留输入占用，不会重发'};

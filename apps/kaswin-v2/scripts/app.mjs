@@ -1,11 +1,11 @@
 /** Kaswin V2 — adapted from Opus, with Astra source labels and Gemini navigation ideas. */
-import {S, PROFILE_ID, NETWORK_GENESIS, COMPILER_COMMIT, CONTRACT_TAG, makeProfile, unhex, hex, blake2b256, p2sh, kas, shortHash, escapeHtml as e, ensure, errorText, daaDuration,
-  explorerTx, explorerAddress, explorerBlock, actionBudget, actionUnits, BUDGET_MARGIN, availableActions, kasToSompi, FEE_CAP, UserError, DAA_PER_SECOND, IndexedStore} from './shared/core.mjs';
+import {S, PROFILE_ID, NETWORK_GENESIS, COMPILER_COMMIT, CONTRACT_TAG, makeProfile, unhex, hex, kas, shortHash, escapeHtml as e, ensure, errorText, daaDuration,
+  explorerTx, explorerAddress, explorerBlock, actionBudget, BUDGET_MARGIN, availableActions, kasToSompi, FEE_CAP, UserError, DAA_PER_SECOND, IndexedStore} from './shared/core.mjs';
 import {NodeLink, host, nodeUrl} from './shared/nodes.mjs';
 import {DEFAULT_NODE, DEFAULT_NODES, DEFAULT_INDEXER, CONFIG_VERSION, migrateConfig, connectionNotices} from './endpoints.mjs';
-import {ACTION_LABEL, roleLabel, explainUnavailable, STORE} from './shared/engine.mjs';
+import {ACTION_LABEL, roleLabel} from './shared/engine.mjs';
 import {EngineV2 as Engine} from './engine2.mjs';
-import {txStatus, recordStatus, needsAttention, roundFacts, plannedActions, cardStep, planSummary, walletFlow, CLOSE_OUTCOME, waitText} from '../visual/view.mjs';
+import {txStatus, recordStatus, needsAttention, plannedActions, cardStep, planSummary, walletFlow, CLOSE_OUTCOME, waitText} from '../visual/view.mjs';
 import {readSession, waitForProvider, watchWallet, provider} from './shared/wallet.mjs';
 import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, phaseInfo as basePhaseInfo} from './shared/rounds.mjs';
 const phaseInfo = row => { const p = basePhaseInfo(row); return p.key === 'refunded' ? {...p, label:'退款完成'} : p; };
@@ -432,11 +432,13 @@ function renderRound(v) {
   if ($('refreshRound')) $('refreshRound').onclick = async () => { try { state.daa=await pair.currentDaa(); } catch {} await openRound(d.cid,{push:false}); };
   bindMatrixEvents(v, recs, d, draw, me, price);
 }
+/** A display-only hint, never inferred from the order of local pending/accepted records. */
+function purchaseTxid(d, index, records) {
+  const hint = d?.purchases?.[index]?.txid ?? (records.length === 1 && d?.state?.phase === 1 ? d.latestTxid : null);
+  return typeof hint === 'string' && /^[0-9a-f]{64}$/.test(hint) ? hint : null;
+}
 function matrix(recs, sold, draw, d, me) {
-  const price = d?.state?.config?.ticketPrice ? BigInt(d.state.config.ticketPrice) : null;
   const drawRec = draw ? draw.record : null;
-  const myBuys = (state.records || []).filter(x => x.cid === d?.cid && x.action === 'BUY' && !['REJECTED', 'ARCHIVED'].includes(x.status));
-  let myBuyIdx = 0;
 
   const cells = recs.map((r, i) => {
     const isMe = r.key === me;
@@ -445,13 +447,7 @@ function matrix(recs, sold, draw, d, me) {
     const start = r.end - r.count + 1;
     const addr = pubkeyToAddress(r.key);
 
-    let txid = r.txid || d?.purchases?.[i]?.txid || null;
-    if (!txid && recs.length === 1 && d?.state?.phase === 1 && d?.latestTxid) {
-      txid = d.latestTxid;
-    }
-    if (!txid && isMe && myBuys[myBuyIdx]?.txid) {
-      txid = myBuys[myBuyIdx++].txid;
-    }
+    const txid = purchaseTxid(d, i, recs);
 
     const href = txid ? explorerTx(txid) : explorerAddress(addr);
     const rangeText = `${start}${r.count > 1 ? '–' + r.end : ''}`;
@@ -474,7 +470,6 @@ function bindMatrixEvents(v, recs, d, draw, me, price) {
   const tip = $('matrixTip');
   if (!tip || !recs.length) return;
   const placeholder = `<div class="tip-placeholder">${icon('search')}<span>点击或悬停方格查看购买详情 · 点击跳转 kaspa.stream</span></div>`;
-  const myBuys = (state.records || []).filter(x => x.cid === d.cid && x.action === 'BUY' && !['REJECTED', 'ARCHIVED'].includes(x.status));
   let activeIdx = null;
 
   function renderTip(i) {
@@ -487,12 +482,7 @@ function bindMatrixEvents(v, recs, d, draw, me, price) {
     const rangeText = `${start}${r.count > 1 ? '–' + r.end : ''}`;
     const addr = pubkeyToAddress(r.key);
     const cost = price ? kas(price * BigInt(r.count)) + ' TKAS' : '';
-    let txid = r.txid || d.purchases?.[i]?.txid || null;
-    if (!txid && recs.length === 1 && d.state?.phase === 1 && d.latestTxid) txid = d.latestTxid;
-    if (!txid && isMe) {
-      const myIdx = recs.slice(0, i).filter(x => x.key === me).length;
-      if (myBuys[myIdx]?.txid) txid = myBuys[myIdx].txid;
-    }
+    const txid = purchaseTxid(d, i, recs);
     const tone = isWin ? 't-gold' : isMe ? 't-pri' : '';
     const badgeLabel = isWin ? '🏆 中奖记录' : isRefunded ? '已退款' : '第 ' + (i + 1) + ' 笔购买';
     tip.innerHTML = `
@@ -507,7 +497,7 @@ function bindMatrixEvents(v, recs, d, draw, me, price) {
       <div class="tip-body">
         <span>买家：<span class="mono">${hashHtml(addr, {link: explorerAddress(addr), isAddr: true, n: 10})}</span></span>
         <span class="spacer"></span>
-        ${txid ? `<a class="btn sm mono" href="${explorerTx(txid)}" target="_blank" rel="noopener noreferrer">${shortHash(txid, 8, 6)} ↗</a>` : `<a class="btn sm" href="${explorerAddress(addr)}" target="_blank" rel="noopener noreferrer">在 kaspa.stream 查看买家 ↗</a>`}
+        ${txid ? hashHtml(txid, {link: explorerTx(txid), n: 8, isTx: true}) : `<a class="btn sm" href="${e(explorerAddress(addr))}" target="_blank" rel="noopener noreferrer">在 kaspa.stream 查看买家 ↗</a>`}
       </div>`;
   }
 
@@ -556,11 +546,11 @@ function actionsHtml(d, ledger) {
   }).join('')}</div><p class="small muted">${ph===1?'到封盘时间不会自动停售，也不会自动封盘。':''}先核验与报价，确认前不会签名或提交。刷新状态不会重新提交交易。</p><button class="link" id="refreshRound">刷新轮次与节点时间</button>`;
 }
 function replayHtml(x) {
-  const lab = {STATE: '状态后继', WINNER: '中奖者', CREATOR: '创建者', EXECUTOR: '执行者', BUYER_REFUND: '买家退款', CHANGE: '找零', REGISTRY: 'Registry 登记'};
-  return `<div class="notice ok"><b>${e(ACTION_LABEL[x.action] ?? x.action)}</b> 已被选中链接受（接受块 DAA ${x.acceptingDaa}，确认深度约 ${x.confirmations}），${x.action === 'GENESIS' ? '创建公告、初始账本、固定 OPEN 模板、0.2 TKAS 状态输出与 Covenant ID 推导均与固定 Profile 一致。' : `全部 ${x.outputs.length} 个输出与固定合约规则重算结果逐字节一致。`}</div>
+  const lab = {STATE: '状态后继', WINNER: '中奖者', CREATOR: '创建者', EXECUTOR: '执行者', BUYER_REFUND: '买家退款', CHANGE: '找零', REGISTRY: 'Registry 登记', AUXILIARY: '辅助输出（非本轮约束）'};
+  return `<div class="notice ok"><b>${e(ACTION_LABEL[x.action] ?? x.action)}</b> 已被选中链接受（接受块 DAA ${x.acceptingDaa}，确认深度约 ${x.confirmations}），${x.action === 'GENESIS' ? '创建公告、初始账本、固定 OPEN 模板、0.2 TKAS 状态输出与 Covenant ID 推导均与固定 Profile 一致。' : `已重算并核对 ${x.constrainedOutputs} 个合约约束输出；其余输出仅展示节点已接受的实际内容，不视为合约保证的收款。`}</div>
   ${x.winner ? `<div class="notice" style="border-color:var(--gold);background:var(--gold-soft)">🏆 中奖记录 #${x.winner.record + 1}（票 ${x.winner.firstTicket}–${x.winner.lastTicket}），奖金 <b>${kas(x.winner.prize)} TKAS</b> → ${hashHtml(pubkeyToAddress(x.winner.key), {link: explorerAddress(pubkeyToAddress(x.winner.key)), n: 12})}</div>` : ''}
   <div class="outs">${x.outputs.map((o, i) => `<div class="out"><span class="r">${i} · ${e(lab[o.role] ?? o.role)}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>
-  <dl class="kv small" style="margin-top:8px"><dt>交易</dt><dd>${hashHtml(x.txid, {link: explorerTx(x.txid)})}</dd><dt>网络费</dt><dd>${kas(x.fee)} TKAS · compute mass ${x.computeMass ?? '—'} · budget ${x.budget}</dd>${x.draw ? `<dt>PASS-A 目标块</dt><dd>${hashHtml(x.draw.target, {link: explorerBlock(x.draw.target)})} · DAA ${x.draw.targetDaa} ≥ 边界 ${x.draw.boundaryDaa}；节点区块头的序列承诺与证明一致</dd>` : ''}</dl>`;
+  <dl class="kv small" style="margin-top:8px"><dt>交易</dt><dd>${hashHtml(x.txid, {link: explorerTx(x.txid)})}</dd><dt>网络费</dt><dd>${kas(x.fee)} TKAS · compute mass ${x.computeMass ?? '—'} · budget ${x.budget}</dd>${x.witnessFee != null && x.witnessFee !== x.fee ? `<dt>见证费用参数</dt><dd>${e(String(x.witnessFee))} sompi（此动作不绑定该参数；上方为真实输入减输出费用）</dd>` : ''}${x.draw ? `<dt>PASS-A 目标块</dt><dd>${hashHtml(x.draw.target, {link: explorerBlock(x.draw.target)})} · 边界 DAA ${x.draw.boundaryDaa}；${x.draw.headerChecked ? '节点区块头的序列承诺与证明一致' : '当前未取得目标区块头，仅依赖已接受交易执行时的共识校验'}</dd>` : ''}</dl>`;
 }
 function liveHtml(l) {
   const acts = availableActions(l.snapshot, profile).filter(a => ACTION_LABEL[a]);
@@ -599,7 +589,6 @@ async function actionDialog(action, d) {
   }
   runPlan({action, cid: d.cid}, epoch);
 }
-const STAGES = {plan: ['连接节点', '读取并复验状态 UTXO', '构建交易并计算精确费用'], exec: ['再次确认输入未花费', '钱包签名（仅你的普通输入）', '验证签名并持久化意图', '单次提交到节点']};
 async function runPlan(request, epoch) {
   modal(ACTION_LABEL[request.action], `<ul class="progress" id="prog"><li class="run" id="pstat">准备…</li></ul><p class="err" id="pErr"></p>`);
   lockModal(true);
@@ -855,7 +844,7 @@ function renderProtocol(v) {
     <div>
       <div class="panel"><h2>${icon('shield')} 你在信任什么</h2>
         <ul style="padding-left:18px;margin:0;display:grid;gap:8px">
-          <li><b>Kaspa L1 共识</b>执行三份固定合约：每次状态转换的输出（金额、收款人、后继状态脚本）都由旧状态的脚本逐字节约束。</li>
+          <li><b>Kaspa L1 共识</b>执行三份固定合约：状态后继、买家退款、中奖者奖金及创建者押金由脚本约束。附加输出和退款末输出不全由本轮脚本约束；本页构建时还应用自己的严格资金布局与费用策略。</li>
           <li><b>随机数</b>来自封存 100 DAA 后首个跨越边界的选中链区块（PASS-A 序列承诺），合约在花费时用 OpChainblockSeqCommit 校验证明，伪造的证明只会让交易失败；不接受其他随机源，样本被拒也不重抽。</li>
           <li><b>本页</b>只是一个构建器：用嵌入的固定合约帧与核心库生成交易，用移植自 rusty-kaspa 的质量公式报价，用 BIP-340 校验钱包签名。</li>
           <li><b>Kaspa 节点</b>（默认 ${e(host(DEFAULT_NODE))} 提供的 kaspad 入口，可在设置中更换）是访问共识的入口：页面通过它读取 UTXO、接受数据与区块头，并提交交易。本页信任所配置节点如实反映 Kaspa 共识；资金规则本身由所有节点共同执行的合约脚本保证。</li>

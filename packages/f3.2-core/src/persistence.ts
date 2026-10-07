@@ -4,8 +4,11 @@ export interface Stored<T> {
     revision: number;
     value: T;
 }
+export interface StoreRow<T = unknown> { key: string; record: Stored<T>; }
 export interface Store {
     get<T>(key: string): Promise<Stored<T> | null>;
+    /** Synchronous check and insert share ONE readwrite transaction. No async callback. */
+    insertIfAbsentWithCheck<T>(key: string, value: T, prefix: string, inspect: (rows: StoreRow[]) => void): Promise<Stored<T>>;
     compareAndSet<T>(key: string, expectedRevision: number | null, value: T): Promise<Stored<T>>;
     remove(key: string, expectedRevision: number): Promise<void>;
     list<T>(prefix: string): Promise<Array<{
@@ -62,6 +65,36 @@ export class IndexedStore implements Store {
                 }
             };
             tx.oncomplete = () => resolve(result!);
+            tx.onabort = () => reject(cause ?? tx.error ?? new Error('IDB_ABORT'));
+            tx.onerror = () => reject(cause ?? tx.error);
+        });
+    }
+    /** Atomically reserve inputs by validating the journal snapshot and inserting the intent.
+     * All same-object-store readwrite transactions serialize across tabs. Existing records
+     * remain the source of reservations: no migration, duplicated lock table or TTL release. */
+    insertIfAbsentWithCheck<T>(key: string, value: T, prefix: string, inspect: (rows: StoreRow[]) => void): Promise<Stored<T>> {
+        check(key.startsWith(prefix), 'ATOMIC_INSERT_SCOPE');
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('records', 'readwrite'), store = tx.objectStore('records');
+            const rows: StoreRow[] = [], result: Stored<T> = {revision: 0, value};
+            let cause: unknown;
+            const req = store.openCursor();
+            req.onsuccess = () => {
+                try {
+                    const c = req.result;
+                    if (c) {
+                        check(c.key !== key, 'INTENT_ALREADY_EXISTS');
+                        if (typeof c.key === 'string' && c.key.startsWith(prefix)) rows.push({key: c.key, record: c.value});
+                        c.continue();
+                    } else {
+                        // Reject accidental async validators; never commit after an unobserved check.
+                        const outcome: unknown = inspect(rows);
+                        check(outcome === undefined, 'ATOMIC_CHECK_MUST_BE_SYNCHRONOUS');
+                        store.add(result, key);
+                    }
+                } catch (e) { cause = e; tx.abort(); }
+            };
+            tx.oncomplete = () => resolve(result);
             tx.onabort = () => reject(cause ?? tx.error ?? new Error('IDB_ABORT'));
             tx.onerror = () => reject(cause ?? tx.error);
         });

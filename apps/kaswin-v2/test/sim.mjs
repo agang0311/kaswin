@@ -153,6 +153,14 @@ export class MemoryStore {
     const prev = this.map.get(k); if ((prev?.revision ?? null) !== rev) throw new Error('STALE_CACHE_REVISION');
     const rec = {revision: (prev?.revision ?? -1) + 1, value: structuredClone(value)}; this.map.set(k, rec); return structuredClone(rec);
   }
+  async insertIfAbsentWithCheck(k, value, prefix, inspect) {
+    // Synchronous critical section for this single-process simulator; NOT proof of cross-tab IDB atomicity.
+    if (this.failNextWrite) { this.failNextWrite = false; throw new Error('IDB_WRITE_FAILED'); }
+    if (this.map.has(k)) throw Error('INTENT_ALREADY_EXISTS');
+    const rows = [...this.map].filter(([key]) => key.startsWith(prefix)).map(([key, record]) => ({key, record: structuredClone(record)}));
+    if (inspect(rows) !== undefined) throw Error('ATOMIC_CHECK_MUST_BE_SYNCHRONOUS');
+    const rec = {revision: 0, value: structuredClone(value)}; this.map.set(k, rec); return structuredClone(rec);
+  }
   async list(prefix) { return [...this.map].filter(([k]) => k.startsWith(prefix)).map(([key, record]) => ({key, record: structuredClone(record)})); }
 }
 export const testLocks = {busy: false, async request(_name, _opts, f) { if (this.busy) return f(null); this.busy = true; try { return await f({}); } finally { this.busy = false; } }};

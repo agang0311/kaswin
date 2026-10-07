@@ -1,6 +1,6 @@
 # Kaswin V2 链上源码候选（目录暂保留 f3.2）
 
-**未编译、未测试、未发布。** 当前 `src/` 是V2；`artifacts/`、`pins.json`、`profile.json`仍是旧F3.2产物，故意不能通过V2构建门禁。旧Profile `7ca61d81be1a2448d16b18cb2bdce845c91ed4993a6da0fd26b14d211fbce863`不是新V2 Profile。
+**当前为固定V2 Profile `206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3`。** 2026-10-07审查曾隔离重编三模板并与pins一致；后续整改不改SIL/artifact/ABI。`budgetProfileId`恢复null，因为完整目录及退款游标预算证据未闭合；正式发布仍BLOCKED。本轮没有VM/链上测试，历史三流程不能覆盖全部资源边界。
 
 | 文件 | 责任 |
 |---|---|
@@ -15,12 +15,12 @@ Header=228B、Magic=KW20、目录从228起；OPEN 8参数，SEALED/REFUNDING 6�
 
 固定SilverScript v1.0.0：`3ed973335b59269293564805cc2c58a14595ec03`，binary SHA256 `81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00`。不升级工具链。
 
-## 获准后的顺序（当前禁止执行）
+## 版本及发布顺序（执行验证须另获授权）
 
 1. 固定TypeScript 5.8.3重新生成核心lib，不手改生成物。
 2. `node contracts/f3.2/tools/build-v2.mjs /absolute/silverc /absolute/new-bundle-directory`。
 3. 人工审查源码、依赖、ABI、产物与Profile，再安装候选bundle；脚本不自动安装。
-4. V2真实VM正负例、mass/fee/预算校准；评审后才可设置对应的budgetProfileId。
+4. V2真实VM正负例、mass/fee/预算校准；评审后才可设置对应的budgetProfileId及budgetEvidenceSha256。`tools/budget-gate.mjs`还核对编译器/共识pin、protocol/builders源码hash、日志hash、动作／目录／退款游标覆盖与实际默认预算；不接受只改Profile字符串放行。
 5. 网页构建与最小回归。网络实验另行授权。
 
 只有编译成功不代表VM、最大目录或TN10 acceptance通过。[源码状态与验证计划](../../docs/kaswin-v2/V2-SOURCE-STATUS.md)优先于旧整理文档中的历史结论。

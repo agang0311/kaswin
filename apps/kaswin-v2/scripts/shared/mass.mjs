@@ -5,7 +5,7 @@
  * transient 1,000,000 post-Toccata (normalization factor 0.5), GRAMS_PER_COMPUTE_BUDGET_UNIT=100.
  * Fee = max(relay floor, ceil(node normal feerate × max(compute, normalizedTransient, storage))), capped at FEE_CAP.
  */
-import {assertDraft, FEE_CAP, FUNDING_INPUT_BUDGET, ensure} from './core.mjs';
+import {assertDraft, FEE_CAP, ensure} from './core.mjs';
 
 const C = 1_000_000_000_000n, U64 = (1n << 64n) - 1n;
 const bytesOf = h => BigInt(h.length / 2);
@@ -69,26 +69,26 @@ export function rateFraction(v) {
  *    This is the mempool admission minimum (check_transaction_standard.rs); storage mass carries no extra relay floor there.
  *  - 'priority': ceil(feerate × max(compute, normalizedTransient, storage)) — mempool priority ordering uses the
  *    normalized max including storage (consensus/core tx.rs calculated_feerate), so this ranks like a normal tx under load.
- * Iterate fee -> draft -> mass until a fixed point; makeDraft(fee) must be deterministic. */
+ * Monotonically raise fee until the FINAL draft satisfies every requirement. A small
+ * overestimate is allowed; a cycle never lowers the candidate. No unchecked fallback. */
 export function convergeFee(makeDraft, feerate, {cap = FEE_CAP, mode = 'standard'} = {}) {
+  ensure(typeof cap === 'bigint' && cap > 0n && cap <= FEE_CAP, '手续费上限无效');
+  ensure(mode === 'standard' || mode === 'priority', '手续费模式无效');
   const {n, d} = rateFraction(feerate);
-  let fee = 100_000n, last = null;
+  let fee = 100_000n;
   for (let i = 0; i < 24; i++) {
+    ensure(fee <= cap, `网络费 ${fee} sompi 超过保护上限`);
     const draft = makeDraft(fee);
-    for (const idx of draft.authorizedInputIndices) draft.transaction.inputs[idx].computeBudget = FUNDING_INPUT_BUDGET;
+    ensure(draft.fee === fee, '构建器费用与候选费用不一致');
     const q = quoteMass(draft);
     const binding = mode === 'priority' ? [q.computeMass, q.normalizedTransient, q.storageMass].reduce((a, b) => a > b ? a : b) : q.feeMass;
     const byRate = (binding * n + d - 1n) / d, required = byRate > q.relayFloor ? byRate : q.relayFloor;
-    ensure(required <= cap, `网络费 ${required} sompi 超过 0.5 TKAS 保护上限`);
-    if (required === fee) { draft.transaction.storageMass = q.storageMass; return {draft, fee, quote: q, feerate, iterations: i + 1}; }
-    if (last !== null && required < fee && last === required) { fee = required > fee ? required : fee; }
-    last = fee; fee = required;
+    ensure(required <= cap, `网络费 ${required} sompi 超过保护上限`);
+    if (fee >= required) {
+      draft.transaction.storageMass = q.storageMass;
+      return {draft, fee, quote: q, feerate, iterations: i + 1};
+    }
+    fee = required;
   }
-  // Oscillation guard: settle on the larger fee and verify it still satisfies itself.
-  const draft = makeDraft(fee);
-  for (const idx of draft.authorizedInputIndices) draft.transaction.inputs[idx].computeBudget = FUNDING_INPUT_BUDGET;
-  const q = quoteMass(draft);
-  ensure(fee >= q.relayFloor, '费用计算未收敛');
-  draft.transaction.storageMass = q.storageMass;
-  return {draft, fee, quote: q, feerate, iterations: 25};
+  throw new Error('费用计算未收敛，未生成可提交报价');
 }

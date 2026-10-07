@@ -53,6 +53,11 @@ export function checkRow(v) {
   ensure(v.phase === null || (Number.isInteger(v.phase) && v.phase >= 1 && v.phase <= 5), '未知阶段');
   if (v.tip) { hash32(v.tip.transactionId); ensure(Number.isInteger(v.tip.index) && v.tip.index >= 0, 'tip'); }
   uint(v.value, 'VALUE');
+  for (const field of ['genesisTxid', 'latestTxid', 'accepting']) if (v[field] != null) hash32(v[field], field);
+  if (v.purchases != null) {
+    ensure(Array.isArray(v.purchases) && v.purchases.length <= S.MAX_PURCHASES, '购买目录格式错误');
+    for (const p of v.purchases) { ensure(p && typeof p === 'object', '购买记录格式错误'); if (p.txid != null) hash32(p.txid, '购买交易 ID'); }
+  }
   return v;
 }
 export async function listRounds(base, {status = null, cursor = null, limit = 100, signal} = {}) {
@@ -72,6 +77,8 @@ export async function roundDetail(base, cid, {signal} = {}) {
 export function ledgerFromDetail(r, profile) {
   ensure(r.contract === CONTRACT_TAG, `不是固定的 V2 Profile（${r.contract}）`);
   ensure(r.state && Array.isArray(r.purchases) && r.purchases.length <= S.MAX_PURCHASES, '索引详情缺少账本或购买目录');
+  // Cached views are just as untrusted as fresh indexer responses.
+  for (const p of r.purchases) { ensure(p && typeof p === 'object', '购买记录格式错误'); if (p.txid != null) hash32(p.txid, '购买交易 ID'); }
   const st = r.state, c = st.config;
   let prev = 0;
   const dir = cat(...r.purchases.map(p => { ensure(Number.isInteger(p.end) && p.end > prev && p.count === p.end - prev, '购买目录不连续'); prev = p.end; return cat(le(BigInt(p.end), 4), unhex(hash32(p.key, '买家公钥'), 32)); }));

@@ -5,10 +5,9 @@
  */
 import {ensure, hash32, referenceTxId, stable, errorText} from './core.mjs';
 import {uint} from './lib/json.mjs';
-import {txFromRpc, utxoFromRpc} from './nodes.mjs';
+import {txFromRpc, utxoFromRpc, parseSpk} from './nodes.mjs';
 import {spkToAddress} from './lib/address.mjs';
-
-const MAX_ROWS = 1024;
+import {sameAcceptedWitnessExceptIgnoredFee} from '../../../../packages/f3.2-core/lib/accepted.js';
 
 /** Live UTXOs of an address on the connected node. */
 export async function commonUtxos(link, address) {
@@ -91,12 +90,21 @@ export async function inMempool(pair, txid) {
   return res.some(r => r.status === 'fulfilled' && r.value?.mempoolEntry);
 }
 
-/** Compare an accepted tx against the approved draft, field by field. Signatures may only differ at authorized inputs. */
+/** Call ONLY after acceptedAt(): exact approved fields, authorized signatures, and
+ * the sole fee argument ignored by the pinned action. Never a wallet-response check. */
 export function matchesDraft(accepted, draft) {
   const expect = structuredClone(draft.transaction), got = structuredClone(accepted.tx);
   for (const i of draft.authorizedInputIndices) { ensure(/^41[0-9a-f]{128}01$/.test(got.inputs[i]?.signatureScript ?? ''), '接受交易的签名格式异常'); expect.inputs[i].signatureScript = got.inputs[i].signatureScript; }
+  if (!draft.authorizedInputIndices.includes(0) && expect.inputs[0] && got.inputs[0] &&
+      sameAcceptedWitnessExceptIgnoredFee(expect.inputs[0].signatureScript, got.inputs[0].signatureScript, draft.action)) {
+    expect.inputs[0].signatureScript = got.inputs[0].signatureScript;
+  }
   ensure(stable(expect) === stable(got), '被接受的交易与批准的计划字段不一致');
-  const fee = draft.inputUtxos.reduce((a, f) => a + f.value, 0n) - got.outputs.reduce((a, o) => a + o.value, 0n);
+  ensure(accepted.inputs?.length === draft.inputUtxos.length && accepted.inputs.every((u, i) => {
+    const f = draft.inputUtxos[i];
+    return u && u.value === f.value && u.daa === f.daa && stable(parseSpk(u.spk)) === stable(f.spk) && (u.covenantId ?? null) === (f.covenantId ?? null);
+  }), '接受交易输入上下文与批准记录不一致或缺失');
+  const fee = accepted.inputs.reduce((a, u) => a + u.value, 0n) - got.outputs.reduce((a, o) => a + o.value, 0n);
   ensure(fee === draft.fee, '实际费用与批准费用不一致');
   return fee;
 }

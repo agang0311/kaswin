@@ -23,8 +23,8 @@ export const EXPLORER = 'https://tn10.kaspa.stream';
 export const DAA_PER_SECOND = 10;
 /** Project policy: never authorize a network fee above 0.5 TKAS (equals the contract's MAX_PAY_FEE). */
 export const FEE_CAP = 50_000_000n;
-/** P2PK funding input: one OpCheckSig = 100,000 script units > 9,999 free; 10 units of budget cover it (VM-measured). */
-export const FUNDING_INPUT_BUDGET = 10;
+/** Same ordinary-input default as the core builder; no web-only budget patching. */
+export {FUNDING_INPUT_BUDGET} from '../../../../packages/f3.2-core/lib/protocol.js';
 /** Selected-chain finality depth (TN10 10 BPS x 43,200 s): OpChainblockSeqCommit only resolves T within this blue-score depth. */
 export const SEQ_COMMIT_DEPTH = 432_000n;
 export const HASH = /^[0-9a-f]{64}$/;

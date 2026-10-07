@@ -1,17 +1,18 @@
 # V2 链外核心源码（目录暂保留 f3.2-core）
 
-**源码候选，未编译或测试。** `src/`已改为V2，`lib/`仍是旧生成物，不能混用或手改补齐。[当前状态](../../docs/kaswin-v2/V2-SOURCE-STATUS.md)优先；以下命令须等待编译/测试授权。
+**2026-10-07安全整改源码与lib已编译对齐，未运行测试，发布仍BLOCKED。** 固定Profile `206d4ec7…`不变；新增已接受交易解释与原子意图写入。[整改决策](../../docs/kaswin-v2/REMEDIATION-20261007.md)及[当前状态](../../docs/kaswin-v2/V2-SOURCE-STATUS.md)优先，历史执行结果不覆盖本轮修改。
 
-这是 V2 **实际使用的13个模块的依赖闭包**，不是链上合约、完整通用SDK或钱包。`src/*.ts` 为源码，`lib/*.js`（及类型/映射）为 TypeScript 5.8.3 生成文件。
+这是 V2 **实际使用的14个模块的依赖闭包**，不是链上合约、完整通用SDK或钱包。`src/*.ts` 为源码，`lib/*.js`（及类型/映射）为 TypeScript 5.8.3 生成文件。
 
 - `state`：账本、不可变域/状态、模板和快照检查。
-- `protocol`：链外状态转换镜像、采样、业务金额与预算。
+- `protocol`：自家builder布局策略、采样、业务金额与暂定预算（不是所有合法链上交易的唯一形式）。
+- `accepted`：**仅在调用者已建立selected-chain acceptance后**解释固定SIL状态转移；检查模板/根/SPK/金额/付款并区分辅助输出。不执行VM，不单独证明acceptance。
 - `builders` / `transaction`：交易构建、完整性检查、txid。
 - `pass-a`：接受上下文与排序承诺证明组装/核验。
 - `artifacts`：编译artifact加载与Profile派生。
 - `registry` / `genesis-discovery`：可选登记与创世候选识别。
 - `bytes` / `hashes` / `blake3` / `covenant-id`：精确编码、哈希、谱系。
-- `persistence`：浏览器记录CAS接口。
+- `persistence`：浏览器CAS与同一readwrite事务内检查并插入意图；缺原子API禁止交易提交。
 
 链上唯一强制规则来自[三合约](../../contracts/f3.2/README.md)及固定节点共识，不由此JS库或Indexer裁定。加密函数的离线差分测试不等于独立密码学审计。
 
@@ -20,4 +21,4 @@ npm --prefix apps/kaswin-v2 ci --ignore-scripts
 npm --prefix apps/kaswin-v2 run check:core
 ```
 
-检查器在内存中用固定TypeScript编译并逐字节核对提交的JS，拒绝源码/产物漂移。新增核心逻辑须重新审查合约/客户端一致性，不直接编辑`lib`。本次协议身份与ABI已变更：`newOpen(owner, config)`、`makeProfile(frames)`，Header228B；生成物须获准后统一重建。
+检查器在内存中用固定TypeScript编译并逐字节核对提交的JS，拒绝源码/产物漂移。新增核心逻辑须重新审查合约/客户端一致性，不直接编辑`lib`。本轮未改变协议身份与ABI，Header228B。普通输入默认computeBudget=10，但核心Draft仍需计算最终mass/storageMass/fee与签名，不能把assertDraft当成relay或acceptance证明。删除当前闭包无调用的blake3KeyedNode重复实现；其它可能被外部使用的轻量导出暂保留。

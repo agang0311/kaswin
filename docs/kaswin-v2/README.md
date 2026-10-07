@@ -1,12 +1,12 @@
 # Kaswin F3.2 / V2 资料入口
 
-当前为 **Testnet 10 V2协议源码候选**，尚未编译、测试或发布。先读 [V2源码状态与门槛](V2-SOURCE-STATUS.md)。保留的lib/artifacts/pins/单HTML仍是历史F3.2构建，不是新V2产物；旧V1审计资料也独立保留，不混用。
+当前为 **Testnet 10 V2安全整改源码，已编译核对但未测试／未发布**。先读[整改Preflight及结果](REMEDIATION-20261007.md)和[V2当前状态](V2-SOURCE-STATUS.md)。合约保持Profile `206d4ec7…`，lib已重新生成；单HTML仍是整改前版本，不含修复。预算门槛BLOCKED，不改标签冒充校准通过；旧V1资料独立保留。
 
 ## 阅读顺序
 
 1. [分层/发布边界](PUBLICATION.md)：为何分开合约、脚本与视觉，以及旧资料处理。
 2. [合约](../../contracts/f3.2/README.md)：源码、linked产物、Profile与pins。
-3. [链外核心](../../packages/f3.2-core/README.md)：状态/交易/证明的13模块闭包。
+3. [链外核心](../../packages/f3.2-core/README.md)：状态/交易/已接受解释/证明的14模块闭包。
 4. [网页](../../apps/kaswin-v2/README.md)：构建、测试、脚本/视觉目录。
 5. [架构材料](ARCHITECTURE.md)：25问、14项材料、8项审查和REST/端点/本地化增量。
 6. [固定来源](SOURCES.md)、[验证与未验证边界](VALIDATION.md)、[单文件交付](../../releases/kaswin-v2/README.md)。

@@ -23,6 +23,12 @@
 
 显式下载、核对SHA后，按压缩包结构解压到被忽略的 `references/kaspa-wasm32-sdk/`；目标是 `nodejs/kaspa/kaspa.js`，package.json必须是2.0.1。也可设置`KASPA_SDK_PATH`绝对路径。测试不得误装名称相似的npm包。本次不随Git分发SDK/WASM、完整上游源码或node_modules。
 
+## 2026-10-07整改补充（固定源码，未运行测试）
+
+新增`accepted.ts`依据上述固定SIL及rusty `cfafeb4…`的`sighash.rs`（v1不承诺signatureScript）、`opcodes/mod.rs`（CSV/CLTV下限）、`constants.rs`（sequence位掩码）、`covenants.rs`（continuation与genesis组区别）。普通输入budget沿用9999免费units／100000 Schnorr units的固定源码依据。不升级工具链、不宣称目标网络新验证。
+
+测试中的绝对路径PASS-A材料替换为小型公开fixture `apps/kaswin-v2/test/fixtures/pass-a-public.json`，SHA256 `25ce608981ffae43becbf483e1a780cc62f82fea527546c1efa7a3db92ef1960`。来源是2026-09-25已有F3记录的公开240字节opening、P/T hash/DAA/commitment，fixture明确标旧Profile；仅用于合成接口向量，不作为当前V2 acceptance、随机性安全或新网络观察证据。没有钱包、密钥或整套上游工程进入fixture。
+
 ## 可追溯性
 
 `source-map.json`记录从工作快照迁入的源/目标文件及两边SHA；合约和核心TS/JS不变，模块import/fixture路径与图标提取单独标注。`contracts/f3.2/pins.json`和`releases/kaswin-v2/build-manifest.json`绑定实际构建输入。网页视觉源与公共测试fixture仅按白名单复制，不从钱包或浏览器库导出。

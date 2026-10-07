@@ -1,6 +1,6 @@
 /** Persistent round catalogue (IndexedDB, same origin). It remembers every round this browser has seen, created,
  * bought into, or opened by CID, with the last indexer/chain view, so a refresh never "loses" a round.
- * Cached views are display data only: every action re-reads the round and re-verifies it on two nodes.
+ * Cached views are display data only: every action re-reads the round and re-verifies it on the configured active node.
  */
 import {IndexedStore, NETWORK_GENESIS, PROFILE_ID, hash32} from './core.mjs';
 

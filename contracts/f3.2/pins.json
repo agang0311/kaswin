@@ -4,7 +4,7 @@
   "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
   "compilerCommit": "3ed973335b59269293564805cc2c58a14595ec03",
   "compilerBinarySha256": "81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00",
-  "budgetProfileId": "206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3",
+  "budgetProfileId": null,
   "frames": {
     "refunding": {
       "templateSourceSha256": "f0cc1c6956fa1c4019e0bcf865b0348367ecc1a44d23174a72fa329cd589c5af",

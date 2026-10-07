@@ -2,7 +2,7 @@
 
 任何人可创建、规则与资金流向可由链上证据核验的 Kaspa 抽奖协议与单网页应用。
 
-> **2026-10-06：V2源码候选，未编译/测试/发布。** 当前源码已改为228B、8/6 ABI及固定前向模板哈希；旧lib/artifacts/pins/release尚未重建。不要运行下方历史命令或把历史通过数当作本轮结果。当前状态、架构差异和获准后的验证顺序见 [V2-SOURCE-STATUS](docs/kaswin-v2/V2-SOURCE-STATUS.md)。
+> **2026-10-07：安全整改源码已实现，仅编译核对，未测试／未发布。** 合约仍为228B、8/6 ABI、Profile `206d4ec7…`，字节码未改。核心lib已由固定TypeScript重建；修复HTML注入、已接受交易解释、原子输入占用、费用及预算默认值。`budgetProfileId`恢复null，缺完整校准证据，正式构建继续BLOCKED。现有HTML是整改前版本，**不含这些修复**。见[整改与边界](docs/kaswin-v2/REMEDIATION-20261007.md)及[当前状态](docs/kaswin-v2/V2-SOURCE-STATUS.md)。
 
 ---
 
@@ -14,11 +14,11 @@
 ├── contracts/f3.2/             # [链上合约] SilverScript 源码、固定 linked 产物与 Profile
 │   ├── src/                    # open.sil, sealed.sil, refunding.sil
 │   ├── artifacts/              # 原始编译器 linked JSON、构造参数与编译报告
-│   ├── profile.json            # 固定 Profile (7ca61d81...) 与模板哈希
+│   ├── profile.json            # 固定 Profile (206d4ec7...) 与模板哈希
 │   ├── pins.json               # 源码与产物完整 SHA256 校验锚
 │   └── tools/check-compile.mjs # 可选编译器离线重放工具
 │
-├── packages/f3.2-core/         # [链外核心库] 状态、交易构建与 PASS-A 证明的 13 模块闭包
+├── packages/f3.2-core/         # [链外核心库] 14 模块：状态、构建、已接受交易解释、PASS-A
 │   ├── src/                    # TypeScript 源码（纯逻辑，无 DOM，无 SDK 依赖）
 │   ├── lib/                    # 固定 TypeScript 5.8.3 生成的 JS、类型与 SourceMap
 │   └── tsconfig.json           # 严格模式编译配置（strict: true）
@@ -41,8 +41,8 @@
 │   └── tools/                  # 构建工具（build.mjs）与核心库检查工具（check-core.mjs）
 │
 ├── releases/kaswin-v2/         # [发布产物] 最终单文件交付物与清单
-│   ├── index.html              # 由分层源码脱机构建出的独立单文件 (310,605 B, sha256: 29a49a62...)
-│   ├── deployed-20261005.html  # 线上部署版本快照 (310,601 B, sha256: ab90da23...)
+│   ├── index.html              # 整改前单文件 (315,595 B, sha256: 6509ee14...)；本轮未替换
+│   ├── deployed-20261005.html  # 历史部署快照 (316,069 B, sha256: 335fbf04...)；非本轮线上核验
 │   └── build-manifest.json     # 包含 40 项构建输入 SHA256 的元数据清单
 │
 ├── docs/kaswin-v2/             # [项目文档] 架构说明、固定来源、验证记录与源码映射
@@ -57,7 +57,7 @@
 
 ---
 
-## 历史构建流程（当前暂停，先阅读V2门槛）
+## 编译核对与正式发布门槛
 
 本项目无需从网络下载任何运行时 SDK、字体或 CDN 库，构建与核心核验完全离线进行：
 
@@ -68,16 +68,19 @@ npm --prefix apps/kaswin-v2 ci --ignore-scripts
 # 2. 验证核心库源码与提交产物 100% 逐字节一致
 npm --prefix apps/kaswin-v2 run check:core
 
-# 3. 构建发布单文件 HTML
-npm --prefix apps/kaswin-v2 run build
+# 3. 仅在内存编译打包，不运行页面、不写发布文件、不解除预算门槛
+npm --prefix apps/kaswin-v2 run check:bundle
 
-# 4. 旧部署复现只属于历史源码版本；当前已移除 verify:deployed
+# 4. 正式构建当前被预算校准门槛阻断，不通过改pin绕过
+# npm --prefix apps/kaswin-v2 run build
 
-# 5. 获准后运行单元测试；历史50项结果不是当前V2结果
+# 5. 旧部署复现只属于历史源码版本；当前已移除 verify:deployed
+
+# 6. 获准后运行单元测试；历史通过数不是整改后结果
 npm --prefix apps/kaswin-v2 test
 ```
 
-自动化浏览器与端到端模拟测试（需安装 Chromium）：
+以下测试命令仅供后续获准使用；2026-10-07整改没有执行任何测试（需安装 Chromium）：
 ```bash
 cd apps/kaswin-v2
 npx --no-install playwright install chromium
