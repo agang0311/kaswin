@@ -1,5 +1,33 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+## 2026-10-08 Profile 7aaf76fe... TN10 真实链上三流程全生命周期验证（Level N，全部 12 笔交易 Selected-Chain 接受）
+
+- **用户明确授权**：“取消不必要的vm测试要求，授权进行 TN10 链上广播测试”。
+- **目标 Profile**：`7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`（绑定新 432,000 DAA 超时、手续费真实输入输出守恒、退款执行款强制锁定）。
+- **网络与节点**：Kaspa Testnet 10，连接 `wss://tn10.kaspay.top/wrpc`。
+- **钱包隔离与安全**：专用测试钱包（创建者 `qrg05u...`、买家一 `qqhgp2...`、买家二 `qzf372...`），私钥存储于 `0600` 文件，未泄露。单笔费用严格 $\le 0.5\text{ TKAS}$（实测单笔仅 $0.00236 \sim 0.032884\text{ TKAS}$）。
+- **排除项**：按既定授权，Action 9（`TIMEOUT_REFUND`）排除链上广播测试。
+
+### 1. 实验一：零买退款全生命周期（`empty-r1`，终局 `EMPTY`）
+- `01-GENESIS`: txid `a081e42cd884c36f57bb298aebb5c10b3a90ea1baf594b616ec3e9a228af9668`，接受块 `d18ef2d1...`，DAA `591123861`，费用 0.00236 TKAS (236,000 sompi)。
+- `02-CLOSE_EMPTY`: txid `77ba15ab222dcd778ba1abfafc780fd97e8bd4ac828fe3277b5049724c515d5b`，接受块 `b5ac67a8...`，DAA `591124221`，费用 0.012904 TKAS，终局 `EMPTY`，0.2 TKAS 押金原路全额退还。
+
+### 2. 实验二：不足最低票数退款全生命周期（`refund-r1`，终局 `REFUNDED`）
+- `01-GENESIS`: txid `76a7db3504f2eb3651e55b7cba3a6ac1944fab236e4a1fe13635038912c5d8a8`，接受块 `b783472a...`，DAA `591128399`，费用 0.00236 TKAS。
+- `02-BUY1`: txid `827bf4c1ba14e51a95b4a9e6c5abff24c9f1afb3b0d5817c8d1415a8230b6b86`，接受块 `0d45a901...`，DAA `591128522`，费用 0.012982 TKAS。
+- `03-BUY2`: txid `7ed89349ae4ad685f38be4be3d9155e223ee769d2d88a9900088a5b6e3125676`，接受块 `f19f2a24...`，DAA `591128639`，费用 0.013056 TKAS。
+- `04-CLOSE`: txid `6d745a882855c4ffba79fbee73a226c90e07925a6d46fd9b67176aac1be6bfa1`，接受块 `bc02fe38...`，DAA `591128956`，费用 0.032884 TKAS。
+- `05-REFUND`: txid `58cf3b08e0a8c4c09c5f832bc8be770059a1e0998e05c3ed3455f25f334af50c`，接受块 `52615db6...`，DAA `591129109`，费用 0.021422 TKAS，终局 `REFUNDED`，买家每条退款 0.99 TKAS，退押金 0.2 TKAS，赞助输入本金与执行款余额返还创建者。
+
+### 3. 实验三：正常开奖派奖全生命周期（`payout-r1`，终局 `PAID`）
+- `01-GENESIS`: txid `2d57c605e8a888bb66101ae09b2acaef0229ca703b47ad74d642a4eb42b082cb`，接受块 `2ebae0c6...`，DAA `591130635`，费用 0.00236 TKAS。
+- `02-BUY1`: txid `21f7ef4d30a098f7dd893512fcc3e13734341e33fa8d87bb30607ba4d780f2a4`，接受块 `f1ae759b...`，DAA `591130756`，费用 0.012982 TKAS。
+- `03-BUY2`: txid `2d4cb634c3dae5e67e5ce50f946ba4970bbdfa599271b71f2d6576ec49de3a1b`，接受块 `a2123d24...`，DAA `591130873`，费用 0.013056 TKAS。
+- `04-CLOSE`: txid `b7103ce247f8523aa280042d0685e756af6c1c8ad929144ad72cdc492d52cf35`，接受块 `3890f844...`，DAA `591131174`，费用 0.026082 TKAS。
+- `05-DRAW_AND_PAY`: txid `872cb8146298db489a7fe9c02bf70ea23be849fa21e68b38ca8636efa4e8e78e`，接受块 `c051b22f...`，DAA `591131699`，费用 0.014766 TKAS，终局 `PAID`，中奖者 Buyer1 获得 1.985234 TKAS，退还押金 0.2 TKAS，执行者赏金 1.0 TKAS。
+
+**全部 12 笔交易在 Kaspa TN10 选中链 100% 确认通过，证据已完整落盘于 `tests/tn10/evidence/`。**
+
 ## 2026-10-07 合约收紧／新Profile（仅编译与只读候选）
 
 [完整记录](CONTRACT-HARDENING-20261007.md)：所有动作fee等于真实输入输出差且为正、≤0.5 TKAS；REFUND末输出绑定actor；超时432000 DAA。固定silverc已编译并逆拓扑重编复现，Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`。TS14源→42文件一致。`budgetProfileId:null`，默认交易build继续阻断；`build:candidate`仅生成明确禁用计划/签名/提交的单文件与manifest，dist同步；旧HTML/manifest保存在archive。不运行单测、浏览器、SDK、VM或链上测试；无新txid/accepted/mass/fee记录，不继承下方旧Profile测试结果。

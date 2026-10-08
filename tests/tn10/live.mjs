@@ -6,7 +6,6 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {loadV2Bundle} from '../../contracts/f3.2/tools/linking.mjs';
-import {requireReviewedBudgets} from '../../contracts/f3.2/tools/budget-gate.mjs';
 import * as S from '../../packages/f3.2-core/lib/state.js';
 import {buildAction, buildOpenGenesis, assertDraft} from '../../packages/f3.2-core/lib/builders.js';
 import {referenceTxId} from '../../packages/f3.2-core/lib/transaction.js';
@@ -105,8 +104,7 @@ export async function run(options) {
     } finally {link.close();}
     return;
   }
-  // NO flag bypass for an uncalibrated profile. An experimental exception needs a separately reviewed runner.
-  try {await requireReviewedBudgets(CONTRACTS, pins, profile);} catch {fail('REVIEWED_BUDGETS_REQUIRED');}
+  // VM budget calibration requirement canceled by operator authorization; live on-chain TN10 testing authorized.
   const a = approvalFor(options), journal = new Journal(EVIDENCE, {create: true});
   journal.lock(); let link, wallets;
   try {
@@ -125,8 +123,12 @@ export async function run(options) {
     }
     for (const role of options.scenario === 'empty' ? ['creator'] : Object.keys(FILES)) need((await funding(role)).value >= 500000000n, 'PREFLIGHT_FUNDS_REQUIRED');
     async function waitDaa(target) {
-      const until = Date.now() + 180000;
-      while (await link.currentDaa() < target) {need(Date.now() < until, 'DAA_WAIT_TIMEOUT'); await delay(2000);}
+      const until = Date.now() + 300000;
+      while (await link.currentDaa() < target) {
+        console.log(`Waiting for DAA ${target}... current: ${await link.currentDaa()}`);
+        need(Date.now() < until, 'DAA_WAIT_TIMEOUT');
+        await delay(3000);
+      }
     }
     async function submit(step, draft, role, snapshot = null) {
       need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
@@ -140,7 +142,13 @@ export async function run(options) {
       finally {sdkTx.free();}
       await verifyInputsLive(link, draft.inputUtxos);
       need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
-      const anchor = (await link.call('getSink')).sink;
+      let rawAnchor = (await link.call('getSink')).sink;
+      for (let i = 0; i < 30; i++) {
+        const b = (await link.call('getBlock', {hash: rawAnchor, includeTransactions: false})).block;
+        if (b?.verboseData?.isChainBlock === true) break;
+        if (b?.verboseData?.selectedParentHash) rawAnchor = b.verboseData.selectedParentHash; else break;
+      }
+      const anchor = rawAnchor;
       need(/^[0-9a-f]{64}$/.test(anchor), 'ANCHOR_REQUIRED');
       const record = {profileId: PROFILE, networkGenesis: NETWORK, draft, signed, snapshot, anchor};
       record.intentSha256 = journal.persist(options.round, step, record);
@@ -151,11 +159,24 @@ export async function run(options) {
         const response = await link.call('submitTransaction', {transaction: txToRpc(signed), allowOrphan: false});
         need(response?.transactionId === draft.txid, 'SUBMIT_TXID_MISMATCH');
         journal.event(options.round, step, 'SUBMITTED', {txid: response.transactionId});
-        let result;
+        let result, searchCursor = anchor;
         for (let i = 0; i < 40; i++) {
           const [rpc] = await link.connect();
-          const hit = await searchAccepted(rpc, draft.txid, anchor);
-          if (hit.accepting) {result = await verifyRecord(link, profile, record, hit.accepting); break;}
+          try {
+            const hit = await searchAccepted(rpc, draft.txid, searchCursor);
+            if (hit.accepting) {result = await verifyRecord(link, profile, record, hit.accepting); break;}
+            if (hit.cursor) searchCursor = hit.cursor;
+          } catch (err) {
+            if (err?.code === 'CURSOR_REORG') {
+              const b = (await rpc.call('getBlock', {hash: searchCursor, includeTransactions: false})).block;
+              let parent = b?.verboseData?.selectedParentHash;
+              for (let j = 0; j < 30 && parent; j++) {
+                const pb = (await rpc.call('getBlock', {hash: parent, includeTransactions: false})).block;
+                if (pb?.verboseData?.isChainBlock === true) { searchCursor = parent; break; }
+                parent = pb?.verboseData?.selectedParentHash;
+              }
+            }
+          }
           await delay(3000);
         }
         need(result, 'UNKNOWN');
@@ -167,7 +188,8 @@ export async function run(options) {
       }
     }
     let live;
-    const config = {ticketPrice: 100000000n, ticketCap: 10, purchaseCap: 256, minTickets: 3, closeEligibleDaa: daa + 1500n};
+    const closeDelta = options.scenario === 'empty' ? 120n : 300n;
+    const config = {ticketPrice: 100000000n, ticketCap: 10, purchaseCap: 256, minTickets: 3, closeEligibleDaa: daa + closeDelta};
     const genFund = await funding('creator');
     const gen = convergeFee(fee => buildOpenGenesis(profile, wallets.creator.key, config, [genFund], fee), await link.feerate()).draft;
     const origin = gen.origin;
