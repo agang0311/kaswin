@@ -11,7 +11,7 @@ node tests/audit/run-all.mjs --local  # 同上
 node tests/audit/run-all.mjs --vm --manifest=/absolute/reviewed-vm.json
 ```
 
-默认JS套件：01固定Profile/模板/ABI；02fee/退款末输出；03timeout/locktime模型；04genesis/空轮CLOSE/DRAW/缺金额上下文；05复用既有remediation/release-safety用例并补清单/CSP及单字段坏inputs；07 CLI/journal冲突/async验签false/VM结果解析；08将真实plan/execute/wallet/submit入口编译成候选模式，断言在访问节点／钱包之前拒绝。05会注册引入文件的用例，不能再按旧README写4/4。run-all不再宣称整个codebase安全，子进程启动错误、超时和signal均失败，local失败不再启动VM。
+默认JS套件：01固定Profile/模板/ABI；02fee/退款末输出；03timeout/locktime模型；04genesis/空轮CLOSE/DRAW/缺金额上下文；05复用既有remediation/release-safety用例并补清单/CSP及单字段坏inputs；07 CLI/journal冲突/async验签false/VM结果解析；08将真实plan/execute/wallet/submit入口编译成候选模式，断言在访问节点／钱包之前拒绝；09 256次购票满额极限容量下状态账本、紧凑目录、CLOSE封盘、PASS-A随机抽样二分查找及DRAW_AND_PAY派奖端到端断言。05会注册引入文件的用例，不能再按旧README写4/4。run-all不再宣称整个codebase安全，子进程启动错误、超时和signal均失败，local失败不再启动VM。
 
 ## VM需要新的固定harness，旧二进制不可直接复用
 

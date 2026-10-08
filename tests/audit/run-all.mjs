@@ -9,7 +9,8 @@ if (args.length && !(args.length === 1 && args[0] === '--local') && !(withVm && 
   throw Error('Usage: run-all.mjs [--local | --vm --manifest=/absolute/reviewed.json]');
 }
 const suites = ['01-profile-and-templates.test.mjs', '02-fee-and-executor-binding.test.mjs', '03-timeout-and-timelock.test.mjs',
-  '04-accepted-interpretation.test.mjs', '05-client-security.test.mjs', '07-runner-safety.test.mjs', '08-candidate-entrypoints.test.mjs']
+  '04-accepted-interpretation.test.mjs', '05-client-security.test.mjs', '07-runner-safety.test.mjs', '08-candidate-entrypoints.test.mjs',
+  '09-payout-256-lifecycle.test.mjs']
   .map(file => ({file, args: ['--test', path.join(DIR, file)], timeout: 120000}));
 if (withVm) suites.push({file: '06-vm-execution-suite.mjs', args: [path.join(DIR, '06-vm-execution-suite.mjs'), '--vm', args[1]], timeout: 1800000});
 console.log(`Scope: local JS${withVm ? ' + explicit SCRIPT_VM' : ' only; VM NOT_RUN'}. Not budget calibration, network acceptance or a security certification.`);

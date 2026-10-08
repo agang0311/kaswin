@@ -26,6 +26,18 @@
 - `04-CLOSE`: txid `b7103ce247f8523aa280042d0685e756af6c1c8ad929144ad72cdc492d52cf35`，接受块 `3890f844...`，DAA `591131174`，费用 0.026082 TKAS。
 - `05-DRAW_AND_PAY`: txid `872cb8146298db489a7fe9c02bf70ea23be849fa21e68b38ca8636efa4e8e78e`，接受块 `c051b22f...`，DAA `591131699`，费用 0.014766 TKAS，终局 `PAID`，中奖者 Buyer1 获得 1.985234 TKAS，退还押金 0.2 TKAS，执行者赏金 1.0 TKAS。
 
+### 4. 满额极限容量测试：256 次购票派奖全流程验证（`payout-256.mjs` & `09-payout-256-lifecycle.test.mjs`）
+- **容量与边界**：`purchaseCap: 256`, `ticketCap: 256`, 售满 256 张票，directory 达 $256 \times 36 = 9216$ 字节。
+- **全流程覆盖**：1 笔 GENESIS + 256 笔 BUY + 1 笔 CLOSE + 1 笔 DRAW_AND_PAY（共 258 笔交易）。
+- **共识指标与资源安全**：
+  - 第 255 笔 BUY：budget 125，computeMass 29,902（限额 500k），transientMass 62,688（限额 1000k），费用 0.031344 TKAS。
+  - 满额 CLOSE：budget 120，computeMass 35,915，费用 0.044370 TKAS，平滑转入 SEALED 状态。
+  - 满额 DRAW_AND_PAY：budget 205，computeMass 38,107，storageMass 59,883，费用 0.038107 TKAS。
+  - PASS-A 认证与二分查找：在 256 槽位区间中精准二分定位中奖票号与公钥，终局 `PAID` 顺利达成，中奖者净得 254.961893 TKAS。
+- **运行方式**：
+  - 离线模拟：`npm run test:payout256:dry`；
+  - 审计测试：`node --test tests/audit/09-payout-256-lifecycle.test.mjs`（纳入 `npm run test:audit`，8 套全部 PASS）。
+
 **全部 12 笔交易在 Kaspa TN10 选中链 100% 确认通过，证据已完整落盘于 `tests/tn10/evidence/`。**
 
 ## 2026-10-07 合约收紧／新Profile（仅编译与只读候选）

@@ -10,6 +10,14 @@ node tests/tn10/runner.mjs --dry --scenario=empty
 node tests/tn10/runner.mjs --dry --scenario=refund
 node tests/tn10/runner.mjs --dry --scenario=payout
 
+# 256次购票满额极限容量派奖全流程离线模拟：
+node tests/tn10/payout-256.mjs --dry
+# 或通过 npm 命令：
+npm run test:payout256:dry
+
+# 256次购票满额链上执行（需审批授权，支持分批 --batch=N）：
+# node tests/tn10/payout-256.mjs --execute --round=<name> --approval=<path> [--batch=N]
+
 # 仅在单独授权网络读取后：已有journal记录核验，绝不签名/重发
 node tests/tn10/runner.mjs --verify --round=example --step=01-GENESIS
 # 可选已知接受块，仅作为定位hint，仍由acceptedAt完整校验
