@@ -24,6 +24,8 @@ import {acquireDrawProof} from '../../apps/kaswin-v2/scripts/shared/passa.mjs';
 import {toSafeJson} from '../../apps/kaswin-v2/scripts/shared/wallet.mjs';
 import {pubkeyToAddress} from '../../apps/kaswin-v2/scripts/shared/lib/address.mjs';
 import {PROFILE, NETWORK} from './cli.mjs';
+import {loadSigningWallets, verifyRecord} from './live.mjs';
+import {stable} from '../../packages/f3.2-core/lib/bytes.js';
 import {Journal, privateDir, readPrivate, sha256} from './journal.mjs';
 import {signDraft} from './signing.mjs';
 
@@ -218,30 +220,43 @@ export async function runLive({round, approval, batch = 256}) {
   const journal = new Journal(EVIDENCE, {create: true});
   journal.lock();
 
-  let link, wallets;
+  let link, wallets, used = new Set(), totalFee = 0n;
   try {
-    const FILES = {creator: 'tn10-test-only.json', buyer1: 'tn10-f3-buyer-1.json', buyer2: 'tn10-f3-buyer-2.json'};
-    wallets = Object.fromEntries(Object.entries(FILES).map(([role, file]) => {
-      const w = JSON.parse(readPrivate(path.join(ROOT, 'wallets', file)));
-      need(sha256(w.privateKey) === a.walletKeys[role], `WALLET_APPROVAL_MISMATCH_${role}`);
-      const pk = new sdk.PrivateKey(w.privateKey), pub = pk.toPublicKey();
-      const addr = pubkeyToAddress(pub.toString());
-      return [role, {pk, key: pub.toString(), address: addr}];
-    }));
+    const loaded = loadSigningWallets(a);
+    wallets = loaded.wallets;
+    const signingSdk = loaded.sdk;
 
     link = new NodeLink(['wss://tn10.kaspay.top/wrpc']);
-    const [rpc] = await link.connect();
+    await link.connect();
     const info = await link.call('getServerInfo');
     need(info.networkId?.endsWith('testnet-10'), 'NETWORK_ID');
     const daa = await link.currentDaa();
 
-    async function funding(role) {
-      const u = commonUtxos(await rpc.call('getUtxosByAddresses', {addresses: [wallets[role].address]}));
-      const clean = u.filter(e => !e.isCoinbase && e.scriptPublicKey.script === p2pk(wallets[role].key).script);
-      const chosen = clean.find(e => e.amount >= 200000000n && !journal.isReserved(e.outpoint.transactionId, e.outpoint.index));
-      need(chosen, `SUFFICIENT_FUNDS_REQUIRED_${role}`);
-      return {outpoint: {transactionId: chosen.outpoint.transactionId, index: chosen.outpoint.index},
-        value: chosen.amount, spk: {version: 0, script: chosen.scriptPublicKey.script}, daa: chosen.blockDaaScore, covenantId: null};
+    const roundDir = path.join(EVIDENCE, round);
+    let priorInputs;
+    if (!fs.existsSync(roundDir)) {
+      priorInputs = journal.checkUnresolved();
+      journal.start(round, {schema: 'KASWIN_TN10_RUN_2', profileId: PROFILE, networkGenesis: NETWORK, approval: a});
+    } else {
+      priorInputs = new Set();
+    }
+    used = priorInputs;
+
+    const opKey = o => `${o.transactionId}:${o.index}`;
+    async function funding(role, maxAttempts = 20) {
+      const w = wallets[role];
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const uList = await commonUtxos(link, w.address);
+        const candidates = uList.filter(u =>
+          !u.isCoinbase && !u.covenantId && stable(u.spk) === stable(w.spk) &&
+          !used.has(opKey(u.outpoint)) &&
+          u.value >= 150000000n && u.value < S.VALUE_LIMIT
+        );
+        candidates.sort((x, y) => x.value > y.value ? -1 : x.value < y.value ? 1 : 0);
+        if (candidates[0]) return candidates[0];
+        await delay(800);
+      }
+      fail('ORDINARY_FUNDS_REQUIRED_' + role);
     }
 
     async function waitDaa(target) {
@@ -255,12 +270,20 @@ export async function runLive({round, approval, batch = 256}) {
 
     async function submit(step, draft, role, snapshot = null) {
       need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
-      const sdkTx = native(draft, draft.transaction.storageMass ?? 0n);
+      need(draft.action !== 'TIMEOUT_REFUND', 'TIMEOUT_EXCLUDED');
+      assertDraft(draft);
+      draft.txid = referenceTxId(draft.transaction);
+      need(draft.fee > 0n && draft.fee <= 50000000n && totalFee + draft.fee <= BigInt(a.maxTotalFeeSompi), 'TOTAL_FEE_CAP');
+      await verifyInputsLive(link, draft.inputUtxos);
+
+      const w = wallets[role];
+      const sdkTx = sdk.Transaction.deserializeFromSafeJSON(toSafeJson(draft, w));
       let signed;
       try {
-        signed = signDraft(sdk, draft, sdkTx, [wallets[role].pk]);
+        signed = await signDraft(draft, w.key, i => sdk.createInputSignature(sdkTx, i, w.pk, sdk.SighashType.All));
       } finally { sdkTx.free(); }
       await verifyInputsLive(link, draft.inputUtxos);
+      need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
 
       let rawAnchor = (await link.call('getSink')).sink;
       for (let i = 0; i < 30; i++) {
@@ -281,104 +304,38 @@ export async function runLive({round, approval, batch = 256}) {
 
       let result, searchCursor = anchor;
       for (let i = 0; i < 40; i++) {
-        const [liveRpc] = await link.connect();
+        const [rpc] = await link.connect();
         try {
-          const hit = await searchAccepted(liveRpc, draft.txid, searchCursor);
+          const hit = await searchAccepted(rpc, draft.txid, searchCursor);
           if (hit.accepting) {
-            result = {
-              ev: {
-                txid: draft.txid,
-                accepting: hit.accepting,
-                acceptingDaa: (await liveRpc.call('getBlock', {hash: hit.accepting, includeTransactions: false})).block.header.daaScore,
-                tx: draft.transaction
-              },
-              terminal: draft.transition?.terminal,
-              next: draft.transition?.next
-            };
+            result = await verifyRecord(link, profile, record, hit.accepting);
             break;
           }
           if (hit.cursor) searchCursor = hit.cursor;
         } catch (err) {
           if (err?.code === 'CURSOR_REORG') {
-            const b = (await liveRpc.call('getBlock', {hash: searchCursor, includeTransactions: false})).block;
+            const b = (await rpc.call('getBlock', {hash: searchCursor, includeTransactions: false})).block;
             let parent = b?.verboseData?.selectedParentHash;
             for (let j = 0; j < 30 && parent; j++) {
-              const pb = (await liveRpc.call('getBlock', {hash: parent, includeTransactions: false})).block;
+              const pb = (await rpc.call('getBlock', {hash: parent, includeTransactions: false})).block;
               if (pb?.verboseData?.isChainBlock === true) { searchCursor = parent; break; }
               parent = pb?.verboseData?.selectedParentHash;
             }
           }
         }
-        await delay(2000);
+        await delay(1000);
       }
       need(result, 'UNKNOWN');
-      journal.event(round, step, 'ACCEPTED', {txid: draft.txid, accepting: result.ev.accepting, daa: result.ev.acceptingDaa});
-      console.log(`ACCEPTED ${step} txid=${draft.txid} at DAA ${result.ev.acceptingDaa}`);
+      journal.accepted(round, step, result.receipt);
+      totalFee += BigInt(result.receipt.actualFeeSompi);
+      need(totalFee <= BigInt(a.maxTotalFeeSompi), 'TOTAL_FEE_BUDGET_EXCEEDED');
+      for (const u of draft.inputUtxos) used.add(opKey(u.outpoint));
+      console.log(`ACCEPTED ${step} ${draft.txid} actualFeeSompi=${result.receipt.actualFeeSompi}`);
       return result;
     }
 
     // Check existing journal state
-    const roundDir = path.join(EVIDENCE, round);
     let live = null, origin = null, currentPurchaseCount = 0;
-
-    // Scan existing accepted steps in journal to resume
-    if (fs.existsSync(roundDir)) {
-      const files = fs.readdirSync(roundDir).filter(f => f.endsWith('-accepted.json')).sort();
-      for (const f of files) {
-        const acc = JSON.parse(fs.readFileSync(path.join(roundDir, f), 'utf8'));
-        const stepName = f.replace('-accepted.json', '');
-        console.log(`Found prior accepted step in journal: ${stepName} txid=${acc.txid}`);
-        if (stepName === '01-GENESIS') {
-          origin = acc.transaction.inputs[0].previousOutpoint;
-        }
-        if (acc.terminal) {
-          console.log(`Round ${round} already completed with terminal ${acc.terminal}.`);
-          return;
-        }
-      }
-    }
-
-    // If 01-GENESIS not executed yet, initialize
-    if (!origin) {
-      console.log(`Initializing new 256-capacity round: ${round}`);
-      const config = {ticketPrice: 100000000n, ticketCap: 256, purchaseCap: 256, minTickets: 256, closeEligibleDaa: daa + 600n};
-      const genFund = await funding('creator');
-      const gen = convergeFee(fee => buildOpenGenesis(profile, wallets.creator.key, config, [genFund], fee), await link.feerate()).draft;
-      origin = gen.origin;
-      const genRes = await submit('01-GENESIS', gen, 'creator');
-      const out = genRes.ev.tx.outputs[0];
-      const snapshot = {ledger: S.encodeLedger(genRes.next), tip: {transactionId: genRes.ev.txid, index: 0}, origin,
-        covenantId: out.covenant.covenantId, value: out.value, scriptPublicKey: out.scriptPublicKey,
-        utxoDaa: genRes.ev.acceptingDaa, currentDaa: genRes.ev.acceptingDaa};
-      live = {ledger: genRes.next, snapshot, accepting: genRes.ev.accepting, acceptedTx: genRes.ev};
-    } else {
-      // Reconstruct live state from latest step
-      console.log(`Resuming existing round ${round}...`);
-      // Find latest accepted file
-      const accFiles = fs.readdirSync(roundDir).filter(f => f.endsWith('-accepted.json')).sort();
-      const latestAccFile = accFiles[accFiles.length - 1];
-      const acc = JSON.parse(fs.readFileSync(path.join(roundDir, latestAccFile), 'utf8'));
-      const intentFile = path.join(roundDir, latestAccFile.replace('-accepted.json', '-intent.json'));
-      const intent = JSON.parse(fs.readFileSync(intentFile, 'utf8'));
-
-      live = {
-        ledger: intent.draft.transition.next,
-        snapshot: {
-          ledger: S.encodeLedger(intent.draft.transition.next),
-          tip: {transactionId: acc.txid, index: 0},
-          origin,
-          covenantId: acc.transaction.outputs[0].covenant.covenantId,
-          value: acc.transaction.outputs[0].value,
-          scriptPublicKey: acc.transaction.outputs[0].scriptPublicKey,
-          utxoDaa: acc.acceptingDaa,
-          currentDaa: await link.currentDaa()
-        },
-        accepting: acc.acceptingBlockHash,
-        acceptedTx: acc
-      };
-      currentPurchaseCount = live.ledger.purchaseCount;
-      console.log(`Resumed at purchaseCount=${currentPurchaseCount}/256, phase=${live.ledger.phase}`);
-    }
 
     function advance(result) {
       if (!result.next) { live = null; return; }
@@ -407,6 +364,75 @@ export async function runLive({round, approval, batch = 256}) {
       return result;
     }
 
+    // If 01-GENESIS not executed yet, initialize
+    if (!fs.existsSync(path.join(roundDir, '01-GENESIS-accepted.json'))) {
+      console.log(`Initializing new 256-capacity round: ${round}`);
+      const config = {ticketPrice: 100000000n, ticketCap: 256, purchaseCap: 256, minTickets: 256, closeEligibleDaa: daa + 600n};
+      const genFund = await funding('creator');
+      const gen = convergeFee(fee => buildOpenGenesis(profile, wallets.creator.key, config, [genFund], fee), await link.feerate()).draft;
+      origin = gen.origin;
+      const genRes = await submit('01-GENESIS', gen, 'creator');
+      advance(genRes);
+    } else {
+      console.log(`Resuming existing round ${round}...`);
+
+      // Self-heal any intent that was submitted but interrupted before writing accepted.json
+      const intentFiles = fs.readdirSync(roundDir).filter(f => f.endsWith('-intent.json')).sort();
+      for (const ifile of intentFiles) {
+        const step = ifile.replace('-intent.json', '');
+        const accPath = path.join(roundDir, `${step}-accepted.json`);
+        if (!fs.existsSync(accPath)) {
+          const rec = journal.load(round, step);
+          const [rpc] = await link.connect();
+          try {
+            const hit = await searchAccepted(rpc, rec.draft.txid, rec.anchor);
+            if (hit.accepting) {
+              console.log(`Self-healing interrupted step: ${step} txid=${rec.draft.txid}`);
+              const result = await verifyRecord(link, profile, rec, hit.accepting);
+              journal.accepted(round, step, result.receipt);
+              console.log(`Self-healed ${step}-accepted.json!`);
+            }
+          } catch (e) {
+            console.log(`Warning: could not self-heal ${step}:`, e.message);
+          }
+        }
+      }
+
+      const stepNum = f => parseInt(f.split('-')[0], 10);
+      const accFiles = fs.readdirSync(roundDir).filter(f => f.endsWith('-accepted.json')).sort((a, b) => stepNum(a) - stepNum(b));
+      const genAcc = JSON.parse(fs.readFileSync(path.join(roundDir, '01-GENESIS-accepted.json'), 'utf8'));
+      origin = genAcc.transaction.inputs[0].previousOutpoint;
+
+      const latestAccFile = accFiles[accFiles.length - 1];
+      const latestStep = latestAccFile.replace('-accepted.json', '');
+      const acc = JSON.parse(fs.readFileSync(path.join(roundDir, latestAccFile), 'utf8'));
+
+      if (acc.terminal) {
+        console.log(`Round ${round} already completed with terminal ${acc.terminal}.`);
+        return;
+      }
+
+      const record = journal.load(round, latestStep);
+      const nextLedger = record.draft.transition.next;
+      live = {
+        ledger: nextLedger,
+        snapshot: {
+          ledger: S.encodeLedger(nextLedger),
+          tip: {transactionId: acc.txid, index: 0},
+          origin: {transactionId: origin.transactionId, index: Number(origin.index)},
+          covenantId: acc.transaction.outputs[0].covenant.covenantId,
+          value: BigInt(acc.transaction.outputs[0].value),
+          scriptPublicKey: acc.transaction.outputs[0].scriptPublicKey,
+          utxoDaa: BigInt(acc.acceptingDaa),
+          currentDaa: BigInt(await link.currentDaa())
+        },
+        accepting: acc.acceptingBlockHash,
+        acceptedTx: acc
+      };
+      currentPurchaseCount = live.ledger.purchaseCount;
+      console.log(`Resumed at step: ${latestStep}, purchaseCount=${currentPurchaseCount}/256, phase=${live.ledger.phase}`);
+    }
+
     // Process Purchases up to batch limit
     const targetCount = Math.min(256, currentPurchaseCount + batch);
     while (currentPurchaseCount < targetCount) {
@@ -426,9 +452,12 @@ export async function runLive({round, approval, batch = 256}) {
 
     // CLOSE
     if (live.ledger.phase === S.Phase.OPEN) {
-      console.log('Purchases full (256/256). Waiting for closeEligibleDaa...');
-      await waitDaa(live.ledger.config.closeEligibleDaa);
-      console.log('Closing round to SEALED phase...');
+      if (live.ledger.sold < live.ledger.config.ticketCap && live.ledger.purchaseCount < live.ledger.config.purchaseCap) {
+        console.log('Purchases not full, waiting for closeEligibleDaa...');
+        await waitDaa(live.ledger.config.closeEligibleDaa);
+      } else {
+        console.log('Purchases full (256/256), closing immediately to SEALED...');
+      }
       await action('258-CLOSE', 'CLOSE', 'creator');
     }
 
@@ -449,31 +478,6 @@ export async function runLive({round, approval, batch = 256}) {
 }
 
 // ==================== CLI DISPATCH ====================
-
-function native(draft, storageMass) {
-  const t = draft.transaction;
-  const n = new sdk.Transaction({
-    version: t.version,
-    inputs: t.inputs.map(i => ({
-      previousOutpoint: i.previousOutpoint,
-      signatureScript: Buffer.from(i.signatureScript, 'hex'),
-      sequence: BigInt(i.sequence),
-      sigOpCount: i.sigOpCount ?? 0,
-      computeBudget: i.computeBudget
-    })),
-    outputs: t.outputs.map(o => ({
-      value: BigInt(o.value),
-      scriptPublicKey: new sdk.ScriptPublicKey(o.scriptPublicKey.version, o.scriptPublicKey.script),
-      covenant: o.covenant ? {covenantId: o.covenant.covenantId, authorizingInput: o.covenant.authorizingInput} : undefined
-    })),
-    lockTime: BigInt(t.lockTime),
-    subnetworkId: t.subnetworkId,
-    gas: BigInt(t.gas),
-    payload: Buffer.from(t.payload, 'hex'),
-    storageMass: BigInt(storageMass)
-  });
-  return n;
-}
 
 const args = process.argv.slice(2);
 const isDry = args.includes('--dry');

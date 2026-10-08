@@ -8,7 +8,7 @@ import {createHash, randomUUID} from 'node:crypto';
 export const sha256 = b => createHash('sha256').update(b).digest('hex');
 export const json = x => JSON.stringify(x, (_, v) => typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v, 2) + '\n';
 const roundName = n => {if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(n)) throw Error('INVALID_ROUND'); return n;};
-const stepName = n => {if (!/^\d{2}-[A-Z_0-9]+$/.test(n)) throw Error('INVALID_STEP'); return n;};
+const stepName = n => {if (!/^\d{2,4}-[A-Z_0-9]+$/.test(n)) throw Error('INVALID_STEP'); return n;};
 function syncDir(dir) {const fd = fs.openSync(dir, 'r'); try {fs.fsyncSync(fd);} finally {fs.closeSync(fd);}}
 export function privateDir(dir, create = false) {
   if (create) {try {fs.mkdirSync(dir, {mode: 0o700});} catch (e) {if (e.code !== 'EEXIST') throw e;}}

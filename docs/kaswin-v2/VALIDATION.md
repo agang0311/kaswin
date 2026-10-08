@@ -37,6 +37,11 @@
 - **运行方式**：
   - 离线模拟：`npm run test:payout256:dry`；
   - 审计测试：`node --test tests/audit/09-payout-256-lifecycle.test.mjs`（纳入 `npm run test:audit`，8 套全部 PASS）。
+- **真实 TN10 链上实验（`payout256-r1`，进行中）**：
+  - 轮次参数：`ticketPrice = 1.0 TKAS`, `ticketCap = 256`, `minTickets = 256`；
+  - 已完成步骤：`01-GENESIS`（txid `d4939d17...`）以及连续 50 笔链上真实购票（`02-BUY1` ~ `51-BUY50`），全部 51 笔交易均在 Kaspa TN10 选中链 100% 确认；
+  - 最新交易：`51-BUY50` txid `952b2b423f65eae95b9886bf517c0f01546790af96b428f769d230ac0fd0f6ac`，接受 DAA `591378755`，单笔费用 0.016512 TKAS；
+  - 具备断点续跑与微重组自愈能力，支持分批持续推进至 256 满额封盘派奖。
 
 **全部 12 笔交易在 Kaspa TN10 选中链 100% 确认通过，证据已完整落盘于 `tests/tn10/evidence/`。**
 

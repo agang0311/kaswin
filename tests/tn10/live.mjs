@@ -47,7 +47,7 @@ function approvalFor(options) {
   need(new Set(Object.values(a.walletKeys)).size === 3, 'DISTINCT_TEST_WALLETS_REQUIRED');
   return a;
 }
-function loadSigningWallets(a) {
+export function loadSigningWallets(a) {
   privateDir(WALLETS);
   need(sha256(fs.readFileSync(path.join(SDK, 'kaspa.js'))) === '1e0ad892861bf3e0a63ba8ed51366efc2b812c5a34c6895385ee2f9d026d2fc1', 'SDK_JS_PIN');
   need(sha256(fs.readFileSync(path.join(SDK, 'kaspa_bg.wasm'))) === '9427733cb0cb1c78cc3f2cc9f77f4153426636925ced0256c5c30e4edc199eaa', 'SDK_WASM_PIN');
