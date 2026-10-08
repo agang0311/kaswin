@@ -1,6 +1,12 @@
 # V2 源码与验证状态
 
-## 2026-10-07 当前状态：安全整改、编译核对、发布BLOCKED
+## 2026-10-07 当前状态：合约已收紧，新Profile仅只读候选
+
+[实施前Preflight与结果](CONTRACT-HARDENING-20261007.md)。新Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`，所有fee绑定真实金额差，REFUND末输出绑定actor，TIMEOUT=432000 DAA；SIL、linked artifacts、profile/pins、核心lib及HTML均更新。Header/ABI未变，不兼容旧Profile的规则／UTXO。
+
+固定silverc编译及隔离重编一致；TS14源→42文件一致；仅编译。`budgetProfileId:null`：交易发布BLOCKED，默认build不放行。发布目录交付的是 `READ_ONLY_UNVERIFIED_CANDIDATE`（计划、签名、提交被构建常量禁用），不是交易就绪或主网版本。旧HTML/manifest留archive，远端Indexer/网站均未部署或切换，新页面不能靠现有旧Profile索引发现新轮次。没有运行测试、VM、网络或钱包操作。
+
+## 历史：2026-10-07 前轮客户端整改
 
 [完整整改Preflight与结果](REMEDIATION-20261007.md)。Profile `206d4ec7…`、228B和8/6 ABI不变；三份SIL及固定artifact未改。TypeScript核心新增accepted解释器，14源文件生成42个lib文件；前端和本机Indexer源码已接入。输入占用改为同一IDB事务扫描/验证/插入，HTTP租约续期，普通资金预算和费用策略修复。HTML注入入口及渲染已加固，正式构建采用脚本hash CSP。
 

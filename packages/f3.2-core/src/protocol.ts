@@ -43,10 +43,10 @@ export function availableActions(x:S.Snapshot,p:S.Profile):Action[] {
 }
 /** The supplied network fee must later equal actual input-output difference. */
 export function transition(x:S.Snapshot,p:S.Profile,op:Operation,fee:bigint,external=0n):Transition {
- const s=S.verifySnapshot(x,p);unhex(op.actorKey,32);check(fee>0n&&fee<S.VALUE_LIMIT,'NETWORK_FEE');check(external>=0n&&external<S.VALUE_LIMIT,'EXTERNAL_VALUE');
+ const s=S.verifySnapshot(x,p);unhex(op.actorKey,32);check(fee>0n&&fee<=S.MAX_PAY_FEE,'NETWORK_FEE');check(external>=0n&&external<S.VALUE_LIMIT,'EXTERNAL_VALUE');
  check(availableActions(x,p).includes(op.action),'ACTION_NOT_AVAILABLE');
  let next:S.Ledger|null=null,terminal:Transition['terminal']=null,lockTime=0n,sequence=0n,data=Z,foreignTail=Z,requiredExternal=fee;
- const payments:Payment[]=[];const pay=(value:bigint,key:string,role:Payment['role'])=>{check(value>0n,'NONPOSITIVE_OUTPUT');payments.push({value,spk:p2pk(key),role});};
+ const payments:Payment[]=[];const pay=(value:bigint,key:string,role:Payment['role'])=>{check(value>0n&&value<=S.VALUE_LIMIT,'PAYMENT_VALUE');payments.push({value,spk:p2pk(key),role});};
  const payout=(state:S.Ledger)=>{check(external===0n,'PAY_HAS_EXTERNAL_INPUT');check(fee<=S.MAX_PAY_FEE,'PAY_FEE_CAP');const i=winnerRecord(state),r=S.records(state)[i]!;const prize=BigInt(state.sold)*state.config.ticketPrice-S.FINALIZER-fee;check(prize>=S.MIN_PRICE,'WINNER_MINIMUM');pay(prize,r.key,'WINNER');pay(S.DEPOSIT,state.ownerKey,'CREATOR');pay(S.FINALIZER,op.actorKey,'EXECUTOR');data=le(BigInt(i),4);terminal='PAID';requiredExternal=0n;};
  switch(op.action){
  case 'BUY':{check(op.quantity!==undefined,'QUANTITY_MISSING');next=S.appendPurchase(s,op.quantity,op.actorKey);data=le(BigInt(op.quantity),4);requiredExternal=BigInt(op.quantity)*s.config.ticketPrice+fee;break;}

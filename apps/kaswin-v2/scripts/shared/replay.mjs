@@ -1,5 +1,6 @@
 /** Explain selected-chain ACCEPTED transactions using the fixed SIL semantics,
- * not our builder's stricter choice of fee witness, change layout or locktime.
+ * not our builder's stricter change layout or locktime choice. The new Profile
+ * binds witness fee to actual amounts and binds the REFUND executor output.
  * Node acceptance is established first; the pure interpreter is not a VM. */
 import {S, ensure, stable, DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI} from './core.mjs';
 import {acceptedPair} from './chain.mjs';

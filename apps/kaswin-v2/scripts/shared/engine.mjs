@@ -2,7 +2,7 @@
  * plan():   live snapshot from the configured node -> core builder -> consensus mass -> fee fixed point -> frozen plan.
  * execute(): user approval -> recheck session + inputs on the node -> wallet signs ordinary inputs only ->
  *            signatures verified -> intent persisted in IndexedDB -> ONE submit -> record outcome.
- * reconcile(): acceptance + approved economic/consensus fields. Only ignored fee witness changes are tolerated after acceptance.
+ * reconcile(): acceptance + exact approved economic/consensus fields and covenant witness.
  */
 import {S, ensure, hash32, hex, buildAction, buildOpenGenesis, availableActions, actionBudget, referenceTxId, stable, kas, errorText,
   DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI, PROFILE_ID, NETWORK_GENESIS, IndexedStore, UserError} from './core.mjs';
@@ -14,6 +14,7 @@ import {spkToAddress} from './lib/address.mjs';
 import {acquireDrawProof} from './passa.mjs';
 import {liveRound} from './rounds.mjs';
 import {reservedInputs, persistIntent} from './reservations.mjs';
+import {requireTradingRelease} from './release-safety.mjs';
 
 export const STORE = 'kaswin-opus-f32';
 const PREFIX = `${NETWORK_GENESIS}/${PROFILE_ID}/tx/`;
@@ -100,6 +101,7 @@ export class Engine {
 
   /** Build a frozen plan. request: {action, cid?, quantity?, config?, registry?, mode?} */
   async plan(request, session) {
+    requireTradingRelease();
     const {action} = request;
     ensure(ACTION_LABEL[action], '未知动作');
     this.onStatus('连接 TN10 节点…');
@@ -172,6 +174,7 @@ export class Engine {
 
   /** Sign, persist, submit once. Returns the stored record. */
   async execute(plan, {approved, onProgress = () => {}} = {}) {
+    requireTradingRelease();
     ensure(approved === true, '尚未勾选批准');
     ensure(this.plans.get(plan.id) === plan, '交易计划已失效，请重新报价');
     this.plans.delete(plan.id);
@@ -250,8 +253,8 @@ export class Engine {
       } else {
         const ev = await acceptedPair(this.pair, txid, accepting);
         const fee = matchesDraft(ev, r.draft);
-        r = {...r, status: 'ACCEPTED', accepted: true, accepting, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations, actualFee: fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(), ignoredFeeWitnessChanged: ev.tx.inputs[0].signatureScript !== r.draft.transaction.inputs[0].signatureScript && !r.draft.authorizedInputIndices.includes(0),
-          note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（只容忍合约忽略的费用见证参数变化；不是不可逆最终性）'};
+        r = {...r, status: 'ACCEPTED', accepted: true, accepting, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations, actualFee: fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(),
+          note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（合约费用见证严格匹配；不是不可逆最终性）'};
       }
     } catch (e) {
       r = {...r, status: r.status === 'REJECTED' ? 'REJECTED' : 'UNKNOWN', accepted: false, error: errorText(e), note: '本次核验未完成；保留输入占用，不会重发'};
@@ -281,7 +284,7 @@ export function explainUnavailable(action, live) {
   if (action === 'BUY') return s.phase !== 1 ? '轮次已封盘' : s.sold >= s.config.ticketCap ? '票已售罄' : '购买记录已满 256 条';
   if (action === 'CLOSE') return s.phase !== 1 ? '轮次不在开放阶段' : `未满票也未到封盘时间（还需约 ${s.config.closeEligibleDaa - d} DAA）`;
   if (action === 'DRAW_AND_PAY') return s.phase !== 2 ? '轮次不在封存待开奖阶段' : `封存后需等待 100 DAA（还差 ${x.utxoDaa + S.DRAW_DELAY - d} DAA）`;
-  if (action === 'TIMEOUT_REFUND') return s.phase !== 2 ? '仅封存阶段可超时转退款' : `封存后 300 DAA 才可超时转退款（还差 ${x.utxoDaa + S.TIMEOUT_DELAY - d} DAA）`;
+  if (action === 'TIMEOUT_REFUND') return s.phase !== 2 ? '仅封存阶段可超时转退款' : `封存后 432000 DAA 才可超时转退款（还差 ${x.utxoDaa + S.TIMEOUT_DELAY - d} DAA）`;
   if (action === 'REFUND') return '轮次不在退款阶段';
   return '条件不满足';
 }

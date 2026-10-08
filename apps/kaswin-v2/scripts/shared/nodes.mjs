@@ -7,6 +7,7 @@
  */
 import {parseJson, jsonText, uint} from './lib/json.mjs';
 import {ensure, hash32, NETWORK_ID, errorText} from './core.mjs';
+import {requireTradingRelease} from './release-safety.mjs';
 
 /** Default node. Public TN10 nodes are fallbacks,
  * tried in order only if the preferred node is unreachable or unsynced. */
@@ -62,6 +63,7 @@ export class JsonRpc {
   }
   async call(method, params = {}, timeoutMs = this.timeoutMs) {
     ensure(READ.has(method) || method === 'submitTransaction', `未允许的节点方法 ${method}`);
+    if (method === 'submitTransaction') requireTradingRelease();
     await this.connect();
     ensure(this.ws && this.ws.readyState === 1, `节点未连接：${host(this.url)}`);
     const id = ++this.next, text = `{"id":${id},"method":${JSON.stringify(method)},"params":${jsonText(params)}}`;

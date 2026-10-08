@@ -1,6 +1,10 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
-## 2026-10-07 静态审查整改（仅源码与编译，未测试／未发布）
+## 2026-10-07 合约收紧／新Profile（仅编译与只读候选）
+
+[完整记录](CONTRACT-HARDENING-20261007.md)：所有动作fee等于真实输入输出差且为正、≤0.5 TKAS；REFUND末输出绑定actor；超时432000 DAA。固定silverc已编译并逆拓扑重编复现，Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`。TS14源→42文件一致。`budgetProfileId:null`，默认交易build继续阻断；`build:candidate`仅生成明确禁用计划/签名/提交的单文件与manifest，dist同步；旧HTML/manifest保存在archive。不运行单测、浏览器、SDK、VM或链上测试；无新txid/accepted/mass/fee记录，不继承下方旧Profile测试结果。
+
+## 历史：2026-10-07 前轮静态审查整改（仅源码与编译，未测试／未发布）
 
 [整改Preflight及实施结果](REMEDIATION-20261007.md)。H1/H2/M1/M3/M4/L1以源码修复；M2恢复预算发布阻断，没有生成VM证据或改预算公式伪装校准完成。三份SIL、linked artifact、Profile与旧HTML均未变；pins仅撤回budgetProfileId。
 

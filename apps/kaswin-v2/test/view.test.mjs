@@ -13,7 +13,7 @@ test('time enables close but does not stop buy; unknown DAA never guessed',()=>{
  const d=detail();d.state.purchaseCount=256;assert.equal(plannedActions(d)[0].available,false);assert.equal(plannedActions(d)[1].available,true);
 });
 test('draw and timeout DAA boundaries; partial refunds',()=>{
- for(const [daa,draw,timeout] of [[1099n,false,false],[1100n,true,false],[1300n,true,true]]) { const a=plannedActions(detail(2),daa);assert.equal(a[0].available,draw);assert.equal(a[1].available,timeout); }
+ for(const [daa,draw,timeout] of [[1099n,false,false],[1100n,true,false],[432999n,true,false],[433000n,true,true]]) { const a=plannedActions(detail(2),daa);assert.equal(a[0].available,draw);assert.equal(a[1].available,timeout); }
  const d=detail(5);d.state.purchaseCount=33;d.state.cursor=32;assert.equal(plannedActions(d)[0].size,1);
 });
 test('exact wallet flow uses authorized inputs; sums all own outputs',()=>{

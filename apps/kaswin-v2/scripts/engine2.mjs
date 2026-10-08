@@ -175,8 +175,7 @@ export class EngineV2 extends Engine {
       const {error: _stale, ...base} = result, ev = v.ev;
       next = {...base, status: 'ACCEPTED', accepted: true, accepting: hint.acceptingBlockHash, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations,
         actualFee: v.fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(), locatedBy: 'REST',
-        ignoredFeeWitnessChanged: ev.tx.inputs[0].signatureScript !== result.draft.transaction.inputs[0].signatureScript && !result.draft.authorizedInputIndices.includes(0),
-        note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（REST仅提供位置；只容忍合约忽略的费用见证参数变化；不是不可逆最终性）', restWitness: witness, restCheck};
+        note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（REST仅提供位置；合约费用见证严格匹配；不是不可逆最终性）', restWitness: witness, restCheck};
     } else next = {...result, restWitness: witness, restCheck};
     // Otherwise status stays UNKNOWN: inputs stay reserved, no localTip, no resubmission. REST-only is display-level.
     await store.compareAndSet(k, current.revision, next);

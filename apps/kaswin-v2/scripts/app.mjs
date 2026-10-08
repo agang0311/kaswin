@@ -537,7 +537,7 @@ function actionsHtml(d, ledger) {
   if (!ledger) return `<div class="notice warn">账本解析失败，无法操作。</div>`;
   const ph = ledger.phase, list = [];
   if (ph === 1) { list.push(['BUY', 'ticket', '购买', `${kas(ledger.config.ticketPrice)} TKAS/张；剩余 ${ledger.config.ticketCap - ledger.sold} 张、${ledger.config.purchaseCap - ledger.purchaseCount} 笔记录`]); list.push(['CLOSE', 'lock', '封盘', ledger.sold >= ledger.config.minTickets ? '→ 封存，100 DAA 后可开奖' : ledger.sold === 0 ? '→ 空轮结束，押金退回创建者' : `→ 未达 ${ledger.config.minTickets} 张，转入退款`]); }
-  if (ph === 2) { list.push(['DRAW_AND_PAY', 'trophy', '开奖并派奖', '任何人可执行，执行者获得 1 TKAS 赏金；奖金直接付给中奖者']); list.push(['TIMEOUT_REFUND', 'clock', '超时转退款', '封存 300 DAA 仍未开奖时，任何人可转入退款']); }
+  if (ph === 2) { list.push(['DRAW_AND_PAY', 'trophy', '开奖并派奖', '任何人可执行，执行者获得 1 TKAS 赏金；奖金直接付给中奖者']); list.push(['TIMEOUT_REFUND', 'clock', '超时转退款', '封存 432000 DAA 仍未开奖时，任何人可转入退款']); }
   if (ph === 5) list.push(['REFUND', 'refund', `退款批次（${Math.min(32, ledger.purchaseCount - ledger.cursor)} 条）`, `已退 ${ledger.cursor}/${ledger.purchaseCount}；执行者获得本批执行费池扣除网络费后的余额`]);
   const proposed = plannedActions(d,state.daa);
   return `<div class="actions">${list.map(([a, ic, title, desc]) => {
@@ -550,7 +550,7 @@ function replayHtml(x) {
   return `<div class="notice ok"><b>${e(ACTION_LABEL[x.action] ?? x.action)}</b> 已被选中链接受（接受块 DAA ${x.acceptingDaa}，确认深度约 ${x.confirmations}），${x.action === 'GENESIS' ? '创建公告、初始账本、固定 OPEN 模板、0.2 TKAS 状态输出与 Covenant ID 推导均与固定 Profile 一致。' : `已重算并核对 ${x.constrainedOutputs} 个合约约束输出；其余输出仅展示节点已接受的实际内容，不视为合约保证的收款。`}</div>
   ${x.winner ? `<div class="notice" style="border-color:var(--gold);background:var(--gold-soft)">🏆 中奖记录 #${x.winner.record + 1}（票 ${x.winner.firstTicket}–${x.winner.lastTicket}），奖金 <b>${kas(x.winner.prize)} TKAS</b> → ${hashHtml(pubkeyToAddress(x.winner.key), {link: explorerAddress(pubkeyToAddress(x.winner.key)), n: 12})}</div>` : ''}
   <div class="outs">${x.outputs.map((o, i) => `<div class="out"><span class="r">${i} · ${e(lab[o.role] ?? o.role)}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>
-  <dl class="kv small" style="margin-top:8px"><dt>交易</dt><dd>${hashHtml(x.txid, {link: explorerTx(x.txid)})}</dd><dt>网络费</dt><dd>${kas(x.fee)} TKAS · compute mass ${x.computeMass ?? '—'} · budget ${x.budget}</dd>${x.witnessFee != null && x.witnessFee !== x.fee ? `<dt>见证费用参数</dt><dd>${e(String(x.witnessFee))} sompi（此动作不绑定该参数；上方为真实输入减输出费用）</dd>` : ''}${x.draw ? `<dt>PASS-A 目标块</dt><dd>${hashHtml(x.draw.target, {link: explorerBlock(x.draw.target)})} · 边界 DAA ${x.draw.boundaryDaa}；${x.draw.headerChecked ? '节点区块头的序列承诺与证明一致' : '当前未取得目标区块头，仅依赖已接受交易执行时的共识校验'}</dd>` : ''}</dl>`;
+  <dl class="kv small" style="margin-top:8px"><dt>交易</dt><dd>${hashHtml(x.txid, {link: explorerTx(x.txid)})}</dd><dt>网络费</dt><dd>${kas(x.fee)} TKAS · compute mass ${x.computeMass ?? '—'} · budget ${x.budget}</dd>${x.draw ? `<dt>PASS-A 目标块</dt><dd>${hashHtml(x.draw.target, {link: explorerBlock(x.draw.target)})} · 边界 DAA ${x.draw.boundaryDaa}；${x.draw.headerChecked ? '节点区块头的序列承诺与证明一致' : '当前未取得目标区块头，仅依赖已接受交易执行时的共识校验'}</dd>` : ''}</dl>`;
 }
 function liveHtml(l) {
   const acts = availableActions(l.snapshot, profile).filter(a => ACTION_LABEL[a]);
@@ -855,7 +855,7 @@ function renderProtocol(v) {
         <dt>购买</dt><dd>开放阶段任何人可买；每次购买追加一条目录记录（票号区间 + 买家公钥），票款精确进入状态 UTXO。</dd>
         <dt>封盘</dt><dd>满票、满设定的购买记录上限或到达封盘 DAA 后任何人可封：售出 ≥ 最低票数 → 封存；不足 → 退款；0 张 → 空轮，押金退创建者。</dd>
         <dt>开奖派奖</dt><dd>封存 ≥ 100 DAA 后任何人可执行，一笔交易内三个输出：中奖者（奖池 − 1 TKAS − 网络费）、创建者押金 0.2、执行者赏金 1 TKAS。网络费 ≤ 0.5 TKAS。</dd>
-        <dt>超时</dt><dd>封存 ≥ 300 DAA 仍未开奖，任何人可转入退款阶段（仍需有人推进并能取得构建所需账本/证明；历史裁剪可能阻止本页构建）。</dd>
+        <dt>超时</dt><dd>封存 ≥ 432000 DAA 仍未开奖，任何人可转入退款阶段（仍需有人推进并能取得构建所需账本/证明；历史裁剪可能阻止本页构建）。</dd>
         <dt>退款</dt><dd>按购买顺序每批 32 条；每条退还 张数×票价 − 0.01 TKAS，0.01 进入执行费池付网络费、余额归执行者；最后一批同时退押金。</dd>
       </dl></div>
     </div>

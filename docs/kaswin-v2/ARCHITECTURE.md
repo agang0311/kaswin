@@ -1,6 +1,10 @@
 # Kaswin V2 架构入口
 
-## 2026-10-07 安全整改增量（当前入口）
+## 2026-10-07 合约收紧（当前入口）
+
+[新Profile完整Preflight：25问／14材料／8反模式](CONTRACT-HARDENING-20261007.md)。新Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`：所有动作fee绑定真实金额差并限制0<fee≤50m；REFUND末输出绑定actor/P2PK/金额/无CID；TIMEOUT=432000 DAA，DRAW=100。228B/8与6 ABI不变。旧轮次不可升级或由新解释器处理。仅编译／只读HTML候选，budgetProfileId=null，禁止签名／提交，未VM或链上验证。
+
+## 历史：2026-10-07 前轮客户端安全整改
 
 [完整Preflight：25问／14材料／8反模式与决策](REMEDIATION-20261007.md)。采用现有Profile `206d4ec7…` 不改SIL/schema；将自家builder策略与已接受交易解释分离，辅助输出不冒充合约保证收款；忽略的fee见证不作为真实费用。新增同网络跨Profile原子输入占用与可续期租约。外部元数据严格校验、统一安全链接，正式构建改为脚本hash CSP。预算门槛恢复BLOCKED；仅源码／编译，未测试或部署。下方旧文档中“全部字段／全部输出一致”的表述仅指历史严格builder路径，不能代表实际共识允许集合。
 

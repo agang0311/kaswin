@@ -23,7 +23,11 @@
 
 显式下载、核对SHA后，按压缩包结构解压到被忽略的 `references/kaspa-wasm32-sdk/`；目标是 `nodejs/kaspa/kaspa.js`，package.json必须是2.0.1。也可设置`KASPA_SDK_PATH`绝对路径。测试不得误装名称相似的npm包。本次不随Git分发SDK/WASM、完整上游源码或node_modules。
 
-## 2026-10-07整改补充（固定源码，未运行测试）
+## 2026-10-07合约收紧补充（只编译）
+
+新Profile `7aaf76fe…`；固定silverc binary SHA256 `81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00`离线编译并复现。fee内省依据上述rusty的OpTxInputAmount/OpTxOutputAmount及SilverScript `compile/expression.rs` indexed value lowering，本地复核日2026-10-07。TIMEOUT432000 DAA为用户项目政策，不是网络共识参数；未运行测试或VM/网络。详见[Preflight](CONTRACT-HARDENING-20261007.md)。
+
+## 历史：2026-10-07前轮整改补充（固定源码，未运行测试）
 
 新增`accepted.ts`依据上述固定SIL及rusty `cfafeb4…`的`sighash.rs`（v1不承诺signatureScript）、`opcodes/mod.rs`（CSV/CLTV下限）、`constants.rs`（sequence位掩码）、`covenants.rs`（continuation与genesis组区别）。普通输入budget沿用9999免费units／100000 Schnorr units的固定源码依据。不升级工具链、不宣称目标网络新验证。
 
@@ -31,6 +35,6 @@
 
 ## 可追溯性
 
-`source-map.json`记录从工作快照迁入的源/目标文件及两边SHA；合约和核心TS/JS不变，模块import/fixture路径与图标提取单独标注。`contracts/f3.2/pins.json`和`releases/kaswin-v2/build-manifest.json`绑定实际构建输入。网页视觉源与公共测试fixture仅按白名单复制，不从钱包或浏览器库导出。
+`source-map.json`仅记录最初迁移的历史源/目标SHA，不代表本轮修改后的输入；当前合约与核心TS/JS已改变，不能用旧映射冒充当前同源证明。`contracts/f3.2/pins.json`和`releases/kaswin-v2/build-manifest.json`绑定实际构建输入。网页视觉源与公共测试fixture仅按白名单复制，不从钱包或浏览器库导出。
 
 本次没有给原项目新增/变更软件许可证，也不将上游ISC许可证自动套到全部原创代码。SilverScript与rusty-kaspa许可证以各固定提交的LICENSE为准；npm开发工具采用其包内许可证。发布资料不是独立法律/安全审计。

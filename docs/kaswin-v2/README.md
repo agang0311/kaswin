@@ -1,6 +1,6 @@
 # Kaswin F3.2 / V2 资料入口
 
-当前为 **Testnet 10 V2安全整改源码，已编译核对但未测试／未发布**。先读[整改Preflight及结果](REMEDIATION-20261007.md)和[V2当前状态](V2-SOURCE-STATUS.md)。合约保持Profile `206d4ec7…`，lib已重新生成；单HTML仍是整改前版本，不含修复。预算门槛BLOCKED，不改标签冒充校准通过；旧V1资料独立保留。
+当前为 **Testnet 10 V2合约收紧版，已编译，单HTML仅只读候选**。先读[新Preflight及结果](CONTRACT-HARDENING-20261007.md)和[V2当前状态](V2-SOURCE-STATUS.md)。新Profile `7aaf76fe…`、artifacts/lib/HTML已生成；fee/退款末输出约束及432000 DAA超时已同步。预算门槛BLOCKED，候选禁用计划/签名/提交；未测试、VM、链上或部署，旧Profile不迁移。
 
 ## 阅读顺序
 
@@ -31,7 +31,7 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 ## 交易与存储边界
 
-- 页面只提供TN10/TKAS操作，KasWare必须逐笔批准；金额bigint/十进制字符串，单笔费用上限0.5TKAS。
+- 当前候选只读，禁止交易计划/签名/提交；将来获批交易版本仍只提供TN10/TKAS操作，KasWare必须逐笔批准；金额bigint/十进制字符串，单笔费用上限0.5TKAS。
 - Submitted ≠ Accepted，区块包含 ≠ selected-chain接受。Indexer是发现/候选/缓存，不是资金与接受裁判。
 - REST在旧UNKNOWN且节点未查明时备查：完整节点复验通过才写ACCEPTED；裁剪等情况下最多标“已接受·REST”，底层UNKNOWN及输入占用不变，不授权后续动作。
 - 历史裁剪/PASS-A材料缺失仍会阻断某些构建；换端点或英文UI不能解除。

@@ -7,7 +7,8 @@ import {fileURLToPath} from 'node:url';
 import {loadV2Bundle} from '../../../contracts/f3.2/tools/linking.mjs';
 import * as S from '../../../packages/f3.2-core/lib/state.js';
 import {buildAction, buildOpenGenesis, witness} from '../../../packages/f3.2-core/lib/builders.js';
-import {interpretAccepted, sameAcceptedWitnessExceptIgnoredFee} from '../../../packages/f3.2-core/lib/accepted.js';
+import {interpretAccepted} from '../../../packages/f3.2-core/lib/accepted.js';
+import {availableActions} from '../../../packages/f3.2-core/lib/protocol.js';
 import {blake2b256} from '../../../packages/f3.2-core/lib/hashes.js';
 import {hex} from '../../../packages/f3.2-core/lib/bytes.js';
 import {p2pk, p2sh} from '../../../packages/f3.2-core/lib/covenant-id.js';
@@ -44,27 +45,30 @@ test('metadata: fresh rows AND cached ledgers reject an injected purchase txid',
   row.purchases[0].txid = hash('4'); assert.equal(checkRow(row), row);
 });
 
-test('accepted BUY ignores free fee argument, but verifies real fee and exact state successor', () => {
-  const {x, op, d} = draft(), tx = structuredClone(d.transaction);
-  tx.inputs[0].signatureScript = witness(x, profile, op, d.transition, 0n);
-  const r = interpretAccepted(x, profile, tx, d.inputUtxos.map(u => u.value));
-  assert.equal(r.fee, d.fee); assert.equal(r.witnessFee, 0n); assert.equal(r.next.sold, 1);
+test('new Profile BUY binds witness fee to real fee and requires funding context', () => {
+  const {x, op, d} = draft(), tx = structuredClone(d.transaction), values = d.inputUtxos.map(u => u.value);
+  const r = interpretAccepted(x, profile, tx, values);
+  assert.equal(r.fee, d.fee); assert.equal(r.witnessFee, d.fee); assert.equal(r.next.sold, 1);
   assert.equal(r.outputs[1].role, 'AUXILIARY');
-  assert.equal(sameAcceptedWitnessExceptIgnoredFee(d.transaction.inputs[0].signatureScript, tx.inputs[0].signatureScript, 'BUY'), true);
-  tx.outputs[0].value--;
-  assert.throws(() => interpretAccepted(x, profile, tx, d.inputUtxos.map(u => u.value)), /SUCCESSOR_MISMATCH/);
+  assert.throws(() => interpretAccepted(x, profile, tx), /INPUT_VALUES_REQUIRED/);
+  for (const badFee of [0n, d.fee + 1n, S.MAX_PAY_FEE + 1n]) {
+    tx.inputs[0].signatureScript = witness(x, profile, op, d.transition, badFee);
+    assert.throws(() => interpretAccepted(x, profile, tx, values), /FEE_MISMATCH/);
+  }
+  tx.inputs[0].signatureScript = d.transaction.inputs[0].signatureScript;
+  tx.outputs[0].value--; tx.outputs[1].value++;
+  assert.throws(() => interpretAccepted(x, profile, tx, values), /SUCCESSOR_MISMATCH/);
 });
 
-test('local reconciliation accepts only ignored fee change, never output/data/budget or missing context', () => {
+test('new Profile reconciliation rejects changed fee witness, budget or missing context', () => {
   const {x, op, d} = draft(), tx = structuredClone(d.transaction);
-  tx.inputs[0].signatureScript = witness(x, profile, op, d.transition, 0n);
   tx.inputs[1].signatureScript = '41' + '11'.repeat(64) + '01';
   const ev = {tx, inputs: d.inputUtxos.map(u => ({value: u.value, daa: u.daa, spk: spkText(u.spk), covenantId: u.covenantId ?? null}))};
   assert.equal(matchesDraft(ev, d), d.fee);
   const missing = {...ev, inputs: [null, ev.inputs[1]]}; assert.throws(() => matchesDraft(missing, d), /上下文/);
   const bad = structuredClone(ev); bad.tx.inputs[0].computeBudget++; assert.throws(() => matchesDraft(bad, d), /字段不一致/);
-  const changed = witness(x, profile, op, {...d.transition, data: Uint8Array.of(2, 0, 0, 0)}, 0n);
-  assert.equal(sameAcceptedWitnessExceptIgnoredFee(d.transaction.inputs[0].signatureScript, changed, 'BUY'), false);
+  tx.inputs[0].signatureScript = witness(x, profile, op, d.transition, 0n);
+  assert.throws(() => matchesDraft(ev, d), /字段不一致/);
 });
 
 test('accepted CLOSE permits auxiliary output layout and stronger locktime, but not diverted deposit', () => {
@@ -76,13 +80,43 @@ test('accepted CLOSE permits auxiliary output layout and stronger locktime, but 
   assert.throws(() => interpretAccepted(x, profile, tx, d.inputUtxos.map(u => u.value)), /PAYOUT_MISMATCH/);
 });
 
-test('accepted REFUND labels unconstrained last output honestly, buyer refund cannot change', () => {
-  const s = {...S.appendPurchase(S.newOpen(key, config), 1, key), phase: S.Phase.REFUNDING};
-  const {x, d} = draft('REFUND', s), tx = structuredClone(d.transaction);
-  tx.outputs.at(-1).scriptPublicKey = p2pk(other);
-  const r = interpretAccepted(x, profile, tx, d.inputUtxos.map(u => u.value));
-  assert.equal(r.terminal, 'REFUNDED'); assert.equal(r.outputs.at(-1).role, 'AUXILIARY');
-  tx.outputs[0].value--; assert.throws(() => interpretAccepted(x, profile, tx, d.inputUtxos.map(u => u.value)), /PAYOUT_MISMATCH/);
+test('REFUND intermediate/final executor is bound even with sponsored inputs', () => {
+  for (const count of [1, 33]) {
+    let s = S.newOpen(key, {...config, ticketCap: 40});
+    for (let i = 0; i < count; i++) s = S.appendPurchase(s, 1, key);
+    s = {...s, phase: S.Phase.REFUNDING};
+    const x = snapshot(s), op = {action: 'REFUND', actorKey: key};
+    for (const sponsors of [[], funds]) {
+      const d = buildAction(x, profile, op, 100000n, sponsors), values = d.inputUtxos.map(u => u.value);
+      const r = interpretAccepted(x, profile, d.transaction, values);
+      assert.equal(r.outputs.at(-1).role, 'EXECUTOR'); assert.equal(r.outputs.at(-1).constrained, true);
+      assert.equal(r.outputs.at(-1).value, BigInt(Math.min(count, 32)) * S.REFUND_FEE + sponsors.reduce((a, u) => a + u.value, 0n) - d.fee);
+      assert.equal(r.terminal, count === 1 ? 'REFUNDED' : null);
+      for (const mutate of [o => {o.scriptPublicKey = p2pk(other);}, o => {o.covenant = {covenantId: hash('9'), authorizingInput: 0};}]) {
+        const tx = structuredClone(d.transaction); mutate(tx.outputs.at(-1));
+        assert.throws(() => interpretAccepted(x, profile, tx, values), /PAYOUT_MISMATCH/);
+      }
+      const bad = structuredClone(d.transaction); bad.outputs[0].value--; bad.outputs.at(-1).value++;
+      assert.throws(() => interpretAccepted(x, profile, bad, values), /PAYOUT_MISMATCH|SUCCESSOR_MISMATCH/);
+    }
+  }
+});
+
+test('timeout is 432000 DAA: before/equal boundary, sequence and fee remain bound', () => {
+  const s = {...S.appendPurchase(S.newOpen(key, config), 5, key), phase: S.Phase.SEALED};
+  const x = snapshot(s), op = {action: 'TIMEOUT_REFUND', actorKey: key};
+  assert.equal(S.TIMEOUT_DELAY, 432000n);
+  x.currentDaa = x.utxoDaa + S.TIMEOUT_DELAY - 1n;
+  assert.equal(availableActions(x, profile).includes('TIMEOUT_REFUND'), false);
+  x.currentDaa++;
+  assert.equal(availableActions(x, profile).includes('TIMEOUT_REFUND'), true);
+  const d = buildAction(x, profile, op, 100000n, funds), values = d.inputUtxos.map(u => u.value);
+  assert.equal(d.transaction.inputs[0].sequence, 432000n);
+  assert.equal(interpretAccepted(x, profile, d.transaction, values).next.phase, S.Phase.REFUNDING);
+  const early = structuredClone(d.transaction); early.inputs[0].sequence--;
+  assert.throws(() => interpretAccepted(x, profile, early, values), /SEQUENCE_REQUIREMENT/);
+  const wrongFee = structuredClone(d.transaction); wrongFee.inputs[0].signatureScript = witness(x, profile, op, d.transition, 0n);
+  assert.throws(() => interpretAccepted(x, profile, wrongFee, values), /FEE_MISMATCH/);
 });
 
 test('ordinary input budgets are initialized in core; final fee satisfies rate and mass for both modes', () => {

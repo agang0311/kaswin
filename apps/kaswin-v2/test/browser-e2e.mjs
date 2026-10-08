@@ -10,6 +10,8 @@ import {parseJson, jsonText} from '../scripts/shared/lib/json.mjs';
 import {S} from '../scripts/shared/core.mjs';
 const require = createRequire(import.meta.url);
 const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
+const manifest = JSON.parse(await fs.readFile(new URL('../../../releases/kaswin-v2/build-manifest.json', import.meta.url), 'utf8'));
+if (manifest.tradingEnabled !== true) throw Error('READ_ONLY_CANDIDATE: trading-flow E2E requires an independently approved trading build, never bypass the candidate gate');
 const profile = loadProfile(), chain = new SimChain(), idx = simIndexer(chain, profile);
 chain.fund(TEST_ADDRESS, 60_000_000_000n);
 chain.fund(TEST_ADDRESS, 60_000_000_000n);
@@ -121,11 +123,12 @@ try {
   await page.waitForSelector('[data-act="TIMEOUT_REFUND"]', {timeout: 60000});
   // Too early: the page must explain instead of building a transaction.
   await page.click('[data-act="TIMEOUT_REFUND"]');
-  await page.waitForFunction(() => /300 DAA|还差/.test(document.getElementById('pErr')?.textContent ?? ''), null, {timeout: 60000});
+  await page.waitForFunction(() => /432000 DAA|还差/.test(document.getElementById('pErr')?.textContent ?? ''), null, {timeout: 60000});
   steps.push(['timeout-too-early', await page.locator('#pErr').textContent()]);
   await scanEnglish();
   await page.click('#mClose');
-  chain.advance(301);
+  // Jump simulated score, not 432000 allocated blocks; this is not consensus evidence.
+  chain.daa += S.TIMEOUT_DELAY; chain.blue += S.TIMEOUT_DELAY; chain.addBlock();
   await page.click('[data-act="TIMEOUT_REFUND"]');
   await approveAndSubmit('timeout');
   await page.waitForSelector('[data-act="REFUND"]', {timeout: 60000});

@@ -1,5 +1,7 @@
 # 2026-10-07 静态审查整改：Preflight 与交付边界
 
+> 历史记录：本页对应旧Profile `206d4ec7…` 的客户端整改。随后用户明确授权修改合约与发布文件，新规则/产物/边界以 [CONTRACT-HARDENING-20261007.md](CONTRACT-HARDENING-20261007.md) 为准。本页的fee豁免、辅助退款输出和旧HTML保留原位说明不再描述当前源码。
+
 状态：**APPROVED FOR SOURCE IMPLEMENTATION / BLOCKED FOR RELEASE**。用户授权“按建议处理”；延续只做源码与必要编译、不运行VM或链上测试的限制，本轮也不运行单元/浏览器测试。主助手单写入者，不委托、不访问钱包、不部署、不提交交易。基础快照 `dc9e8048a3fcd5f8b1d6bec2822cf905c2f9c2b7`。
 
 固定 Profile `206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3`、SilverScript `3ed973335b59269293564805cc2c58a14595ec03`、共识源码 `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`，不升级。已阅读知识工作区核心架构规范、25问模板、README、sources与兼容矩阵；前次完整审查在 `/root/kaspa/docs/kaswin/v2-code-review-2026-10-07.zh.md`。

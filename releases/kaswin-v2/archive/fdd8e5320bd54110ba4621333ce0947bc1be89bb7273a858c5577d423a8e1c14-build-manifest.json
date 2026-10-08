@@ -1,0 +1,99 @@
+{
+  "artifact": "index.html",
+  "bytes": 315595,
+  "sha256": "6509ee1420003380484cc472763e2782a152e796a08874aa7fac5f4a3944e495",
+  "esbuild": "0.28.2",
+  "profileId": "206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3",
+  "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
+  "frames": {
+    "refunding": {
+      "templateSourceSha256": "f0cc1c6956fa1c4019e0bcf865b0348367ecc1a44d23174a72fa329cd589c5af",
+      "sourceSha256": "f0cc1c6956fa1c4019e0bcf865b0348367ecc1a44d23174a72fa329cd589c5af",
+      "artifactSha256": "d256d07e592104a0e27962526b958e91e6e7a793fb65688f852b4e79a0330aa8",
+      "constructorArgsSha256": "831643e4f9c845a62d198b8dddb062a355551617e3c8dceb05745300ebcada5b",
+      "templateHash": "8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6",
+      "tailBytes": 7229,
+      "dependencies": {}
+    },
+    "sealed": {
+      "templateSourceSha256": "3deacf2464fd918a886a8d95c0111cc1179fe8c147d86b5276d7e5f350c6621d",
+      "sourceSha256": "b89d116409da7b3b9099eccbb6e449fed59b38f271b0bbbf27b87c57662e153d",
+      "artifactSha256": "042f25a200aea9c6851a804f7956e2a3fbe614dff50e6977b7af3d52547c2984",
+      "constructorArgsSha256": "35b49acfb5fd29c81de3407b86414ee8566dae84347e65e5b9a0028e91c8b744",
+      "templateHash": "ba2f1118738c0c9b0a0d9c4adcfedffacace8f075984912fe7df1bd15aedc546",
+      "tailBytes": 3937,
+      "dependencies": {
+        "refunding": "8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6"
+      }
+    },
+    "open": {
+      "templateSourceSha256": "9130306157269cbfebf75e8f51c74826cbf9cd393e2b19d731c8ffb8f3b2e3ee",
+      "sourceSha256": "765eb7492677c8f53b67b7db49f57bb042d4645a136f2fa3c80575a09a7619ac",
+      "artifactSha256": "51efd7ddab66716a20bc682f6f64a3d8d8613d9d11401a1f22b80f92875e7fdf",
+      "constructorArgsSha256": "696b0f17e36a8670c849465b48fe10ad619d01b3f1768bedbc6c18d4e5616ffd",
+      "templateHash": "09e1a6aea947b3cf5cda353ef822f45180df5fa2cf0f4b5fdafd4f759c67547e",
+      "tailBytes": 3224,
+      "dependencies": {
+        "sealed": "ba2f1118738c0c9b0a0d9c4adcfedffacace8f075984912fe7df1bd15aedc546",
+        "refunding": "8547e6b11115a8d7f81e6062719194d467bc1135d9bcf0c91fc87256a84150d6"
+      }
+    }
+  },
+  "transformations": [],
+  "inputSha256": {
+    "contracts/f3.2/pins.json": "aaa979e00cb53d73dc085fe953e752f9d08ea7a94d45619af7c23c6cbb97c4ec",
+    "packages/f3.2-core/lib/bytes.js": "1733e47c30dcefd4689f56f27829dc0fa6f51a2c9e4c58c87e5f3f6748fc8080",
+    "packages/f3.2-core/lib/hashes.js": "7f0a6395b528e53df2c19b0ca62975cd3bb04a65479e1d3117e3154905297b13",
+    "packages/f3.2-core/lib/blake3.js": "293a39853baa92803d0a1717969ac6165101788cb8602de92e990706758d9104",
+    "packages/f3.2-core/lib/covenant-id.js": "cdf5dbe8263f2e7c8284fb561b5b5ac8a201a2190fe162aceba55535a157b5a0",
+    "packages/f3.2-core/lib/state.js": "ccbf3dbc96353c400dc6305673b763e7884ab260ed2854a4393f29276afcdd1b",
+    "packages/f3.2-core/lib/protocol.js": "82ecd02cab1d13a1df779870bf1f615da57eb95406b265b86350135d5ebbc134",
+    "packages/f3.2-core/lib/transaction.js": "710bd12c3e48171d24f985222fab56eeb9370d902d1e59b8ab3701630ca907f5",
+    "packages/f3.2-core/lib/registry.js": "5c33432884288b441c1002abb7af258206522ab0da4e49ae3bc85924fb361f83",
+    "packages/f3.2-core/lib/builders.js": "6272e99854ea109b43cd4cbea9990613bd66201f1bb1aab77463bbd732e02bb1",
+    "packages/f3.2-core/lib/artifacts.js": "8dac0a49d0b1de64172d86fb04dc0eaacada705b77b78657ec16d4c9b632fe9a",
+    "packages/f3.2-core/lib/pass-a.js": "6f6477383e2c6dceddb5087f2cf23df10f2b2605a3c490293bdee55479c5c335",
+    "packages/f3.2-core/lib/persistence.js": "338f5639faf3ece72252d2efeb04dd521dea570be39f6610fa07b2bcb547bad7",
+    "apps/kaswin-v2/scripts/shared/core.mjs": "e563d2720ddbfe568fde27eaee77412ab34309338af6b62609ab718fcd1c705e",
+    "apps/kaswin-v2/scripts/shared/lib/json.mjs": "d444df58db8cdd30ad192e787ee95af8bcf8a2bde5b367ffb75caf6bebbeb88d",
+    "apps/kaswin-v2/scripts/shared/nodes.mjs": "c0f52b2c49a825a262a7c52be5cb17e544469c210e86645698dceef2a8eeb080",
+    "apps/kaswin-v2/scripts/endpoints.mjs": "c68b006e2cf49d74ab0a5e2208935c3e5814b86b36c48f3700c5defbacee0292",
+    "apps/kaswin-v2/scripts/shared/mass.mjs": "995837d86537940ba0aaa9094def507a570953dfe10db5f75c99923b53d9a0e2",
+    "apps/kaswin-v2/scripts/shared/lib/address.mjs": "f1c71eda09e53c8aa4c8aa3b8866ec524a693988a8873785e056ffa448af147d",
+    "apps/kaswin-v2/scripts/shared/chain.mjs": "1fbe2272a5b5744c8133e02a116cd48706e67088016a0b93d73dcedc4ad308ec",
+    "apps/kaswin-v2/scripts/shared/lib/sighash.mjs": "7759748f4ccd61f66b155766881e8fe1ad53a4efe33ff24167aa82147aacceb9",
+    "apps/kaswin-v2/scripts/shared/lib/sha256.mjs": "3bcc06cd94a08e6a0f39714c1ed5a17f016f96e0c40518663e7007e48621a5fb",
+    "apps/kaswin-v2/scripts/shared/lib/schnorr.mjs": "d21b69359e174677601138ebfd241b0d04e102dd42c1644eeefc7c7830a0bf45",
+    "apps/kaswin-v2/scripts/shared/wallet.mjs": "17091cc251aec266047d6d40d2260bbf2b3f18abff91fc74f49a9f0330f345c6",
+    "apps/kaswin-v2/scripts/shared/passa.mjs": "98cbffdfb92d874fe946fff8a43ef47802e99b4ec65db751cb22af5138ac8be8",
+    "apps/kaswin-v2/scripts/shared/rounds.mjs": "9f3ea4c126064080957ed70e7abf56958fd575054423770739110dc557d26be2",
+    "apps/kaswin-v2/scripts/shared/reservations.mjs": "2a1c289e4e96853d31d9bfa1dee3df397b3d0cb49e023b4310dc32b65d86d65c",
+    "apps/kaswin-v2/scripts/shared/engine.mjs": "573f91c81af532b8da03db5036900caf4117c9d253d3f9ae8f9043e8ccbf40d9",
+    "apps/kaswin-v2/scripts/rest.mjs": "92dbe0c57713eb2cefaddff5ef306838ecc7e1d8b445c9e7e8212b765cfbbddc",
+    "apps/kaswin-v2/scripts/engine2.mjs": "8b13e6daccaa6c74a4c51b43e25b67dd45ae7126597d1727db7f92ee0902d8f4",
+    "apps/kaswin-v2/visual/view.mjs": "166049eb85f2906109063c35b6cee21acef546366f2799382d1e71584ffb44bf",
+    "packages/f3.2-core/lib/genesis-discovery.js": "15efc547b591f6ec9b1c442d25fefd0d024f4f8432c5f634269917aaf92d8ad3",
+    "apps/kaswin-v2/scripts/shared/replay.mjs": "4bf794149d6cb33771e9b48ef11a559a031940e6a138520bc64868333f746499",
+    "apps/kaswin-v2/scripts/shared/catalog.mjs": "55ca135830dd1b9fb9b12cebbcf7d93b4d16d8c05ae57fd7d9230d8a3f828152",
+    "apps/kaswin-v2/visual/messages-en.mjs": "a41b1950614e335c6533a00f28613ab48d82e586fc65813e791980db1ec356f9",
+    "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
+    "apps/kaswin-v2/visual/icons.mjs": "12ff0be47df4f5bdca0b9d0fe21300200ffaf0d663e11b27721cee131d516fd2",
+    "apps/kaswin-v2/scripts/app.mjs": "c122aff8311a397f83265a779422637bd8360d4275904940e25becb2afb9a4b5",
+    "apps/kaswin-v2/visual/styles.css": "9260e2b93bb8730106723dd376d9f570ede2c40c3ffba7965d486a8b6097de38",
+    "apps/kaswin-v2/visual/index.template.html": "1ee3565014f23e2d9ab7fde95e7c9f169f0887cc99027b3a84427a1540ba0c14",
+    "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8"
+  },
+  "externalRuntime": [
+    "user-configured indexer (GET /v1/rounds*), default https://tn10.kaspay.top/indexer",
+    "one configured TN10 JSON wRPC node (ws/wss, ordered fallback), default wss://tn10.kaspay.top/wrpc",
+    "public TN10 REST GET /transactions/{txid} (https://api-tn10.kaspa.org) for old UNKNOWN records",
+    "KasWare provider (window.kasware)"
+  ],
+  "noRuntimeDownloads": true,
+  "embeddedSdk": false,
+  "deployedSnapshot": {
+    "file": "deployed-20261005.html",
+    "sha256": "335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003",
+    "relation": "Historical F3.2 deployment; preserved unchanged, not reproducible from or evidence for current V2 sources."
+  }
+}

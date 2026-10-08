@@ -2,7 +2,7 @@
 
 任何人可创建、规则与资金流向可由链上证据核验的 Kaspa 抽奖协议与单网页应用。
 
-> **2026-10-07：安全整改源码已实现，仅编译核对，未测试／未发布。** 合约仍为228B、8/6 ABI、Profile `206d4ec7…`，字节码未改。核心lib已由固定TypeScript重建；修复HTML注入、已接受交易解释、原子输入占用、费用及预算默认值。`budgetProfileId`恢复null，缺完整校准证据，正式构建继续BLOCKED。现有HTML是整改前版本，**不含这些修复**。见[整改与边界](docs/kaswin-v2/REMEDIATION-20261007.md)及[当前状态](docs/kaswin-v2/V2-SOURCE-STATUS.md)。
+> **2026-10-07：合约收紧，新Profile与单文件只读候选。** 所有动作fee绑定真实输入输出差且0<fee≤0.5 TKAS；退款末输出绑定执行者；超时改为432000 DAA。Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`；228B、8/6 ABI保持，SIL/artifacts/lib/HTML均已更新。固定编译器重编一致，但未测试／VM／链上验证。`budgetProfileId:null`，**当前HTML禁用交易计划、签名和提交，不是可交易或主网版本**。旧HTML归档，新Profile不升级旧UTXO。见[合约Preflight与结果](docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。
 
 ---
 
@@ -14,7 +14,7 @@
 ├── contracts/f3.2/             # [链上合约] SilverScript 源码、固定 linked 产物与 Profile
 │   ├── src/                    # open.sil, sealed.sil, refunding.sil
 │   ├── artifacts/              # 原始编译器 linked JSON、构造参数与编译报告
-│   ├── profile.json            # 固定 Profile (206d4ec7...) 与模板哈希
+│   ├── profile.json            # 新 Profile (7aaf76fe...) 与模板哈希
 │   ├── pins.json               # 源码与产物完整 SHA256 校验锚
 │   └── tools/check-compile.mjs # 可选编译器离线重放工具
 │
@@ -41,9 +41,9 @@
 │   └── tools/                  # 构建工具（build.mjs）与核心库检查工具（check-core.mjs）
 │
 ├── releases/kaswin-v2/         # [发布产物] 最终单文件交付物与清单
-│   ├── index.html              # 整改前单文件 (315,595 B, sha256: 6509ee14...)；本轮未替换
+│   ├── index.html              # 新Profile只读候选，签名/提交禁用；hash见manifest
 │   ├── deployed-20261005.html  # 历史部署快照 (316,069 B, sha256: 335fbf04...)；非本轮线上核验
-│   └── build-manifest.json     # 包含 40 项构建输入 SHA256 的元数据清单
+│   └── build-manifest.json     # 构建输入SHA256、只读模式及验证边界
 │
 ├── docs/kaswin-v2/             # [项目文档] 架构说明、固定来源、验证记录与源码映射
 │   ├── ARCHITECTURE.md         # 架构规范：25 问、14 项材料与 8 项反模式审查
@@ -71,7 +71,9 @@ npm --prefix apps/kaswin-v2 run check:core
 # 3. 仅在内存编译打包，不运行页面、不写发布文件、不解除预算门槛
 npm --prefix apps/kaswin-v2 run check:bundle
 
-# 4. 正式构建当前被预算校准门槛阻断，不通过改pin绕过
+# 4. 更新只读候选HTML/manifest及dist（交易被编译常量禁用）
+npm --prefix apps/kaswin-v2 run build:candidate
+# 可交易build仍被新Profile预算证据阻断，不通过改pin绕过
 # npm --prefix apps/kaswin-v2 run build
 
 # 5. 旧部署复现只属于历史源码版本；当前已移除 verify:deployed

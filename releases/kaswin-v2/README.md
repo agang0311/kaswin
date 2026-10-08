@@ -1,41 +1,37 @@
-# Kaswin V2 发布产物
+# Kaswin V2 单文件交付（只读候选）
 
-本目录当前 `index.html` 是 **206d4ec7… Profile的整改前构建**。2026-10-07已修复源码，但预算校准门槛未闭合，未覆盖HTML/manifest。**此HTML不含当前安全修复，不应当作已整改版本发布。** 本轮仅内存编译，未回读线上页面。见[整改报告](../../docs/kaswin-v2/REMEDIATION-20261007.md)。
+当前 `index.html` 对应新 Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`，包含fee绑定、退款末输出约束、432000 DAA超时及前轮客户端安全修复。**仅编译，尚未运行单测／浏览器／VM／链上验证，未部署。**
 
----
+`releaseMode=READ_ONLY_UNVERIFIED_CANDIDATE`，`tradingEnabled=false`，`budgetProfileId=null`。HTML包含永久双语提示；计划、执行、钱包签名及RPC提交入口均由构建常量禁用，无URL／localStorage／checkbox放行开关。源码开发接口并不等于发布授权。当前不能用于新轮次资金操作，更不是主网版本。
 
-## 文件列表与校验
+## 文件
 
-| 文件 | 大小（字节） | SHA256 | 说明 |
-|---|---|---|---|
-| `deployed-20261005.html` | 316,069 | `335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003` | **线上交付版本快照**：线上交付部署文件的逐字节副本。已通过双语公网只读回读验证。 |
-| `index.html` | 315,595 | `6509ee1420003380484cc472763e2782a152e796a08874aa7fac5f4a3944e495` | **V2整改前构建**：manifest绑定当时输入；不代表当前源码，不继承其它版本测试数。 |
-| `build-manifest.json` | — | — | **构建元数据清单**：绑定 40 项源文件 SHA256、Profile ID、三帧来源哈希与端点内存变换证明。 |
+| 文件 | 说明 |
+|---|---|
+| `index.html` | 自包含只读候选；准确字节数与SHA256见同目录 `build-manifest.json` |
+| `build-manifest.json` | 新Profile、三帧来源、构建输入SHA256、交易关闭及验证边界 |
+| `../../dist/index.html` | 与上述HTML逐字节同步，被Git忽略，可重建 |
+| `archive/6509ee1420003380484cc472763e2782a152e796a08874aa7fac5f4a3944e495-index.html` | 前轮206d4ec7…构建，315595字节，**含已知旧问题，仅归档，不作新版推荐入口** |
+| `archive/fdd8e5320bd54110ba4621333ce0947bc1be89bb7273a858c5577d423a8e1c14-build-manifest.json` | 前轮HTML对应manifest，未改hash或标签 |
+| `deployed-20261005.html` | 历史F3.2部署快照，SHA256 `335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003`，原样保留；不是当前线上回读证据 |
 
----
+## 离线构建
 
-## 历史产物同源记录（不适用于当前index.html）
+从仓库根运行（开发依赖须为已固定版本）：
 
-`index.html`（316,073 字节）与 `deployed-20261005.html`（316,069 字节）的 4 字节差异源自工程整理时将图标集合从单体应用控制器物理抽取为独立模块 `apps/kaswin-v2/visual/icons.mjs`，由 esbuild 引入了微小的模块包装开销。
-
-以下复现命令只属于对应历史源码版本。当前V2已移除此npm入口，不得在当前工作树执行或据此声称同源：
 ```bash
-npm --prefix apps/kaswin-v2 run verify:deployed
+npm --prefix apps/kaswin-v2 run check:core
+npm --prefix apps/kaswin-v2 run check:bundle     # 仅内存编译
+npm --prefix apps/kaswin-v2 run build:candidate  # 更新只读HTML、manifest及dist，归档之前文件
 ```
-该命令在内存中把 `visual/icons.mjs` 并回控制器源码进行打包，逐字节生成 `335fbf0485369c0b924401b7cfb0243c1deb1e2b0e049d288cdb3a89f3168003`（316,069 字节），证明分层源码与部署版本在业务逻辑、链上规则与数据上 100% 同源。
 
----
+默认 `npm --prefix apps/kaswin-v2 run build` **仍被新Profile预算证据阻断**，没有改pin冒充测量。真正交易版本还需独立授权的VM、全部资源边界、浏览器、钱包和TN10验证，不应仅凭构建按钮开启。
 
-## 历史使用方式（当前整改未发布，以下不是部署授权）
+## 使用边界
 
-单 HTML 产物为完全自包含结构，无外部 CSS/JS 依赖、无外部字体请求、不下载运行时 SDK 或 WASM 文件：
+- 可以离线打开界面和规则；读取轮次/交易仍需节点和Indexer、CORS/Origin权限。此构建过程未访问任何节点。
+- 新Profile不升级旧UTXO；旧轮次和UNKNOWN记录继续保留其原协议／原工具边界，不能在新Profile中重发。
+- 远端Indexer仍为旧Profile，没有随文件生成而切换或部署；新页面不保证当前远端已支持新Profile。
+- 不要随意更换Origin或清除IndexedDB；保留旧记录不是允许广播旧交易。
 
-1. **直接打开**：双击即可使用浏览器以 `file://` 协议打开进行离线浏览与计算（部分浏览器限制跨域请求）。
-2. **本地静态服务**：
-   ```bash
-   # 在仅包含此单文件的目录中启动轻量服务
-   python3 -m http.server 8000 --bind 127.0.0.1
-   ```
-   - 访问地址：`http://127.0.0.1:8000/index.html`
-   - **注意**：`127.0.0.1` 与 `localhost` 仅代表浏览器所在设备；若手机访问请使用局域网 IP（如 `192.168.x.x`）。
-   - **数据隔离提示**：浏览器的 IndexedDB 事务日志与提交锁按 Origin（源）严格隔离。请勿随意更换访问域名或清除站点数据，以免丢失本地 UNKNOWN 事务记录。
+[合约Preflight、修复与编译结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。

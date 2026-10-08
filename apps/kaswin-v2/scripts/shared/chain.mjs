@@ -7,7 +7,6 @@ import {ensure, hash32, referenceTxId, stable, errorText} from './core.mjs';
 import {uint} from './lib/json.mjs';
 import {txFromRpc, utxoFromRpc, parseSpk} from './nodes.mjs';
 import {spkToAddress} from './lib/address.mjs';
-import {sameAcceptedWitnessExceptIgnoredFee} from '../../../../packages/f3.2-core/lib/accepted.js';
 
 /** Live UTXOs of an address on the connected node. */
 export async function commonUtxos(link, address) {
@@ -90,15 +89,11 @@ export async function inMempool(pair, txid) {
   return res.some(r => r.status === 'fulfilled' && r.value?.mempoolEntry);
 }
 
-/** Call ONLY after acceptedAt(): exact approved fields, authorized signatures, and
- * the sole fee argument ignored by the pinned action. Never a wallet-response check. */
+/** Call ONLY after acceptedAt(): exact approved fields and covenant witness;
+ * only authorized ordinary signatures may differ. Never a wallet-response check. */
 export function matchesDraft(accepted, draft) {
   const expect = structuredClone(draft.transaction), got = structuredClone(accepted.tx);
   for (const i of draft.authorizedInputIndices) { ensure(/^41[0-9a-f]{128}01$/.test(got.inputs[i]?.signatureScript ?? ''), '接受交易的签名格式异常'); expect.inputs[i].signatureScript = got.inputs[i].signatureScript; }
-  if (!draft.authorizedInputIndices.includes(0) && expect.inputs[0] && got.inputs[0] &&
-      sameAcceptedWitnessExceptIgnoredFee(expect.inputs[0].signatureScript, got.inputs[0].signatureScript, draft.action)) {
-    expect.inputs[0].signatureScript = got.inputs[0].signatureScript;
-  }
   ensure(stable(expect) === stable(got), '被接受的交易与批准的计划字段不一致');
   ensure(accepted.inputs?.length === draft.inputUtxos.length && accepted.inputs.every((u, i) => {
     const f = draft.inputUtxos[i];

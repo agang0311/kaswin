@@ -51,7 +51,7 @@ export function planSummary(p){
   if(p.action==='BUY')return `购买 ${p.after.sold-b.sold} 张，票号 #${b.sold+1}–#${p.after.sold}。票款进入合约，另付网络费 ${fee} TKAS。若状态被抢先消费，须重新核对而非重复提交。`;
   if(p.action==='CLOSE')return `${p.terminal==='EMPTY'?CLOSE_OUTCOME.EMPTY:p.after?.phase===5?CLOSE_OUTCOME.REFUNDING:CLOSE_OUTCOME.SEALED}。封盘发起者承担网络费 ${fee} TKAS。`;
   if(p.action==='DRAW_AND_PAY')return `按已验证的 PASS-A 证明计算中奖票 #${p.winner.ticket}。奖金直接支付中奖者，执行者获得 1 TKAS，创建者取回押金。网络费 ${fee} TKAS 从奖池扣除。`;
-  if(p.action==='TIMEOUT_REFUND')return `封存已满足 300 DAA 超时条件，转入退款，但本笔不直接向买家退款。发起者付网络费 ${fee} TKAS；之后需执行退款批次。`;
+  if(p.action==='TIMEOUT_REFUND')return `封存已满足 432000 DAA 超时条件，转入退款，但本笔不直接向买家退款。发起者付网络费 ${fee} TKAS；之后需执行退款批次。`;
   if(p.action==='REFUND')return `执行下一批（最多32条）购买记录退款，每条扣0.01 TKAS执行费；执行费池扣除网络费后余款归执行者。${p.sponsored?'需普通资金输入赞助，回款见下方全部输出。':''}这不是额外重复扣票款。`;
   return '';
 }

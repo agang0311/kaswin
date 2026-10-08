@@ -1,7 +1,8 @@
 /** Interpretation of ALREADY ACCEPTED V2 transactions, not a VM or acceptance proof.
  * The caller establishes selected-chain acceptance and authenticates the spent UTXO.
  * Unlike transition() (our builder policy), this mirrors the pinned SIL constraints:
- * ignored fee arguments and auxiliary outputs cannot decide state or ownership.
+ * every action binds real fee; REFUND binds the executor output. Other auxiliary
+ * outputs remain outside the builder's stricter change-layout policy.
  * It is scoped to canonical OPEN lineages verified by verifySnapshot(), not arbitrary
  * directly-created SEALED/REFUNDING lookalikes. Other input scripts, covenant contexts,
  * finality and the native PASS-A accessor remain the accepting node's responsibility. */
@@ -46,7 +47,7 @@ export function scriptPushes(bytes) {
     }
     return out;
 }
-/** SIL int ABI: signed ScriptNum, at most 8 bytes. Negative ignored fee is still data. */
+/** SIL int ABI: signed ScriptNum, at most 8 bytes; fee is subsequently constrained. */
 export function scriptNumber(bytes) {
     check(bytes.length <= 8, 'SCRIPT_NUMBER_LENGTH');
     if (!bytes.length)
@@ -105,7 +106,7 @@ export function interpretAccepted(x, p, tx, inputValues) {
     let fee = null, external = null;
     if (inputValues) {
         check(inputValues.length === tx.inputs.length && inputValues[0] === x.value, 'INPUT_VALUES');
-        inputValues.forEach(v => { uint(v, 64); check(v > 0n, 'INPUT_VALUE'); });
+        inputValues.forEach(v => { uint(v, 64); check(v > 0n && v <= S.VALUE_LIMIT, 'INPUT_VALUE'); });
         external = inputValues.slice(1).reduce((a, v) => a + v, 0n);
         fee = x.value + external - tx.outputs.reduce((a, o) => a + o.value, 0n);
         check(fee >= 0n, 'NEGATIVE_FEE');
@@ -115,6 +116,12 @@ export function interpretAccepted(x, p, tx, inputValues) {
         fee = x.value - tx.outputs.reduce((a, o) => a + o.value, 0n);
         check(fee >= 0n, 'NEGATIVE_FEE');
     }
+    // New Profile no longer treats the fee witness as free data. Missing funding
+    // context means incomplete evidence, not consensus invalidity or a guessed fee.
+    check(fee !== null && external !== null, 'INPUT_VALUES_REQUIRED');
+    check(x.value > 0n && x.value <= S.VALUE_LIMIT, 'INPUT_VALUE');
+    check(tx.outputs.every(o => o.value > 0n && o.value <= S.VALUE_LIMIT), 'OUTPUT_VALUE');
+    check(fee > 0n && fee <= S.MAX_PAY_FEE && fee === w.witnessFee, 'FEE_MISMATCH');
     const outputs = tx.outputs.map(o => ({ ...o, role: 'AUXILIARY', constrained: false }));
     const ordinary = (index, value, key, role) => {
         const o = outputs[index];
@@ -189,7 +196,7 @@ export function interpretAccepted(x, p, tx, inputValues) {
             }
             else
                 next = { ...s, cursor: end };
-            // Output k+1 is deliberately unconstrained by this SIL. Never label it a guaranteed executor payment.
+            ordinary(k + 1, external + BigInt(k) * S.REFUND_FEE - fee, w.actorKey, 'EXECUTOR');
             break;
         }
     }
@@ -209,42 +216,5 @@ export function interpretAccepted(x, p, tx, inputValues) {
         check(terminal !== null && familyOutputs.length === 0, 'TERMINAL_FAMILY');
     return { action: w.action, module: w.module, actorKey: w.actorKey, spent: s, next, terminal, witnessFee: w.witnessFee, fee, external,
         outputs, constrainedOutputs: outputs.filter(o => o.constrained).length, draw, winner };
-}
-/** Only for matching an ALREADY ACCEPTED tx to our own approved draft. Byte-level
- * comparison stays strict except for the one int argument ignored by that action.
- * Do not use this to validate a wallet response or arbitrary unaccepted transactions. */
-export function sameAcceptedWitnessExceptIgnoredFee(before, after, action) {
-    if (before === after)
-        return true;
-    try {
-        const shift = action === 'BUY' || action === 'CLOSE' ? 2 : 0;
-        if (!['BUY', 'CLOSE', 'TIMEOUT_REFUND', 'REFUND'].includes(action))
-            return false;
-        // Preserve exact push encodings of EVERY other item, including dispatch/redeem.
-        const spans = (h) => {
-            const b = unhex(h), items = scriptPushes(b), raw = [];
-            let at = 0;
-            for (const item of items) {
-                const start = at, op = b[at++];
-                if (op > 0 && op <= 75)
-                    at += op;
-                else if (op >= 0x4c && op <= 0x4e) {
-                    const n = op === 0x4c ? 1 : op === 0x4d ? 2 : 4;
-                    at += n + item.length;
-                }
-                raw.push(b.slice(start, at));
-            }
-            return { items, raw };
-        };
-        const a = spans(before), b = spans(after), feeIndex = 5 + shift;
-        if (a.items.length !== 8 + shift || b.items.length !== a.items.length || actionName(a.items[0]) !== action || actionName(b.items[0]) !== action)
-            return false;
-        scriptNumber(a.items[feeIndex]);
-        scriptNumber(b.items[feeIndex]);
-        return a.raw.every((v, i) => i === feeIndex || same(v, b.raw[i]));
-    }
-    catch {
-        return false;
-    }
 }
 //# sourceMappingURL=accepted.js.map

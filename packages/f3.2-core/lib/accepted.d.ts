@@ -3,7 +3,7 @@ import * as S from './state.js';
 import { type Action, type Transition } from './protocol.js';
 import { type Output, type Transaction } from './transaction.js';
 export declare function scriptPushes(bytes: Uint8Array): Uint8Array[];
-/** SIL int ABI: signed ScriptNum, at most 8 bytes. Negative ignored fee is still data. */
+/** SIL int ABI: signed ScriptNum, at most 8 bytes; fee is subsequently constrained. */
 export declare function scriptNumber(bytes: Uint8Array): bigint;
 export declare function targetSeqOf(opening: Uint8Array): string;
 export declare function decodeSpend(script: string, profile: S.Profile, contextOrigin?: Outpoint): {
@@ -51,7 +51,3 @@ export interface AcceptedInterpretation {
     };
 }
 export declare function interpretAccepted(x: S.Snapshot, p: S.Profile, tx: Transaction, inputValues?: readonly bigint[]): AcceptedInterpretation;
-/** Only for matching an ALREADY ACCEPTED tx to our own approved draft. Byte-level
- * comparison stays strict except for the one int argument ignored by that action.
- * Do not use this to validate a wallet response or arbitrary unaccepted transactions. */
-export declare function sameAcceptedWitnessExceptIgnoredFee(before: string, after: string, action: string): boolean;

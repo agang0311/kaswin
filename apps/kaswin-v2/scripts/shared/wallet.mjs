@@ -11,6 +11,7 @@ import {addressToSpk, decodeAddress} from './lib/address.mjs';
 import {schnorrSighash} from './lib/sighash.mjs';
 import {schnorrVerify} from './lib/schnorr.mjs';
 import {spkText} from './nodes.mjs';
+import {requireTradingRelease} from './release-safety.mjs';
 
 export const provider = () => globalThis.kasware ?? null;
 
@@ -56,6 +57,7 @@ export function toSafeJson(draft, session) {
 
 /** Ask the wallet to sign the authorized inputs; returns {signatures: Map(index -> sigScriptHex)} after full verification. */
 export async function signWithWallet(draft, session, {p = provider(), onWaiting, timeoutMs = 90000} = {}) {
+  requireTradingRelease();
   const current = await readSession(p);
   ensure(current.address === session.address && current.key === session.key, '钱包账户已变化，计划作废，请重新报价');
   if (!draft.authorizedInputIndices.length) return new Map();

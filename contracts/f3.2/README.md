@@ -1,12 +1,12 @@
 # Kaswin V2 链上源码候选（目录暂保留 f3.2）
 
-**当前为固定V2 Profile `206d4ec7072727ae3291726f19c82293b38340a5a7de05d306cf105c4206a9c3`。** 2026-10-07审查曾隔离重编三模板并与pins一致；后续整改不改SIL/artifact/ABI。`budgetProfileId`恢复null，因为完整目录及退款游标预算证据未闭合；正式发布仍BLOCKED。本轮没有VM/链上测试，历史三流程不能覆盖全部资源边界。
+**当前为新V2 Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`。** 2026-10-07合约收紧并固定编译/逆拓扑重编一致：所有动作fee=真实输入输出差，0<fee≤50000000；退款末输出绑定actor/P2PK/金额/无CID；超时432000 DAA。ABI和Header不变，不迁移旧UTXO。`budgetProfileId:null`，默认交易发布BLOCKED，仅允许明确禁用交易的只读候选。未VM／链上测试。[Preflight与结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。
 
 | 文件 | 责任 |
 |---|---|
 | [src/open.sil](src/open.sil) | BUY/CLOSE；唯一链上规范零票初态CID认证；写死SEALED/REFUNDING模板哈希 |
-| [src/sealed.sil](src/sealed.sil) | 原子开奖派奖或300 DAA超时转REFUNDING；只含REFUNDING前向哈希 |
-| [src/refunding.sil](src/refunding.sil) | 分批退款/终局退押金；无foreign依赖 |
+| [src/sealed.sil](src/sealed.sil) | 原子开奖派奖或432000 DAA超时转REFUNDING；只含REFUNDING前向哈希 |
+| [src/refunding.sil](src/refunding.sil) | 分批退款/终局退押金／绑定执行者末输出；无foreign依赖 |
 | [tools/linking.mjs](tools/linking.mjs) | 本地V2依赖/源码/artifact/ABI/Profile溯源加载，拒绝旧产物贴标签 |
 | [tools/build-v2.mjs](tools/build-v2.mjs) | REFUNDING→SEALED→OPEN链接，只写新候选目录，不安装或发布 |
 | [tools/check-compile.mjs](tools/check-compile.mjs) | 对已安装本地V2 bundle做逆拓扑重编比对，不支持旧部署 |
