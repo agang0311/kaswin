@@ -37,13 +37,26 @@
 - **运行方式**：
   - 离线模拟：`npm run test:payout256:dry`；
   - 审计测试：`node --test tests/audit/09-payout-256-lifecycle.test.mjs`（纳入 `npm run test:audit`，8 套全部 PASS）。
-- **真实 TN10 链上实验（`payout256-r1`，进行中）**：
-  - 轮次参数：`ticketPrice = 1.0 TKAS`, `ticketCap = 256`, `minTickets = 256`；
-  - 已完成步骤：`01-GENESIS`（txid `d4939d17...`）以及连续 50 笔链上真实购票（`02-BUY1` ~ `51-BUY50`），全部 51 笔交易均在 Kaspa TN10 选中链 100% 确认；
-  - 最新交易：`51-BUY50` txid `952b2b423f65eae95b9886bf517c0f01546790af96b428f769d230ac0fd0f6ac`，接受 DAA `591378755`，单笔费用 0.016512 TKAS；
-  - 具备断点续跑与微重组自愈能力，支持分批持续推进至 256 满额封盘派奖。
+- **真实 TN10 链上实验（`payout256-r1`，全部 259 笔交易 Selected-Chain 接受完成，终局 `PAID`）**：
+  - 轮次参数：`ticketPrice = 1.0 TKAS`, `ticketCap = 256`, `minTickets = 256`, `purchaseCap = 256`；
+  - **全量交易覆盖**：1 笔创世（`01-GENESIS`）+ 256 笔真实购票（`02-BUY1` ~ `257-BUY256`）+ 1 笔满额封盘（`258-CLOSE`）+ 1 笔原子派奖（`259-DRAW_AND_PAY`），**共 259 笔交易在 Kaspa TN10 选中链 100% 确认通过**！
+  - **关键交易指纹**：
+    - `01-GENESIS`: txid `d4939d173ea5d2dec088eb6ca98dd7357a5fca80f4c8790cafc114d188c5963f`，接受 DAA `591356121`，费用 0.002360 TKAS。
+    - `257-BUY256`: txid `bcc31f60066dd4e52a0630ac70461b73de2c29a1599e9e0ef9d62a2f1854b880`，接受 DAA `591440864`，费用 0.031344 TKAS，状态售满 256 票，目录 9216 字节。
+    - `258-CLOSE`: txid `05525bc36e6f352da97e264eefe38ff8028373bb65e0513601c11be32bf0ff10`，接受块 `3eb7d227...`，接受 DAA `591441294`，费用 0.044370 TKAS，平滑转入 `SEALED` 封存状态。
+    - `259-DRAW_AND_PAY`: txid `b4c7875521a562ec44f70c9746df413f571ed3a57c58586144d712c43010b3a4`，接受块 `8a863f7c...`，接受 DAA `591441689`，费用 0.038107 TKAS。
+  - **派奖清算明细**：
+    - 终局：`PAID`（`complete.json` 终结确认）；
+    - 中奖者：Buyer2（`931f2911...`），原子到账 **254.961893 TKAS** 大奖；
+    - 创建者押金：**0.200000 TKAS** 全额原路退还；
+    - 执行者赏金：**1.000000 TKAS** 原子支付给创建者；
+  - **网络费用与经济模型表现**：
+    - 259 笔交易累计网络手续费：仅 **5.796248 TKAS**；
+    - 单笔最低费用：`0.002360 TKAS`（创世），单笔最高费用：`0.044370 TKAS`（满额 CLOSE），平均单笔费用仅 `0.022379 TKAS`，无一超过 0.05 TKAS（远低于 0.5 TKAS 风控门槛）；
+    - 输入输出严格守恒：$256.2\text{ TKAS (池资产)} - (254.961893 + 0.2 + 1.0)\text{ TKAS (三笔输出)} = 0.038107\text{ TKAS (手续费)}$。
+  - 凭证已完整落盘于 `tests/tn10/evidence/payout256-r1/`，经 `journal.checkUnresolved()` 核验 536 个占用输入全部平滑解闭。
 
-**全部 12 笔交易在 Kaspa TN10 选中链 100% 确认通过，证据已完整落盘于 `tests/tn10/evidence/`。**
+**Kaspa TN10 真实链上测试累计完成 4 套场景共 271 笔交易（12 笔常规基线 + 259 笔满额极限容量），100% 选中链确认通过！**
 
 ## 2026-10-07 合约收紧／新Profile（仅编译与只读候选）
 
