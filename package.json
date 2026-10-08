@@ -7,6 +7,8 @@
   "scripts": {
     "build": "npm --prefix apps/kaswin-v2 ci --ignore-scripts && npm --prefix apps/kaswin-v2 run build && node -e \"const fs=require('fs'); fs.mkdirSync('dist',{recursive:true}); fs.copyFileSync('releases/kaswin-v2/index.html','dist/index.html');\"",
     "test": "npm --prefix apps/kaswin-v2 test",
+    "test:audit": "node tests/audit/run-all.mjs --local",
+    "test:tn10:dry": "node tests/tn10/runner.mjs --dry",
     "build:v1": "node docs/legacy-v1/tools/build.js"
   }
 }
