@@ -22,6 +22,7 @@ import {pubkeyToAddress} from '../../apps/kaswin-v2/scripts/shared/lib/address.m
 import {PROFILE, NETWORK} from './cli.mjs';
 import {Journal, privateDir, readPrivate, sha256} from './journal.mjs';
 import {signDraft} from './signing.mjs';
+import {selectedChainAnchor} from './resume-safety.mjs';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const CONTRACTS = path.join(ROOT, 'contracts/f3.2');
 const EVIDENCE = path.join(ROOT, 'tests/tn10/evidence');
@@ -142,14 +143,7 @@ export async function run(options) {
       finally {sdkTx.free();}
       await verifyInputsLive(link, draft.inputUtxos);
       need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
-      let rawAnchor = (await link.call('getSink')).sink;
-      for (let i = 0; i < 30; i++) {
-        const b = (await link.call('getBlock', {hash: rawAnchor, includeTransactions: false})).block;
-        if (b?.verboseData?.isChainBlock === true) break;
-        if (b?.verboseData?.selectedParentHash) rawAnchor = b.verboseData.selectedParentHash; else break;
-      }
-      const anchor = rawAnchor;
-      need(/^[0-9a-f]{64}$/.test(anchor), 'ANCHOR_REQUIRED');
+      const anchor = await selectedChainAnchor(link);
       const record = {profileId: PROFILE, networkGenesis: NETWORK, draft, signed, snapshot, anchor};
       record.intentSha256 = journal.persist(options.round, step, record);
       draft.inputUtxos.forEach(u => used.add(opKey(u.outpoint))); totalFee += draft.fee;
@@ -167,15 +161,9 @@ export async function run(options) {
             if (hit.accepting) {result = await verifyRecord(link, profile, record, hit.accepting); break;}
             if (hit.cursor) searchCursor = hit.cursor;
           } catch (err) {
-            if (err?.code === 'CURSOR_REORG') {
-              const b = (await rpc.call('getBlock', {hash: searchCursor, includeTransactions: false})).block;
-              let parent = b?.verboseData?.selectedParentHash;
-              for (let j = 0; j < 30 && parent; j++) {
-                const pb = (await rpc.call('getBlock', {hash: parent, includeTransactions: false})).block;
-                if (pb?.verboseData?.isChainBlock === true) { searchCursor = parent; break; }
-                parent = pb?.verboseData?.selectedParentHash;
-              }
-            }
+            if (err?.code !== 'CURSOR_REORG') throw err;
+            searchCursor = await selectedChainAnchor(rpc, searchCursor);
+            journal.event(options.round, step, 'CURSOR', {cursor: searchCursor});
           }
           await delay(3000);
         }

@@ -1,24 +1,16 @@
 {
   "artifact": "index.html",
-  "bytes": 337300,
-  "sha256": "6f790f0ca45cabe2ad483de44be0ce3c17aca1978f1ed886a53c2ddba2569f1e",
+  "bytes": 337385,
+  "sha256": "1acb946bac78c4d328c1e7d9eeb8e7cef42339909052e2f2b582b8f434f7b480",
   "esbuild": "0.28.2",
-  "releaseMode": "TN10_ACCEPTANCE_CANDIDATE",
-  "tradingEnabled": true,
+  "releaseMode": "READ_ONLY_UNVERIFIED_CANDIDATE",
+  "tradingEnabled": false,
   "budgetProfileId": null,
-  "publicLaunchApproved": false,
-  "tn10EvidenceSha256": "2a81b565c6c8d4223ab261cc933bf5b46b66e1baed4c07218259c57304e24478",
-  "unverified": [
-    "TIMEOUT_REFUND",
-    "REFUND_DIRECTORY_256",
-    "REAL_KASWARE_END_TO_END"
-  ],
   "validation": {
     "compilation": "PASS",
     "vm": "NOT_RUN_IN_THIS_BUILD",
-    "network": "377_HISTORICAL_RECEIPTS_CHECKED_OFFLINE_NOT_REQUERIED",
-    "budget": "TN10_OBSERVED_DEFAULT_BUDGETS_NOT_VM_CALIBRATION",
-    "realWalletE2e": "NOT_VERIFIED"
+    "network": "NOT_RUN_IN_THIS_BUILD",
+    "budget": "BLOCKED"
   },
   "profileId": "7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8",
   "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
@@ -73,7 +65,7 @@
     "packages/f3.2-core/lib/persistence.js": "b582f025694c4b3969e7cc3146eec7167f1eba282feaa9a82e99dcf4b62e9b6e",
     "apps/kaswin-v2/scripts/shared/core.mjs": "ffb48b31f33eb684b9fb630fc6bd01d8492d42881fc1af0116b365548b8a49b8",
     "apps/kaswin-v2/scripts/shared/lib/json.mjs": "d444df58db8cdd30ad192e787ee95af8bcf8a2bde5b367ffb75caf6bebbeb88d",
-    "apps/kaswin-v2/scripts/shared/release-safety.mjs": "c4660cb73dac72d90b6932a8ec37f8f2f451bc5b9ac20316249cc53130729093",
+    "apps/kaswin-v2/scripts/shared/release-safety.mjs": "0a08f173574839e7a2c4a8d7c7f0395dd23023f41f6067db927f1536d1aecfef",
     "apps/kaswin-v2/scripts/shared/nodes.mjs": "06fee29f2e63d83b1668ba13b990b90c8e45a49e4c89183d1a984c859c483bd3",
     "apps/kaswin-v2/scripts/endpoints.mjs": "c68b006e2cf49d74ab0a5e2208935c3e5814b86b36c48f3700c5defbacee0292",
     "apps/kaswin-v2/scripts/shared/mass.mjs": "7269ff69bc499598b58f29cff80efa74bd6c00beffd37043ce543085be15d9a2",
@@ -103,11 +95,9 @@
     "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8",
     "contracts/f3.2/profile.json": "763a7e8220a18c71ea3cfb311f9f7ca4bd2d5cc01e91171d479569f651a56064",
     "contracts/f3.2/artifacts/build-report.json": "3bfea6bf80f241ff38a2fa278ddd3edd2b8944b45565b936cb626e3021baa887",
-    "contracts/f3.2/tn10-release-evidence.json": "2a81b565c6c8d4223ab261cc933bf5b46b66e1baed4c07218259c57304e24478",
-    "contracts/f3.2/tools/tn10-evidence.mjs": "8355944fc405167f9b9d7a4aaf67194fb8b5539e5507a5cefe5a1b245a5dbbfd",
     "contracts/f3.2/tools/budget-gate.mjs": "0ac15ff2ba54bafb3606c1795c48e080be4e26a5bad64ace39428d6b4e6538c3",
     "contracts/f3.2/tools/linking.mjs": "4341e47c79daa7b8e966592d1e7c476e4a7e39cde9c1640c5a3d71511c2641ed",
-    "apps/kaswin-v2/tools/build.mjs": "4415c6cd4c7239016dbe15e608d45709e92dc980b2b677292f3ca968de596c48"
+    "apps/kaswin-v2/tools/build.mjs": "d76822114ad3a02eeaea0d00a62e6edc14335ff0484af681d6b71935d02a35b8"
   },
   "externalRuntime": [
     "user-configured indexer (GET /v1/rounds*), default https://tn10.kaspay.top/indexer",

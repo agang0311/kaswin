@@ -9,6 +9,7 @@
   "scripts": {
     "build": "node tools/build.mjs",
     "build:candidate": "node tools/build.mjs --candidate",
+    "build:tn10-candidate": "node tools/build.mjs --tn10-candidate",
     "check:core": "node tools/check-core.mjs",
     "check:bundle": "node tools/build.mjs --check",
     "test": "node --test test/*.test.mjs",

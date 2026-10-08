@@ -39,7 +39,7 @@ export class Journal {
     fs.mkdirSync(dir, {mode: 0o700}); syncDir(this.root); // NEVER resume execute or reuse a dry directory
     writeOnce(path.join(dir, 'run.json'), json(metadata)); return dir;
   }
-  checkUnresolved() {
+  checkUnresolved({resumeRound = null} = {}) {
     if (!this.locked) throw Error('LOCK_REQUIRED');
     const reserved = new Set();
     for (const e of fs.readdirSync(this.root, {withFileTypes: true})) {
@@ -49,8 +49,14 @@ export class Journal {
       const run = JSON.parse(readPrivate(path.join(dir, 'run.json')));
       if (run.schema !== 'KASWIN_TN10_RUN_2') throw Error('UNRECOGNIZED_RUN_SCHEMA');
       // An interrupted run blocks new runs even if its last submitted tx was accepted.
-      const complete = JSON.parse(readPrivate(path.join(dir, 'complete.json')));
-      if (complete.status !== 'COMPLETED' || !['EMPTY', 'PAID', 'REFUNDED'].includes(complete.terminal)) throw Error('INCOMPLETE_PRIOR_RUN');
+      if (e.name !== resumeRound || fs.existsSync(path.join(dir, 'complete.json'))) {
+        const complete = JSON.parse(readPrivate(path.join(dir, 'complete.json')));
+        if (complete.status !== 'COMPLETED' || !['EMPTY', 'PAID', 'REFUNDED'].includes(complete.terminal)) throw Error('INCOMPLETE_PRIOR_RUN');
+      }
+      for (const name of fs.readdirSync(dir)) {
+        const suffix = name.endsWith('-record.bin') ? '-record.bin' : name.endsWith('-accepted.json') ? '-accepted.json' : null;
+        if (suffix && !fs.existsSync(path.join(dir, `${name.slice(0, -suffix.length)}-intent.json`))) throw Error('ORPHANED_EVIDENCE');
+      }
       for (const name of fs.readdirSync(dir).filter(n => n.endsWith('-intent.json'))) {
         const step = name.slice(0, -12), intent = JSON.parse(readPrivate(path.join(dir, name)));
         const receipt = JSON.parse(readPrivate(path.join(dir, `${step}-accepted.json`)));
@@ -58,6 +64,11 @@ export class Journal {
             receipt.schema !== 'KASWIN_TN10_ACCEPTED_2' || receipt.status !== 'ACCEPTED' || receipt.txid !== intent.txid ||
             receipt.profileId !== intent.profileId || receipt.networkGenesis !== intent.networkGenesis ||
             receipt.intentSha256 !== sha256(readPrivate(path.join(dir, name)))) throw Error('UNRESOLVED_INTENT');
+        if (sha256(readPrivate(path.join(dir, `${step}-record.bin`))) !== intent.recordSha256) throw Error('RECORD_HASH_MISMATCH');
+        const fee = BigInt(receipt.actualFeeSompi);
+        if (fee <= 0n || fee > 50000000n || fee !== BigInt(intent.draft.fee) ||
+            JSON.stringify(receipt.transaction.outputs) !== JSON.stringify(intent.draft.transaction.outputs) ||
+            receipt.inputContext.reduce((n, u) => n + BigInt(u.value), 0n) - receipt.transaction.outputs.reduce((n, o) => n + BigInt(o.value), 0n) !== fee) throw Error('RECEIPT_VALUE_MISMATCH');
         if (!Array.isArray(intent.draft?.inputUtxos) || !intent.draft.inputUtxos.length) throw Error('INTENT_INPUTS_REQUIRED');
         for (const u of intent.draft.inputUtxos) {
           if (!/^[0-9a-f]{64}$/.test(u.outpoint?.transactionId ?? '') || !Number.isSafeInteger(u.outpoint.index) || u.outpoint.index < 0) throw Error('INTENT_INPUT_INVALID');

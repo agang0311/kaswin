@@ -2,7 +2,9 @@
 
 任何人可创建、规则与资金流向可由链上证据核验的 Kaspa 抽奖协议与单网页应用。
 
-> **2026-10-07：合约收紧，新Profile与单文件只读候选。** 所有动作fee绑定真实输入输出差且0<fee≤0.5 TKAS；退款末输出绑定执行者；超时改为432000 DAA。Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`；228B、8/6 ABI保持，SIL/artifacts/lib/HTML均已更新。固定编译器重编一致，但未测试／VM／链上验证。`budgetProfileId:null`，**当前HTML禁用交易计划、签名和提交，不是可交易或主网版本**。旧HTML归档，新Profile不升级旧UTXO。见[合约Preflight与结果](docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。
+> **2026-10-08：新增TN10可交易验收候选。** 当前 `releases/kaswin-v2/index.html` 允许交易，仅用于测试资金验收，`publicLaunchApproved:false`；377笔历史接受回执已离线绑定。真实KasWare/新Profile登记发现仍待验收，256目录退款与超时未全证，不是VM预算校准。使用 `npm --prefix apps/kaswin-v2 run build:tn10-candidate`，默认build的VM门保持阻断。详见[本轮实施与验收](docs/kaswin-v2/TN10-RELEASE-20261008.md)。
+
+> **历史2026-10-07：合约收紧，新Profile与单文件只读候选。** 所有动作fee绑定真实输入输出差且0<fee≤0.5 TKAS；退款末输出绑定执行者；超时改为432000 DAA。Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`；228B、8/6 ABI保持，SIL/artifacts/lib/HTML均已更新。固定编译器重编一致，但未测试／VM／链上验证。`budgetProfileId:null`，**当前HTML禁用交易计划、签名和提交，不是可交易或主网版本**。旧HTML归档，新Profile不升级旧UTXO。见[合约Preflight与结果](docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。
 
 ---
 

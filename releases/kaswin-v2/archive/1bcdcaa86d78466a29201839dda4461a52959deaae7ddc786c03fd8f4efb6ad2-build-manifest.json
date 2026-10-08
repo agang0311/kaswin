@@ -73,7 +73,7 @@
     "packages/f3.2-core/lib/persistence.js": "b582f025694c4b3969e7cc3146eec7167f1eba282feaa9a82e99dcf4b62e9b6e",
     "apps/kaswin-v2/scripts/shared/core.mjs": "ffb48b31f33eb684b9fb630fc6bd01d8492d42881fc1af0116b365548b8a49b8",
     "apps/kaswin-v2/scripts/shared/lib/json.mjs": "d444df58db8cdd30ad192e787ee95af8bcf8a2bde5b367ffb75caf6bebbeb88d",
-    "apps/kaswin-v2/scripts/shared/release-safety.mjs": "c4660cb73dac72d90b6932a8ec37f8f2f451bc5b9ac20316249cc53130729093",
+    "apps/kaswin-v2/scripts/shared/release-safety.mjs": "0a08f173574839e7a2c4a8d7c7f0395dd23023f41f6067db927f1536d1aecfef",
     "apps/kaswin-v2/scripts/shared/nodes.mjs": "06fee29f2e63d83b1668ba13b990b90c8e45a49e4c89183d1a984c859c483bd3",
     "apps/kaswin-v2/scripts/endpoints.mjs": "c68b006e2cf49d74ab0a5e2208935c3e5814b86b36c48f3700c5defbacee0292",
     "apps/kaswin-v2/scripts/shared/mass.mjs": "7269ff69bc499598b58f29cff80efa74bd6c00beffd37043ce543085be15d9a2",

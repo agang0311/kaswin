@@ -1,5 +1,7 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+2026-10-08 摘要纠错：下列接受块/DAA按原始回执校正，旧值保留在Git历史，不声称已证实是reorg。完整377笔机器生成表见 [TN10-RECEIPTS.md](TN10-RECEIPTS.md)，每笔含checkedAt、mass、fee与完整接受块；这是本地历史回执核对，不是新的网络最终性确认。
+
 ## 2026-10-08 Profile 7aaf76fe... TN10 真实链上三流程全生命周期验证（Level N，全部 12 笔交易 Selected-Chain 接受）
 
 - **用户明确授权**：“取消不必要的vm测试要求，授权进行 TN10 链上广播测试”。
@@ -13,24 +15,24 @@
 - `02-CLOSE_EMPTY`: txid `77ba15ab222dcd778ba1abfafc780fd97e8bd4ac828fe3277b5049724c515d5b`，接受块 `b5ac67a8...`，DAA `591124221`，费用 0.012904 TKAS，终局 `EMPTY`，0.2 TKAS 押金原路全额退还。
 
 ### 2. 实验二：不足最低票数退款全生命周期（`refund-r1`，终局 `REFUNDED`）
-- `01-GENESIS`: txid `76a7db3504f2eb3651e55b7cba3a6ac1944fab236e4a1fe13635038912c5d8a8`，接受块 `b783472a...`，DAA `591128399`，费用 0.00236 TKAS。
-- `02-BUY1`: txid `827bf4c1ba14e51a95b4a9e6c5abff24c9f1afb3b0d5817c8d1415a8230b6b86`，接受块 `0d45a901...`，DAA `591128522`，费用 0.012982 TKAS。
-- `03-BUY2`: txid `7ed89349ae4ad685f38be4be3d9155e223ee769d2d88a9900088a5b6e3125676`，接受块 `f19f2a24...`，DAA `591128639`，费用 0.013056 TKAS。
-- `04-CLOSE`: txid `6d745a882855c4ffba79fbee73a226c90e07925a6d46fd9b67176aac1be6bfa1`，接受块 `bc02fe38...`，DAA `591128956`，费用 0.032884 TKAS。
+- `01-GENESIS`: txid `76a7db3504f2eb3651e55b7cba3a6ac1944fab236e4a1fe13635038912c5d8a8`，接受块 `69262702...`，DAA `591128371`，费用 0.00236 TKAS。
+- `02-BUY1`: txid `827bf4c1ba14e51a95b4a9e6c5abff24c9f1afb3b0d5817c8d1415a8230b6b86`，接受块 `c168e0b8...`，DAA `591128505`，费用 0.012982 TKAS。
+- `03-BUY2`: txid `7ed89349ae4ad685f38be4be3d9155e223ee769d2d88a9900088a5b6e3125676`，接受块 `29e299a8...`，DAA `591128714`，费用 0.013056 TKAS。
+- `04-CLOSE`: txid `6d745a882855c4ffba79fbee73a226c90e07925a6d46fd9b67176aac1be6bfa1`，接受块 `e270c453...`，DAA `591128893`，费用 0.032884 TKAS。
 - `05-REFUND`: txid `58cf3b08e0a8c4c09c5f832bc8be770059a1e0998e05c3ed3455f25f334af50c`，接受块 `52615db6...`，DAA `591129109`，费用 0.021422 TKAS，终局 `REFUNDED`，买家每条退款 0.99 TKAS，退押金 0.2 TKAS，赞助输入本金与执行款余额返还创建者。
 
 ### 3. 实验三：正常开奖派奖全生命周期（`payout-r1`，终局 `PAID`）
-- `01-GENESIS`: txid `2d57c605e8a888bb66101ae09b2acaef0229ca703b47ad74d642a4eb42b082cb`，接受块 `2ebae0c6...`，DAA `591130635`，费用 0.00236 TKAS。
-- `02-BUY1`: txid `21f7ef4d30a098f7dd893512fcc3e13734341e33fa8d87bb30607ba4d780f2a4`，接受块 `f1ae759b...`，DAA `591130756`，费用 0.012982 TKAS。
-- `03-BUY2`: txid `2d4cb634c3dae5e67e5ce50f946ba4970bbdfa599271b71f2d6576ec49de3a1b`，接受块 `a2123d24...`，DAA `591130873`，费用 0.013056 TKAS。
-- `04-CLOSE`: txid `b7103ce247f8523aa280042d0685e756af6c1c8ad929144ad72cdc492d52cf35`，接受块 `3890f844...`，DAA `591131174`，费用 0.026082 TKAS。
+- `01-GENESIS`: txid `2d57c605e8a888bb66101ae09b2acaef0229ca703b47ad74d642a4eb42b082cb`，接受块 `9bbcf431...`，DAA `591130307`，费用 0.00236 TKAS。
+- `02-BUY1`: txid `21f7ef4d30a098f7dd893512fcc3e13734341e33fa8d87bb30607ba4d780f2a4`，接受块 `151dee78...`，DAA `591130488`，费用 0.012982 TKAS。
+- `03-BUY2`: txid `2d4cb634c3dae5e67e5ce50f946ba4970bbdfa599271b71f2d6576ec49de3a1b`，接受块 `9eb08dd0...`，DAA `591130676`，费用 0.013056 TKAS。
+- `04-CLOSE`: txid `b7103ce247f8523aa280042d0685e756af6c1c8ad929144ad72cdc492d52cf35`，接受块 `7e9e213e...`，DAA `591130973`，费用 0.026082 TKAS。
 - `05-DRAW_AND_PAY`: txid `872cb8146298db489a7fe9c02bf70ea23be849fa21e68b38ca8636efa4e8e78e`，接受块 `c051b22f...`，DAA `591131699`，费用 0.014766 TKAS，终局 `PAID`，中奖者 Buyer1 获得 1.985234 TKAS，退还押金 0.2 TKAS，执行者赏金 1.0 TKAS。
 
 ### 4. 满额极限容量测试：256 次购票派奖全流程验证（`payout-256.mjs` & `09-payout-256-lifecycle.test.mjs`）
 - **容量与边界**：`purchaseCap: 256`, `ticketCap: 256`, 售满 256 张票，directory 达 $256 \times 36 = 9216$ 字节。
-- **全流程覆盖**：1 笔 GENESIS + 256 笔 BUY + 1 笔 CLOSE + 1 笔 DRAW_AND_PAY（共 258 笔交易）。
+- **全流程覆盖**：1 笔 GENESIS + 256 笔 BUY + 1 笔 CLOSE + 1 笔 DRAW_AND_PAY（共 259 笔交易）。
 - **共识指标与资源安全**：
-  - 第 255 笔 BUY：budget 125，computeMass 29,902（限额 500k），transientMass 62,688（限额 1000k），费用 0.031344 TKAS。
+  - 第 256 笔 BUY（购买前目录255）：budget 125，computeMass 29,902（限额 500k），transientMass 62,688（限额 1000k），费用 0.031344 TKAS。
   - 满额 CLOSE：budget 120，computeMass 35,915，费用 0.044370 TKAS，平滑转入 SEALED 状态。
   - 满额 DRAW_AND_PAY：budget 205，computeMass 38,107，storageMass 59,883，费用 0.038107 TKAS。
   - PASS-A 认证与二分查找：在 256 槽位区间中精准二分定位中奖票号与公钥，终局 `PAID` 顺利达成，中奖者净得 254.961893 TKAS。
@@ -42,7 +44,7 @@
   - **全量交易覆盖**：1 笔创世（`01-GENESIS`）+ 256 笔真实购票（`02-BUY1` ~ `257-BUY256`）+ 1 笔满额封盘（`258-CLOSE`）+ 1 笔原子派奖（`259-DRAW_AND_PAY`），**共 259 笔交易在 Kaspa TN10 选中链 100% 确认通过**！
   - **关键交易指纹**：
     - `01-GENESIS`: txid `d4939d173ea5d2dec088eb6ca98dd7357a5fca80f4c8790cafc114d188c5963f`，接受 DAA `591356121`，费用 0.002360 TKAS。
-    - `257-BUY256`: txid `bcc31f60066dd4e52a0630ac70461b73de2c29a1599e9e0ef9d62a2f1854b880`，接受 DAA `591440864`，费用 0.031344 TKAS，状态售满 256 票，目录 9216 字节。
+    - `257-BUY256`: txid `bcc31f60066dd4e52a0630ac70461b73de2c29a1599e9e0ef9d62a2f1854b880`，接受 DAA `591441052`，费用 0.031344 TKAS，状态售满 256 票，目录 9216 字节。
     - `258-CLOSE`: txid `05525bc36e6f352da97e264eefe38ff8028373bb65e0513601c11be32bf0ff10`，接受块 `3eb7d227...`，接受 DAA `591441294`，费用 0.044370 TKAS，平滑转入 `SEALED` 封存状态。
     - `259-DRAW_AND_PAY`: txid `b4c7875521a562ec44f70c9746df413f571ed3a57c58586144d712c43010b3a4`，接受块 `8a863f7c...`，接受 DAA `591441689`，费用 0.038107 TKAS。
   - **派奖清算明细**：

@@ -1,13 +1,12 @@
 // Full-capacity 256-purchase payout test runner on Kaspa Testnet 10 / offline simulation.
 // Supports:
-//   node tests/tn10/payout-256.mjs --dry                     (pure offline synthetic model, 258 transactions built & verified)
-//   node tests/tn10/payout-256.mjs --status --round=<round>  (query current progress on-chain and in journal)
+//   node tests/tn10/payout-256.mjs --dry                     (offline synthetic model, 259 transactions; not network acceptance)
 //   node tests/tn10/payout-256.mjs --execute --round=<round> --approval=<path> [--batch=N] (live TN10 execution)
 
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createRequire} from 'node:module';
+import {parseCapacityArgs, capacityApproval, prepareResume, selectedChainAnchor} from './resume-safety.mjs';
 import {loadV2Bundle} from '../../contracts/f3.2/tools/linking.mjs';
 import * as S from '../../packages/f3.2-core/lib/state.js';
 import * as P from '../../packages/f3.2-core/lib/protocol.js';
@@ -29,8 +28,6 @@ import {stable} from '../../packages/f3.2-core/lib/bytes.js';
 import {Journal, privateDir, readPrivate, sha256} from './journal.mjs';
 import {signDraft} from './signing.mjs';
 
-const require = createRequire(import.meta.url);
-const sdk = require('../../references/kaspa-wasm32-sdk/nodejs/kaspa/kaspa.js');
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const EVIDENCE = path.join(ROOT, 'tests/tn10/evidence');
 const CONTRACTS = path.join(ROOT, 'contracts/f3.2');
@@ -186,10 +183,10 @@ export async function runDry() {
 
   console.log('\n=== PAYOUT VERIFICATION SUMMARY ===');
   console.log(`Winner Key:        ${interp.winner.key}`);
-  console.log(`Winning Prize:     ${(Number(interp.winner.prize) / 1e8).toFixed(6)} KAS`);
+  console.log(`Winning Prize:     ${interp.winner.prize} sompi`);
   console.log(`Creator Deposit:   0.200000 KAS (returned)`);
   console.log(`Executor Bounty:   1.000000 KAS (claimed)`);
-  console.log(`Network Fee:       ${(Number(interp.fee) / 1e8).toFixed(6)} KAS`);
+  console.log(`Network Fee:       ${interp.fee} sompi`);
   console.log(`Consensus Terminal: ${interp.terminal}`);
   console.log('=== OFFLINE 256-PURCHASE PAYOUT FULL LIFECYCLE PASS ===\n');
 
@@ -198,15 +195,7 @@ export async function runDry() {
 
 // ==================== LIVE TN10 EXECUTION ====================
 
-function approvalFor(roundPath, roundName) {
-  const a = JSON.parse(readPrivate(roundPath));
-  need(a.schema === 'KASWIN_TN10_APPROVAL_1', 'APPROVAL_SCHEMA');
-  need(a.networkGenesis === NETWORK, 'NETWORK_GENESIS_APPROVAL');
-  need(a.profileId === PROFILE, 'PROFILE_APPROVAL');
-  need(a.round === roundName, 'ROUND_NAME_APPROVAL');
-  need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
-  return a;
-}
+const approvalFor = (file, round) => capacityApproval(file, round, 'payout', 259);
 
 export async function runLive({round, approval, batch = 256}) {
   need(round && /^[A-Za-z0-9_-]{1,64}$/.test(round), 'VALID_ROUND_NAME_REQUIRED');
@@ -215,6 +204,7 @@ export async function runLive({round, approval, batch = 256}) {
   const {profile} = await loadV2Bundle(CONTRACTS);
   need(profile.id === PROFILE, 'PROFILE_DRIFT');
   const a = approvalFor(approval, round);
+  need(Number.isSafeInteger(batch) && batch >= 1 && batch <= 256, 'BATCH_RANGE');
 
   privateDir(EVIDENCE);
   const journal = new Journal(EVIDENCE, {create: true});
@@ -222,9 +212,11 @@ export async function runLive({round, approval, batch = 256}) {
 
   let link, wallets, used = new Set(), totalFee = 0n;
   try {
+    const recovery = prepareResume(journal, round, a);
+    used = recovery.used; totalFee = recovery.totalFee;
     const loaded = loadSigningWallets(a);
     wallets = loaded.wallets;
-    const signingSdk = loaded.sdk;
+    const sdk = loaded.sdk;
 
     link = new NodeLink(['wss://tn10.kaspay.top/wrpc']);
     await link.connect();
@@ -233,14 +225,7 @@ export async function runLive({round, approval, batch = 256}) {
     const daa = await link.currentDaa();
 
     const roundDir = path.join(EVIDENCE, round);
-    let priorInputs;
-    if (!fs.existsSync(roundDir)) {
-      priorInputs = journal.checkUnresolved();
-      journal.start(round, {schema: 'KASWIN_TN10_RUN_2', profileId: PROFILE, networkGenesis: NETWORK, approval: a});
-    } else {
-      priorInputs = new Set();
-    }
-    used = priorInputs;
+    if (!fs.existsSync(roundDir)) journal.start(round, {schema: 'KASWIN_TN10_RUN_2', profileId: PROFILE, networkGenesis: NETWORK, approval: a});
 
     const opKey = o => `${o.transactionId}:${o.index}`;
     async function funding(role, maxAttempts = 20) {
@@ -285,14 +270,7 @@ export async function runLive({round, approval, batch = 256}) {
       await verifyInputsLive(link, draft.inputUtxos);
       need(Date.parse(a.expiresAt) > Date.now(), 'APPROVAL_EXPIRED');
 
-      let rawAnchor = (await link.call('getSink')).sink;
-      for (let i = 0; i < 30; i++) {
-        const b = (await link.call('getBlock', {hash: rawAnchor, includeTransactions: false})).block;
-        if (b?.verboseData?.isChainBlock === true) break;
-        if (b?.verboseData?.selectedParentHash) rawAnchor = b.verboseData.selectedParentHash; else break;
-      }
-      const anchor = rawAnchor;
-      need(/^[0-9a-f]{64}$/.test(anchor), 'ANCHOR_REQUIRED');
+      const anchor = await selectedChainAnchor(link);
 
       const record = {profileId: PROFILE, networkGenesis: NETWORK, draft, signed, snapshot, anchor};
       record.intentSha256 = journal.persist(round, step, record);
@@ -313,15 +291,12 @@ export async function runLive({round, approval, batch = 256}) {
           }
           if (hit.cursor) searchCursor = hit.cursor;
         } catch (err) {
-          if (err?.code === 'CURSOR_REORG') {
-            const b = (await rpc.call('getBlock', {hash: searchCursor, includeTransactions: false})).block;
-            let parent = b?.verboseData?.selectedParentHash;
-            for (let j = 0; j < 30 && parent; j++) {
-              const pb = (await rpc.call('getBlock', {hash: parent, includeTransactions: false})).block;
-              if (pb?.verboseData?.isChainBlock === true) { searchCursor = parent; break; }
-              parent = pb?.verboseData?.selectedParentHash;
-            }
+          if (err?.code !== 'CURSOR_REORG') {
+            journal.event(round, step, 'UNKNOWN', {txid: draft.txid, reason: 'ACCEPTANCE_CHECK_FAILED'});
+            throw err;
           }
+          searchCursor = await selectedChainAnchor(rpc, searchCursor);
+          journal.event(round, step, 'CURSOR', {cursor: searchCursor});
         }
         await delay(1000);
       }
@@ -365,7 +340,7 @@ export async function runLive({round, approval, batch = 256}) {
     }
 
     // If 01-GENESIS not executed yet, initialize
-    if (!fs.existsSync(path.join(roundDir, '01-GENESIS-accepted.json'))) {
+    if (!recovery.latestStep) {
       console.log(`Initializing new 256-capacity round: ${round}`);
       const config = {ticketPrice: 100000000n, ticketCap: 256, purchaseCap: 256, minTickets: 256, closeEligibleDaa: daa + 600n};
       const genFund = await funding('creator');
@@ -376,61 +351,18 @@ export async function runLive({round, approval, batch = 256}) {
     } else {
       console.log(`Resuming existing round ${round}...`);
 
-      // Self-heal any intent that was submitted but interrupted before writing accepted.json
-      const intentFiles = fs.readdirSync(roundDir).filter(f => f.endsWith('-intent.json')).sort();
-      for (const ifile of intentFiles) {
-        const step = ifile.replace('-intent.json', '');
-        const accPath = path.join(roundDir, `${step}-accepted.json`);
-        if (!fs.existsSync(accPath)) {
-          const rec = journal.load(round, step);
-          const [rpc] = await link.connect();
-          try {
-            const hit = await searchAccepted(rpc, rec.draft.txid, rec.anchor);
-            if (hit.accepting) {
-              console.log(`Self-healing interrupted step: ${step} txid=${rec.draft.txid}`);
-              const result = await verifyRecord(link, profile, rec, hit.accepting);
-              journal.accepted(round, step, result.receipt);
-              console.log(`Self-healed ${step}-accepted.json!`);
-            }
-          } catch (e) {
-            console.log(`Warning: could not self-heal ${step}:`, e.message);
-          }
-        }
-      }
-
-      const stepNum = f => parseInt(f.split('-')[0], 10);
-      const accFiles = fs.readdirSync(roundDir).filter(f => f.endsWith('-accepted.json')).sort((a, b) => stepNum(a) - stepNum(b));
-      const genAcc = JSON.parse(fs.readFileSync(path.join(roundDir, '01-GENESIS-accepted.json'), 'utf8'));
-      origin = genAcc.transaction.inputs[0].previousOutpoint;
-
-      const latestAccFile = accFiles[accFiles.length - 1];
-      const latestStep = latestAccFile.replace('-accepted.json', '');
-      const acc = JSON.parse(fs.readFileSync(path.join(roundDir, latestAccFile), 'utf8'));
-
-      if (acc.terminal) {
-        console.log(`Round ${round} already completed with terminal ${acc.terminal}.`);
+      const latestStep = recovery.latestStep;
+      const record = journal.load(round, latestStep);
+      const acc = JSON.parse(readPrivate(path.join(roundDir, `${latestStep}-accepted.json`)));
+      origin = journal.load(round, '01-GENESIS').draft.origin;
+      const verified = await verifyRecord(link, profile, record, acc.acceptingBlockHash);
+      journal.event(round, latestStep, 'RESUME_VERIFIED', verified.receipt);
+      if (verified.terminal) {
+        if (!fs.existsSync(path.join(roundDir, 'complete.json'))) journal.complete(round, verified.terminal);
         return;
       }
-
-      const record = journal.load(round, latestStep);
-      const nextLedger = record.draft.transition.next;
-      live = {
-        ledger: nextLedger,
-        snapshot: {
-          ledger: S.encodeLedger(nextLedger),
-          tip: {transactionId: acc.txid, index: 0},
-          origin: {transactionId: origin.transactionId, index: Number(origin.index)},
-          covenantId: acc.transaction.outputs[0].covenant.covenantId,
-          value: BigInt(acc.transaction.outputs[0].value),
-          scriptPublicKey: acc.transaction.outputs[0].scriptPublicKey,
-          utxoDaa: BigInt(acc.acceptingDaa),
-          currentDaa: BigInt(await link.currentDaa())
-        },
-        accepting: acc.acceptingBlockHash,
-        acceptedTx: acc
-      };
+      advance(verified);
       currentPurchaseCount = live.ledger.purchaseCount;
-      console.log(`Resumed at step: ${latestStep}, purchaseCount=${currentPurchaseCount}/256, phase=${live.ledger.phase}`);
     }
 
     // Process Purchases up to batch limit
@@ -479,19 +411,8 @@ export async function runLive({round, approval, batch = 256}) {
 
 // ==================== CLI DISPATCH ====================
 
-const args = process.argv.slice(2);
-const isDry = args.includes('--dry');
-const isExecute = args.includes('--execute');
-const roundArg = args.find(a => a.startsWith('--round='))?.slice(8);
-const approvalArg = args.find(a => a.startsWith('--approval='))?.slice(11);
-const batchArg = parseInt(args.find(a => a.startsWith('--batch='))?.slice(8) || '256', 10);
-
-if (isDry || (!isExecute && !roundArg)) {
-  await runDry();
-} else if (isExecute) {
-  await runLive({round: roundArg, approval: approvalArg, batch: batchArg});
-} else {
-  console.log('Usage:');
-  console.log('  node tests/tn10/payout-256.mjs --dry');
-  console.log('  node tests/tn10/payout-256.mjs --execute --round=<name> --approval=<path> [--batch=N]');
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const options = parseCapacityArgs(process.argv.slice(2), 256);
+  if (options.mode === 'dry') await runDry();
+  else await runLive(options);
 }

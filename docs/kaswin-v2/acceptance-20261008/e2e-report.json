@@ -1,0 +1,65 @@
+{
+  "at": "2026-10-08T23:02:42.662Z",
+  "origin": "http://127.0.0.1:42711",
+  "steps": [
+    [
+      "context",
+      "secure=true subtle=true locks=true"
+    ],
+    [
+      "context",
+      "secure=true subtle=true locks=true"
+    ],
+    [
+      "genesis",
+      "已提交"
+    ],
+    [
+      "buy1",
+      "已提交"
+    ],
+    [
+      "buy2",
+      "已提交"
+    ],
+    [
+      "buy3",
+      "已提交"
+    ],
+    [
+      "close",
+      "已提交"
+    ],
+    [
+      "timeout-too-early",
+      "当前链上条件不允许「超时转退款」：封存后 432000 DAA 才可超时转退款（还差 432000 DAA）"
+    ],
+    [
+      "timeout",
+      "已提交"
+    ],
+    [
+      "refund",
+      "已提交"
+    ],
+    [
+      "mine-rows",
+      "7"
+    ]
+  ],
+  "errors": [],
+  "submits": 7,
+  "acceptedTxs": 7,
+  "outputsPerTx": [
+    3,
+    2,
+    2,
+    2,
+    2,
+    2,
+    5
+  ],
+  "untranslated": [],
+  "language": "zh-CN",
+  "scope": "built kaswin-v2.html in Chromium; simulated TN10 node over a real WebSocket + simulated indexer; simulated KasWare signing with public test key; NOT a real chain or real extension"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-08T23:02:43.272Z",
+  "scope": "REAL_CHROMIUM_NATIVE_IDB_SYNTHETIC_RECORDS_NO_CHAIN",
+  "results": [
+    "INSERTED",
+    "INPUT_ALREADY_RESERVED"
+  ],
+  "unknownReservationsAfterReload": 1
+}

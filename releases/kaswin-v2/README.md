@@ -1,4 +1,12 @@
-# Kaswin V2 单文件交付（只读候选）
+# Kaswin V2 单文件交付（TN10可交易验收候选）
+
+## 当前2026-10-08交付
+
+`releaseMode=TN10_ACCEPTANCE_CANDIDATE`、`tradingEnabled=true`、`publicLaunchApproved=false`、`budgetProfileId=null`。HTML337300字节，SHA256 `6f790f0ca45cabe2ad483de44be0ce3c17aca1978f1ed886a53c2ddba2569f1e`；dist相同，未部署。仅限隔离TN10测试资金，真实KasWare/新轮登记发现尚未验收。377笔历史接受回执离线绑定，不是VM预算校准。
+
+构建：`npm --prefix apps/kaswin-v2 run build:tn10-candidate`。需本地原始evidence目录供hash复核，缺失则拒绝；公共仓库的摘要不能替代原始材料。默认build仍要求原VM门，`build:candidate`仍能生成禁交易候选。详见[实施、验证与真实钱包交接](../../docs/kaswin-v2/TN10-RELEASE-20261008.md)。Indexer已适配；本轮真实只读列表暂无新Profile登记轮次。
+
+## 以下为历史2026-10-07只读候选说明（以当前说明为准）
 
 当前 `index.html` 对应新 Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`，包含fee绑定、退款末输出约束、432000 DAA超时及前轮客户端安全修复。**仅编译，尚未运行单测／浏览器／VM／链上验证，未部署。**
 

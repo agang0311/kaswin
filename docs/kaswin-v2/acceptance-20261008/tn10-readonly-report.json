@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-08T23:02:17.847Z",
+  "artifactSha256": "6f790f0ca45cabe2ad483de44be0ce3c17aca1978f1ed886a53c2ddba2569f1e",
+  "scope": "REAL_TN10_READONLY_BROWSER_NO_WALLET_SIGN_OR_SUBMIT",
+  "node": "wss://tn10.kaspay.top/wrpc TN10 synced · DAA 591673871 · 2740 ms",
+  "indexerContracts": {
+    "kaswin-f3@1dc418097f316550": 4,
+    "kaswin-f3@7ca61d81be1a2448": 8,
+    "kaswin-v2@206d4ec7072727ae": 1
+  },
+  "discoveryCoverage": "notification-or-manual-only",
+  "newProfileRows": 0,
+  "kaswareProviderPresent": false,
+  "realWalletE2e": "BLOCKED_NO_EXTENSION_IN_AUTOMATION_CONTEXT",
+  "errors": []
+}
