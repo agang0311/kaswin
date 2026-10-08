@@ -522,13 +522,6 @@
       "change": "new publication asset"
     },
     {
-      "source": "README.md",
-      "destination": "docs/legacy-v1/README.md",
-      "sourceSha256": "3edf3ebd65bc5d200998f1c4b0b24ab7a1147f6071dd19366f3e226b287e2dd9",
-      "publishedSha256": "3083c71b0669f5cf4dabeea28e35d78174df7423e68ef93c0f50d7db71de7258",
-      "change": "archived baseline README with links adjusted to ../"
-    },
-    {
       "source": "packages/f3.2-core/README.md",
       "destination": "packages/f3.2-core/README.md",
       "sourceSha256": "710e0b46f844e2932b85b62eb4fac54f5cb894eab7348a125af3820c84c9ec7b",

@@ -45,14 +45,12 @@
 │   ├── deployed-20261005.html  # 历史部署快照 (316,069 B, sha256: 335fbf04...)；非本轮线上核验
 │   └── build-manifest.json     # 构建输入SHA256、只读模式及验证边界
 │
-├── docs/kaswin-v2/             # [项目文档] 架构说明、固定来源、验证记录与源码映射
-│   ├── ARCHITECTURE.md         # 架构规范：25 问、14 项材料与 8 项反模式审查
-│   ├── PUBLICATION.md          # 资料整理与分层边界约定
-│   ├── SOURCES.md              # 外部来源固定版本表与哈希
-│   ├── VALIDATION.md           # 完整验证记录与不可逾越的边界
-│   └── source-map.json         # 迁移源码逐文件 SHA256 映射与变更说明
-│
-└── docs/legacy-v1/             # [历史归档] 早期 V1 审计快照资料（隔离保留，非 F3.2/V2 状态）
+└── docs/kaswin-v2/             # [项目文档] 架构说明、固定来源、验证记录与源码映射
+    ├── ARCHITECTURE.md         # 架构规范：25 问、14 项材料与 8 项反模式审查
+    ├── PUBLICATION.md          # 资料整理与分层边界约定
+    ├── SOURCES.md              # 外部来源固定版本表与哈希
+    ├── VALIDATION.md           # 完整验证记录与不可逾越的边界
+    └── source-map.json         # 迁移源码逐文件 SHA256 映射与变更说明
 ```
 
 ---
