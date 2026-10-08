@@ -56,7 +56,24 @@
     - 输入输出严格守恒：$256.2\text{ TKAS (池资产)} - (254.961893 + 0.2 + 1.0)\text{ TKAS (三笔输出)} = 0.038107\text{ TKAS (手续费)}$。
   - 凭证已完整落盘于 `tests/tn10/evidence/payout256-r1/`，经 `journal.checkUnresolved()` 核验 536 个占用输入全部平滑解闭。
 
-**Kaspa TN10 真实链上测试累计完成 4 套场景共 271 笔交易（12 笔常规基线 + 259 笔满额极限容量），100% 选中链确认通过！**
+### 5. 规模化分批退款测试：100 次购票 4 批次退款全流程验证（`refund100-r1`，全部 106 笔交易 Selected-Chain 接受完成，终局 `REFUNDED`）
+- **场景与门槛**：`ticketPrice = 1.0 TKAS`, `ticketCap = 256`, `minTickets = 200`, `purchaseCap = 256`。销售 100 票未达到 200 票门槛，触发不足额保护，到期截盘自动转入 `REFUNDING` 阶段。
+- **全量交易覆盖**：1 笔创世（`01-GENESIS`）+ 100 笔真实购票（`02-BUY1` ~ `101-BUY100`）+ 1 笔分流截盘（`102-CLOSE`）+ 4 笔分批退款（`103-REFUND1` ~ `106-REFUND4`），**共 106 笔交易在 Kaspa TN10 选中链 100% 确认通过**！
+- **关键交易指纹**：
+  - `01-GENESIS`: txid `306a9b75fed597ef41824adff10e99920aa158ca7b57ca7fbbe3d0d571e2c536`，接受 DAA `591465223`，费用 0.002360 TKAS。
+  - `101-BUY100`: txid `9e4e319b259d4c307df033d0771e08d651a1cb5fe52c5b516422ca4656c5d013`，接受 DAA `591483321`，费用 0.020112 TKAS，累积售出 100 票，目录 3600 字节。
+  - `102-CLOSE`: txid `07a7688b3ecf087d0d4bf2dd0b6a6c4c555ec136baf6a7e5c206dd59e03eab8c`，接受块 `eab8c19d...`，接受 DAA `591483523`，费用 0.039940 TKAS，因 $100 < 200$ 平滑转入 `REFUNDING` 阶段。
+  - `103-REFUND1`: txid `561f892b81b1a80c9ebc04b774aea61d76a63642532690728a044ed0546b8bcb`，接受 DAA `591483693`，费用 0.038384 TKAS，游标 $0 \rightarrow 32$，输出 34 笔（32 位买家各退 0.99 TKAS + 1 状态 UTXO + 1 执行找零）。
+  - `104-REFUND2`: txid `7d356181b4c602bd79eae5f661c43490a8ab74820286662413ac1ea2e8218b72`，接受 DAA `591483834`，费用 0.039284 TKAS，游标 $32 \rightarrow 64$，输出 34 笔。
+  - `105-REFUND3`: txid `f357b42bc9fadb79a9df9adbd3ef195b9cdfc3f45e70476f9e0ba1de9b830d35`，接受 DAA `591483988`，费用 0.039284 TKAS，游标 $64 \rightarrow 96$，输出 34 笔。
+  - `106-REFUND4`: txid `16fba40156f30e332e3affa13dde4b9707ca8096162b1a2a4c0fe7f540475463`，接受 DAA `591484251`，费用 0.028686 TKAS，游标 $96 \rightarrow 100$，输出 6 笔（最后 4 位买家退款 + 退还创建者 0.2 TKAS 押金 + 执行找零），**终局 REFUNDED**。
+- **清算与经济模型**：
+  - 100 张票全部按单价 1.0 TKAS 扣减 0.01 TKAS 退款费（每笔返还 0.99 TKAS）精准原路返还两名买家（Buyer1 退回 50 笔，Buyer2 退回 50 笔）；
+  - 创建者收回 0.2 TKAS 创世押金，并从退款手续费池（每批 $k \times 0.01$ TKAS）获得执行补贴；
+  - 106 笔交易累计网络手续费：仅 **1.842736 TKAS**（平均每笔仅 0.017384 TKAS）；
+  - 凭证已完整落盘于 `tests/tn10/evidence/refund100-r1/`，经 `journal.checkUnresolved()` 核验 747 个占用输入全部平滑解闭。
+
+**Kaspa TN10 真实链上测试累计完成 5 套场景共 377 笔交易（12 笔基线 + 259 笔满额派奖 + 106 笔规模退款），100% 选中链确认通过！**
 
 ## 2026-10-07 合约收紧／新Profile（仅编译与只读候选）
 
