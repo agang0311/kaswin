@@ -81,3 +81,7 @@ Indexer 源码不在本仓库，位于知识工作区 `workers/kaswin-event-inde
 ## 分支调整（2026-10-09，用户要求）
 
 GitHub 上原 `main`（`0633907c`，2026-09-06，是 `audit/state-deposit-v1` 的祖先，没有独有提交）已删除；`audit/state-deposit-v1` 改名为 `main` 并设为默认分支。Cloudflare Pages 项目 `kaswin` 的生产分支同步改为 `main`。历史文档中提到的 `audit/state-deposit-v1` 指的就是现在的 `main`。
+
+## Pages 重新绑定仓库（2026-10-09）
+
+原 Pages 项目 `kaswin` 一直绑定 GitHub 仓库 ID `1300696635`（现名 `agang0311/kaswin-archived`），而当前仓库 `agang0311/kaswin` 的 ID 是 `1357958794`（2026-09-05 新建），所以 8 月 19 日以后推送都不会自动构建，此前各次部署都是手动触发（`ad_hoc`）。API 无法修改已有项目的绑定仓库（PATCH 被静默忽略；断开后项目变成 Direct Upload，不允许再设置 source）。用户在 Cloudflare 后台重新绑定后，项目 `kaswin` 的来源为 `agang0311/kaswin`（`1357958794`），生产分支 `main`，构建命令 `npm run build:pages`，输出 `dist`，域名 `kaswin.pages.dev`、`win.kaspay.top`、`kaswin.kaspay.top` 保持不变。
