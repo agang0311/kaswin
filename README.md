@@ -2,7 +2,7 @@
 
 任何人可创建、规则与资金流向可由链上证据核验的 Kaspa 抽奖协议与单网页应用。
 
-> **2026-10-09：VM预算校准已运行**：2,549例全部可执行、无超预算；但CLOSE等小目录实测超出候选公式，预算门未通过，见[VM-BUDGET-20261009.md](docs/kaswin-v2/VM-BUDGET-20261009.md)。
+> **2026-10-09：VM预算校准已运行并修正公式**：2,549例全部可执行；BUY/CLOSE公式按实测上调后全部满足预算门（≥10%余量），证据待独立审查、未写入pins；候选HTML `b627d6e2…`，见[VM-BUDGET-20261009.md](docs/kaswin-v2/VM-BUDGET-20261009.md)。
 >
 > **2026-10-09：修复Indexer/缓存`state`显示注入并重建候选**（`bc5eeff1…`，未部署），见[INJECTION-FIX-20261009.md](docs/kaswin-v2/INJECTION-FIX-20261009.md)。
 >

@@ -140,8 +140,10 @@ export function transition(x, p, op, fee, external = 0n) {
 export function actionUnits(action, s) {
     const pc = s.purchaseCount;
     switch (action) {
-        case 'BUY': return 201600 + 4000 * pc;
-        case 'CLOSE': return pc === 0 ? 142100 : s.sold >= s.config.minTickets ? 226400 + 3700 * pc : 275100 + 3700 * pc;
+        // BUY/CLOSE refit 2026-10-09 from the full SCRIPT_VM matrix (cfafeb4, 2,549 cases incl. 8-input and large-value stress):
+        // every measurement <= formula and >= 10% headroom against the committed budget. See docs/kaswin-v2/VM-BUDGET-20261009.md.
+        case 'BUY': return 204300 + 4090 * pc;
+        case 'CLOSE': return pc === 0 ? 144800 : s.sold >= s.config.minTickets ? 246700 + 3750 * pc : 300800 + 3760 * pc;
         case 'DRAW_AND_PAY': return 230000 + 7000 * pc;
         case 'TIMEOUT_REFUND': return 290800 + 2850 * pc;
         case 'REFUND': {

@@ -58,13 +58,13 @@ test('09.2 Edge BUY actions at count 0 and count 255 satisfy mass limits and bud
   // Ledger at 0 purchases
   const s0 = S.newOpen(key, {ticketPrice: 100000000n, ticketCap: 256, purchaseCap: 256, minTickets: 256, closeEligibleDaa: 500n});
   const budget0 = P.actionBudget('BUY', s0);
-  assert.equal(budget0, 23); // ceil((201600 - 9999)/10000) + 3 = 20 + 3 = 23
+  assert.equal(budget0, 23); // ceil((204300 - 9999)/10000) + 3 = 20 + 3 = 23 (VM-refit 2026-10-09)
 
   // Ledger at 255 purchases
   let s255 = s0;
   for (let i = 0; i < 255; i++) s255 = S.appendPurchase(s255, 1, key);
   const budget255 = P.actionBudget('BUY', s255);
-  assert.equal(budget255, 125); // ceil((201600 + 4000*255 - 9999)/10000) + 3 = 122 + 3 = 125
+  assert.equal(budget255, 127); // ceil((204300 + 4090*255 - 9999)/10000) + 3 = 124 + 3 = 127
 
   const snap255 = {
     ledger: S.encodeLedger(s255),
@@ -99,7 +99,7 @@ test('09.3 Full 256-ticket CLOSE to SEALED preserves balance and covenant lockin
   for (let i = 0; i < 256; i++) s = S.appendPurchase(s, 1, key);
 
   const closeBudget = P.actionBudget('CLOSE', s);
-  assert.equal(closeBudget, 120);
+  assert.equal(closeBudget, 123); // ceil((246700 + 3750*256 - 9999)/10000) + 3
 
   const snap = {
     ledger: S.encodeLedger(s),

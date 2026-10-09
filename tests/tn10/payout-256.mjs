@@ -142,7 +142,7 @@ export async function runDry() {
   const snapBeforeClose = snapshot();
   const cFund = take(keyCreator);
   const closeBudget = P.actionBudget('CLOSE', ledger);
-  need(closeBudget === 120, 'CLOSE_BUDGET_CALCULATION_DRIFT');
+  need(closeBudget === 123, 'CLOSE_BUDGET_CALCULATION_DRIFT'); // VM-refit 2026-10-09 (was 120)
   const closeDraft = convergeFee(fee => buildAction(snapBeforeClose, profile, {action: 'CLOSE', actorKey: keyCreator}, fee, [cFund], closeBudget), 1).draft;
   const closeMass = massOf(closeDraft);
   console.log(`[CLOSE] 03-CLOSE built: budget=${closeBudget}, fee=${closeDraft.fee} sompi, computeMass=${closeMass.computeMass}, nextPhase=${closeDraft.transition.next.phase} (SEALED)`);

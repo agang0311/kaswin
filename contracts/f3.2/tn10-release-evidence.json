@@ -10,14 +10,14 @@
   "review": {
     "scope": "TN10_ACCEPTANCE_CANDIDATE_ONLY",
     "reviewer": "main-assistant",
-    "at": "2026-10-08T22:57:09.110Z",
+    "at": "2026-10-09T03:23:12.862Z",
     "authorization": "Operator requested runner fixes, tradable TN10 candidate, then wallet/indexer acceptance, in that order."
   },
   "evidence": {
     "profileId": "7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8",
     "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
     "sourceSha256": {
-      "packages/f3.2-core/src/protocol.ts": "d4cedf805a0571d49d42ca804fec4f2b96619a1e57eed3d99c0367820ccf78ba",
+      "packages/f3.2-core/src/protocol.ts": "920df14c1d146511e1cd5814a69af7fcdc4625dbe87b2a86625d00df385b9487",
       "packages/f3.2-core/src/builders.ts": "314435ea974d11fe8017c8443a6cec3e30ffcfbcdfbd65e8faf4f24f850e92f4",
       "packages/f3.2-core/src/accepted.ts": "16ced789477e7345df2624350d498ea441b059d26146db7a4e7725fcaec4d270",
       "contracts/f3.2/pins.json": "b6b898c386be4325b54b767acc17b935c045629f2f654864885438bb64c94349",
