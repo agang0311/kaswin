@@ -60,3 +60,9 @@ Indexer 源码不在本仓库，位于知识工作区 `workers/kaswin-event-inde
 
 - 未部署：`/root/www/kaswin-v2.html` 仍为 `6509ee14…`（旧 Profile、含原 F5 脚本注入），`/opt/kaswin-event-indexer` 仍为修复前代码。上线需单独授权：替换页面；同步 Indexer 三个文件并重启服务（启动时自动建索引）。
 - 真实 KasWare E2E、新 Profile 轮次自动发现、256 目录退款资源与真实超时路径仍未验证，发布门槛不变。
+
+## 部署记录（2026-10-09 11:35–11:40 CST，用户授权“先把你能做的做了”）
+
+- **Indexer F4 修复**：本机 `/opt/kaswin-event-indexer` 与 VPS `la.cd311.cn`（公开 `https://tn10.kaspay.top/indexer`）均按停机冷备份 → 替换 `indexer.mjs`/`src/engine.mjs`/`src/store.mjs` → 重启。部署前先用新代码打开生产库副本，确认无活跃重复、唯一索引可建立（本机 318 行、VPS 347 行；重复组全部为 ROLLED_BACK 历史）。重启后服务 active、`integrity_check` ok、索引存在、API 轮次数与升级前一致（本机 9、VPS 13）。备份：两机均为 `/var/lib/kaswin-event-indexer/events-before-20261009-f4.sqlite` 与 `/opt/kaswin-event-indexer-before-20261009-f4.tgz`。
+- **开源仓库** `agang0311/kaswin-indexer`：同步三文件（保留其 `./src/sdk.mjs` 导入与原分类逻辑差异），Docker 构建、容器内新 store 建索引与 `contracts` 列出 4 个插件均通过，推送 `00de43d`。
+- **页面**：`https://cd311.cn:888/www/kaswin-v2.html` 已经是当前构建 `b627d6e2…`（`/root/www/kaswin-v2.html` 为指向 `dist/index.html` 的软链接）。**`https://win.kaspay.top/` 仍返回旧版 `6509ee14…`（含原 F5 脚本注入）**；该域名经 Cloudflare，源站不在本机或 VPS，未能更新。
