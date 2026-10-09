@@ -2,6 +2,8 @@
 
 任何人可创建、规则与资金流向可由链上证据核验的 Kaspa 抽奖协议与单网页应用。
 
+> **2026-10-09：VM预算校准已运行**：2,549例全部可执行、无超预算；但CLOSE等小目录实测超出候选公式，预算门未通过，见[VM-BUDGET-20261009.md](docs/kaswin-v2/VM-BUDGET-20261009.md)。
+>
 > **2026-10-09：修复Indexer/缓存`state`显示注入并重建候选**（`bc5eeff1…`，未部署），见[INJECTION-FIX-20261009.md](docs/kaswin-v2/INJECTION-FIX-20261009.md)。
 >
 > **2026-10-08：新增TN10可交易验收候选。** 当前 `releases/kaswin-v2/index.html` 允许交易，仅用于测试资金验收，`publicLaunchApproved:false`；377笔历史接受回执已离线绑定。真实KasWare/新Profile登记发现仍待验收，256目录退款与超时未全证，不是VM预算校准。使用 `npm --prefix apps/kaswin-v2 run build:tn10-candidate`，默认build的VM门保持阻断。详见[本轮实施与验收](docs/kaswin-v2/TN10-RELEASE-20261008.md)。

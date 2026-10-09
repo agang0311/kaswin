@@ -45,7 +45,10 @@ fn run(c: &Value) -> Value {
     let mut secret = [0u8; 32]; secret[31] = 1;
     let secp = secp256k1::Secp256k1::new();
     let key = secp256k1::Keypair::from_seckey_slice(&secp, &secret).unwrap();
-    for i in 1..tx.inputs.len() {
+    // Sign exactly the inputs the builder marks as wallet-authorized (GENESIS: all funding inputs incl. index 0;
+    // actions: funding inputs after the covenant state input 0).
+    let authorized: Vec<usize> = d["authorizedInputIndices"].as_array().unwrap().iter().map(|v| usize::try_from(num(v)).unwrap()).collect();
+    for &i in &authorized {
         let h = kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash(
             &PopulatedTransaction::new(&tx, entries.clone()), i,
             kaspa_consensus_core::hashing::sighash_type::SIG_HASH_ALL, &SigHashReusedValuesUnsync::new());

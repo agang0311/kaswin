@@ -1,0 +1,22 @@
+{
+  "schema": "KASWIN_VM_BINARY_REVIEW_1",
+  "consensusCommit": "cfafeb4c093fa37a303f1b9f19c58f986b870ce3",
+  "compilerCommit": "3ed973335b59269293564805cc2c58a14595ec03",
+  "profileId": "7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8",
+  "binary": "<knowledge-workspace>/references/kaswin-vm-budget-20261009/target/release/deps/hardened_vm-e83f383214d0d13b",
+  "binarySha256": "a9e203949459fd6524b3ee62c4fbfe014f188831ffa55384d29d638e7b380b65",
+  "harnessSourceSha256": "b2e9741df1e3094e3729f0d7d48a644f917a4d5ef7bde7d1dbba097f7152bc2e",
+  "build": {
+    "command": "cargo test --offline --release --test hardened_vm --no-run",
+    "workspace": "/root/kaspa/references/kaswin-vm-budget-20261009",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "dependencies": "path deps on ../rusty-kaspa crypto/txscript, consensus/core, crypto/hashes verified byte-clean vs cfafeb4; Cargo.lock copied from that checkout",
+    "network": "built offline in an isolated network namespace"
+  },
+  "review": {
+    "status": "APPROVED",
+    "reviewer": "assistant (self-review; not independent)",
+    "at": "2026-10-09T02:59:30.710Z",
+    "note": "Rebuilt after GENESIS signing fix (sign builder authorizedInputIndices). Harness source identical to tests/audit/vm/hardened_vm.rs; scope SCRIPT_VM."
+  }
+}

@@ -1,0 +1,1604 @@
+{
+  "schema": "KASWIN_V2_VM_BUDGET_RUN_1",
+  "scope": "SCRIPT_VM_ONLY",
+  "quick": false,
+  "profileId": "7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8",
+  "consensusCommit": "cfafeb4c093fa37a303f1b9f19c58f986b870ce3",
+  "compilerCommit": "3ed973335b59269293564805cc2c58a14595ec03",
+  "binarySha256": "a9e203949459fd6524b3ee62c4fbfe014f188831ffa55384d29d638e7b380b65",
+  "harnessSourceSha256": "b2e9741df1e3094e3729f0d7d48a644f917a4d5ef7bde7d1dbba097f7152bc2e",
+  "protocolSourceSha256": "d4cedf805a0571d49d42ca804fec4f2b96619a1e57eed3d99c0367820ccf78ba",
+  "buildersSourceSha256": "314435ea974d11fe8017c8443a6cec3e30ffcfbcdfbd65e8faf4f24f850e92f4",
+  "cases": 2549,
+  "passed": 2364,
+  "byPath": {
+    "GENESIS": {
+      "cases": 2,
+      "pass": 2,
+      "fail": [],
+      "minHeadroom": 9998,
+      "minHeadroomPct": 9.09,
+      "worst": "0000-GENESIS-pc0-c0-f1",
+      "maxUsed": 100001,
+      "maxEnvelopeSlackPct": null
+    },
+    "BUY": {
+      "cases": 278,
+      "pass": 261,
+      "fail": [
+        {
+          "name": "0002-BUY-pc0-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 203870,
+          "allowed": 239999,
+          "envelope": 201600
+        },
+        {
+          "name": "0003-BUY-pc0-c0-f8",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 204142,
+          "allowed": 239999,
+          "envelope": 201600
+        },
+        {
+          "name": "0005-BUY-pc1-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 207590,
+          "allowed": 239999,
+          "envelope": 205600
+        },
+        {
+          "name": "0011-BUY-pc2-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 211298,
+          "allowed": 239999,
+          "envelope": 209600
+        },
+        {
+          "name": "0017-BUY-pc3-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 215006,
+          "allowed": 249999,
+          "envelope": 213600
+        },
+        {
+          "name": "0023-BUY-pc4-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 218715,
+          "allowed": 249999,
+          "envelope": 217600
+        },
+        {
+          "name": "0029-BUY-pc5-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 222423,
+          "allowed": 259999,
+          "envelope": 221600
+        },
+        {
+          "name": "0035-BUY-pc6-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 226131,
+          "allowed": 259999,
+          "envelope": 225600
+        },
+        {
+          "name": "0041-BUY-pc7-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 229839,
+          "allowed": 259999,
+          "envelope": 229600
+        },
+        {
+          "name": "2439-BUY-pc0-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 204280,
+          "allowed": 239999,
+          "envelope": 201600
+        },
+        {
+          "name": "2441-BUY-pc1-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 208014,
+          "allowed": 239999,
+          "envelope": 205600
+        },
+        {
+          "name": "2446-BUY-pc2-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 211722,
+          "allowed": 239999,
+          "envelope": 209600
+        },
+        {
+          "name": "2451-BUY-pc3-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 215430,
+          "allowed": 249999,
+          "envelope": 213600
+        },
+        {
+          "name": "2456-BUY-pc4-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 219139,
+          "allowed": 249999,
+          "envelope": 217600
+        },
+        {
+          "name": "2461-BUY-pc5-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 222847,
+          "allowed": 259999,
+          "envelope": 221600
+        },
+        {
+          "name": "2466-BUY-pc6-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 226555,
+          "allowed": 259999,
+          "envelope": 225600
+        },
+        {
+          "name": "2471-BUY-pc8-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 233971,
+          "allowed": 269999,
+          "envelope": 233600
+        }
+      ],
+      "minHeadroom": 28277,
+      "minHeadroomPct": 11.78,
+      "worst": "2446-BUY-pc2-c0-f8-big",
+      "maxUsed": 1149882,
+      "maxEnvelopeSlackPct": 5.91,
+      "minEnvelopeSlackPct": -1.33
+    },
+    "CLOSE_EMPTY": {
+      "cases": 2,
+      "pass": 0,
+      "fail": [
+        {
+          "name": "0004-CLOSE_EMPTY-pc0-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 144337,
+          "allowed": 179999,
+          "envelope": 142100
+        },
+        {
+          "name": "2440-CLOSE_EMPTY-pc0-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 144729,
+          "allowed": 179999,
+          "envelope": 142100
+        }
+      ],
+      "minHeadroom": 35270,
+      "minHeadroomPct": 19.59,
+      "worst": "2440-CLOSE_EMPTY-pc0-c0-f8-big",
+      "maxUsed": 144729,
+      "maxEnvelopeSlackPct": -1.57,
+      "minEnvelopeSlackPct": -1.85
+    },
+    "CLOSE_SEALED": {
+      "cases": 276,
+      "pass": 198,
+      "fail": [
+        {
+          "name": "0006-CLOSE_SEALED-pc1-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 249988,
+          "allowed": 269999,
+          "envelope": 230100
+        },
+        {
+          "name": "0012-CLOSE_SEALED-pc2-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 253372,
+          "allowed": 269999,
+          "envelope": 233800
+        },
+        {
+          "name": "0018-CLOSE_SEALED-pc3-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 256756,
+          "allowed": 269999,
+          "envelope": 237500
+        },
+        {
+          "name": "0024-CLOSE_SEALED-pc4-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 260141,
+          "allowed": 279999,
+          "envelope": 241200
+        },
+        {
+          "name": "0030-CLOSE_SEALED-pc5-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 263525,
+          "allowed": 279999,
+          "envelope": 244900
+        },
+        {
+          "name": "0036-CLOSE_SEALED-pc6-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 266909,
+          "allowed": 279999,
+          "envelope": 248600
+        },
+        {
+          "name": "0042-CLOSE_SEALED-pc7-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 270293,
+          "allowed": 289999,
+          "envelope": 252300
+        },
+        {
+          "name": "0048-CLOSE_SEALED-pc8-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 273677,
+          "allowed": 289999,
+          "envelope": 256000
+        },
+        {
+          "name": "0054-CLOSE_SEALED-pc9-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 277061,
+          "allowed": 289999,
+          "envelope": 259700
+        },
+        {
+          "name": "0060-CLOSE_SEALED-pc10-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 280445,
+          "allowed": 299999,
+          "envelope": 263400
+        },
+        {
+          "name": "0066-CLOSE_SEALED-pc11-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 283829,
+          "allowed": 299999,
+          "envelope": 267100
+        },
+        {
+          "name": "0072-CLOSE_SEALED-pc12-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 287213,
+          "allowed": 309999,
+          "envelope": 270800
+        },
+        {
+          "name": "0078-CLOSE_SEALED-pc13-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 290597,
+          "allowed": 309999,
+          "envelope": 274500
+        },
+        {
+          "name": "0084-CLOSE_SEALED-pc14-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 293981,
+          "allowed": 309999,
+          "envelope": 278200
+        },
+        {
+          "name": "0090-CLOSE_SEALED-pc15-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 297365,
+          "allowed": 319999,
+          "envelope": 281900
+        },
+        {
+          "name": "0096-CLOSE_SEALED-pc16-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 300749,
+          "allowed": 319999,
+          "envelope": 285600
+        },
+        {
+          "name": "0102-CLOSE_SEALED-pc17-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 304133,
+          "allowed": 319999,
+          "envelope": 289300
+        },
+        {
+          "name": "0108-CLOSE_SEALED-pc18-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 307517,
+          "allowed": 329999,
+          "envelope": 293000
+        },
+        {
+          "name": "0114-CLOSE_SEALED-pc19-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 310901,
+          "allowed": 329999,
+          "envelope": 296700
+        },
+        {
+          "name": "0120-CLOSE_SEALED-pc20-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 314285,
+          "allowed": 339999,
+          "envelope": 300400
+        },
+        {
+          "name": "0126-CLOSE_SEALED-pc21-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 317669,
+          "allowed": 339999,
+          "envelope": 304100
+        },
+        {
+          "name": "0132-CLOSE_SEALED-pc22-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 321068,
+          "allowed": 339999,
+          "envelope": 307800
+        },
+        {
+          "name": "0138-CLOSE_SEALED-pc23-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 324452,
+          "allowed": 349999,
+          "envelope": 311500
+        },
+        {
+          "name": "0144-CLOSE_SEALED-pc24-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 327836,
+          "allowed": 349999,
+          "envelope": 315200
+        },
+        {
+          "name": "0150-CLOSE_SEALED-pc25-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 331220,
+          "allowed": 349999,
+          "envelope": 318900
+        },
+        {
+          "name": "0156-CLOSE_SEALED-pc26-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 334604,
+          "allowed": 359999,
+          "envelope": 322600
+        },
+        {
+          "name": "0162-CLOSE_SEALED-pc27-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 337988,
+          "allowed": 359999,
+          "envelope": 326300
+        },
+        {
+          "name": "0168-CLOSE_SEALED-pc28-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 341372,
+          "allowed": 369999,
+          "envelope": 330000
+        },
+        {
+          "name": "0174-CLOSE_SEALED-pc29-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 344756,
+          "allowed": 369999,
+          "envelope": 333700
+        },
+        {
+          "name": "0180-CLOSE_SEALED-pc30-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 348140,
+          "allowed": 369999,
+          "envelope": 337400
+        },
+        {
+          "name": "0186-CLOSE_SEALED-pc31-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 351524,
+          "allowed": 379999,
+          "envelope": 341100
+        },
+        {
+          "name": "0192-CLOSE_SEALED-pc32-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 354908,
+          "allowed": 379999,
+          "envelope": 344800
+        },
+        {
+          "name": "0198-CLOSE_SEALED-pc33-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 358292,
+          "allowed": 379999,
+          "envelope": 348500
+        },
+        {
+          "name": "0205-CLOSE_SEALED-pc34-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 361676,
+          "allowed": 389999,
+          "envelope": 352200
+        },
+        {
+          "name": "0212-CLOSE_SEALED-pc35-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 365060,
+          "allowed": 389999,
+          "envelope": 355900
+        },
+        {
+          "name": "0219-CLOSE_SEALED-pc36-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 368444,
+          "allowed": 389999,
+          "envelope": 359600
+        },
+        {
+          "name": "0226-CLOSE_SEALED-pc37-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 371828,
+          "allowed": 399999,
+          "envelope": 363300
+        },
+        {
+          "name": "0233-CLOSE_SEALED-pc38-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 375212,
+          "allowed": 399999,
+          "envelope": 367000
+        },
+        {
+          "name": "0240-CLOSE_SEALED-pc39-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 378596,
+          "allowed": 409999,
+          "envelope": 370700
+        },
+        {
+          "name": "0247-CLOSE_SEALED-pc40-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 381980,
+          "allowed": 409999,
+          "envelope": 374400
+        },
+        {
+          "name": "0254-CLOSE_SEALED-pc41-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 385364,
+          "allowed": 409999,
+          "envelope": 378100
+        },
+        {
+          "name": "0261-CLOSE_SEALED-pc42-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 388748,
+          "allowed": 419999,
+          "envelope": 381800
+        },
+        {
+          "name": "0268-CLOSE_SEALED-pc43-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 392132,
+          "allowed": 419999,
+          "envelope": 385500
+        },
+        {
+          "name": "0275-CLOSE_SEALED-pc44-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 395516,
+          "allowed": 419999,
+          "envelope": 389200
+        },
+        {
+          "name": "0282-CLOSE_SEALED-pc45-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 398900,
+          "allowed": 429999,
+          "envelope": 392900
+        },
+        {
+          "name": "0289-CLOSE_SEALED-pc46-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 402284,
+          "allowed": 429999,
+          "envelope": 396600
+        },
+        {
+          "name": "0296-CLOSE_SEALED-pc47-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 405668,
+          "allowed": 439999,
+          "envelope": 400300
+        },
+        {
+          "name": "0303-CLOSE_SEALED-pc48-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 409052,
+          "allowed": 439999,
+          "envelope": 404000
+        },
+        {
+          "name": "0310-CLOSE_SEALED-pc49-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 412436,
+          "allowed": 439999,
+          "envelope": 407700
+        },
+        {
+          "name": "0317-CLOSE_SEALED-pc50-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 415820,
+          "allowed": 449999,
+          "envelope": 411400
+        },
+        {
+          "name": "0324-CLOSE_SEALED-pc51-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 419204,
+          "allowed": 449999,
+          "envelope": 415100
+        },
+        {
+          "name": "0331-CLOSE_SEALED-pc52-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 422588,
+          "allowed": 449999,
+          "envelope": 418800
+        },
+        {
+          "name": "0338-CLOSE_SEALED-pc53-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 425972,
+          "allowed": 459999,
+          "envelope": 422500
+        },
+        {
+          "name": "0345-CLOSE_SEALED-pc54-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 429356,
+          "allowed": 459999,
+          "envelope": 426200
+        },
+        {
+          "name": "0352-CLOSE_SEALED-pc55-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 432740,
+          "allowed": 459999,
+          "envelope": 429900
+        },
+        {
+          "name": "0359-CLOSE_SEALED-pc56-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 436124,
+          "allowed": 469999,
+          "envelope": 433600
+        },
+        {
+          "name": "0366-CLOSE_SEALED-pc57-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 439508,
+          "allowed": 469999,
+          "envelope": 437300
+        },
+        {
+          "name": "0373-CLOSE_SEALED-pc58-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 442892,
+          "allowed": 479999,
+          "envelope": 441000
+        },
+        {
+          "name": "0380-CLOSE_SEALED-pc59-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 446276,
+          "allowed": 479999,
+          "envelope": 444700
+        },
+        {
+          "name": "0387-CLOSE_SEALED-pc60-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 449660,
+          "allowed": 479999,
+          "envelope": 448400
+        },
+        {
+          "name": "0394-CLOSE_SEALED-pc61-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 453044,
+          "allowed": 489999,
+          "envelope": 452100
+        },
+        {
+          "name": "0401-CLOSE_SEALED-pc62-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 456428,
+          "allowed": 489999,
+          "envelope": 455800
+        },
+        {
+          "name": "0408-CLOSE_SEALED-pc63-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 459812,
+          "allowed": 489999,
+          "envelope": 459500
+        },
+        {
+          "name": "2442-CLOSE_SEALED-pc1-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 250410,
+          "allowed": 269999,
+          "envelope": 230100
+        },
+        {
+          "name": "2447-CLOSE_SEALED-pc2-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 253794,
+          "allowed": 269999,
+          "envelope": 233800
+        },
+        {
+          "name": "2452-CLOSE_SEALED-pc3-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 257178,
+          "allowed": 269999,
+          "envelope": 237500
+        },
+        {
+          "name": "2457-CLOSE_SEALED-pc4-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 260563,
+          "allowed": 279999,
+          "envelope": 241200
+        },
+        {
+          "name": "2462-CLOSE_SEALED-pc5-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 263947,
+          "allowed": 279999,
+          "envelope": 244900
+        },
+        {
+          "name": "2467-CLOSE_SEALED-pc6-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 267331,
+          "allowed": 279999,
+          "envelope": 248600
+        },
+        {
+          "name": "2472-CLOSE_SEALED-pc8-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 274099,
+          "allowed": 289999,
+          "envelope": 256000
+        },
+        {
+          "name": "2477-CLOSE_SEALED-pc12-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 287635,
+          "allowed": 309999,
+          "envelope": 270800
+        },
+        {
+          "name": "2482-CLOSE_SEALED-pc16-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 301171,
+          "allowed": 319999,
+          "envelope": 285600
+        },
+        {
+          "name": "2487-CLOSE_SEALED-pc31-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 351946,
+          "allowed": 379999,
+          "envelope": 341100
+        },
+        {
+          "name": "2492-CLOSE_SEALED-pc32-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 355330,
+          "allowed": 379999,
+          "envelope": 344800
+        },
+        {
+          "name": "2497-CLOSE_SEALED-pc33-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 358714,
+          "allowed": 379999,
+          "envelope": 348500
+        },
+        {
+          "name": "2503-CLOSE_SEALED-pc63-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 460234,
+          "allowed": 489999,
+          "envelope": 459500
+        },
+        {
+          "name": "2509-CLOSE_SEALED-pc64-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 463618,
+          "allowed": 499999,
+          "envelope": 463200
+        },
+        {
+          "name": "2515-CLOSE_SEALED-pc65-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 467002,
+          "allowed": 499999,
+          "envelope": 466900
+        }
+      ],
+      "minHeadroom": 12668,
+      "minHeadroomPct": 4.52,
+      "worst": "2467-CLOSE_SEALED-pc6-c0-f8-big",
+      "maxUsed": 1109971,
+      "maxEnvelopeSlackPct": 7.59,
+      "minEnvelopeSlackPct": -8.83
+    },
+    "CLOSE_REFUNDING": {
+      "cases": 276,
+      "pass": 188,
+      "fail": [
+        {
+          "name": "0007-CLOSE_REFUNDING-pc1-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 301003,
+          "allowed": 309999,
+          "envelope": 278800
+        },
+        {
+          "name": "0013-CLOSE_REFUNDING-pc2-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 304387,
+          "allowed": 319999,
+          "envelope": 282500
+        },
+        {
+          "name": "0019-CLOSE_REFUNDING-pc3-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 307771,
+          "allowed": 319999,
+          "envelope": 286200
+        },
+        {
+          "name": "0025-CLOSE_REFUNDING-pc4-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 311156,
+          "allowed": 319999,
+          "envelope": 289900
+        },
+        {
+          "name": "0031-CLOSE_REFUNDING-pc5-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 314540,
+          "allowed": 329999,
+          "envelope": 293600
+        },
+        {
+          "name": "0037-CLOSE_REFUNDING-pc6-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 317924,
+          "allowed": 329999,
+          "envelope": 297300
+        },
+        {
+          "name": "0043-CLOSE_REFUNDING-pc7-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 321308,
+          "allowed": 339999,
+          "envelope": 301000
+        },
+        {
+          "name": "0049-CLOSE_REFUNDING-pc8-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 324692,
+          "allowed": 339999,
+          "envelope": 304700
+        },
+        {
+          "name": "0055-CLOSE_REFUNDING-pc9-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 328076,
+          "allowed": 339999,
+          "envelope": 308400
+        },
+        {
+          "name": "0061-CLOSE_REFUNDING-pc10-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 331460,
+          "allowed": 349999,
+          "envelope": 312100
+        },
+        {
+          "name": "0067-CLOSE_REFUNDING-pc11-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 334844,
+          "allowed": 349999,
+          "envelope": 315800
+        },
+        {
+          "name": "0073-CLOSE_REFUNDING-pc12-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 338228,
+          "allowed": 349999,
+          "envelope": 319500
+        },
+        {
+          "name": "0079-CLOSE_REFUNDING-pc13-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 341612,
+          "allowed": 359999,
+          "envelope": 323200
+        },
+        {
+          "name": "0085-CLOSE_REFUNDING-pc14-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 344996,
+          "allowed": 359999,
+          "envelope": 326900
+        },
+        {
+          "name": "0091-CLOSE_REFUNDING-pc15-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 348380,
+          "allowed": 369999,
+          "envelope": 330600
+        },
+        {
+          "name": "0097-CLOSE_REFUNDING-pc16-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 351764,
+          "allowed": 369999,
+          "envelope": 334300
+        },
+        {
+          "name": "0103-CLOSE_REFUNDING-pc17-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 355148,
+          "allowed": 369999,
+          "envelope": 338000
+        },
+        {
+          "name": "0109-CLOSE_REFUNDING-pc18-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 358532,
+          "allowed": 379999,
+          "envelope": 341700
+        },
+        {
+          "name": "0115-CLOSE_REFUNDING-pc19-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 361916,
+          "allowed": 379999,
+          "envelope": 345400
+        },
+        {
+          "name": "0121-CLOSE_REFUNDING-pc20-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 365300,
+          "allowed": 379999,
+          "envelope": 349100
+        },
+        {
+          "name": "0127-CLOSE_REFUNDING-pc21-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 368699,
+          "allowed": 389999,
+          "envelope": 352800
+        },
+        {
+          "name": "0133-CLOSE_REFUNDING-pc22-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 372083,
+          "allowed": 389999,
+          "envelope": 356500
+        },
+        {
+          "name": "0139-CLOSE_REFUNDING-pc23-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 375467,
+          "allowed": 399999,
+          "envelope": 360200
+        },
+        {
+          "name": "0145-CLOSE_REFUNDING-pc24-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 378851,
+          "allowed": 399999,
+          "envelope": 363900
+        },
+        {
+          "name": "0151-CLOSE_REFUNDING-pc25-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 382235,
+          "allowed": 399999,
+          "envelope": 367600
+        },
+        {
+          "name": "0157-CLOSE_REFUNDING-pc26-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 385619,
+          "allowed": 409999,
+          "envelope": 371300
+        },
+        {
+          "name": "0163-CLOSE_REFUNDING-pc27-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 389003,
+          "allowed": 409999,
+          "envelope": 375000
+        },
+        {
+          "name": "0169-CLOSE_REFUNDING-pc28-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 392387,
+          "allowed": 409999,
+          "envelope": 378700
+        },
+        {
+          "name": "0175-CLOSE_REFUNDING-pc29-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 395771,
+          "allowed": 419999,
+          "envelope": 382400
+        },
+        {
+          "name": "0181-CLOSE_REFUNDING-pc30-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 399155,
+          "allowed": 419999,
+          "envelope": 386100
+        },
+        {
+          "name": "0187-CLOSE_REFUNDING-pc31-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 402539,
+          "allowed": 419999,
+          "envelope": 389800
+        },
+        {
+          "name": "0193-CLOSE_REFUNDING-pc32-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 405923,
+          "allowed": 429999,
+          "envelope": 393500
+        },
+        {
+          "name": "0199-CLOSE_REFUNDING-pc33-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 409307,
+          "allowed": 429999,
+          "envelope": 397200
+        },
+        {
+          "name": "0206-CLOSE_REFUNDING-pc34-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 412691,
+          "allowed": 439999,
+          "envelope": 400900
+        },
+        {
+          "name": "0213-CLOSE_REFUNDING-pc35-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 416075,
+          "allowed": 439999,
+          "envelope": 404600
+        },
+        {
+          "name": "0220-CLOSE_REFUNDING-pc36-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 419459,
+          "allowed": 439999,
+          "envelope": 408300
+        },
+        {
+          "name": "0227-CLOSE_REFUNDING-pc37-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 422843,
+          "allowed": 449999,
+          "envelope": 412000
+        },
+        {
+          "name": "0234-CLOSE_REFUNDING-pc38-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 426227,
+          "allowed": 449999,
+          "envelope": 415700
+        },
+        {
+          "name": "0241-CLOSE_REFUNDING-pc39-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 429611,
+          "allowed": 449999,
+          "envelope": 419400
+        },
+        {
+          "name": "0248-CLOSE_REFUNDING-pc40-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 432995,
+          "allowed": 459999,
+          "envelope": 423100
+        },
+        {
+          "name": "0255-CLOSE_REFUNDING-pc41-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 436379,
+          "allowed": 459999,
+          "envelope": 426800
+        },
+        {
+          "name": "0262-CLOSE_REFUNDING-pc42-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 439763,
+          "allowed": 469999,
+          "envelope": 430500
+        },
+        {
+          "name": "0269-CLOSE_REFUNDING-pc43-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 443147,
+          "allowed": 469999,
+          "envelope": 434200
+        },
+        {
+          "name": "0276-CLOSE_REFUNDING-pc44-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 446531,
+          "allowed": 469999,
+          "envelope": 437900
+        },
+        {
+          "name": "0283-CLOSE_REFUNDING-pc45-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 449915,
+          "allowed": 479999,
+          "envelope": 441600
+        },
+        {
+          "name": "0290-CLOSE_REFUNDING-pc46-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 453299,
+          "allowed": 479999,
+          "envelope": 445300
+        },
+        {
+          "name": "0297-CLOSE_REFUNDING-pc47-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 456683,
+          "allowed": 479999,
+          "envelope": 449000
+        },
+        {
+          "name": "0304-CLOSE_REFUNDING-pc48-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 460067,
+          "allowed": 489999,
+          "envelope": 452700
+        },
+        {
+          "name": "0311-CLOSE_REFUNDING-pc49-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 463451,
+          "allowed": 489999,
+          "envelope": 456400
+        },
+        {
+          "name": "0318-CLOSE_REFUNDING-pc50-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 466835,
+          "allowed": 499999,
+          "envelope": 460100
+        },
+        {
+          "name": "0325-CLOSE_REFUNDING-pc51-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 470219,
+          "allowed": 499999,
+          "envelope": 463800
+        },
+        {
+          "name": "0332-CLOSE_REFUNDING-pc52-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 473603,
+          "allowed": 499999,
+          "envelope": 467500
+        },
+        {
+          "name": "0339-CLOSE_REFUNDING-pc53-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 476987,
+          "allowed": 509999,
+          "envelope": 471200
+        },
+        {
+          "name": "0346-CLOSE_REFUNDING-pc54-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 480371,
+          "allowed": 509999,
+          "envelope": 474900
+        },
+        {
+          "name": "0353-CLOSE_REFUNDING-pc55-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 483755,
+          "allowed": 509999,
+          "envelope": 478600
+        },
+        {
+          "name": "0360-CLOSE_REFUNDING-pc56-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 487139,
+          "allowed": 519999,
+          "envelope": 482300
+        },
+        {
+          "name": "0367-CLOSE_REFUNDING-pc57-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 490523,
+          "allowed": 519999,
+          "envelope": 486000
+        },
+        {
+          "name": "0374-CLOSE_REFUNDING-pc58-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 493907,
+          "allowed": 519999,
+          "envelope": 489700
+        },
+        {
+          "name": "0381-CLOSE_REFUNDING-pc59-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 497291,
+          "allowed": 529999,
+          "envelope": 493400
+        },
+        {
+          "name": "0388-CLOSE_REFUNDING-pc60-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 500675,
+          "allowed": 529999,
+          "envelope": 497100
+        },
+        {
+          "name": "0395-CLOSE_REFUNDING-pc61-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 504059,
+          "allowed": 539999,
+          "envelope": 500800
+        },
+        {
+          "name": "0402-CLOSE_REFUNDING-pc62-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 507443,
+          "allowed": 539999,
+          "envelope": 504500
+        },
+        {
+          "name": "0409-CLOSE_REFUNDING-pc63-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 510827,
+          "allowed": 539999,
+          "envelope": 508200
+        },
+        {
+          "name": "0416-CLOSE_REFUNDING-pc64-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 514211,
+          "allowed": 549999,
+          "envelope": 511900
+        },
+        {
+          "name": "0423-CLOSE_REFUNDING-pc65-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 517595,
+          "allowed": 549999,
+          "envelope": 515600
+        },
+        {
+          "name": "0431-CLOSE_REFUNDING-pc66-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 520979,
+          "allowed": 549999,
+          "envelope": 519300
+        },
+        {
+          "name": "0439-CLOSE_REFUNDING-pc67-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 524363,
+          "allowed": 559999,
+          "envelope": 523000
+        },
+        {
+          "name": "0447-CLOSE_REFUNDING-pc68-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 527747,
+          "allowed": 559999,
+          "envelope": 526700
+        },
+        {
+          "name": "0455-CLOSE_REFUNDING-pc69-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 531131,
+          "allowed": 569999,
+          "envelope": 530400
+        },
+        {
+          "name": "0463-CLOSE_REFUNDING-pc70-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 534515,
+          "allowed": 569999,
+          "envelope": 534100
+        },
+        {
+          "name": "0471-CLOSE_REFUNDING-pc71-c0-f1",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 537899,
+          "allowed": 569999,
+          "envelope": 537800
+        },
+        {
+          "name": "2443-CLOSE_REFUNDING-pc1-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 301425,
+          "allowed": 309999,
+          "envelope": 278800
+        },
+        {
+          "name": "2448-CLOSE_REFUNDING-pc2-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 304809,
+          "allowed": 319999,
+          "envelope": 282500
+        },
+        {
+          "name": "2453-CLOSE_REFUNDING-pc3-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 308193,
+          "allowed": 319999,
+          "envelope": 286200
+        },
+        {
+          "name": "2458-CLOSE_REFUNDING-pc4-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 311578,
+          "allowed": 319999,
+          "envelope": 289900
+        },
+        {
+          "name": "2463-CLOSE_REFUNDING-pc5-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 314962,
+          "allowed": 329999,
+          "envelope": 293600
+        },
+        {
+          "name": "2468-CLOSE_REFUNDING-pc6-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 318346,
+          "allowed": 329999,
+          "envelope": 297300
+        },
+        {
+          "name": "2473-CLOSE_REFUNDING-pc8-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 325114,
+          "allowed": 339999,
+          "envelope": 304700
+        },
+        {
+          "name": "2478-CLOSE_REFUNDING-pc12-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 338650,
+          "allowed": 349999,
+          "envelope": 319500
+        },
+        {
+          "name": "2483-CLOSE_REFUNDING-pc16-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 352201,
+          "allowed": 369999,
+          "envelope": 334300
+        },
+        {
+          "name": "2488-CLOSE_REFUNDING-pc31-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 402961,
+          "allowed": 419999,
+          "envelope": 389800
+        },
+        {
+          "name": "2493-CLOSE_REFUNDING-pc32-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 406345,
+          "allowed": 429999,
+          "envelope": 393500
+        },
+        {
+          "name": "2498-CLOSE_REFUNDING-pc33-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 409729,
+          "allowed": 429999,
+          "envelope": 397200
+        },
+        {
+          "name": "2504-CLOSE_REFUNDING-pc63-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 511249,
+          "allowed": 539999,
+          "envelope": 508200
+        },
+        {
+          "name": "2510-CLOSE_REFUNDING-pc64-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 514633,
+          "allowed": 549999,
+          "envelope": 511900
+        },
+        {
+          "name": "2516-CLOSE_REFUNDING-pc65-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 518017,
+          "allowed": 549999,
+          "envelope": 515600
+        },
+        {
+          "name": "2522-CLOSE_REFUNDING-pc71-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 538321,
+          "allowed": 569999,
+          "envelope": 537800
+        },
+        {
+          "name": "2528-CLOSE_REFUNDING-pc72-c0-f8-big",
+          "status": "ACCEPT",
+          "error": null,
+          "used": 541705,
+          "allowed": 579999,
+          "envelope": 541500
+        }
+      ],
+      "minHeadroom": 8421,
+      "minHeadroomPct": 2.63,
+      "worst": "2458-CLOSE_REFUNDING-pc4-c0-f8-big",
+      "maxUsed": 1160992,
+      "maxEnvelopeSlackPct": 7.1,
+      "minEnvelopeSlackPct": -8.12
+    },
+    "DRAW_AND_PAY": {
+      "cases": 256,
+      "pass": 256,
+      "fail": [],
+      "minHeadroom": 133876,
+      "minHeadroomPct": 46.16,
+      "worst": "0026-DRAW_AND_PAY-pc4-c0-f0",
+      "maxUsed": 1680310,
+      "maxEnvelopeSlackPct": 42.96,
+      "minEnvelopeSlackPct": 16.9
+    },
+    "TIMEOUT_REFUND": {
+      "cases": 277,
+      "pass": 277,
+      "fail": [],
+      "minHeadroom": 80019,
+      "minHeadroomPct": 24.25,
+      "worst": "2454-TIMEOUT_REFUND-pc3-c0-f8-big",
+      "maxUsed": 842025,
+      "maxEnvelopeSlackPct": 17.52,
+      "minEnvelopeSlackPct": 16.47
+    },
+    "REFUND_FINAL": {
+      "cases": 276,
+      "pass": 276,
+      "fail": [],
+      "minHeadroom": 120155,
+      "minHeadroomPct": 46.21,
+      "worst": "2450-REFUND_FINAL-pc2-c0-f1-sp-big",
+      "maxUsed": 1471306,
+      "maxEnvelopeSlackPct": 39.2,
+      "minEnvelopeSlackPct": 12.41
+    },
+    "REFUND_INTERMEDIATE": {
+      "cases": 906,
+      "pass": 906,
+      "fail": [],
+      "minHeadroom": 167204,
+      "minHeadroomPct": 28.83,
+      "worst": "2500-REFUND_INTERMEDIATE-pc33-c0-f1-sp-big",
+      "maxUsed": 1701280,
+      "maxEnvelopeSlackPct": 24.68,
+      "minEnvelopeSlackPct": 12.59
+    }
+  },
+  "seconds": 4,
+  "notCovered": [
+    "full-transaction validation (mass, storage mass, relative-lock maturity, relay, node acceptance)",
+    "real SeqCommit accessor (mocked to the public PASS-A fixture)",
+    "real wallet signatures (public test scalar 1)"
+  ]
+}
