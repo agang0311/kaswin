@@ -7,7 +7,7 @@ import {ACTION_LABEL, roleLabel} from './shared/engine.mjs';
 import {EngineV2 as Engine} from './engine2.mjs';
 import {txStatus, recordStatus, needsAttention, plannedActions, cardStep, planSummary, walletFlow, CLOSE_OUTCOME, waitText} from '../visual/view.mjs';
 import {readSession, waitForProvider, watchWallet, provider} from './shared/wallet.mjs';
-import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, phaseInfo as basePhaseInfo} from './shared/rounds.mjs';
+import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, checkRow, phaseInfo as basePhaseInfo} from './shared/rounds.mjs';
 const phaseInfo = row => { const p = basePhaseInfo(row); return p.key === 'refunded' ? {...p, label:'退款完成'} : p; };
 import {replayAccepted} from './shared/replay.mjs';
 import {RoundCatalog} from './shared/catalog.mjs';
@@ -130,12 +130,14 @@ async function mergedRows() {
   const rank = s => ({cache: 1, local: 2, live: 3})[s] ?? 0;
   const remembered = await catalog.list();
   state.cached = remembered.length;
-  for (const c of remembered) put(c.view ?? {cid: c.cid, contract: CONTRACT_TAG, indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: c.updatedAt}, 'cache');
+  for (const c of remembered) put(cachedView(c) ?? {cid: c.cid, contract: CONTRACT_TAG, indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: Number.isSafeInteger(c.updatedAt) ? c.updatedAt : null}, 'cache');
   for (const cid of await localCids()) { const d = await localDetail(cid); if (d) put(d, 'local'); }
   for (const r of state.live ?? []) put(r, 'live');
   for (const r of map.values()) if (r.state && !state.details.has(r.cid)) state.details.set(r.cid, r);
   return [...map.values()];
 }
+/** IndexedDB views are untrusted (an older page or a hostile indexer may have written them): same schema checks as live rows. */
+function cachedView(c) { try { return c?.view && c.view.cid === c.cid ? checkRow(c.view, {cached: true}) : null; } catch { return null; } }
 async function localCids() { try { return [...new Set((await engine.records()).filter(r => !['REJECTED', 'ARCHIVED'].includes(r.status)).map(r => r.cid))]; } catch { return []; } }
 async function loadRows({quiet = false} = {}) {
   if (state.loadingRows) return;
@@ -144,7 +146,7 @@ async function loadRows({quiet = false} = {}) {
   state.liveError = null;
   try {
     const base = indexerBase(state.indexer), rows = []; let cursor = null, pages = 0;
-    do { const p = await listRounds(base, {cursor, limit: 200}); rows.push(...p.items); cursor = p.nextCursor; state.meta = {source: base, lastCheckpointAt: p.lastCheckpointAt, coverage: p.coverage}; } while (cursor && ++pages < 10);
+    do { const p = await listRounds(base, {cursor, limit: 200}); rows.push(...p.items); cursor = p.nextCursor; state.meta = {source: base, lastCheckpointAt: p.lastCheckpointAt, coverage: p.coverage, rejected: (state.meta?.source === base && pages ? state.meta.rejected : 0) + p.rejected}; } while (cursor && ++pages < 10);
     state.live = rows.map(r => ({...r, _src: 'live'})); state.liveAt = Date.now();
     state.listLimited = !!cursor;
     // List rows are summaries. Fetch a bounded batch of details, not fake zero prices/prizes.
@@ -264,6 +266,7 @@ function renderExplore(v) {
     <div class="seg"><button data-sort="new" aria-pressed="${state.sort === 'new'}">最近</button><button data-sort="value" aria-pressed="${state.sort === 'value'}">锁定价值</button></div>
     <button class="icon-btn" id="refreshRows" aria-label="刷新">${icon('refresh')}</button>
   </div>
+  ${state.meta?.rejected ? `<div class="notice warn">索引返回的 ${e(state.meta.rejected)} 个轮次格式不合规，已忽略（不显示、不缓存）。若持续出现，请更换数据源。</div>` : ''}
   ${state.liveError ? `<div class="notice warn">实时索引暂不可用（<span class="mono">${e(state.indexer)}</span>）：${e(state.liveError)}。仍显示本机记住的轮次。<button class="link" id="openSettings">${icon('settings')}设置数据源</button></div>` : state.live ? `<div class="source-strip"><span class="dot ok"></span><span>索引数据 · ${timeHtml(state.liveAt)} · <b>尚未逐轮节点核验</b>${state.listLimited ? ' · 已达分页上限，并非完整列表' : ''}<br><span class="small muted">${e(state.meta?.source ?? '')} · 检查点 ${timeHtml(state.meta?.lastCheckpointAt)} · 操作前重新核对</span></span></div>` : ''}
   <div class="grid">${state.busy ? '<div class="empty">读取中…</div>' : list.length ? list.map(card).join('') : `<div class="empty">${icon('ticket')}<p>当前筛选下没有轮次。也可以<button class="link" data-go2="create">创建一个新轮次</button>。</p></div>`}</div>`;
   v.querySelectorAll('[data-go2]').forEach(b => b.onclick = () => go(b.dataset.go2));
@@ -295,7 +298,7 @@ function card(r) {
     <div class="mono dim small">CID ${shortHash(r.cid, 12, 8)}</div>
     <div class="small muted">${r.terminal ? '历史票款总额 · 非实际奖金' : '票款奖池 · 不含押金'}</div>
     <div class="big">${headline}<small>TKAS</small></div>
-    ${st ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${sold.toLocaleString()} / ${cap.toLocaleString()} 张 · ${kas(price)} TKAS/张</span><span>${st.purchaseCount} 笔</span></div>` : `<div class="small muted">打开查看账本与购买目录</div>`}
+    ${st ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${e(sold.toLocaleString())} / ${e(cap.toLocaleString())} 张 · ${kas(price)} TKAS/张</span><span>${e(st.purchaseCount)} 笔</span></div>` : `<div class="small muted">打开查看账本与购买目录</div>`}
     <div class="card-next">${e(step.text)}</div>
     <div class="src">${({live: '索引数据 · 待节点核验', local: '本机接受记录', cache: '本机缓存 · 非实时'})[r._src] ?? '来源待核对'} · ${timeHtml(r.updatedAt)}</div>
     <div class="card-cta">${p.key === 'open' ? '查看并购买' : p.key === 'sealed' ? '查看开奖条件' : p.key === 'refund' ? '查看退款进度' : '查看轮次详情'} ${icon('arrow')}</div>
@@ -318,7 +321,7 @@ async function openRound(cid, {push = true} = {}) {
     if (fresh && loc && loc.state && fresh.state && !fresh.terminal && (loc.terminal || loc.state.purchaseCount > fresh.state.purchaseCount || loc.state.phase !== fresh.state.phase || loc.state.cursor !== fresh.state.cursor) && loc.updatedAt > (fresh.updatedAt ?? 0)) d = loc;
     else if (fresh) d = fresh;
     else if (loc) d = loc;
-    else if (!d) { const c = await catalog.get(cid); if (c?.view?.state) d = {...c.view, _src: 'cache'}; }
+    else if (!d) { const v = cachedView(await catalog.get(cid)); if (v?.state) d = {...v, _src: 'cache'}; }
     if (!fresh && !loc && d) d = {...d, _src:'cache'};
     if (!d) throw idxErr ?? new Error('找不到这个轮次');
     ledgerFromDetail(d, profile);
@@ -382,8 +385,8 @@ function renderRound(v) {
     <div class="source-strip small">${d._src === 'live' ? '索引详情' : d._src === 'local' ? '本机接受记录' : '本机缓存'} · 更新于 ${timeHtml(d.updatedAt)} · ${R.live ? '本次已核验当前 UTXO' : R.replay ? '本次已复验最近交易' : '本次尚未完成节点核验'}。索引展示不是接受证明。</div>
     ${stepper(d)}
     <div class="cols3">
-      <div class="kpi"><small>${d.terminal === 'PAID' ? '奖池（票款总额）' : '当前票款'}</small><strong>${kas(pool)} <span class="small muted">TKAS</span></strong><span>${st.sold.toLocaleString()} 张 × ${kas(price)} TKAS</span></div>
-      <div class="kpi"><small>售出 / 上限</small><strong>${st.sold.toLocaleString()} / ${c.ticketCap.toLocaleString()}</strong><span>开奖最低 ${c.minTickets} 张 · ${st.purchaseCount}/${c.purchaseCap} 笔记录</span></div>
+      <div class="kpi"><small>${d.terminal === 'PAID' ? '奖池（票款总额）' : '当前票款'}</small><strong>${kas(pool)} <span class="small muted">TKAS</span></strong><span>${e(st.sold.toLocaleString())} 张 × ${kas(price)} TKAS</span></div>
+      <div class="kpi"><small>售出 / 上限</small><strong>${e(st.sold.toLocaleString())} / ${e(c.ticketCap.toLocaleString())}</strong><span>开奖最低 ${e(c.minTickets)} 张 · ${e(st.purchaseCount)}/${e(c.purchaseCap)} 笔记录</span></div>
       <div class="kpi"><small>${d.terminal ? '结果' : '奖金上界（未扣网络费）'}</small><strong>${d.terminal === 'PAID' ? '已派奖' : d.terminal ? (d.terminal === 'EMPTY' ? '空轮' : '已退款') : kas(prizeEst > 0n ? prizeEst : 0n) + ' <span class="small muted">TKAS</span>'}</strong><span>${d.terminal ? '详情来源见上方；实际金额以接受交易输出为准' : st.sold < c.minTickets ? '当前未达开奖门槛；该数值不是可领奖金' : '此数值=票款−1 TKAS；实际奖金还需减网络费'}</span></div>
     </div>
   </div>
@@ -394,7 +397,7 @@ function renderRound(v) {
         <h3>${icon('ticket')} 购买目录 · 票号分布</h3>
         ${ledgerErr ? `<div class="notice warn">账本无法按固定 Profile 解析：${e(ledgerErr)}</div>` : ''}
         ${recs.length ? matrix(recs, st.sold, draw, d, me) : '<p class="muted">还没有购买记录。</p>'}
-        ${me ? `<p class="small muted" style="margin-top:8px">你在本轮持有 <b>${myTickets}</b> 张票${st.sold ? `，中奖概率约 ${(myTickets / st.sold * 100).toFixed(2)}%` : ''}。</p>` : ''}
+        ${me ? `<p class="small muted" style="margin-top:8px">你在本轮持有 <b>${e(myTickets)}</b> 张票${st.sold ? `，中奖概率约 ${(myTickets / st.sold * 100).toFixed(2)}%` : ''}。</p>` : ''}
       </div>
       <div class="panel">
         <h3>${icon('shield')} 链上复验</h3>
@@ -417,7 +420,7 @@ function renderRound(v) {
           <dt>Genesis</dt><dd>${hashHtml(d.genesisTxid, {link: explorerTx(d.genesisTxid)})}</dd>
           <dt>最近交易</dt><dd>${hashHtml(d.latestTxid, {link: d.latestTxid && explorerTx(d.latestTxid)})}</dd>
           <dt>接受块</dt><dd>${hashHtml(d.accepting, {link: d.accepting && explorerBlock(d.accepting)})}</dd>
-          ${d.tip ? `<dt>状态 UTXO</dt><dd class="mono">${e(shortHash(d.tip.transactionId, 10, 6))}:${d.tip.index}</dd>` : ''}
+          ${d.tip ? `<dt>状态 UTXO</dt><dd class="mono">${e(shortHash(d.tip.transactionId, 10, 6))}:${e(d.tip.index)}</dd>` : ''}
           <dt>索引更新</dt><dd>${timeHtml(d.updatedAt)}</dd>
         </dl>
       </div>
@@ -698,7 +701,7 @@ function restBox(r) {
 }
 function showRecord(r, fresh = false) {
   modal(`${ACTION_LABEL[r.action] ?? r.action} · 交易记录`, `
-    <div id="recTx" data-tx="${r.txid}"></div>
+    <div id="recTx" data-tx="${e(r.txid)}"></div>
     <div class="notice ${needsAttention(r)?'warn':''}">${e(txStatus(recordStatus(r)).meaning)}</div>
     ${fresh && r.status === 'SUBMITTED' ? '<div class="notice ok">节点已接收交易。<b>接收 ≠ 接受</b>：页面会自动在选中链上核对，也可随时手动对账。</div>' : ''}
     ${r.status === 'UNKNOWN' && needsAttention(r) ? '<div class="notice warn">提交结果未知（例如网络中断）。交易可能已经广播。<b>不要重新创建同类交易</b>；请点击对账。相关输入在本页保持占用，防止重复花费。</div>' : ''}

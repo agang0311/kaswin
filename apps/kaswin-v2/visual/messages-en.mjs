@@ -24,7 +24,7 @@ export const EN = [
 ['已派奖轮次','Paid rounds'],['共 {0} 轮已结束','{0} rounds ended'],['锁定价值','Locked value'],['TKAS · 进行中的轮次','TKAS · Active rounds'],['最近','Recent'],
 ['索引 {0}','Indexed {0}'],['实时索引未连接','Live index unavailable'],['· 另有其他 Profile {0}（仅显示）','· Other Profiles: {0} (display only)'],
 ['全部','All'],['待开奖','Awaiting draw'],['退款中','Refunding'],['已结束','Ended'],['★ 关注','★ Saved'],
-['实时索引暂不可用（','Live index unavailable ('],['）：{0}。仍显示本机记住的轮次。','): {0}. Locally remembered rounds are still shown.'],['设置数据源','Data source settings'],
+['索引返回的 {0} 个轮次格式不合规，已忽略（不显示、不缓存）。若持续出现，请更换数据源。','The indexer returned {0} malformed round(s); they were ignored (not shown, not cached). If this persists, switch data source.'],['实时索引暂不可用（','Live index unavailable ('],['）：{0}。仍显示本机记住的轮次。','): {0}. Locally remembered rounds are still shown.'],['设置数据源','Data source settings'],
 ['索引数据 · {0} ·','Index data · {0} · '],['尚未逐轮节点核验','Not yet verified per round against the node'],['{0} · 检查点 {1} · 操作前重新核对','{0} · Checkpoint {1} · Rechecked before actions'],
 ['· 已达分页上限，并非完整列表','· Page limit reached; not a complete list'],['读取中…','Loading…'],['当前筛选下没有轮次。也可以','No rounds match this filter. You can also '],['创建一个新轮次','Create a new round'],['。','.'],['、',', '],
 ['打开轮次 {0}','Open round {0}'],['其他 Profile','Other Profile'],['合约','Contract'],['未知','Unknown'],

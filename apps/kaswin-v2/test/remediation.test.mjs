@@ -45,6 +45,23 @@ test('metadata: fresh rows AND cached ledgers reject an injected purchase txid',
   row.purchases[0].txid = hash('4'); assert.equal(checkRow(row), row);
 });
 
+// Protects: list card / round KPIs render indexer- or IndexedDB-supplied `state` numbers into innerHTML.
+// Failure: an unvalidated row.state.purchaseCount string injects markup (CSP blocks script, not phishing HTML).
+test('metadata: hostile or non-canonical state in list rows and cached views is rejected before rendering', () => {
+  const s = S.appendPurchase(S.newOpen(key, config), 1, key);
+  const st = {...s, directory: undefined, config: {...s.config, ticketPrice: '100000000', closeEligibleDaa: '500'}, anchorDaa: '0'};
+  const base = {cid: hash('1'), indexStatus: 'LIVE', terminal: null, phase: 1, value: '120000000', contract: CONTRACT_TAG};
+  assert.equal(checkRow({...base, state: st}).state, st);                                  // summary row without directory
+  assert.equal(checkRow({...base, state: st, purchases: S.records(s)}).state, st);         // detail row with directory
+  for (const bad of [{purchaseCount: '<img src=x onerror=alert(1)>'}, {sold: 11}, {config: {...st.config, ticketCap: '10'}},
+    {config: {...st.config, minTickets: '<b>'}}, {ownerKey: '"><i>'}, {seed: 1}])
+    assert.throws(() => checkRow({...base, state: {...st, ...bad}}), Error, JSON.stringify(bad));
+  assert.throws(() => checkRow({...base, state: st, purchases: []}), /购买目录数量/);
+  assert.throws(() => checkRow({...base, indexStatus: 'UNKNOWN', state: st}), /未知索引状态/);
+  assert.equal(checkRow({...base, indexStatus: 'UNKNOWN', state: st}, {cached: true}).state, st);
+  assert.throws(() => checkRow({...base, indexStatus: 'LOCAL', state: {...st, purchaseCount: '<svg>'}}, {cached: true}));
+});
+
 test('new Profile BUY binds witness fee to real fee and requires funding context', () => {
   const {x, op, d} = draft(), tx = structuredClone(d.transaction), values = d.inputUtxos.map(u => u.value);
   const r = interpretAccepted(x, profile, tx, values);

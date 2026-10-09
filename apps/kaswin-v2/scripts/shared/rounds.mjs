@@ -46,9 +46,36 @@ function meta(d) {
   ensure(d.requiresIndependentVerification === true, 'Indexer 响应缺少“需独立核验”声明');
   return {coverage: d.coverage, lastCheckpointAt: typeof d.lastCheckpointAt === 'number' ? d.lastCheckpointAt : null};
 }
-export function checkRow(v) {
+const int = (n, min, max, what) => ensure(Number.isSafeInteger(n) && n >= min && n <= max, `${what}格式错误`);
+/** Any `state` carried by an indexer row or a cached view is untrusted display data. It must be a complete, canonical
+ * ledger summary (exact types/ranges via the core validator) before it can reach any template. */
+function checkState(st, purchases) {
+  ensure(st && typeof st === 'object' && !Array.isArray(st), '账本格式错误');
+  const c = st.config;
+  ensure(c && typeof c === 'object' && !Array.isArray(c), '账本配置格式错误');
+  int(st.phase, 1, 5, '阶段'); hash32(st.ownerKey, '创建者公钥');
+  int(c.ticketCap, 3, S.MAX_TICKETS, '票数上限'); int(c.purchaseCap, 1, S.MAX_PURCHASES, '购买记录上限'); int(c.minTickets, 3, c.ticketCap, '最低票数');
+  int(st.sold, 0, c.ticketCap, '售出票数'); int(st.purchaseCount, 0, Math.min(c.purchaseCap, st.sold), '购买记录数'); int(st.cursor, 0, S.MAX_PURCHASES, '退款游标');
+  int(st.anchorIndex, 0, 0xffffffff, '锚点索引'); int(st.counter, 0, 0xffffffff, '计数'); int(st.winnerPlusOne, 0, S.MAX_TICKETS, '中奖票号');
+  for (const f of ['anchorTxId', 'seed', 'targetHash', 'targetSeq']) hash32(st[f], f);
+  // Rebuild the exact ledger (directory included when supplied) and let the core library enforce every invariant.
+  let prev = 0;
+  if (purchases != null) ensure(Array.isArray(purchases) && purchases.length === st.purchaseCount, '购买目录数量与账本不一致');
+  const list = purchases ?? null;
+  const dir = list ? cat(...list.map(p => { ensure(p && typeof p === 'object' && Number.isSafeInteger(p.end) && p.end > prev && p.count === p.end - prev, '购买目录不连续'); prev = p.end; return cat(le(BigInt(p.end), 4), unhex(hash32(p.key, '买家公钥'), 32)); })) : null;
+  const s = {phase: st.phase, ownerKey: st.ownerKey,
+    config: {ticketPrice: uint(c.ticketPrice, '票价'), ticketCap: c.ticketCap, purchaseCap: c.purchaseCap, minTickets: c.minTickets, closeEligibleDaa: uint(c.closeEligibleDaa, '封盘 DAA')},
+    sold: st.sold, purchaseCount: list ? st.purchaseCount : 0, cursor: list ? st.cursor : 0, anchorDaa: uint(st.anchorDaa, '锚点 DAA'), anchorTxId: st.anchorTxId, anchorIndex: st.anchorIndex,
+    seed: st.seed, counter: st.counter, winnerPlusOne: st.winnerPlusOne, targetHash: st.targetHash, targetSeq: st.targetSeq, directory: dir ?? new Uint8Array()};
+  if (list) S.validateLedger(s);
+  else { S.validateConfig(s.config); ensure((st.sold === 0) === (st.purchaseCount === 0), '售出票数与购买记录不一致'); }
+}
+/** `cached`: a view read back from this browser's IndexedDB (possibly written by an older page version) — it is just as
+ * untrusted as a fresh indexer response, and may additionally carry the page's own placeholder statuses. */
+export function checkRow(v, {cached = false} = {}) {
   ensure(v && typeof v === 'object', '轮次格式错误'); hash32(v.cid, 'CID');
-  ensure(['LIVE', 'FINAL', 'TERMINAL', 'STALE', 'ROLLED_BACK'].includes(v.indexStatus), '未知索引状态');
+  ensure(['LIVE', 'FINAL', 'TERMINAL', 'STALE', 'ROLLED_BACK', ...(cached ? ['UNKNOWN', 'LOCAL'] : [])].includes(v.indexStatus), '未知索引状态');
+  if (v.contract != null) ensure(typeof v.contract === 'string' && v.contract.length <= 128, '合约标识格式错误');
   ensure(v.terminal === null || ['PAID', 'EMPTY', 'REFUNDED'].includes(v.terminal), '未知终局');
   ensure(v.phase === null || (Number.isInteger(v.phase) && v.phase >= 1 && v.phase <= 5), '未知阶段');
   if (v.tip) { hash32(v.tip.transactionId); ensure(Number.isInteger(v.tip.index) && v.tip.index >= 0, 'tip'); }
@@ -58,13 +85,18 @@ export function checkRow(v) {
     ensure(Array.isArray(v.purchases) && v.purchases.length <= S.MAX_PURCHASES, '购买目录格式错误');
     for (const p of v.purchases) { ensure(p && typeof p === 'object', '购买记录格式错误'); if (p.txid != null) hash32(p.txid, '购买交易 ID'); }
   }
+  if (v.state != null) checkState(v.state, v.purchases);
+  for (const f of ['updatedAt', 'liveSeenAt']) if (v[f] != null) ensure(Number.isSafeInteger(v[f]) && v[f] >= 0, `${f}格式错误`);
   return v;
 }
 export async function listRounds(base, {status = null, cursor = null, limit = 100, signal} = {}) {
   const q = new URLSearchParams({limit: String(limit)}); if (status) q.set('status', status); if (cursor) q.set('cursor', hash32(cursor));
   const d = await getJson(`${base}/v1/rounds?${q}`, {signal});
   const m = meta(d); ensure(Array.isArray(d.items) && d.items.length <= 200, '分页超限');
-  return {...m, items: d.items.map(checkRow), nextCursor: d.nextCursor ?? null};
+  // One malformed row must not hide the honest ones: drop it (and count it) instead of rejecting the page.
+  const items = []; let rejected = 0;
+  for (const v of d.items) { try { items.push(checkRow(v)); } catch { rejected++; } }
+  return {...m, items, rejected, nextCursor: d.nextCursor == null ? null : hash32(d.nextCursor, '分页游标')};
 }
 export async function roundDetail(base, cid, {signal} = {}) {
   const d = await getJson(`${base}/v1/rounds/${hash32(cid, 'CID')}`, {signal});

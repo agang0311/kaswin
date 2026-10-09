@@ -1,6 +1,10 @@
 # Kaswin V2 单文件交付（TN10可交易验收候选）
 
-## 当前2026-10-08交付
+## 当前2026-10-09交付（索引/缓存数据注入修复）
+
+HTML340122字节，SHA256 `bc5eeff13d76444021ecd501f856a4f0455486d80c1cff3f7133ca23feb6e133`；dist相同，未部署。相对10-08候选仅修客户端显示层：Indexer行与IndexedDB缓存视图中的 `state`/`config` 进入模板前按账本规则完整校验，不合规行被丢弃并提示数量；卡片与轮次KPI数字插值统一转义。合约、核心库、Profile、pin与TN10证据门不变。验证见 [`docs/kaswin-v2/INJECTION-FIX-20261009.md`](../../docs/kaswin-v2/INJECTION-FIX-20261009.md)。10-08 HTML（`6f790f0c…`）与中间构建 `dfdc52a8…` 已归档于 `archive/`，**含已知显示注入路径，不作推荐入口**。
+
+## 2026-10-08交付（已被上条取代）
 
 `releaseMode=TN10_ACCEPTANCE_CANDIDATE`、`tradingEnabled=true`、`publicLaunchApproved=false`、`budgetProfileId=null`。HTML337300字节，SHA256 `6f790f0ca45cabe2ad483de44be0ce3c17aca1978f1ed886a53c2ddba2569f1e`；dist相同，未部署。仅限隔离TN10测试资金，真实KasWare/新轮登记发现尚未验收。377笔历史接受回执离线绑定，不是VM预算校准。
 
