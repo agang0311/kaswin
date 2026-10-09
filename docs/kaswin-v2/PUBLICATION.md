@@ -6,6 +6,25 @@
 
 `build:pages`核验已提交HTML和全部记录输入后暂存；原始回执不公开随Git分发，源码重建与回执门的前置条件见[证据访问](EVIDENCE-ACCESS.md)。构建、VM、历史网络回执与线上HTTP回读分别记录；publicLaunchApproved仍为false。
 
+## 内部测试 → 公开发布流程（2026-10-09 起）
+
+`main` 由 Cloudflare Pages 自动发布（推送即上线），所以先在内部测试站确认，再推送：
+
+1. 本地构建，提交新的 `releases/kaswin-v2/index.html` 与 `build-manifest.json`（先不推送）。
+2. 部署到内部测试站 `https://cd311.cn:888/www/kaswin-v2.html`：在本机 `/root/www/kaswin-v2.html` 软链接指向 `dist/index.html`，构建完成即生效。
+3. 运行 `node tools/check-deployed.mjs https://cd311.cn:888/www/kaswin-v2.html`。它会核对线上返回的页面与要推送的发布文件、构建清单逐字节一致，执行与 Pages 相同的 `stage-release` 检查，再用真实 Chromium（桌面和手机宽度）读取公开 TN10 节点和 Indexer，确认列表、节点连接和轮次详情正常，且无页面错误、CSP 拦截或交易提交。结果写入 `apps/kaswin-v2/test-results/deployed/<sha256>.json`（不提交）。只读：不使用钱包、不签名、不提交交易。
+4. 需要人工看的（真实 KasWare 操作等）在内部测试站上做。
+5. 推送 `main`。本地 `pre-push` 钩子（`tools/pre-push-gate.mjs`）会检查：若这次推送改变了发布页面，该页面必须已在内部测试站通过第 3 步，且测试站此刻仍在返回同一页面，否则拒绝推送。只改文档、测试或源码而不改发布页面的推送直接放行。
+
+钩子是本地的，每个克隆需要安装一次：
+
+```sh
+git config kaswin.internalUrl https://cd311.cn:888/www/kaswin-v2.html
+printf '#!/bin/sh\nexec node tools/pre-push-gate.mjs "$@"\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+```
+
+它只是防止误操作，`git push --no-verify` 或在别的克隆里推送都能绕过；Pages 端的 `stage-release` 检查仍然有效，但它不知道内部测试是否做过。
+
 ## 历史：2026-10-06 源码候选（已被后续版本取代）
 
 当时已是V2协议源码变更，不再是仅文件搬迁。详见 [V2源码状态](V2-SOURCE-STATUS.md)。源码与旧lib/artifacts/pins/release尚未同步；构建应失败，不可发布。旧部署复现npm入口已移除，旧HTML和历史映射保留；本轮无编译、测试、提交、push或部署。Indexer候选位于另一工作空间，未启用，不应把本仓库提交当作服务部署。

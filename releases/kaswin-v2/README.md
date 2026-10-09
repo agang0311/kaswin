@@ -14,6 +14,8 @@ npm run build:pages # 从仓库根执行，校验HTML大小/hash、精确CSP及�
 
 Cloudflare Pages 应只发布 `dist/`，不要发布整个 `releases/` 或仓库。此步骤不需要SDK或原始回执，但只是暂存已构建产物，不等于源码重建或重新确认acceptance。
 
+推送 `main` 即自动上线，所以新页面先在内部测试站 `https://cd311.cn:888/www/kaswin-v2.html` 用 `node tools/check-deployed.mjs <URL>` 检查通过，再推送；本地 `pre-push` 钩子会拦截未经内部检查的页面变更。流程见[发布约定](../../docs/kaswin-v2/PUBLICATION.md#内部测试--公开发布流程2026-10-09-起)。
+
 从源码重建：
 
 - `npm --prefix apps/kaswin-v2 run build:tn10-candidate`：原始历史回执必须完整且哈希匹配，缺失拒绝；见[证据访问](../../docs/kaswin-v2/EVIDENCE-ACCESS.md)。
