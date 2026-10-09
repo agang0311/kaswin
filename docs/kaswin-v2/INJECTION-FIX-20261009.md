@@ -77,3 +77,7 @@ Indexer 源码不在本仓库，位于知识工作区 `workers/kaswin-event-inde
 - 真实 Chromium 检查线上页面：读取公开 Indexer 显示 13 个轮次，0 页面错误；把公开 Indexer 的响应换成恶意行后，列表和轮次详情均未注入，页面提示“索引返回的 1 个轮次格式不合规，已忽略”。探针为 `/root/kaspa/references/v2-audit-20261006/probe-live-site.mjs`（无钱包、不签名、不提交）。
 - `kaspay.top` 区域开着 Cloudflare Web Analytics（RUM），边缘会在 `win.kaspay.top` 的 HTML 末尾注入 `beacon.min.js`，所以浏览器收到的字节哈希是 `a6811955…`，不等于发布哈希（`kaswin.pages.dev` 不受影响，为 `b627d6e2…`）。该脚本被页面 CSP 拦截、不会执行，也不影响功能；未修改区域设置。
 - **行为变化**：今后推送到 `audit/state-deposit-v1` 即会把仓库中提交的 `releases/kaswin-v2/index.html` 发布到生产，而不是在 CI 里重新构建。
+
+## 分支调整（2026-10-09，用户要求）
+
+GitHub 上原 `main`（`0633907c`，2026-09-06，是 `audit/state-deposit-v1` 的祖先，没有独有提交）已删除；`audit/state-deposit-v1` 改名为 `main` 并设为默认分支。Cloudflare Pages 项目 `kaswin` 的生产分支同步改为 `main`。历史文档中提到的 `audit/state-deposit-v1` 指的就是现在的 `main`。

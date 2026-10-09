@@ -8,7 +8,7 @@
 
 ## Git 交付约定
 
-用户已明确长期授权：以后任务完成后默认创建独立 commit 并 push 到 GitHub，核对本地 HEAD 与目标远端分支 SHA 一致后返回完整 SHA。当前目标分支为 `audit/state-deposit-v1`；不自动合并 main，不 amend/rebase/squash/force push。若用户明确要求提交未完成工作，按 BLOCKED 检查点如实提交，不把提交成功称为功能门禁通过。此授权不扩大钱包、签名、节点或广播权限；凭证不得进入提交、日志或 remote URL。
+用户已明确长期授权：以后任务完成后默认创建独立 commit 并 push 到 GitHub，核对本地 HEAD 与目标远端分支 SHA 一致后返回完整 SHA。当前目标分支为 `main`（2026-10-09 起：原 `audit/state-deposit-v1` 经用户要求改名为 `main` 并设为默认分支，旧 main 已删除；旧分支名由 GitHub 自动重定向）；不 amend/rebase/squash/force push。若用户明确要求提交未完成工作，按 BLOCKED 检查点如实提交，不把提交成功称为功能门禁通过。此授权不扩大钱包、签名、节点或广播权限；凭证不得进入提交、日志或 remote URL。
 
 ## 边界
 
