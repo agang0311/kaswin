@@ -16,7 +16,8 @@ import {PROFILE} from '../tn10/cli.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const CONTRACTS = path.join(ROOT, 'contracts/f3.2');
-const passAFile = path.join(ROOT, '../kaspa/references/kaswin-f3-open-genesis/evidence/tn10/payout/PASS_A.json');
+// Public historical bytes are a synthetic JS input, not V2 network acceptance evidence.
+const passAFile = path.join(ROOT, 'apps/kaswin-v2/test/fixtures/pass-a-public.json');
 
 test('09.1 256 purchases ledger and compact directory evolution', async () => {
   const key1 = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';

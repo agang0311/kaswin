@@ -1,5 +1,11 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+## 当前发布工程修复（2026-10-09，S/L）
+
+[完整修复/验证/部署观察](RELEASE-REVIEW-FIXES.md)：HTML `71f33c0f…`（343750字节），TN10可交易验收候选，publicLaunchApproved=false。构建输入/CSP发布守卫、公共审计与原始回执门分离、干净副本PASS-A路径修复、展开搜索/持久参数及费用统计回归通过。应用68PASS/1TODO、公共审计10套、原始377回执门独立通过；这不是新的VM/钱包/网络acceptance。当前入口见[根README](../../README.md)。
+
+VM预算后续材料见[2026-10-09实验](VM-BUDGET-20261009.md)，独立评审未完成。以下内容均保留其原日期/Profile/测试范围，不能用历史“未测”描述当前，也不能把历史通过数继承到新构建。
+
 2026-10-08 摘要纠错：下列接受块/DAA按原始回执校正，旧值保留在Git历史，不声称已证实是reorg。完整377笔机器生成表见 [TN10-RECEIPTS.md](TN10-RECEIPTS.md)，每笔含checkedAt、mass、fee与完整接受块；这是本地历史回执核对，不是新的网络最终性确认。
 
 ## 2026-10-08 Profile 7aaf76fe... TN10 真实链上三流程全生命周期验证（Level N，全部 12 笔交易 Selected-Chain 接受）

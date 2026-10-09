@@ -1,6 +1,6 @@
 # Kaswin F3.2 / V2 资料入口
 
-当前为 **Testnet 10 V2合约收紧版，已编译，单HTML仅只读候选**。先读[新Preflight及结果](CONTRACT-HARDENING-20261007.md)和[V2当前状态](V2-SOURCE-STATUS.md)。新Profile `7aaf76fe…`、artifacts/lib/HTML已生成；fee/退款末输出约束及432000 DAA超时已同步。预算门槛BLOCKED，候选禁用计划/签名/提交；未测试、VM、链上或部署，旧Profile不迁移。
+当前是 **Testnet 10 可交易验收候选**，Profile `7aaf76fe…`，不是只读，也不是公开上线批准。当前发布模式/哈希见[交付入口](../../releases/kaswin-v2/README.md)，本轮修复与验证见[修复记录](RELEASE-REVIEW-FIXES.md)。历史377笔网络回执与2,549例SCRIPT_VM材料分别记录，不能混称完整验证；VM独立评审未闭合、budget pin仍为null。旧Profile不迁移。`V2-SOURCE-STATUS.md`等带日期材料仅代表当时快照。
 
 ## 阅读顺序
 
@@ -31,9 +31,9 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 ## 交易与存储边界
 
-- 当前候选只读，禁止交易计划/签名/提交；将来获批交易版本仍只提供TN10/TKAS操作，KasWare必须逐笔批准；金额bigint/十进制字符串，单笔费用上限0.5TKAS。
+- 当前候选允许TN10/TKAS交易，KasWare必须逐笔批准；真实钱包E2E仍待验收，publicLaunchApproved=false。金额bigint/十进制字符串，单笔费用上限0.5TKAS。
 - Submitted ≠ Accepted，区块包含 ≠ selected-chain接受。Indexer是发现/候选/缓存，不是资金与接受裁判。
 - REST在旧UNKNOWN且节点未查明时备查：完整节点复验通过才写ACCEPTED；裁剪等情况下最多标“已接受·REST”，底层UNKNOWN及输入占用不变，不授权后续动作。
 - 历史裁剪/PASS-A材料缺失仍会阻断某些构建；换端点或英文UI不能解除。
 - 同origin保留原journal/锁。协议记录和对账限当前Profile；输入占用读取同库同网络所有Profile的未释放tx记录，不迁移旧ABI或轮次。换域名/端口/记录库会隔离保护，不能因此重发旧UNKNOWN；不要清除站点数据。
-- 发布源码并不等于已经部署GitHub Pages，本次没有创建新站点、节点或代理。
+- 提交源码不等于线上部署完成。Cloudflare Pages使用 `npm run build:pages` 暂存已提交产物，公开URL版本须另做HTTP回读核对；不部署整个仓库。

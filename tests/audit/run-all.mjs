@@ -1,4 +1,6 @@
-// Default: local JS only. VM requires explicit flags AND a reviewed binary manifest.
+// Default: public local JS regressions (pinned SDK required), no private receipts.
+// Historical receipt verification is a separate `npm run test:receipts` gate; never silently skipped.
+// VM requires explicit flags AND a reviewed binary manifest.
 import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -10,10 +12,10 @@ if (args.length && !(args.length === 1 && args[0] === '--local') && !(withVm && 
 }
 const suites = ['01-profile-and-templates.test.mjs', '02-fee-and-executor-binding.test.mjs', '03-timeout-and-timelock.test.mjs',
   '04-accepted-interpretation.test.mjs', '05-client-security.test.mjs', '07-runner-safety.test.mjs', '08-candidate-entrypoints.test.mjs',
-  '09-payout-256-lifecycle.test.mjs', '10-resume-safety.test.mjs', '11-tn10-gate.test.mjs']
+  '09-payout-256-lifecycle.test.mjs', '10-resume-safety.test.mjs', '13-release-staging.test.mjs']
   .map(file => ({file, args: ['--test', path.join(DIR, file)], timeout: 120000}));
 if (withVm) suites.push({file: '06-vm-execution-suite.mjs', args: [path.join(DIR, '06-vm-execution-suite.mjs'), '--vm', args[1]], timeout: 1800000});
-console.log(`Scope: local JS${withVm ? ' + explicit SCRIPT_VM' : ' only; VM NOT_RUN'}. Not budget calibration, network acceptance or a security certification.`);
+console.log(`Scope: public local JS${withVm ? ' + explicit SCRIPT_VM' : ' only; VM NOT_RUN'}. Raw TN10 receipts NOT_CHECKED: use npm run test:receipts. Not network acceptance or a security certification.`);
 const summary = [];
 for (const s of suites) {
   const result = await new Promise(resolve => {

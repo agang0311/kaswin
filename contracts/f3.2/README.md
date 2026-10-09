@@ -1,6 +1,6 @@
 # Kaswin V2 链上源码候选（目录暂保留 f3.2）
 
-**当前为新V2 Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`。** 2026-10-07合约收紧并固定编译/逆拓扑重编一致：所有动作fee=真实输入输出差，0<fee≤50000000；退款末输出绑定actor/P2PK/金额/无CID；超时432000 DAA。ABI和Header不变，不迁移旧UTXO。`budgetProfileId:null`，默认交易发布BLOCKED，仅允许明确禁用交易的只读候选。未VM／链上测试。[Preflight与结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。
+**当前为新V2 Profile `7aaf76fe5e2180070290ff984bebaef54e41093e6a77eef24f2b48fb64c159c8`。** 2026-10-07合约收紧并固定编译/逆拓扑重编一致：所有动作fee=真实输入输出差，0<fee≤50000000；退款末输出绑定actor/P2PK/金额/无CID；超时432000 DAA。ABI和Header不变，不迁移旧UTXO。`budgetProfileId:null`，默认VM发布门仍BLOCKED；另有历史回执门支持TN10可交易验收候选（publicLaunchApproved=false）。已有377笔历史网络回执与2,549例SCRIPT_VM材料，范围及独立评审状态见[当前发布入口](../../README.md)，不外推完整网络/钱包验收。[Preflight与结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。
 
 | 文件 | 责任 |
 |---|---|

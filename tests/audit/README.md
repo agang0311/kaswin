@@ -1,8 +1,15 @@
-# 有界审计回归源码（2026-10-08修复，NOT_RUN）
+# 有界审计回归与显式证据门
 
-本轮仅静态修复及语法检查，没有实际通过数。JS模型≠VM，SCRIPT_VM≠完整交易验证或网络acceptance；小样本全部通过也不能解除256目录/退款游标预算门槛。
+## 当前入口与前置条件
 
-## 入口（需另行获准运行）
+- `npm run test:audit`：公共本地回归，01–05、07–10、13共10套；不需要原始TN10回执，不执行VM。部分测试需要固定官方SDK2.0.1，安装位置/资产校验见[来源](../../docs/kaswin-v2/SOURCES.md)。
+- `npm run test:receipts`：单独执行11，离线核验377笔历史原始回执；缺失/不符硬失败，不SKIP，不当成公共回归通过。见[证据访问](../../docs/kaswin-v2/EVIDENCE-ACCESS.md)。
+- 13运行真实发布CLI的临时副本，防止源码漂移、缺文件、路径越界或CSP错误被发布；失败不覆盖已有dist。无需VM或网络。
+- 06及12为显式VM工具；历史执行/评审状态见[VM记录](../../docs/kaswin-v2/VM-BUDGET-20261009.md)，不是默认套件的一部分。
+
+本轮实际结果见[修复记录](../../docs/kaswin-v2/RELEASE-REVIEW-FIXES.md)。JS模型≠VM，SCRIPT_VM≠完整交易验证或网络acceptance。默认套件通过不代表历史回执已复核或预算门已批准。
+
+## 命令
 
 ```bash
 node tests/audit/run-all.mjs          # 默认仅本地JS，无VM或网络
@@ -13,7 +20,9 @@ node tests/audit/run-all.mjs --vm --manifest=/absolute/reviewed-vm.json
 
 默认JS套件：01固定Profile/模板/ABI；02fee/退款末输出；03timeout/locktime模型；04genesis/空轮CLOSE/DRAW/缺金额上下文；05复用既有remediation/release-safety用例并补清单/CSP及单字段坏inputs；07 CLI/journal冲突/async验签false/VM结果解析；08将真实plan/execute/wallet/submit入口编译成候选模式，断言在访问节点／钱包之前拒绝；09 256次购票满额极限容量下状态账本、紧凑目录、CLOSE封盘、PASS-A随机抽样二分查找及DRAW_AND_PAY派奖端到端断言。05会注册引入文件的用例，不能再按旧README写4/4。run-all不再宣称整个codebase安全，子进程启动错误、超时和signal均失败，local失败不再启动VM。
 
-## VM需要新的固定harness，旧二进制不可直接复用
+## 历史：2026-10-08 VM harness准备说明
+
+以下“未编译/未校准”只描述当时阶段；后续已执行的固定harness及2,549例材料以[2026-10-09记录](../../docs/kaswin-v2/VM-BUDGET-20261009.md)为准，独立评审/pin仍未完成。旧二进制不可因历史通过而任意复用。
 
 `vm/hardened_vm.rs`为最小项目harness源码，针对固定rusty-kaspa `cfafeb4c093fa37a303f1b9f19c58f986b870ce3` API，沿用已存SilverScript3ed973…实验工作区依赖；**本轮未编译，Rust可编译性未验证**。不得执行旧v2_user_flows_vm并声称已测原预算。
 

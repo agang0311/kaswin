@@ -37,6 +37,7 @@ const CONFIG = loadConfig();
 const state = {
   view: 'explore', indexer: CONFIG.indexer, live: null, liveAt: null, liveError: null, cached: 0, nodes: CONFIG.nodes,
   rows: [], details: new Map(), meta: null, error: null, busy: false, filter: 'all', query: '', sort: 'new', saved: new Set(LS.get('saved', [])),
+  otherRoundsOpen: false,
   session: null, walletEpoch: 0, round: null, roundLive: null, records: [], daa: null, theme: LS.get('theme', matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'),
 };
 document.documentElement.dataset.theme = state.theme;
@@ -222,6 +223,8 @@ function render() {
 
 /* ================================================================== EXPLORE */
 function renderExplore(v) {
+  const previousDetails = v.querySelector('.other-rounds-details');
+  if (previousDetails) state.otherRoundsOpen = previousDetails.open;
   const rows = state.rows;
   const own = rows.filter(r => phaseInfo(r).key !== 'other'), otherList = rows.filter(r => phaseInfo(r).key === 'other'), others = otherList.length;
   const groups = {all: own.length, open: 0, sealed: 0, refund: 0, done: 0};
@@ -268,7 +271,7 @@ function renderExplore(v) {
     <div class="seg"><button data-sort="new" aria-pressed="${state.sort === 'new'}">最近</button><button data-sort="value" aria-pressed="${state.sort === 'value'}">锁定价值</button></div>
     <button class="icon-btn" id="refreshRows" aria-label="刷新">${icon('refresh')}</button>
     ${others ? `
-    <details class="other-rounds-details">
+    <details class="other-rounds-details"${state.otherRoundsOpen ? ' open' : ''}>
       <summary class="btn ghost sm" style="cursor:pointer;color:var(--dim);border:1px solid var(--line)" title="查看不适用轮次（其他合约或旧 Profile）">
         ${icon('archive')}<span>不适用轮次 (${others})</span>
       </summary>
@@ -291,6 +294,8 @@ function renderExplore(v) {
   v.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { state.sort = b.dataset.sort; render(); });
   v.querySelectorAll('[data-cid]').forEach(c => c.onclick = ev => { if (ev.target.closest('[data-star],[data-copy]')) return; openRound(c.dataset.cid); });
   v.querySelectorAll('[data-star]').forEach(b => b.onclick = ev => { ev.stopPropagation(); const c = b.dataset.star; state.saved.has(c) ? state.saved.delete(c) : state.saved.add(c); LS.set('saved', [...state.saved]); render(); });
+  const otherDetails = v.querySelector('.other-rounds-details');
+  if (otherDetails) otherDetails.ontoggle = () => { if (otherDetails.isConnected) state.otherRoundsOpen = otherDetails.open; };
   $('refreshRows').onclick = () => loadRows();
   $('openSettings') && ($('openSettings').onclick = settingsDialog);
   const qi = $('q');
@@ -861,7 +866,7 @@ function budgetPanel(pc) {
   return `<label class="field">购买记录数：<b id="budgetPcV">${pc}</b><input type="range" class="slider" id="budgetPc" min="1" max="256" value="${pc}"></label>
     <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>动作</th><th>compute budget</th><th>约占质量</th><th>最低网络费（约）</th></tr></thead><tbody>${rows.map(([l, a, s0]) => { const b = actionBudget(a, {...s0, phase: 1}); return `<tr><td>${e(l)}</td><td class="mono">${b}</td><td class="mono">${(b * 100).toLocaleString()} g</td><td class="mono">~${kas(estimateActionFee(a, s0))} TKAS</td></tr>`; }).join('')}</tbody></table></div>
     ${budgetChart()}
-    <p class="small muted">交易手续费由原生交易 Mass 与节点实时费率动态迭代收敛，单笔风控上限 0.5 TKAS（实测 377 笔全覆盖交易平均单笔仅 0.022 TKAS）。compute budget 每单位对应 100 g 算力质量。</p>`;
+    <p class="small muted">交易手续费由原生交易 Mass 与节点实时费率动态迭代收敛，单笔风控上限 0.5 TKAS。历史 TN10 样本 377 笔总手续费 7.80619784 TKAS，平均约 0.020706 TKAS；不代表未来费率或完整场景覆盖。compute budget 每单位对应 100 g 算力质量。</p>`;
 }
 function budgetChart() {
   const W = 520, H = 210, P = 30, fam = [['BUY', '#49eacb'], ['CLOSE', '#60a5fa'], ['DRAW_AND_PAY', '#f5c451'], ['TIMEOUT_REFUND', '#a78bfa'], ['REFUND', '#f87171']];

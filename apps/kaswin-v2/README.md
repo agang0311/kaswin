@@ -1,44 +1,40 @@
 # Kaswin V2 网页
 
-独立单文件 Testnet 10 界面：浏览轮次、创建、活动记录、规则说明；中英切换、明暗主题、本地时区，逐笔报价和钱包批准。源码只支持本地固定的V2 Profile；其他Profile不能操作。
-
-**2026-10-07合约收紧：新Profile `7aaf76fe…`，仅编译与只读候选。** fee绑定、退款末输出约束、432000 DAA超时已同步，SIL/artifacts/lib/HTML均更新。先读[设计与结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)。预算证据未闭合，可交易build仍阻断；当前HTML永久禁用计划/签名/提交，无UI开关，未部署。旧Profile轮次不能由新版操作。
+自包含单文件 Testnet 10 应用。当前交付为 **可交易验收候选**（不是只读），`publicLaunchApproved=false`；准确模式、哈希、未验证边界见[发布入口](../../releases/kaswin-v2/README.md)与[根README](../../README.md)。只支持固定 Profile `7aaf76fe…`，不升级旧轮次。
 
 ## 源码分工
 
 - [scripts/](scripts/README.md)：控制器、业务流程与网络/钱包适配。
 - [visual/](visual/README.md)：HTML壳、CSS、图标、中英文和只读展示。
-- [链外核心库](../../packages/f3.2-core/README.md)：交易与状态编码。
-- [链上合约](../../contracts/f3.2/README.md)：SilverScript，不能以UI逻辑替代。
-- [使用/构建与限制](../../docs/kaswin-v2/README.md)、[整理范围](../../docs/kaswin-v2/PUBLICATION.md)。
+- [链外核心库](../../packages/f3.2-core/README.md)：状态与交易编码。
+- [链上合约](../../contracts/f3.2/README.md)：SilverScript；UI不能替代链上约束。
 
-## 构建
+广场将其他 Profile 放入默认收起的独立面板，搜索保留当前展开状态。创建默认总票数100,000；七项参数保存在当前 Origin 的 `kaswin-v2:createForm`。存储不可用时不保证跨会话记忆，不保存密钥。
 
-Node.js 22+。从仓库根目录：
+## 构建（仓库根目录）
 
 ```bash
 npm --prefix apps/kaswin-v2 ci --ignore-scripts
 npm --prefix apps/kaswin-v2 run check:core
-npm --prefix apps/kaswin-v2 run check:bundle  # 只在内存编译，不写HTML
-npm --prefix apps/kaswin-v2 run build:candidate # 写只读候选，禁用交易；同步dist
-# npm --prefix apps/kaswin-v2 run build      # 当前预算门槛BLOCKED
+npm --prefix apps/kaswin-v2 run check:bundle
+npm run build:pages # 只验证并暂存已提交产物，不重新构建
 ```
 
-输出 `releases/kaswin-v2/index.html` 和构建manifest。构建仅需锁定开发依赖和仓库内合约产物；不下载SDK/WASM、不访问节点、不运行上游setup、不签名提交。
+重建需显式选择 `build:candidate`（只读）或 `build:tn10-candidate`（原始回执门）。两者都会覆盖现行release/dist并归档旧版。默认 `build` 仍被未评审VM预算阻断。详见[证据访问](../../docs/kaswin-v2/EVIDENCE-ACCESS.md)。
 
-## 测试（本轮没有执行，以下仅供后续获准使用）
+## 测试
 
-模拟钱包单测/E2E需要**单独取得的官方SDK2.0.1**。按[固定来源](../../docs/kaswin-v2/SOURCES.md)验证release资产，不安装猜测的npm包。默认SDK路径为仓库下被忽略的 `references/kaspa-wasm32-sdk/nodejs/kaspa/kaspa.js`；也可设 `KASPA_SDK_PATH=/absolute/path/to/kaspa.js`。SDK仅用于测试，不打包。
+模拟钱包单测/E2E需要单独取得的官方SDK2.0.1，按[固定来源](../../docs/kaswin-v2/SOURCES.md)核对资产SHA256，解压至忽略目录 `references/kaspa-wasm32-sdk/`，或设置 `KASPA_SDK_PATH=/absolute/path/to/kaspa.js`。禁止安装猜测的同名npm包；SDK不进入网页。
 
 ```bash
 npm --prefix apps/kaswin-v2 test
-# 显式安装与Playwright 1.63.0对应的浏览器，仅首次需要：
+# 首次显式安装与锁定Playwright匹配的浏览器：
 cd apps/kaswin-v2
 npx --no-install playwright install chromium
 npm run test:ui
 npm run test:e2e
 ```
 
-`test`包含源码层接口、引擎和记录保护回归；旧预算数据不再用于V2断言，V2 VM校准明确TODO。当前没有新通过数。交易流程`test:e2e`要求独立获批的交易build，当前只读候选明确拒绝运行；历史为英文7模拟提交/接受及REST生命周期；模拟KasWare使用公开测试标量1，禁止用于真实资金。`test:ui`里的明文测试会短暂监听本机/LAN测试服务，不是生产部署，HTTPS仅检查提示和保存，不承诺混合内容放行。全部测试输出写被忽略的 `test-results/`。
+`test:ui` 含布局、参数持久化/折叠搜索、双语、明文和端点检查；明文测试仅短暂监听本机/LAN模拟服务。`test:e2e` 使用公开测试标量和模拟节点，不等于真实KasWare或TN10验收；只读构建会拒绝交易E2E。测试输出写忽略目录。可选 `test:live` 只读外部TN10服务，不签名广播。
 
-可选 `npm run test:live` 只读LA真实服务，不需钱包、不签名/广播；外部服务可用性、历史裁剪和访问权限可能导致失败。默认测试不访问真实节点。
+当前测试结果及范围见[修复记录](../../docs/kaswin-v2/RELEASE-REVIEW-FIXES.md)，不把历史结果称为当前全验证。

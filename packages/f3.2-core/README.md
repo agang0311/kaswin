@@ -1,6 +1,6 @@
 # V2 链外核心源码（目录暂保留 f3.2-core）
 
-**2026-10-07合约收紧与lib编译对齐，未运行测试。** 新Profile `7aaf76fe…`：fee绑定真实金额差，REFUND末输出绑定actor，TIMEOUT=432000 DAA。多输入解释缺金额上下文拒绝推进；移除忽略fee见证差异的旧导出。只读HTML可构建，交易发布仍BLOCKED。[新设计与结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)优先，旧Profile与历史执行结果不兼容／不继承。
+**当前核心与lib已对齐；验证范围见[当前发布入口](../../README.md)与[VM预算记录](../../docs/kaswin-v2/VM-BUDGET-20261009.md)。** 新Profile `7aaf76fe…`：fee绑定真实金额差，REFUND末输出绑定actor，TIMEOUT=432000 DAA。多输入解释缺金额上下文拒绝推进；移除忽略fee见证差异的旧导出。支持显式只读构建与TN10可交易验收候选；默认VM发布门仍BLOCKED，publicLaunchApproved=false。[新设计与结果](../../docs/kaswin-v2/CONTRACT-HARDENING-20261007.md)优先，旧Profile与历史执行结果不兼容／不继承。
 
 这是 V2 **实际使用的14个模块的依赖闭包**，不是链上合约、完整通用SDK或钱包。`src/*.ts` 为源码，`lib/*.js`（及类型/映射）为 TypeScript 5.8.3 生成文件。
 

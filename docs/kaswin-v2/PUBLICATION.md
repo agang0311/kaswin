@@ -1,8 +1,14 @@
 # F3.2 / V2 资料发布与分层约定
 
-## 2026-10-06 当前源码候选
+## 当前发布约定
 
-当前已是V2协议源码变更，不再是仅文件搬迁。详见 [V2源码状态](V2-SOURCE-STATUS.md)。源码与旧lib/artifacts/pins/release尚未同步；构建应失败，不可发布。旧部署复现npm入口已移除，旧HTML和历史映射保留；本轮无编译、测试、提交、push或部署。Indexer候选位于另一工作空间，未启用，不应把本仓库提交当作服务部署。
+当前为可交易TN10验收候选，源码/产物一致性由构建清单与发布脚本核对；准确状态见[根README](../../README.md)、[交付入口](../../releases/kaswin-v2/README.md)和[修复记录](RELEASE-REVIEW-FIXES.md)。`main`为发布分支。网站只发布`dist/index.html`，不发布整个仓库或历史归档。
+
+`build:pages`核验已提交HTML和全部记录输入后暂存；原始回执不公开随Git分发，源码重建与回执门的前置条件见[证据访问](EVIDENCE-ACCESS.md)。构建、VM、历史网络回执与线上HTTP回读分别记录；publicLaunchApproved仍为false。
+
+## 历史：2026-10-06 源码候选（已被后续版本取代）
+
+当时已是V2协议源码变更，不再是仅文件搬迁。详见 [V2源码状态](V2-SOURCE-STATUS.md)。源码与旧lib/artifacts/pins/release尚未同步；构建应失败，不可发布。旧部署复现npm入口已移除，旧HTML和历史映射保留；本轮无编译、测试、提交、push或部署。Indexer候选位于另一工作空间，未启用，不应把本仓库提交当作服务部署。
 
 以下是2026-10-05整理工作的历史范围，不适用于当前V2协议源码。
 
