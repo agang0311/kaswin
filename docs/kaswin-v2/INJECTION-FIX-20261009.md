@@ -65,4 +65,15 @@ Indexer 源码不在本仓库，位于知识工作区 `workers/kaswin-event-inde
 
 - **Indexer F4 修复**：本机 `/opt/kaswin-event-indexer` 与 VPS `la.cd311.cn`（公开 `https://tn10.kaspay.top/indexer`）均按停机冷备份 → 替换 `indexer.mjs`/`src/engine.mjs`/`src/store.mjs` → 重启。部署前先用新代码打开生产库副本，确认无活跃重复、唯一索引可建立（本机 318 行、VPS 347 行；重复组全部为 ROLLED_BACK 历史）。重启后服务 active、`integrity_check` ok、索引存在、API 轮次数与升级前一致（本机 9、VPS 13）。备份：两机均为 `/var/lib/kaswin-event-indexer/events-before-20261009-f4.sqlite` 与 `/opt/kaswin-event-indexer-before-20261009-f4.tgz`。
 - **开源仓库** `agang0311/kaswin-indexer`：同步三文件（保留其 `./src/sdk.mjs` 导入与原分类逻辑差异），Docker 构建、容器内新 store 建索引与 `contracts` 列出 4 个插件均通过，推送 `00de43d`。
-- **页面**：`https://cd311.cn:888/www/kaswin-v2.html` 已经是当前构建 `b627d6e2…`（`/root/www/kaswin-v2.html` 为指向 `dist/index.html` 的软链接）。**`https://win.kaspay.top/` 仍返回旧版 `6509ee14…`（含原 F5 脚本注入）**；该域名经 Cloudflare，源站不在本机或 VPS，未能更新。
+- **页面**：`https://cd311.cn:888/www/kaswin-v2.html` 已经是当前构建 `b627d6e2…`（`/root/www/kaswin-v2.html` 为指向 `dist/index.html` 的软链接）。
+
+## Cloudflare Pages 发布（2026-10-09 12:10 CST，用户授权）
+
+`win.kaspay.top`、`kaswin.kaspay.top`、`kaswin.pages.dev` 均为 Pages 项目 `kaswin`（GitHub 集成，生产分支 `audit/state-deposit-v1`）。原先线上为 2026-10-06 的部署 `aac66cdf`（提交 `fdf8230`，含 F5 注入的旧页面 `6509ee14…`）。
+
+- 原构建命令 `npm run build` 在 Pages 上失败（部署 `554e3d3b`、`edb38e91`）：默认构建被未审查的 VM 预算门正确拦截（`budgetProfileId` 为 null），而 TN10 候选构建需要不提交到仓库的原始回执，CI 也无法运行。没有绕过任何门。
+- 新增 `tools/stage-release.mjs`（`npm run build:pages`）：只发布仓库中已提交的 `releases/kaswin-v2/index.html`，发布前核对 `build-manifest.json` 中的 SHA256 与字节数、releaseMode 白名单、`publicLaunchApproved=false`、脚本 CSP 必须为哈希；改动一个字节即失败（已测）。Pages 构建命令已改为 `npm run build:pages`。
+- 部署 `3a3a4eef`（提交 `56f3571`）成功。三个域名与 cd311 均返回 `b627d6e2…`。
+- 真实 Chromium 检查线上页面：读取公开 Indexer 显示 13 个轮次，0 页面错误；把公开 Indexer 的响应换成恶意行后，列表和轮次详情均未注入，页面提示“索引返回的 1 个轮次格式不合规，已忽略”。探针为 `/root/kaspa/references/v2-audit-20261006/probe-live-site.mjs`（无钱包、不签名、不提交）。
+- `kaspay.top` 区域开着 Cloudflare Web Analytics（RUM），边缘会在 `win.kaspay.top` 的 HTML 末尾注入 `beacon.min.js`，所以浏览器收到的字节哈希是 `a6811955…`，不等于发布哈希（`kaswin.pages.dev` 不受影响，为 `b627d6e2…`）。该脚本被页面 CSP 拦截、不会执行，也不影响功能；未修改区域设置。
+- **行为变化**：今后推送到 `audit/state-deposit-v1` 即会把仓库中提交的 `releases/kaswin-v2/index.html` 发布到生产，而不是在 CI 里重新构建。
