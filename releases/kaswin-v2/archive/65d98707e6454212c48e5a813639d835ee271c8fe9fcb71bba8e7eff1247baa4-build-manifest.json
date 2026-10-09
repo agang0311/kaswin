@@ -1,7 +1,7 @@
 {
   "artifact": "index.html",
-  "bytes": 340451,
-  "sha256": "a6d34cf30b0f443b348dd3973aabdc77a8a7bb80e1804efac9e864ac28730247",
+  "bytes": 340122,
+  "sha256": "bc5eeff13d76444021ecd501f856a4f0455486d80c1cff3f7133ca23feb6e133",
   "esbuild": "0.28.2",
   "releaseMode": "TN10_ACCEPTANCE_CANDIDATE",
   "tradingEnabled": true,
@@ -97,7 +97,7 @@
     "apps/kaswin-v2/visual/messages-en.mjs": "236302f8a24cc58c632a375cfb0d549f697836a8bd1e51960514aa76296ec1a4",
     "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
     "apps/kaswin-v2/visual/icons.mjs": "12ff0be47df4f5bdca0b9d0fe21300200ffaf0d663e11b27721cee131d516fd2",
-    "apps/kaswin-v2/scripts/app.mjs": "9c9a1740fe2597ea9d58e2fda2597c29c94a173377db50a5e1b4dec1bb7bfc74",
+    "apps/kaswin-v2/scripts/app.mjs": "e0f436bc5daaf86231cb9e731df6cd2076074fa4666ba48ae1572eb55e55caf2",
     "apps/kaswin-v2/visual/styles.css": "9260e2b93bb8730106723dd376d9f570ede2c40c3ffba7965d486a8b6097de38",
     "apps/kaswin-v2/visual/index.template.html": "f7b319e24d36d42557b1ccb3060d45136b5a82d7571c9506644ca7edc590dd0f",
     "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8",
