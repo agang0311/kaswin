@@ -1,6 +1,6 @@
 # Kaswin F3.2 / V2 资料入口
 
-当前是 **Testnet 10 可交易验收候选**，Profile `7aaf76fe…`，不是只读，也不是公开上线批准。当前发布模式/哈希见[交付入口](../../releases/kaswin-v2/README.md)，本轮修复与验证见[轮次刷新与负载下手续费](ROUND-REFRESH-FEES-20261009.md)，上一轮见[发布复审修复](RELEASE-REVIEW-FIXES.md)。历史377笔网络回执与2,549例SCRIPT_VM材料分别记录，不能混称完整验证；VM独立评审未闭合、budget pin仍为null。旧Profile不迁移。`V2-SOURCE-STATUS.md`等带日期材料仅代表当时快照。
+当前是 **Testnet 10 可交易验收候选**，Profile `7aaf76fe…`，不是只读，也不是公开上线批准。当前发布模式/哈希见[交付入口](../../releases/kaswin-v2/README.md)，本轮修复与验证见[内存池状态与手续费替换](MEMPOOL-RBF-20261009.md)；此前见[轮次刷新与负载下手续费](ROUND-REFRESH-FEES-20261009.md)、[发布复审修复](RELEASE-REVIEW-FIXES.md)。历史377笔网络回执与2,549例SCRIPT_VM材料分别记录，不能混称完整验证；VM独立评审未闭合、budget pin仍为null。旧Profile不迁移。`V2-SOURCE-STATUS.md`等带日期材料仅代表当时快照。
 
 ## 阅读顺序
 

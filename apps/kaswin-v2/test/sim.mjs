@@ -10,6 +10,7 @@ import {parseJson, jsonText} from '../scripts/shared/lib/json.mjs';
 import {txFromRpc, spkText} from '../scripts/shared/nodes.mjs';
 import {spkToAddress, pubkeyToAddress} from '../scripts/shared/lib/address.mjs';
 import {schnorrSighash} from '../scripts/shared/lib/sighash.mjs';
+import {massOf} from '../scripts/shared/mass.mjs';
 
 const require = createRequire(import.meta.url);
 export const sdk = require(process.env.KASPA_SDK_PATH || '../../../references/kaspa-wasm32-sdk/nodejs/kaspa/kaspa.js');
@@ -72,6 +73,36 @@ export class SimChain {
     this.accepted.set(id, {tx, rpc: enrichedRpc, block: block.hash, inputs});
     return id;
   }
+  /** Opt-in mempool model (chain.holdInMempool = true), mirroring rusty-kaspa v2.1.0 mempool RBF:
+   * submitTransaction = RbfPolicy::Forbidden (any double spend of a mempool tx is rejected);
+   * submitTransactionReplacement = RbfPolicy::Mandatory (exactly one conflicting mempool tx, strictly higher
+   * fee / max(compute, normalized transient, storage)). mine(txid) accepts a held transaction. A simulator, not consensus. */
+  toMempool(rpcTx, replacement) {
+    const tx = txFromRpc(rpcTx), id = referenceTxId(tx), ops = tx.inputs.map(i => `${i.previousOutpoint.transactionId}:${i.previousOutpoint.index}`);
+    if (this.accepted.has(id)) throw Error(`Rejected transaction ${id}: transaction ${id} was already accepted by the consensus`);
+    if (this.mempool.has(id)) throw Error(`Rejected transaction ${id}: transaction ${id} is already in the mempool`);
+    for (const o of ops) if (!this.utxos.has(o)) throw Error(`Rejected transaction ${id}: transaction ${id} is an orphan where orphan is disallowed`);
+    const inputs = ops.map(o => this.utxos.get(o));
+    const fee = inputs.reduce((a, u) => a + u.value, 0n) - tx.outputs.reduce((a, o) => a + o.value, 0n);
+    const q = massOf({transaction: tx, inputUtxos: inputs.map(u => ({outpoint: u.outpoint, value: u.value, spk: u.spk, daa: u.daa, covenantId: u.covenantId})), authorizedInputIndices: [], fee});
+    const mass = [q.computeMass, q.normalizedTransient, q.storageMass].reduce((a, b) => a > b ? a : b);
+    if (fee < q.relayFloor) throw Error(`Rejected transaction ${id}: transaction ${id} is not standard: insufficient fee`);
+    const conflicts = [...this.mempool.values()].filter(m => m.ops.some(o => ops.includes(o)));
+    let replaced = null;
+    if (!replacement) { if (conflicts.length) throw Error(`Rejected transaction ${id}: output ${conflicts[0].ops.find(o => ops.includes(o))} already spent by transaction ${conflicts[0].id} in the mempool`); }
+    else {
+      if (!conflicts.length) throw Error(`Rejected transaction ${id}: replace by fee found no double spending transaction in the mempool`);
+      if (conflicts.length > 1) throw Error(`Rejected transaction ${id}: replace by fee found more than one double spending transaction in the mempool`);
+      const old = conflicts[0];
+      if (!(fee * old.mass > old.fee * mass)) throw Error(`Rejected transaction ${id}: output ${old.ops[0]} already spent by transaction ${old.id} in the mempool`);
+      this.mempool.delete(old.id); replaced = old;
+    }
+    this.mempool.set(id, {id, rpc: structuredClone(rpcTx), ops, fee, mass});
+    return replacement ? {id, replaced} : id;
+  }
+  mine(txid) { const m = this.mempool.get(txid); if (!m) throw Error('NOT_IN_MEMPOOL'); this.mempool.delete(txid); return this.accept(m.rpc); }
+  /** The mempool drops a transaction (eviction/expiry) without it being accepted. */
+  evict(txid) { this.mempool.delete(txid); }
   rpcFor(p2pId) {
     const chain = this;
     const header = b => ({hash: b.hash, daaScore: Number(b.daa), blueScore: Number(b.blue), parentsByLevel: [[b.parent ?? '00'.repeat(32)]], acceptedIdMerkleRoot: b.seqCommit ?? '00'.repeat(32), blueWork: '01', timestamp: 1});
@@ -93,13 +124,22 @@ export class SimChain {
         const added = chain.chain.slice(i + 1);
         return {removedChainBlockHashes: [], addedChainBlockHashes: added, acceptedTransactionIds: added.map(h => ({acceptingBlockHash: h, acceptedTransactionIds: chain.blocks.get(h).txs}))};
       },
-      getMempoolEntry: () => { throw {message: 'not found'}; },
+      getMempoolEntry: ({transactionId}) => {
+        const m = chain.mempool.get(transactionId);
+        if (!m) throw {message: `Transaction ${transactionId} not found`};
+        return {mempoolEntry: {fee: Number(m.fee), transaction: m.rpc, isOrphan: false}};
+      },
       submitTransaction: ({transaction}) => {
         chain.submits++;
         if (chain.rejectNext) { const m = chain.rejectNext; chain.rejectNext = null; throw {message: m}; }
-        const id = chain.accept(transaction);
+        const id = chain.holdInMempool ? chain.toMempool(transaction, false) : chain.accept(transaction);
         if (chain.dropResponse) { chain.dropResponse = false; throw {message: 'connection reset'}; }
         return {transactionId: id};
+      },
+      submitTransactionReplacement: ({transaction}) => {
+        chain.submits++;
+        const {id, replaced} = chain.toMempool(transaction, true);
+        return {transactionId: id, replacedTransaction: replaced.rpc};
       },
     };
     return methods;

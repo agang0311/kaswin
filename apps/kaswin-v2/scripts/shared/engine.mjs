@@ -4,12 +4,13 @@
  *            signatures verified -> intent persisted in IndexedDB -> ONE submit -> record outcome.
  * reconcile(): acceptance + exact approved economic/consensus fields and covenant witness.
  */
-import {S, ensure, hash32, hex, buildAction, buildOpenGenesis, availableActions, actionBudget, referenceTxId, stable, kas, errorText,
+import {S, ensure, hash32, hex, unhex, buildAction, buildOpenGenesis, availableActions, actionBudget, referenceTxId, stable, kas, errorText,
   DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI, PROFILE_ID, NETWORK_GENESIS, IndexedStore, UserError} from './core.mjs';
-import {convergeFee, MassLimitError} from './mass.mjs';
-import {commonUtxos, verifyInputsLive, acceptedPair, searchAccepted, inMempool, matchesDraft} from './chain.mjs';
+import {convergeFee, quoteMass, MassLimitError} from './mass.mjs';
+import {decodeSpend} from '../../../../packages/f3.2-core/lib/accepted.js';
+import {commonUtxos, verifyInputsLive, acceptedPair, searchAccepted, mempoolEntry, matchesDraft} from './chain.mjs';
 import {signWithWallet} from './wallet.mjs';
-import {txToRpc} from './nodes.mjs';
+import {txToRpc, txFromRpc} from './nodes.mjs';
 import {spkToAddress} from './lib/address.mjs';
 import {acquireDrawProof} from './passa.mjs';
 import {liveRound} from './rounds.mjs';
@@ -177,6 +178,78 @@ export class Engine {
     return plan;
   }
 
+  /** Fee bump (RBF) of this browser's own transaction that is still in the node mempool. Rebuilds the SAME transition on
+   * the SAME inputs (the round state input plus the same wallet inputs), so the original and the replacement conflict
+   * and at most one can ever be accepted. Only the fee changes; the builders take it from where they always do (wallet
+   * change, the REFUND executor share, or the DRAW_AND_PAY prize via the bound fee witness). The node accepts the
+   * replacement only if the original is still in its mempool and the new ordering feerate is strictly higher
+   * (rusty-kaspa v2.1.0 RbfPolicy::Mandatory). Signing and submission go through the normal execute() path. */
+  async planReplacement(txid, session, {feeMode = 'load'} = {}) {
+    requireTradingRelease();
+    const store = await this.store(), cur = await store.get(PREFIX + hash32(txid));
+    ensure(cur, '本浏览器没有这笔交易的记录');
+    const old = cur.value;
+    ensure(['SUBMITTED', 'PENDING', 'UNKNOWN'].includes(old.status) && !old.replacedBy, '只有尚未确认、且未被替换过的本机交易才能加速');
+    ensure(old.session?.key === session.key && old.session?.address === session.address, '请连接提交这笔交易时使用的钱包账户');
+    this.onStatus('连接 TN10 节点…');
+    await this.pair.connect();
+    const currentDaa = await this.pair.currentDaa(), feerate = await this.pair.feerate();
+    this.onStatus('确认原交易仍在节点内存池中…');
+    const entry = await mempoolEntry(this.pair, txid);
+    ensure(entry, '原交易已不在节点内存池中（可能已被接受、已被替换或已被挤出）：请先核对结果，不能替换', 'NOT_IN_MEMPOOL');
+    ensure(entry.fee === old.fee, '节点内存池中的原交易费用与本机记录不符，已拒绝替换');
+    // Inputs must still be live: the original is only in the mempool, so they are unspent in the UTXO set.
+    await verifyInputsLive(this.pair, old.draft.inputUtxos);
+    const d0 = old.draft, t0 = d0.transaction;
+    let make, spent = null, budget = t0.inputs[0].computeBudget;
+    if (old.action === 'GENESIS') {
+      const reg = t0.outputs.length > 1 && t0.outputs[1].scriptPublicKey.script === DEFAULT_REGISTRY_SPK.script && !t0.outputs[1].covenant;
+      const s = S.decodeLedger(unhex(old.nextLedger));
+      make = fee => buildOpenGenesis(this.profile, session.key, s.config, d0.inputUtxos, fee, reg ? DEFAULT_REGISTRY_SPK : null);
+    } else {
+      const in0 = d0.inputUtxos[0], w = decodeSpend(t0.inputs[0].signatureScript, this.profile, old.origin);
+      const snapshot = {ledger: w.ledger, tip: in0.outpoint, origin: old.origin, scriptPublicKey: in0.spk, covenantId: in0.covenantId, value: in0.value, utxoDaa: in0.daa, currentDaa};
+      spent = S.verifySnapshot(snapshot, this.profile);
+      const op = {action: old.action, actorKey: session.key};
+      if (old.action === 'BUY') op.quantity = d0.transition.next.sold - spent.sold;
+      // The PASS-A opening is the first 240 bytes of the original witness data (protocol.js DRAW_AND_PAY: data = opening‖…);
+      // the target recorded at planning time must match it, and the builder re-authenticates it.
+      if (old.action === 'DRAW_AND_PAY') {
+        ensure(old.proof?.target?.hash && w.data.length >= 240, '原开奖交易缺少随机证明，无法替换');
+        op.opening = w.data.slice(0, 240); op.accessor = {blockHash: old.proof.target.hash, sequenceCommitment: old.proof.target.seqCommit};
+      }
+      make = fee => buildAction(snapshot, this.profile, op, fee, d0.inputUtxos.slice(1), budget);
+    }
+    // Strictly higher ordering feerate than the original: old fee / old mass < new fee / new mass. Same inputs and
+    // output count give (almost) the same mass, so require new fee >= floor(old fee x new mass / old mass) + 1, plus
+    // a 10% step so repeated bumps make visible progress under a moving estimate.
+    const q0 = quoteMass(d0), m0 = [q0.computeMass, q0.normalizedTransient, q0.storageMass].reduce((a, b) => a > b ? a : b);
+    const step = old.fee + old.fee / 10n + 1n;
+    let priced = convergeFee(make, feerate, {mode: feeMode, minFee: step});
+    const m1 = priced.orderingMass, strict = old.fee * m1 / m0 + 1n;
+    if (priced.fee < strict) priced = convergeFee(make, feerate, {mode: feeMode, minFee: strict > step ? strict : step});
+    ensure(priced.fee * m0 > old.fee * priced.orderingMass, '替换交易的费率没有严格高于原交易');
+    const draft = priced.draft;
+    draft.txid = referenceTxId(draft.transaction);
+    ensure(draft.txid !== txid, '替换交易与原交易相同');
+    ensure(stable(draft.inputUtxos.map(u => u.outpoint)) === stable(d0.inputUtxos.map(u => u.outpoint)), '替换交易必须花费完全相同的输入');
+    if (old.action !== 'GENESIS') ensure(stable(draft.transition.next ?? null) === stable(d0.transition.next ?? null) && draft.transition.terminal === d0.transition.terminal, '替换交易的状态变化与原交易不一致');
+    const plan = {
+      id: planId(), createdAt: Date.now(), action: old.action, cid: old.cid, session, draft, fee: priced.fee, quote: priced.quote, feerate, currentDaa, sponsored: old.sponsored ?? false,
+      feeMode: priced.mode, orderingFeerate: priced.orderingFeerate, standardFee: priced.standardFee, loadFee: priced.loadFee, feeClamped: priced.clamped,
+      proof: old.proof ?? null, outputs: describeOutputs(draft, null, session), budget: draft.transaction.inputs[0].computeBudget,
+      before: spent ? {phase: spent.phase, sold: spent.sold, purchaseCount: spent.purchaseCount, cursor: spent.cursor, value: d0.inputUtxos[0].value} : null,
+      after: draft.transition?.next ? {phase: draft.transition.next.phase, sold: draft.transition.next.sold, purchaseCount: draft.transition.next.purchaseCount, cursor: draft.transition.next.cursor, value: draft.transaction.outputs[0].value} : null,
+      terminal: draft.transition?.terminal ?? null, winner: old.winner ?? null,
+      origin: old.origin, genesisTxid: old.action === 'GENESIS' ? draft.txid : old.genesisTxid,
+      nextLedger: old.nextLedger, nextValue: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].value : null, nextSpk: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].scriptPublicKey : null,
+      replaces: txid, replaceRoot: old.replaceRoot ?? txid, previousFee: old.fee, previousOrderingFeerate: old.orderingFeerate ?? null, replaceVia: 'replacement',
+    };
+    if (old.action === 'GENESIS') { plan.cid = draft.transaction.outputs[0].covenant.covenantId; ensure(plan.cid === old.cid, '替换创建交易的 Covenant ID 与原交易不一致'); }
+    this.plans.set(plan.id, plan);
+    return plan;
+  }
+
   /** Sign, persist, submit once. Returns the stored record. */
   async execute(plan, {approved, onProgress = () => {}} = {}) {
     requireTradingRelease();
@@ -191,7 +264,8 @@ export class Engine {
       ensure(typeof store.insertIfAbsentWithCheck === 'function', '记录库不支持原子输入占用，不能提交', 'ATOMIC_INTENT_STORE_REQUIRED');
       await lock.assertHeld?.();
       ensure(!(await store.get(k)), '这笔交易已有本地记录，只能对账，不能重复提交');
-      const reserved = await this.reserved();
+      const replacesKey = plan.replaces ? PREFIX + hash32(plan.replaces) : null;
+      const reserved = await reservedInputs(store, NETWORK_GENESIS, replacesKey);
       ensure(!plan.draft.inputUtxos.some(f => reserved.has(key(f.outpoint))), '输入已被另一笔未对账的本地提交占用');
       onProgress('再次确认所有输入仍未花费…');
       await this.pair.currentDaa();
@@ -210,24 +284,43 @@ export class Engine {
         txid: plan.draft.txid, action: plan.action, cid: plan.cid, createdAt: Date.now(), status: 'SUBMITTING', accepted: false,
         fee: plan.fee, quote: plan.quote, budget: plan.budget, session: {address: plan.session.address, key: plan.session.key},
         inputs: plan.draft.inputUtxos.map(f => f.outpoint), draft: plan.draft, signed: tx, anchors, cursors: Object.fromEntries(anchors.map(a => [a.url, a.sink])),
-        outputs: plan.outputs, terminal: plan.terminal, winner: plan.winner, proof: plan.proof,
+        outputs: plan.outputs, terminal: plan.terminal, winner: plan.winner, proof: plan.proof, orderingFeerate: plan.orderingFeerate ?? null,
+        ...(plan.replaces ? {replaces: plan.replaces, replaceRoot: plan.replaceRoot, previousFee: plan.previousFee} : {}),
         origin: plan.origin, genesisTxid: plan.action === 'GENESIS' ? plan.draft.txid : plan.genesisTxid, nextLedger: plan.nextLedger, nextValue: plan.nextValue, nextSpk: plan.nextSpk, walletEchoDiffers: sigs.echoDiffers === true,
       };
       await lock.assertHeld?.();
-      let stored = await persistIntent(store, NETWORK_GENESIS, k, record, lock.lease); // atomic outpoint check + durable intent
+      let stored = await persistIntent(store, NETWORK_GENESIS, k, record, lock.lease, replacesKey); // atomic outpoint check + durable intent
       onProgress('意图已持久化，正在单次提交…');
       try {
         await lock.assertHeld?.(); // failure preserves the durable intent as UNKNOWN, never silently releases
-        const res = await this.pair.nodes[0].call('submitTransaction', {transaction: txToRpc(tx), allowOrphan: false});
+        // Fee bump of a transaction still in the node mempool: RbfPolicy::Mandatory (exactly one conflicting mempool tx,
+        // strictly higher feerate). Otherwise the ordinary submit (RbfPolicy::Forbidden). rusty-kaspa v2.1.0 flow_context.rs.
+        const viaReplacement = plan.replaceVia === 'replacement';
+        const res = viaReplacement
+          ? await this.pair.nodes[0].call('submitTransactionReplacement', {transaction: txToRpc(tx)})
+          : await this.pair.nodes[0].call('submitTransaction', {transaction: txToRpc(tx), allowOrphan: false});
         ensure(res?.transactionId === plan.draft.txid, `节点返回的交易 ID 不一致：${res?.transactionId}`);
-        record = {...record, status: 'SUBMITTED', submittedAt: Date.now(), submittedTo: this.pair.nodes[0].url};
+        let replacedTxid = null;
+        if (viaReplacement) { try { replacedTxid = referenceTxId(txFromRpc(res.replacedTransaction)); } catch {} }
+        record = {...record, status: 'SUBMITTED', submittedAt: Date.now(), submittedTo: this.pair.nodes[0].url,
+          ...(viaReplacement ? {replacedInMempool: replacedTxid} : {})};
       } catch (e) {
         const msg = errorText(e);
         // A definite mempool rejection that names this txid is recorded as REJECTED (inputs released); anything else is UNKNOWN.
-        const definite = /Rejected transaction/i.test(msg) && msg.includes(plan.draft.txid) && !/already/i.test(msg);
+        // "already accepted / already in the mempool / orphan pool" means THIS transaction exists: not a rejection.
+        // (mining/errors/src/mempool.rs v2.1.0; "output … already spent by transaction … in the mempool" IS a rejection.)
+        const definite = /Rejected transaction/i.test(msg) && msg.includes(plan.draft.txid) && !/was already accepted|is already in the mempool|already in the orphan pool/i.test(msg);
         record = {...record, status: definite ? 'REJECTED' : 'UNKNOWN', error: msg};
       }
       try { stored = await store.compareAndSet(k, stored.revision, record); } catch (e) { record = {...record, persistenceError: errorText(e)}; }
+      // The replaced record stays open (it can still be accepted until a sibling is); it only gains a pointer.
+      if (replacesKey && record.status === 'SUBMITTED') {
+        for (let i = 0; i < 4; i++) {
+          const cur = await store.get(replacesKey);
+          if (!cur || cur.value.status === 'ACCEPTED') break;
+          try { await store.compareAndSet(replacesKey, cur.revision, {...cur.value, status: 'REPLACED', replacedBy: plan.draft.txid, replacedAt: Date.now()}); break; } catch {}
+        }
+      }
       return record;
     });
   }
@@ -236,7 +329,8 @@ export class Engine {
   async reconcile(txid, onProgress = () => {}) {
     const store = await this.store(), k = PREFIX + hash32(txid);
     let stored = await store.get(k); ensure(stored, '本浏览器没有这笔交易的记录');
-    let r = {...stored.value, status: stored.value.status === 'REJECTED' ? 'REJECTED' : 'RECHECKING', accepted: false, checkedAt: Date.now()};
+    const prev = stored.value.status, sticky = prev === 'REJECTED' || prev === 'REPLACED' || prev === 'SUPERSEDED' ? prev : null;
+    let r = {...stored.value, status: sticky ?? 'RECHECKING', accepted: false, checkedAt: Date.now()};
     stored = await store.compareAndSet(k, stored.revision, r);
     try {
       await this.pair.connect();
@@ -253,8 +347,9 @@ export class Engine {
       }
       const accepting = found[0];
       if (!accepting) {
-        const pending = await inMempool(this.pair, txid);
-        r = {...r, status: pending ? 'PENDING' : (r.status === 'REJECTED' ? 'REJECTED' : 'UNKNOWN'), note: pending ? '交易仍在内存池中，等待被接受' : '本次有界查询没有在选中链上找到；不代表失败，不会重发'};
+        let entry = null; try { entry = await mempoolEntry(this.pair, txid); } catch {}
+        r = {...r, status: sticky ?? (entry ? 'PENDING' : 'UNKNOWN'), mempool: {present: !!entry, fee: entry?.fee ?? null, checkedAt: Date.now()},
+          note: entry ? '交易在节点内存池中，等待被打包接受（在内存池中不等于已接受）' : '本次有界查询没有在选中链上找到，节点内存池中也没有（可能已被替换、被挤出或尚未传播）；不代表失败，不会自动重发'};
       } else {
         const ev = await acceptedPair(this.pair, txid, accepting);
         const fee = matchesDraft(ev, r.draft);
@@ -262,10 +357,29 @@ export class Engine {
           note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（合约费用见证严格匹配；不是不可逆最终性）'};
       }
     } catch (e) {
-      r = {...r, status: r.status === 'REJECTED' ? 'REJECTED' : 'UNKNOWN', accepted: false, error: errorText(e), note: '本次核验未完成；保留输入占用，不会重发'};
+      r = {...r, status: sticky ?? 'UNKNOWN', accepted: false, error: errorText(e), note: '本次核验未完成；保留输入占用，不会重发'};
     }
     await store.compareAndSet(k, stored.revision, r);
-    return r;
+    return this.settleFamily(r);
+  }
+  /** A fee-bump family (original + replacements) spends the same inputs, so at most one member can be accepted.
+   * Once one is ACCEPTED (node-verified), the others can never take effect: mark them SUPERSEDED (inputs released,
+   * since they are spent by the accepted member). Never touches a record outside the family or changes ACCEPTED. */
+  async settleFamily(r) {
+    const root = r.replaceRoot ?? (r.replacedBy ? r.txid : null);
+    if (!root) return r;
+    const store = await this.store(), family = (await store.list(PREFIX)).filter(x => { const v = x.record.value; return v.txid === root || v.replaceRoot === root; });
+    const winner = family.find(x => x.record.value.status === 'ACCEPTED')?.record.value;
+    if (!winner) return r;
+    let self = r;
+    for (const x of family) {
+      const v = x.record.value;
+      if (v.txid === winner.txid || ['ACCEPTED', 'SUPERSEDED', 'ARCHIVED'].includes(v.status)) continue;
+      const next = {...v, status: 'SUPERSEDED', supersededBy: winner.txid, supersededAt: Date.now(), accepted: false,
+        note: `同一组替换交易中的 ${winner.txid.slice(0, 12)}… 已被接受；这笔花费相同输入，不可能再生效`};
+      try { await store.compareAndSet(x.key, x.record.revision, next); if (v.txid === r.txid) self = next; } catch {}
+    }
+    return self;
   }
 
   /** User-confirmed release of a REJECTED/UNKNOWN record's input reservation (e.g. inputs verified spent elsewhere). */

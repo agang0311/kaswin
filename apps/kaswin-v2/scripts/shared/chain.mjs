@@ -83,10 +83,24 @@ export async function searchAccepted(rpc, txid, cursor, {pages = 40, sinkLagLimi
   return {accepting: null, cursor: at};
 }
 
-/** Mempool presence on the connected node (pending ≠ accepted). */
+/** Mempool entry of `txid` on the connected node: {fee} when it is in the transaction pool, null when the node reports
+ * it absent. Pending is NOT accepted; absent is NOT rejected (it may already be accepted, replaced, or expired).
+ * Network errors propagate (unknown is not absent). rusty-kaspa v2.1.0 rpc/service get_mempool_entry_call. */
+export async function mempoolEntry(link, txid) {
+  hash32(txid);
+  try {
+    const r = await link.call('getMempoolEntry', {transactionId: txid, includeOrphanPool: false, filterTransactionPool: false});
+    const e = r?.mempoolEntry;
+    ensure(e && e.transaction, '节点返回的内存池条目格式错误');
+    return {fee: uint(e.fee), isOrphan: e.isOrphan === true};
+  } catch (err) {
+    if (/not found/i.test(errorText(err))) return null;
+    throw err;
+  }
+}
+/** Mempool presence on the connected node (pending ≠ accepted). Unknown (network error) counts as not present. */
 export async function inMempool(pair, txid) {
-  const res = await Promise.allSettled(pair.nodes.map(n => n.call('getMempoolEntry', {transactionId: txid, includeOrphanPool: false, filterTransactionPool: false})));
-  return res.some(r => r.status === 'fulfilled' && r.value?.mempoolEntry);
+  try { return !!(await mempoolEntry(pair, txid)); } catch { return false; }
 }
 
 /** Call ONLY after acceptedAt(): exact approved fields and covenant witness;

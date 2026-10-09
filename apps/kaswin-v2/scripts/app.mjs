@@ -645,6 +645,7 @@ function showPlan(plan, epoch) {
   const lab = o => `${roleLabel(o.role)}${o.mine ? ' · 你' : ''}`;
   modal(`确认：${ACTION_LABEL[plan.action]}`, `
     <div class="notice plan-summary"><b>这笔交易会做什么</b><p>${e(planSummary(plan))}</p></div>
+    ${plan.replaces ? `<div class="notice warn"><b>加速：替换内存池中的原交易</b><p>花费与原交易 ${hashHtml(plan.replaces, {link: explorerTx(plan.replaces)})} 完全相同的输入，状态变化相同，只把网络费从 ${kas(plan.previousFee)} 提高到 ${kas(plan.fee)} TKAS（排序费率 ${e(plan.previousOrderingFeerate ?? '—')} → ${e(plan.orderingFeerate)} sompi/gram）。节点只在原交易仍在其内存池中、且新费率更高时接受替换。两笔最多只有一笔生效。</p></div>` : ''}
     ${plan.action === 'DRAW_AND_PAY' ? `<div class="notice" style="border-color:var(--gold);background:var(--gold-soft)">🏆 已从选中链构造并验证 PASS-A 随机证明。按合约规则，本次开奖中奖票为 <b>#${plan.winner.ticket}</b>（记录 #${plan.winner.record + 1}），买家 ${hashHtml(pubkeyToAddress(plan.winner.key), {n: 12})}。</div>` : ''}
     ${plan.sponsored ? `<div class="notice warn">本批退款的执行费池不足以覆盖网络费/存储质量，需由你的一笔普通 UTXO 赞助；赞助本金会随执行者输出退回给你。</div>` : ''}
     <h3 style="margin:0 0 8px">全部输出（${t.outputs.length}）</h3>
@@ -680,7 +681,7 @@ function showPlan(plan, epoch) {
       if (['SUBMITTED', 'UNKNOWN'].includes(rec.status)) void catalog.remember(rec.cid, {source: rec.action === 'GENESIS' ? 'created' : 'traded', mine: true});
       $('xprog')?.querySelectorAll('.run').forEach(n => n.className = 'ok');
       lockModal(false); showRecord(rec, true);
-      if (['SUBMITTED','UNKNOWN'].includes(rec.status)) { toast('正在核对结果；只查询，不重新提交'); void autoReconcile(rec.txid); }
+      if (['SUBMITTED','UNKNOWN'].includes(rec.status)) { toast('正在核对结果；只查询，不重新提交'); void autoReconcile(rec.txid); if (rec.replaces) void autoReconcile(rec.replaces); }
     } catch (err) {
       lockModal(false);
       const msg = errorText(err);
@@ -699,11 +700,15 @@ function showPlan(plan, epoch) {
     }
   };
 }
+/** Bounded follow-up (~10 min): only queries, never resubmits. Keeps the open record dialog in sync, including the
+ * mempool state, so a stuck transaction shows as "in mempool" and can be bumped. */
 async function autoReconcile(txid) {
-  for (let i = 0; i < 8; i++) {
-    await new Promise(r => setTimeout(r, 2500 + i * 1500));
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, Math.min(2500 + i * 1500, 60_000)));
     try {
       const r = await engine.reconcile(txid);
+      if ($('modal').open && $('recTx')?.dataset.tx === txid && !modalBusy && ['PENDING', 'UNKNOWN', 'REPLACED', 'SUPERSEDED'].includes(r.status)) showRecord(r);
+      if (r.status === 'SUPERSEDED') { if (state.view === 'mine') render(); return; }
       if (['ACCEPTED','REST_ACCEPTED'].includes(recordStatus(r))) {
         toast(`${ACTION_LABEL[r.action]} ${txStatus(recordStatus(r)).label}`);
         if ($('modal').open && $('recTx')?.dataset.tx === txid) showRecord(r);
@@ -717,6 +722,30 @@ async function autoReconcile(txid) {
     }
     catch {}
   }
+}
+/** Fee bump is offered only for this browser's own unsettled, not-yet-replaced record (the node decides if it is in the mempool). */
+const canBump = r => ['SUBMITTED', 'PENDING'].includes(r.status) && !r.replacedBy && (!r.mempool || r.mempool.present);
+function replaceBox(r) {
+  const rows = [];
+  if (r.mempool) rows.push(['节点内存池', r.mempool.present ? `在内存池中 · 费用 ${kas(r.mempool.fee)} TKAS · 核对于 ${timeHtml(r.mempool.checkedAt)}` : `未在内存池中 · 核对于 ${timeHtml(r.mempool.checkedAt)}`]);
+  if (r.orderingFeerate) rows.push(['本笔排序费率', `${e(r.orderingFeerate)} sompi/gram`]);
+  if (r.replaces) rows.push(['替换了', `${hashHtml(r.replaces, {link: explorerTx(r.replaces)})} · 原费用 ${kas(r.previousFee)} TKAS`]);
+  if (r.replacedBy) rows.push(['已被替换为', hashHtml(r.replacedBy, {link: explorerTx(r.replacedBy)})]);
+  if (r.supersededBy) rows.push(['已生效的交易', hashHtml(r.supersededBy, {link: explorerTx(r.supersededBy)})]);
+  return rows.length ? facts(rows) : '';
+}
+async function bumpFee(r) {
+  if (!state.session) { await connectWallet(); if (!state.session) return; }
+  const epoch = state.walletEpoch;
+  modal('加速交易', `<ul class="progress" id="prog"><li class="run" id="pstat">准备…</li></ul><p class="err" id="pErr"></p>`);
+  lockModal(true);
+  engine.onStatus = s => { const el = $('pstat'); if (el) el.textContent = s; };
+  let plan;
+  try { plan = await engine.planReplacement(r.txid, state.session); }
+  catch (err) { lockModal(false); engine.onStatus = () => {}; $('prog').innerHTML = ''; $('pErr').textContent = errorText(err); $('mFoot').hidden = false; $('mFoot').innerHTML = `<button class="btn" id="cancel">关闭</button>`; $('cancel').onclick = closeModal; return; }
+  engine.onStatus = () => {}; lockModal(false);
+  if (epoch !== state.walletEpoch) { $('pErr').textContent = '钱包已变化，请重新开始'; return; }
+  showPlan(plan, epoch);
 }
 function statusBadge(r) { const t=txStatus(recordStatus(r)); return `<span class="badge t-${e(t.tone)}">${e(t.label)}</span>`; }
 const REST_OUTCOME = {ACCEPTED: '报告已接受', UNCONFIRMED: '报告未接受（不代表失败）', NOT_FOUND: '未找到（REST 也可能有保存期限；不代表失败）', ERROR: '查询未完成（不代表失败）'};
@@ -742,10 +771,12 @@ function showRecord(r, fresh = false) {
     ${r.status === 'UNKNOWN' && needsAttention(r) ? '<div class="notice warn">提交结果未知（例如网络中断）。交易可能已经广播。<b>不要重新创建同类交易</b>；请点击对账。相关输入在本页保持占用，防止重复花费。</div>' : ''}
     ${r.status === 'REJECTED' ? `<div class="notice bad">节点明确拒绝：${e(r.error ?? '')}。这是提交拒绝回执，不是整体余额证明。</div>` : ''}
     ${facts([['状态', statusBadge(r)], ['交易 ID', hashHtml(r.txid, {link: explorerTx(r.txid)})], ['轮次 CID', hashHtml(r.cid)], ['网络费', `${kas(r.fee)} TKAS`], r.actualFee !== undefined && ['实际费用', `${kas(r.actualFee)} TKAS`], r.accepting && ['接受块', hashHtml(r.accepting, {link: explorerBlock(r.accepting)})], r.locatedBy === 'REST' && ['接受块定位', 'REST 提供位置，节点已完整复验'], r.acceptingDaa && ['接受 DAA', String(r.acceptingDaa)], ['创建时间', timeHtml(r.createdAt)], r.verifiedAt && ['最近核验', timeHtml(r.verifiedAt)]])}
+    ${replaceBox(r)}
     ${restBox(r)}
     ${r.note ? `<p class="small muted">节点核对：${e(r.note)}</p>` : ''}${r.error && (needsAttention(r)||r.restCheck) ? `<p class="small muted">节点信息：${e(r.error)}</p>` : ''}
     <h3 style="margin:14px 0 8px">本机批准的输出</h3><div class="outs">${(r.outputs ?? []).map(o => `<div class="out ${o.mine ? 'mine' : ''}"><span class="r">${o.index} · ${e(roleLabel(o.role))}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>`,
-    `${['UNKNOWN', 'REJECTED'].includes(recordStatus(r)) ? '<button class="btn warn" id="arch">检查是否可归档</button>' : ''}<button class="btn" id="dl">${icon('download')}导出</button>${r.status==='ARCHIVED'?'':'<button class="btn pri" id="rec">核对结果（不重发）</button>'}`);
+    `${['UNKNOWN', 'REJECTED'].includes(recordStatus(r)) ? '<button class="btn warn" id="arch">检查是否可归档</button>' : ''}<button class="btn" id="dl">${icon('download')}导出</button>${canBump(r) ? '<button class="btn gold" id="bump">加速（提高手续费替换）</button>' : ''}${['ARCHIVED', 'SUPERSEDED'].includes(r.status)?'':'<button class="btn pri" id="rec">核对结果（不重发）</button>'}`);
+  if ($('bump')) $('bump').onclick = () => bumpFee(r);
   if ($('rec')) $('rec').onclick = async () => { $('rec').disabled = true; lockModal(true); try { const next=await engine.reconcile(r.txid,text=>{if($('rec')) $('rec').textContent=text;}); lockModal(false); showRecord(next); if(state.view==='mine') render(); } catch (err) { lockModal(false); toast(errorText(err), 'bad'); if($('rec')) $('rec').disabled = false; } };
   $('dl').onclick = () => download({kind: 'KASWIN_LOCAL_RECORD', ...r}, `kaswin-tx-${r.txid.slice(0, 12)}.json`);
   $('arch') && ($('arch').onclick = async () => {

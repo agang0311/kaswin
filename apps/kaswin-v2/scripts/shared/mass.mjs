@@ -77,11 +77,14 @@ export function rateFraction(v) {
  *    never below the 'standard' admission minimum. Under load (e.g. TN10 stress tests) a fee priced on compute/transient
  *    only is admitted to the mempool yet can wait there indefinitely when storage mass dominates the ordering mass.
  *    `clamped: true` means the cap kept the fee below the node's estimate: the transaction may queue. */
-export function convergeFee(makeDraft, feerate, {cap = FEE_CAP, mode = 'standard'} = {}) {
+/** `minFee`: lowest acceptable fee regardless of mode (RBF: the replacement must pay strictly more per ordering gram).
+ *  It is never clamped: if it exceeds the cap, quoting fails. */
+export function convergeFee(makeDraft, feerate, {cap = FEE_CAP, mode = 'standard', minFee = 0n} = {}) {
   ensure(typeof cap === 'bigint' && cap > 0n && cap <= FEE_CAP, '手续费上限无效');
   ensure(['standard', 'priority', 'load'].includes(mode), '手续费模式无效');
   const {n, d} = rateFraction(feerate);
-  let fee = 100_000n;
+  ensure(typeof minFee === 'bigint' && minFee >= 0n, '最低手续费无效');
+  let fee = minFee > 100_000n ? minFee : 100_000n;
   for (let i = 0; i < 24; i++) {
     ensure(fee <= cap, `网络费 ${fee} sompi 超过保护上限`);
     const draft = makeDraft(fee);
@@ -93,6 +96,7 @@ export function convergeFee(makeDraft, feerate, {cap = FEE_CAP, mode = 'standard
     ensure(standard <= cap, `网络费 ${standard} sompi 超过保护上限`);
     let required = mode === 'standard' ? standard : byOrdering, clamped = false;
     if (mode === 'load' && required > cap) { required = cap; clamped = true; }
+    if (required < minFee) required = minFee;
     ensure(required <= cap, `网络费 ${required} sompi 超过保护上限`);
     if (fee >= required) {
       draft.transaction.storageMass = q.storageMass;

@@ -62,8 +62,9 @@ export class JsonRpc {
     return this.ready;
   }
   async call(method, params = {}, timeoutMs = this.timeoutMs) {
-    ensure(READ.has(method) || method === 'submitTransaction', `未允许的节点方法 ${method}`);
-    if (method === 'submitTransaction') requireTradingRelease();
+    const submit = method === 'submitTransaction' || method === 'submitTransactionReplacement';
+    ensure(READ.has(method) || submit, `未允许的节点方法 ${method}`);
+    if (submit) requireTradingRelease();
     await this.connect();
     ensure(this.ws && this.ws.readyState === 1, `节点未连接：${host(this.url)}`);
     const id = ++this.next, text = `{"id":${id},"method":${JSON.stringify(method)},"params":${jsonText(params)}}`;

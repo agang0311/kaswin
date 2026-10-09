@@ -1,5 +1,9 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+## 内存池状态与手续费替换 RBF（2026-10-09，S/L，模拟节点）
+
+[记录](MEMPOOL-RBF-20261009.md)：HTML `357c9ecb…`（365006字节）。按 rusty-kaspa v2.1.0（线上节点版本）核对 `submitTransactionReplacement`=RbfPolicy::Mandatory。新增“内存池中/已被替换/未生效·已被替代”状态与加速（同输入、同状态变化、只提高费用）。应用80PASS/1TODO，E2E中英各8次提交含卡池→加速→接受，UI、audit10套、377回执、内部站只读检查通过。真实TN10替换未执行。
+
 ## 轮次状态刷新与负载下手续费（2026-10-09，S/L）
 
 [记录](ROUND-REFRESH-FEES-20261009.md)：HTML `c36c8648…`（349880字节）。显示视图按状态机单调进度选择，不比较跨机器时间戳；报价时节点核验到的状态回写页面；打开的轮次30秒刷新。默认报价改按节点费率×max(compute, transient, storage)，0.5 TKAS封顶并提示。应用75PASS/1TODO、E2E中英各7笔（模拟）、UI、公共审计10套、377回执门、内部测试站只读检查通过；无签名广播，不是新的网络acceptance。

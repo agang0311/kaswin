@@ -112,7 +112,34 @@ try {
   await page.goto(base + '/#/round/' + cid);
   await page.waitForSelector('[data-act="BUY"]', {timeout: 60000});
   await shot('round-open');
-  for (let i = 0; i < 3; i++) {
+  // BUY #1 gets stuck in the mempool (simulated congestion): the page must say "in mempool", never "accepted", and
+  // the user speeds it up with a fee-bump replacement (submitTransactionReplacement), which is then mined.
+  chain.holdInMempool = true;
+  await page.click('[data-act="BUY"]');
+  await page.waitForSelector('#qty'); await page.fill('#qty', '1'); await page.click('#go');
+  await page.waitForSelector('#approve', {timeout: 60000}); await scanEnglish();
+  await page.check('#approve'); await page.click('#sign');
+  await page.waitForSelector('#bump', {timeout: 60000});
+  const pendingLabel = await page.locator('#mBody .badge').first().textContent();
+  if (/已接受|Accepted/.test(pendingLabel)) throw Error('mempool transaction shown as accepted');
+  await page.waitForFunction(() => /内存池中|In mempool/.test(document.querySelector('#mBody .badge')?.textContent ?? ''), null, {timeout: 60000});
+  steps.push(['buy1-in-mempool', await page.locator('#mBody .badge').first().textContent()]);
+  await scanEnglish(); await shot('buy1-mempool');
+  const stuck = [...chain.mempool.keys()][0];
+  await page.click('#bump');
+  await page.waitForSelector('#approve', {timeout: 60000});
+  if (!(await page.locator('#mBody').textContent()).match(/替换内存池中的原交易|replace the original transaction/)) throw Error('bump dialog does not explain the replacement');
+  await scanEnglish();
+  await page.check('#approve'); await page.click('#sign');
+  await page.waitForFunction(() => !!document.querySelector('#recTx'), null, {timeout: 60000});
+  const bumped = [...chain.mempool.keys()][0];
+  if (!bumped || bumped === stuck || chain.mempool.has(stuck)) throw Error('replacement did not replace the original in the mempool');
+  chain.holdInMempool = false; chain.mine(bumped);
+  await page.waitForFunction(() => /已接受|Accepted/.test(document.querySelector('#mBody .badge')?.textContent ?? ''), null, {timeout: 90000});
+  steps.push(['buy1-bumped-accepted', await page.locator('#mBody .badge').first().textContent()]);
+  await scanEnglish(); await page.click('#mClose');
+  await page.waitForSelector('[data-act="BUY"]', {timeout: 60000});
+  for (let i = 1; i < 3; i++) {
     await page.click('[data-act="BUY"]');
     await page.waitForSelector('#qty'); await page.fill('#qty', '1'); await page.click('#go');
     await approveAndSubmit('buy' + (i + 1));
@@ -138,7 +165,8 @@ try {
   await approveAndSubmit('refund');
   // "Mine" view lists all six submissions as accepted.
   await page.goto(base + '/#/mine');
-  await page.waitForFunction(() => document.querySelectorAll('#mineList tbody tr').length >= 6, null, {timeout: 30000});
+  await page.waitForFunction(() => document.querySelectorAll('#mineList tbody tr').length >= 8, null, {timeout: 30000});
+  if (!/未生效|Superseded/.test(await page.locator('#mineList').textContent())) throw Error('replaced original not shown as superseded');
   steps.push(['mine-rows', String(await page.locator('#mineList tbody tr').count())]);
   await scanEnglish();
   await shot('mine');
