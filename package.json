@@ -10,6 +10,7 @@
     "test:audit": "node tests/audit/run-all.mjs --local",
     "test:tn10:dry": "node tests/tn10/runner.mjs --dry",
     "test:payout256:dry": "node tests/tn10/payout-256.mjs --dry",
-    "test:refund100:dry": "node tests/tn10/refund-100.mjs --dry"
+    "test:refund100:dry": "node tests/tn10/refund-100.mjs --dry",
+    "build:pages": "node tools/stage-release.mjs"
   }
 }
