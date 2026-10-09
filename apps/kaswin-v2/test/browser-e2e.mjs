@@ -104,11 +104,11 @@ try {
   await approveAndSubmit('genesis');
   // The new round: track it in the simulated indexer from the chain's accepted genesis (as the real indexer would via Registry).
   const g = [...chain.accepted.values()].at(-1), cid = g.tx.outputs[0].covenant.covenantId;
-  const cfg = S.decodeLedger(S.encodeLedger(S.newOpen(TEST_KEY, {ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: 1n}))).config;
-  void cfg;
-  const tipLedger = txid => { const a = chain.accepted.get(txid); return a; };
-  void tipLedger;
-  // follow the round via the page's own local continuation (indexer intentionally lagging)
+  // Lagging indexer whose server clock is far ahead: it keeps serving the OPEN genesis state with a later timestamp.
+  // The page must follow its own accepted transactions anyway (state progress, never cross-machine timestamps).
+  const genesisTxid = [...chain.accepted.keys()].at(-1), HEADER_AT = 'KASWIN_GENESIS_V2'.length + 32;
+  idx.track(cid, {genesisTxid, origin: g.tx.inputs[0].previousOutpoint, tip: {transactionId: genesisTxid, index: 0},
+    ledger: Buffer.from(g.tx.payload, 'hex').subarray(HEADER_AT), updatedAt: Date.now() + 365 * 86400_000});
   await page.goto(base + '/#/round/' + cid);
   await page.waitForSelector('[data-act="BUY"]', {timeout: 60000});
   await shot('round-open');
@@ -121,6 +121,8 @@ try {
   await page.click('[data-act="CLOSE"]');
   await approveAndSubmit('close');
   await page.waitForSelector('[data-act="TIMEOUT_REFUND"]', {timeout: 60000});
+  steps.push(['sealed-while-indexer-open', String(await page.locator('[data-act="BUY"]').count() === 0 && (await page.locator('.round-actions').textContent()).includes(english ? 'Draw' : '开奖'))]);
+  if (await page.locator('[data-act="BUY"]').count()) throw Error('SEALED round shown as OPEN while the indexer lags');
   // Too early: the page must explain instead of building a transaction.
   await page.click('[data-act="TIMEOUT_REFUND"]');
   await page.waitForFunction(() => /432000 DAA|还差/.test(document.getElementById('pErr')?.textContent ?? ''), null, {timeout: 60000});

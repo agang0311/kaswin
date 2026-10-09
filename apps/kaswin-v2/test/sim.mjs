@@ -177,10 +177,12 @@ export function simIndexer(chain, profile) {
       const r = m && rounds.get(m[1]);
       if (!r) return new Response('{"detail":"NOT_INDEXED"}', {status: 404});
       const s = S.decodeLedger(r.ledger);
-      const u = chain.utxos.get(`${r.tip.transactionId}:${r.tip.index}`);
+      // A lagging indexer keeps serving its last recorded tip even after that UTXO was spent: read it from the accepted tx.
+      const a = chain.accepted.get(r.tip.transactionId), o = a?.tx.outputs[r.tip.index];
+      const u = chain.utxos.get(`${r.tip.transactionId}:${r.tip.index}`) ?? (o && {value: o.value, spk: o.scriptPublicKey, daa: chain.blocks.get(a.block).daa});
       const item = {cid: m[1], genesisTxid: r.genesisTxid, contract: CONTRACT_TAG, status: 'open', phase: s.phase, terminal: r.terminal ?? null, indexStatus: r.terminal ? 'TERMINAL' : 'LIVE',
         tip: r.terminal ? null : r.tip, address: null, value: r.terminal ? '0' : u.value.toString(), latestTxid: r.tip.transactionId, accepting: chain.accepted.get(r.tip.transactionId).block, utxoDaa: u ? u.daa.toString() : null,
-        updatedAt: Date.now(), liveSeenAt: Date.now(),
+        updatedAt: r.updatedAt ?? Date.now(), liveSeenAt: r.updatedAt ?? Date.now(),
         state: {...s, config: {...s.config, ticketPrice: s.config.ticketPrice.toString(), closeEligibleDaa: s.config.closeEligibleDaa.toString()}, anchorDaa: s.anchorDaa.toString(), directory: undefined},
         purchases: S.records(s), origin: r.origin, scriptPublicKey: u?.spk ?? null};
       return new Response(jsonText({item, network: 'testnet-10', coverage: 'tracked-rounds-only', requiresIndependentVerification: true, lastCheckpointAt: Date.now()}), {status: 200});

@@ -3,7 +3,9 @@
  *  mining/src/mempool/check_transaction_standard.rs (relay floor = max(compute, normalizedTransient) * 100000/1000, min 100000).
  * TESTNET_PARAMS: mass_per_tx_byte=1, mass_per_script_pub_key_byte=10, storage C = 10^12, block compute/storage 500000,
  * transient 1,000,000 post-Toccata (normalization factor 0.5), GRAMS_PER_COMPUTE_BUDGET_UNIT=100.
- * Fee = max(relay floor, ceil(node normal feerate × max(compute, normalizedTransient, storage))), capped at FEE_CAP.
+ * Default page fee ('load') = max(relay floor, ceil(node feerate × max(compute, normalizedTransient, storage))), clamped
+ * to FEE_CAP but never below the relay admission minimum. The node estimate (getFeeEstimate) is per gram of that same
+ * ordering mass (mining/src/mempool/model/frontier/feerate_key.rs from_tx).
  */
 import {assertDraft, FEE_CAP, ensure} from './core.mjs';
 
@@ -71,9 +73,13 @@ export function rateFraction(v) {
  *    normalized max including storage (consensus/core tx.rs calculated_feerate), so this ranks like a normal tx under load.
  * Monotonically raise fee until the FINAL draft satisfies every requirement. A small
  * overestimate is allowed; a cycle never lowers the candidate. No unchecked fallback. */
+/**  - 'load': the page default. 'priority' pricing (what the node's feerate estimate refers to), clamped to the cap but
+ *    never below the 'standard' admission minimum. Under load (e.g. TN10 stress tests) a fee priced on compute/transient
+ *    only is admitted to the mempool yet can wait there indefinitely when storage mass dominates the ordering mass.
+ *    `clamped: true` means the cap kept the fee below the node's estimate: the transaction may queue. */
 export function convergeFee(makeDraft, feerate, {cap = FEE_CAP, mode = 'standard'} = {}) {
   ensure(typeof cap === 'bigint' && cap > 0n && cap <= FEE_CAP, '手续费上限无效');
-  ensure(mode === 'standard' || mode === 'priority', '手续费模式无效');
+  ensure(['standard', 'priority', 'load'].includes(mode), '手续费模式无效');
   const {n, d} = rateFraction(feerate);
   let fee = 100_000n;
   for (let i = 0; i < 24; i++) {
@@ -81,12 +87,18 @@ export function convergeFee(makeDraft, feerate, {cap = FEE_CAP, mode = 'standard
     const draft = makeDraft(fee);
     ensure(draft.fee === fee, '构建器费用与候选费用不一致');
     const q = quoteMass(draft);
-    const binding = mode === 'priority' ? [q.computeMass, q.normalizedTransient, q.storageMass].reduce((a, b) => a > b ? a : b) : q.feeMass;
-    const byRate = (binding * n + d - 1n) / d, required = byRate > q.relayFloor ? byRate : q.relayFloor;
+    const ordering = [q.computeMass, q.normalizedTransient, q.storageMass].reduce((a, b) => a > b ? a : b);
+    const atRate = mass => { const v = (mass * n + d - 1n) / d; return v > q.relayFloor ? v : q.relayFloor; };
+    const standard = atRate(q.feeMass), byOrdering = atRate(ordering);
+    ensure(standard <= cap, `网络费 ${standard} sompi 超过保护上限`);
+    let required = mode === 'standard' ? standard : byOrdering, clamped = false;
+    if (mode === 'load' && required > cap) { required = cap; clamped = true; }
     ensure(required <= cap, `网络费 ${required} sompi 超过保护上限`);
     if (fee >= required) {
       draft.transaction.storageMass = q.storageMass;
-      return {draft, fee, quote: q, feerate, iterations: i + 1};
+      // Effective mempool ordering feerate of the final draft, sompi/gram with 2 decimals (exact integer arithmetic).
+      const centi = fee * 100n / ordering, orderingFeerate = `${centi / 100n}.${String(centi % 100n).padStart(2, '0')}`;
+      return {draft, fee, quote: q, feerate, iterations: i + 1, mode, orderingMass: ordering, orderingFeerate, standardFee: standard, loadFee: byOrdering, clamped: clamped && fee < byOrdering};
     }
     fee = required;
   }

@@ -142,6 +142,8 @@ export class NodeLink {
     const d = uint(s.virtualDaaScore); if (this.nodes[0]) this.nodes[0].info.daa = d; this.emit();
     return d;
   }
+  /** Node fee estimate in sompi per gram of the mempool ORDERING mass max(compute, normalized transient, storage)
+   * (rusty-kaspa cfafeb4 mining/src/mempool/model/frontier/feerate_key.rs from_tx). Price against that mass. */
   async feerate() {
     const e = await this.call('getFeeEstimate');
     const v = e?.estimate?.normalBuckets?.[0]?.feerate ?? e?.estimate?.priorityBucket?.feerate;

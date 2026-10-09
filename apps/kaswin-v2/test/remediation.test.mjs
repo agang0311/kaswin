@@ -149,6 +149,26 @@ test('ordinary input budgets are initialized in core; final fee satisfies rate a
   assert.throws(() => convergeFee(genesis, 1, {mode: 'unrecognized'}), /模式/);
 });
 
+// TN10 stress load (2026-10-09, node estimate ~104-120 sompi/gram): the node estimate is per gram of the mempool
+// ORDERING mass max(compute, normalized transient, storage). A fee priced on compute/transient only is admitted but can
+// wait in the mempool indefinitely when storage mass dominates (GENESIS: 400000 storage vs ~2772 compute).
+test("'load' fee: node estimate x ordering mass, cap-clamped but never below the relay admission minimum", () => {
+  const genesis = fee => buildOpenGenesis(profile, key, config, funds, fee);
+  const rate = 120.26359250251055, {n, d} = rateFraction(rate);
+  const std = convergeFee(genesis, rate, {mode: 'standard'}), load = convergeFee(genesis, rate, {mode: 'load'});
+  const q = quoteMass(load.draft), ordering = [q.computeMass, q.normalizedTransient, q.storageMass].reduce((a, b) => a > b ? a : b);
+  assert.ok(q.storageMass > q.feeMass, 'fixture must be storage-dominated');
+  assert.ok(load.fee >= (ordering * n + d - 1n) / d && load.fee >= q.relayFloor && load.fee > std.fee);
+  assert.equal(load.clamped, false); assert.equal(load.orderingMass, ordering);
+  assert.equal(load.orderingFeerate, `${load.fee * 100n / ordering / 100n}.${String(load.fee * 100n / ordering % 100n).padStart(2, '0')}`);
+  // A rate whose ordering-mass fee exceeds the cap: clamped to the cap and flagged, still >= the admission minimum.
+  const hot = convergeFee(genesis, 2000, {mode: 'load'});
+  assert.equal(hot.fee, 50_000_000n); assert.equal(hot.clamped, true); assert.ok(hot.fee >= hot.standardFee);
+  // 'priority' keeps its strict meaning (refuses above the cap); the admission minimum itself above the cap is refused.
+  assert.throws(() => convergeFee(genesis, 2000, {mode: 'priority'}), /超过保护上限/);
+  assert.throws(() => convergeFee(genesis, 1e6, {mode: 'load'}), /超过保护上限/);
+});
+
 test('funding excludes mature and immature coinbase alike', async () => {
   const normal = {...funds[0], isCoinbase: false};
   const entries = [normal, {...normal, outpoint: {transactionId: hash('4'), index: 0}, isCoinbase: true}].map(u => ({outpoint: u.outpoint,

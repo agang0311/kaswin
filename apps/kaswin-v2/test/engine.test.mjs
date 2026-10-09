@@ -412,3 +412,35 @@ test('engine: another Profile reserves funding before signing while records and 
   assert.deepEqual(await h.store.get(k), before);
   assert.equal(h.chain.submits, 0);
 });
+
+test('engine: a refused action still reports the node-verified state; local CLOSE wins over a lagging indexer', async () => {
+  const h = harness();
+  h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
+  const seen = [];
+  h.engine.onLive = (live, cid) => seen.push({cid, phase: live.ledger.phase, source: live.source, tip: live.snapshot.tip.transactionId});
+  const {plan: g, session, rec: gr} = await genesis(h, config(h.chain.daa, {ticketCap: 3}));
+  assert.equal((await h.engine.reconcile(gr.txid)).status, 'ACCEPTED');
+  const {rec: b} = await step(h, g.cid, {action: 'BUY', quantity: 3}, session);
+  assert.equal((await h.engine.reconcile(b.txid)).status, 'ACCEPTED');
+  // CLOSE through the engine; the simulated indexer intentionally stays at the OPEN tip.
+  const pc = await h.engine.plan({action: 'CLOSE', cid: g.cid}, session);
+  const c = await h.engine.execute(pc, {approved: true});
+  assert.equal((await h.engine.reconcile(c.txid)).status, 'ACCEPTED');
+  seen.length = 0;
+  await assert.rejects(h.engine.plan({action: 'BUY', cid: g.cid, quantity: 1}, session), /轮次已封盘/);
+  assert.deepEqual(seen, [{cid: g.cid, phase: 2, source: 'local', tip: c.txid}]);
+});
+
+test('liveRound: a further-along local successor that is not live (reorged out) yields to the live indexer tip', async () => {
+  const h = harness();
+  h.chain.fund(TEST_ADDRESS, 50_000_000_000n);
+  const {plan: g, session, rec: gr} = await genesis(h, config(h.chain.daa, {ticketCap: 10}));
+  assert.equal((await h.engine.reconcile(gr.txid)).status, 'ACCEPTED');
+  // A BUY this browser once saw ACCEPTED but which is no longer on the selected chain: valid successor ledger, absent txid.
+  const p = await h.engine.plan({action: 'BUY', cid: g.cid, quantity: 2}, session);
+  const local = {txid: 'ff'.repeat(32), terminal: null, nextLedger: p.nextLedger, value: p.nextValue, spk: p.nextSpk, utxoDaa: h.chain.daa,
+    accepting: h.chain.chain.at(-1), origin: p.origin, genesisTxid: gr.txid, inputs: p.draft.inputUtxos.map(u => u.outpoint)};
+  await h.pair.connect();
+  const live = await liveRound(h.pair, 'http://localhost/indexer', profile, g.cid, await h.pair.currentDaa(), local);
+  assert.equal(live.source, 'indexer'); assert.equal(live.snapshot.tip.transactionId, gr.txid); assert.equal(live.ledger.sold, 0);
+});

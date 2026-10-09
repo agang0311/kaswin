@@ -8,6 +8,7 @@ import {S, ensure, hash32, cat, le, unhex, CONTRACT_TAG, NETWORK_GENESIS, UserEr
 import {parseJson, uint} from './lib/json.mjs';
 import {commonUtxos, acceptedPair} from './chain.mjs';
 import {spkToAddress} from './lib/address.mjs';
+import {compareProgress} from './progress.mjs';
 
 const MAX_BODY = 4 * 1024 * 1024;
 
@@ -74,7 +75,7 @@ function checkState(st, purchases) {
  * untrusted as a fresh indexer response, and may additionally carry the page's own placeholder statuses. */
 export function checkRow(v, {cached = false} = {}) {
   ensure(v && typeof v === 'object', '轮次格式错误'); hash32(v.cid, 'CID');
-  ensure(['LIVE', 'FINAL', 'TERMINAL', 'STALE', 'ROLLED_BACK', ...(cached ? ['UNKNOWN', 'LOCAL'] : [])].includes(v.indexStatus), '未知索引状态');
+  ensure(['LIVE', 'FINAL', 'TERMINAL', 'STALE', 'ROLLED_BACK', ...(cached ? ['UNKNOWN', 'LOCAL', 'NODE'] : [])].includes(v.indexStatus), '未知索引状态');
   if (v.contract != null) ensure(typeof v.contract === 'string' && v.contract.length <= 128, '合约标识格式错误');
   ensure(v.terminal === null || ['PAID', 'EMPTY', 'REFUNDED'].includes(v.terminal), '未知终局');
   ensure(v.phase === null || (Number.isInteger(v.phase) && v.phase >= 1 && v.phase <= 5), '未知阶段');
@@ -129,20 +130,32 @@ export function ledgerFromDetail(r, profile) {
 export async function liveRound(pair, base, profile, cid, currentDaa, local = null) {
   let r = null, idxErr = null;
   try { r = await roundDetail(base, cid); } catch (err) { idxErr = err; }
-  let cand = null;
-  if (r && !r.terminal && r.tip && !['STALE', 'ROLLED_BACK'].includes(r.indexStatus)) cand = {ledger: ledgerFromDetail(r, profile), tip: r.tip, origin: r.origin, spk: r.scriptPublicKey, value: uint(r.value), utxoDaa: uint(r.utxoDaa), accepting: r.accepting, genesisTxid: r.genesisTxid, source: 'indexer'};
-  // Prefer the local accepted successor if the indexer has not caught up with it yet.
-  const localIsNewer = local && !local.terminal && local.nextLedger &&
-    (!cand || local.inputs.some(o => o.transactionId === cand.tip.transactionId && o.index === cand.tip.index));
-  if (localIsNewer) {
+  const cands = [];
+  if (r && !r.terminal && r.tip && !['STALE', 'ROLLED_BACK'].includes(r.indexStatus)) cands.push({ledger: ledgerFromDetail(r, profile), tip: r.tip, origin: r.origin, spk: r.scriptPublicKey, value: uint(r.value), utxoDaa: uint(r.utxoDaa), accepting: r.accepting, genesisTxid: r.genesisTxid, source: 'indexer'});
+  if (local && !local.terminal && local.nextLedger) {
     const s = S.decodeLedger(unhex(local.nextLedger)); S.validateLedger(s);
-    cand = {ledger: s, tip: {transactionId: local.txid, index: 0}, origin: local.origin, spk: local.spk, value: local.value, utxoDaa: local.utxoDaa, accepting: local.accepting, genesisTxid: local.genesisTxid ?? r?.genesisTxid ?? null, source: 'local'};
+    const c = {ledger: s, tip: {transactionId: local.txid, index: 0}, origin: local.origin, spk: local.spk, value: local.value, utxoDaa: local.utxoDaa, accepting: local.accepting, genesisTxid: local.genesisTxid ?? r?.genesisTxid ?? null, source: 'local'};
+    // This browser's accepted successor goes first when it is further along (the indexer has not caught up). Ordered by
+    // the state machine's monotone progress, never by timestamps from different machines. Either way it is only a candidate.
+    if (!cands.length || compareProgress(s, cands[0].ledger) > 0) cands.unshift(c); else cands.push(c);
   }
-  if (!cand) {
+  if (!cands.length) {
+    if (local?.terminal) throw new UserError(`轮次已结束（${local.terminal}，本机已接受记录）`, 'NOT_LIVE');
     if (r?.terminal) throw new UserError(`轮次已结束（${r.terminal}）`, 'NOT_LIVE');
     if (r) throw new UserError('索引状态不可操作（STALE / 回滚 / 无 tip）', 'NOT_LIVE');
     throw idxErr ?? new UserError('无法取得轮次状态', 'NOT_LIVE');
   }
+  // Only "this outpoint is not in the node's UTXO set" (spent by a newer transition, or a local record reorged out)
+  // lets the next candidate be tried; the node decides. Any mismatch on a live outpoint is an error, not a fallback.
+  for (let i = 0; ; i++) {
+    try { return {...await verifyCandidate(pair, profile, cid, currentDaa, cands[i]), row: r ?? {cid, genesisTxid: cands[i].genesisTxid}}; }
+    catch (err) {
+      if (err?.code !== 'STALE_TIP') throw err;
+      if (i === cands.length - 1) { if (local?.terminal) throw new UserError(`轮次已结束（${local.terminal}，本机已接受记录）`, 'NOT_LIVE'); throw err; }
+    }
+  }
+}
+async function verifyCandidate(pair, profile, cid, currentDaa, cand) {
   hash32(cand.origin?.transactionId, 'origin'); ensure(cand.accepting, '缺少接受块提示');
   const snapshot = {ledger: S.encodeLedger(cand.ledger), tip: cand.tip, origin: cand.origin, scriptPublicKey: cand.spk, covenantId: cid, value: cand.value, utxoDaa: cand.utxoDaa, currentDaa};
   S.verifySnapshot(snapshot, profile); // pinned frame + canonical OPEN CID + P2SH + exact locked value
@@ -150,11 +163,21 @@ export async function liveRound(pair, base, profile, cid, currentDaa, local = nu
   const live = await commonUtxos(pair, addr);
   const u = live.find(x => x.outpoint.transactionId === cand.tip.transactionId && x.outpoint.index === cand.tip.index);
   ensure(u, '轮次状态 UTXO 已不是未花费输出（可能刚被他人推进，请稍后刷新再试）', 'STALE_TIP');
-  ensure(u.value === snapshot.value && stable(u.spk) === stable(snapshot.scriptPublicKey) && u.daa === snapshot.utxoDaa && u.covenantId === cid, '实时 UTXO 与账本不一致', 'STALE_TIP');
+  ensure(u.value === snapshot.value && stable(u.spk) === stable(snapshot.scriptPublicKey) && u.daa === snapshot.utxoDaa && u.covenantId === cid, '实时 UTXO 与账本不一致', 'TIP_MISMATCH');
   const acc = await acceptedPair(pair, cand.tip.transactionId, cand.accepting);
   const o = acc.tx.outputs[cand.tip.index];
   ensure(o && o.value === snapshot.value && stable(o.scriptPublicKey) === stable(snapshot.scriptPublicKey) && o.covenant?.covenantId === cid && acc.acceptingDaa === snapshot.utxoDaa, '接受交易输出与状态 UTXO 不一致');
-  return {row: r ?? {cid, genesisTxid: cand.genesisTxid}, ledger: cand.ledger, snapshot, accepting: cand.accepting, acceptedTx: acc, source: cand.source};
+  return {ledger: cand.ledger, snapshot, accepting: cand.accepting, acceptedTx: acc, source: cand.source, genesisTxid: cand.genesisTxid};
+}
+/** Display view of a node-verified live snapshot (same shape as an indexer detail). The ledger preimage re-encodes to
+ * the P2SH of the live UTXO, so phase, sales and purchase directory shown here are exactly what the chain locks. */
+export function viewFromLive(live, cid, now = Date.now()) {
+  const s = live.ledger, x = live.snapshot;
+  return {cid, genesisTxid: live.genesisTxid ?? live.row?.genesisTxid ?? null, contract: CONTRACT_TAG, status: s.phase === 1 ? 'open' : s.phase === 5 ? 'close' : 'sealed',
+    phase: s.phase, terminal: null, indexStatus: 'NODE', tip: x.tip, value: String(x.value), latestTxid: x.tip.transactionId, accepting: live.accepting,
+    utxoDaa: String(x.utxoDaa), updatedAt: now, verifiedAt: now, origin: x.origin, scriptPublicKey: x.scriptPublicKey, _src: 'node',
+    state: {...s, config: {...s.config, ticketPrice: s.config.ticketPrice.toString(), closeEligibleDaa: s.config.closeEligibleDaa.toString()}, anchorDaa: s.anchorDaa.toString(), directory: undefined},
+    purchases: S.records(s)};
 }
 
 /** Pure view helpers (work on archive rows and indexer rows alike). */

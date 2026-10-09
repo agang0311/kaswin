@@ -58,8 +58,10 @@ export function leaseLocks(openStore, ttlMs = 120_000) {
 }
 
 export class Engine {
-  constructor({pair, profile, indexer, onStatus = () => {}, openStore = () => IndexedStore.open(STORE), locks = null, drawProof = acquireDrawProof}) {
-    Object.assign(this, {pair, profile, indexer, onStatus, openStore, drawProof}); this.plans = new Map(); this.storeP = null;
+  /** onLive(live, cid): display-only notice of each node-verified live snapshot read while planning (also when the
+   * action then turns out unavailable). It cannot alter the plan; the page uses it to stop showing a stale view. */
+  constructor({pair, profile, indexer, onStatus = () => {}, onLive = () => {}, openStore = () => IndexedStore.open(STORE), locks = null, drawProof = acquireDrawProof}) {
+    Object.assign(this, {pair, profile, indexer, onStatus, onLive, openStore, drawProof}); this.plans = new Map(); this.storeP = null;
     this.locks = locks ?? globalThis.navigator?.locks ?? leaseLocks(() => this.store());
   }
   store() { return this.storeP ??= this.openStore(); }
@@ -117,6 +119,7 @@ export class Engine {
       hash32(request.cid, 'Covenant ID');
       this.onStatus('读取轮次账本，并在节点上核对实时状态 UTXO…');
       live = await liveRound(this.pair, this.indexer, this.profile, request.cid, currentDaa, await this.localTip(request.cid));
+      try { this.onLive(live, request.cid); } catch {}
       const acts = availableActions(live.snapshot, this.profile);
       ensure(acts.includes(action), `当前链上条件不允许「${ACTION_LABEL[action]}」：${explainUnavailable(action, live)}`, 'NOT_AVAILABLE');
       op = {action, actorKey: session.key};
@@ -137,7 +140,8 @@ export class Engine {
     const available = needsFunds || action === 'REFUND' ? await this.funding(session) : [];
     const make = funds => fee => action === 'GENESIS' ? buildOpenGenesis(this.profile, session.key, request.config, funds, fee, registry) : buildAction(live.snapshot, this.profile, op, fee, funds, actionBudget(action, s));
     let funds = needsFunds ? this.pick(available, principal + 3_000_000n) : [], priced, sponsored = false;
-    const attempt = f => convergeFee(make(f), feerate, {mode: request.feeMode ?? 'standard'});
+    // 'load' (default): priced on the node estimate x mempool ordering mass; see mass.mjs convergeFee.
+    const attempt = f => convergeFee(make(f), feerate, {mode: request.feeMode ?? 'load'});
     for (let round = 0; ; round++) {
       try { priced = attempt(funds); break; }
       catch (e) {
@@ -158,7 +162,8 @@ export class Engine {
     for (const f of draft.inputUtxos.slice(action === 'GENESIS' ? 0 : 1)) ensure(!reservedSet.has(key(f.outpoint)), '资金输入已被一笔未对账的本地提交占用', 'PENDING_LOCAL');
     const plan = {
       id: planId(), createdAt: Date.now(), action, cid: action === 'GENESIS' ? draft.transaction.outputs[0].covenant.covenantId : request.cid,
-      session, draft, fee: priced.fee, quote: priced.quote, feerate, currentDaa, sponsored, proof: proof ? {target: proof.target, parent: proof.parent, boundaryDaa: proof.boundaryDaa, nodes: proof.nodes} : null,
+      session, draft, fee: priced.fee, quote: priced.quote, feerate, currentDaa, sponsored,
+      feeMode: priced.mode, orderingFeerate: priced.orderingFeerate, standardFee: priced.standardFee, loadFee: priced.loadFee, feeClamped: priced.clamped, proof: proof ? {target: proof.target, parent: proof.parent, boundaryDaa: proof.boundaryDaa, nodes: proof.nodes} : null,
       outputs: describeOutputs(draft, live, session), budget: draft.transaction.inputs[0].computeBudget,
       before: live ? {phase: live.ledger.phase, sold: live.ledger.sold, purchaseCount: live.ledger.purchaseCount, cursor: live.ledger.cursor, value: live.snapshot.value} : null,
       after: draft.transition?.next ? {phase: draft.transition.next.phase, sold: draft.transition.next.sold, purchaseCount: draft.transition.next.purchaseCount, cursor: draft.transition.next.cursor, value: draft.transaction.outputs[0].value} : null,

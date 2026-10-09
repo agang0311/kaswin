@@ -1,5 +1,9 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+## 轮次状态刷新与负载下手续费（2026-10-09，S/L）
+
+[记录](ROUND-REFRESH-FEES-20261009.md)：HTML `c36c8648…`（349880字节）。显示视图按状态机单调进度选择，不比较跨机器时间戳；报价时节点核验到的状态回写页面；打开的轮次30秒刷新。默认报价改按节点费率×max(compute, transient, storage)，0.5 TKAS封顶并提示。应用75PASS/1TODO、E2E中英各7笔（模拟）、UI、公共审计10套、377回执门、内部测试站只读检查通过；无签名广播，不是新的网络acceptance。
+
 ## 当前发布工程修复（2026-10-09，S/L）
 
 [完整修复/验证/部署观察](RELEASE-REVIEW-FIXES.md)：HTML `71f33c0f…`（343750字节），TN10可交易验收候选，publicLaunchApproved=false。构建输入/CSP发布守卫、公共审计与原始回执门分离、干净副本PASS-A路径修复、展开搜索/持久参数及费用统计回归通过。应用68PASS/1TODO、公共审计10套、原始377回执门独立通过；这不是新的VM/钱包/网络acceptance。当前入口见[根README](../../README.md)。

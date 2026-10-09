@@ -7,7 +7,8 @@ import {ACTION_LABEL, roleLabel} from './shared/engine.mjs';
 import {EngineV2 as Engine} from './engine2.mjs';
 import {txStatus, recordStatus, needsAttention, plannedActions, cardStep, planSummary, walletFlow, CLOSE_OUTCOME, waitText} from '../visual/view.mjs';
 import {readSession, waitForProvider, watchWallet, provider} from './shared/wallet.mjs';
-import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, checkRow, phaseInfo as basePhaseInfo} from './shared/rounds.mjs';
+import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, viewFromLive, checkRow, phaseInfo as basePhaseInfo} from './shared/rounds.mjs';
+import {chooseView} from './shared/progress.mjs';
 const phaseInfo = row => { const p = basePhaseInfo(row); return p.key === 'refunded' ? {...p, label:'退款完成'} : p; };
 import {replayAccepted} from './shared/replay.mjs';
 import {RoundCatalog} from './shared/catalog.mjs';
@@ -36,14 +37,14 @@ const refreshLanguage = installLocalization();
 const CONFIG = loadConfig();
 const state = {
   view: 'explore', indexer: CONFIG.indexer, live: null, liveAt: null, liveError: null, cached: 0, nodes: CONFIG.nodes,
-  rows: [], details: new Map(), meta: null, error: null, busy: false, filter: 'all', query: '', sort: 'new', saved: new Set(LS.get('saved', [])),
+  rows: [], details: new Map(), nodeViews: new Map(), meta: null, error: null, busy: false, filter: 'all', query: '', sort: 'new', saved: new Set(LS.get('saved', [])),
   otherRoundsOpen: false,
   session: null, walletEpoch: 0, round: null, roundLive: null, records: [], daa: null, theme: LS.get('theme', matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'),
 };
 document.documentElement.dataset.theme = state.theme;
 let pair = new NodeLink(state.nodes);
 pair.onChange(renderNodeChip);
-let engine = new Engine({pair, profile, indexer: safeBase(state.indexer)});
+let engine = new Engine({pair, profile, indexer: safeBase(state.indexer), onLive: rememberNodeView});
 const catalog = new RoundCatalog(() => IndexedStore.open('kaswin-v2-rounds'));
 function safeBase(v) { try { return indexerBase(v); } catch { return indexerBase(DEFAULT_INDEXER); } }
 
@@ -123,20 +124,21 @@ function route() {
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
 
 /* ------------------------------------------------------------------ data sources */
-/** Merge: remembered rounds (IndexedDB) < this browser's own transactions < live indexer.
- * Later sources replace earlier views of the same CID; nothing is ever dropped just because a source is offline. */
+/** One displayed view per CID from: live indexer, node-verified snapshots, this browser's own accepted transactions and
+ * remembered rounds (IndexedDB). chooseView() orders them by the round's monotone state progress, never by comparing
+ * timestamps from different machines. Nothing is dropped just because a source is offline. */
 async function mergedRows() {
-  const map = new Map();
-  const put = (row, src) => { if (!row?.cid) return; const old = map.get(row.cid); const take = !old || rank(src) >= rank(old._src); map.set(row.cid, take ? {...row, _src: src, _also: [...new Set([...(old?._also ?? []), old?._src].filter(Boolean))]} : {...old, _also: [...new Set([...(old._also ?? []), src])]}); };
-  const rank = s => ({cache: 1, local: 2, live: 3})[s] ?? 0;
+  const src = new Map(), slot = cid => src.get(cid) ?? src.set(cid, {}).get(cid);
   const remembered = await catalog.list();
   state.cached = remembered.length;
-  for (const c of remembered) put(cachedView(c) ?? {cid: c.cid, contract: CONTRACT_TAG, indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: Number.isSafeInteger(c.updatedAt) ? c.updatedAt : null}, 'cache');
-  for (const cid of await localCids()) { const d = await localDetail(cid); if (d) put(d, 'local'); }
-  for (const r of state.live ?? []) put(r, 'live');
-  for (const r of map.values()) if (r.state && !state.details.has(r.cid)) state.details.set(r.cid, r);
-  return [...map.values()];
+  for (const c of remembered) if (c?.cid) slot(c.cid).cache = {...(cachedView(c) ?? {cid: c.cid, contract: CONTRACT_TAG, indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: Number.isSafeInteger(c.updatedAt) ? c.updatedAt : null}), _src: 'cache'};
+  for (const cid of await localCids()) { const d = await localDetail(cid); if (d) slot(cid).local = d; }
+  for (const r of state.live ?? []) { const d = state.details.get(r.cid); slot(r.cid).index = d && r.latestTxid && d.latestTxid === r.latestTxid ? d : r; }
+  for (const [cid, v] of state.nodeViews) slot(cid).node = v;
+  return [...src.values()].map(chooseView).filter(Boolean);
 }
+/** The displayed view of a round, if it carries a decoded ledger. */
+const shownDetail = cid => state.rows.find(r => r.cid === cid && r.state) ?? null;
 /** IndexedDB views are untrusted (an older page or a hostile indexer may have written them): same schema checks as live rows. */
 function cachedView(c) { try { return c?.view && c.view.cid === c.cid ? checkRow(c.view, {cached: true}) : null; } catch { return null; } }
 async function localCids() { try { return [...new Set((await engine.records()).filter(r => !['REJECTED', 'ARCHIVED'].includes(r.status)).map(r => r.cid))]; } catch { return []; } }
@@ -155,7 +157,7 @@ async function loadRows({quiet = false} = {}) {
     let next = 0;
     await Promise.all(Array.from({length: 4}, async () => {
       while (next < targets.length) { const r = targets[next++]; try {
-        const d = {...await roundDetail(base, r.cid), _src:'live'}; ledgerFromDetail(d, profile);
+        const d = {...await roundDetail(base, r.cid), _src:'live', _fetchedAt: Date.now()}; ledgerFromDetail(d, profile);
         state.details.set(r.cid,d);
       } catch { state.details.delete(r.cid); } }
     }));
@@ -310,7 +312,7 @@ function card(r) {
     <div class="card-next">${r.terminal ? `索引报告：${e(({PAID: '已派奖', REFUNDED: '已退款', EMPTY: '空轮结束'})[r.terminal] ?? r.terminal)}` : '索引报告：进行中'} · 本页只支持固定 V2 Profile，不读取账本、不复验、不提供操作</div>
     <div class="src">${({live: '索引数据', local: '本机记录', cache: '本机缓存 · 非实时'})[r._src] ?? '来源待核对'} · ${timeHtml(r.updatedAt)}</div>
   </article>`;
-  const p = phaseInfo(r), candidate = state.details.get(r.cid), d = candidate?.latestTxid === r.latestTxid ? candidate : null, st = d?.state, saved = state.saved.has(r.cid);
+  const p = phaseInfo(r), d = r.state ? r : null, st = d?.state, saved = state.saved.has(r.cid);
   const sold = st?.sold ?? null, cap = st?.config?.ticketCap ?? null, pct = sold !== null && cap ? Math.min(100, sold / cap * 100) : (r.terminal ? 100 : 0);
   const price = st ? BigInt(st.config.ticketPrice) : null, pool = st ? BigInt(st.sold) * price : null;
   const headline = pool !== null ? kas(pool) : '—';
@@ -322,42 +324,52 @@ function card(r) {
     <div class="big">${headline}<small>TKAS</small></div>
     ${st ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${e(sold.toLocaleString())} / ${e(cap.toLocaleString())} 张 · ${kas(price)} TKAS/张</span><span>${e(st.purchaseCount)} 笔</span></div>` : `<div class="small muted">打开查看账本与购买目录</div>`}
     <div class="card-next">${e(step.text)}</div>
-    <div class="src">${({live: '索引数据 · 待节点核验', local: '本机接受记录', cache: '本机缓存 · 非实时'})[r._src] ?? '来源待核对'} · ${timeHtml(r.updatedAt)}</div>
+    <div class="src">${({live: '索引数据 · 待节点核验', node: '节点已核验状态', local: '本机接受记录', cache: '本机缓存 · 非实时'})[r._src] ?? '来源待核对'} · ${timeHtml(r.updatedAt)}</div>
     <div class="card-cta">${p.key === 'open' ? '查看并购买' : p.key === 'sealed' ? '查看开奖条件' : p.key === 'refund' ? '查看退款进度' : '查看轮次详情'} ${icon('arrow')}</div>
   </article>`;
 }
 
 /* ================================================================== ROUND */
 async function openRound(cid, {push = true} = {}) {
-  state.round = {cid, loading: true, error: null, detail: state.details.get(cid) ?? null, live: null, liveError: null, replay: null};
+  state.round = {cid, loading: true, error: null, detail: shownDetail(cid), live: null, liveError: null, replay: null};
   state.view = 'round';
   if (push && location.hash !== `#/round/${cid}`) history.pushState(null, '', `#/round/${cid}`);
   render();
+  await refreshRound(cid);
+}
+/** (Re)load one round's views and show the one furthest along the state machine. Never resets the open page's
+ * verification panels; quiet refreshes keep the current view on errors. */
+async function refreshRound(cid, {quiet = false} = {}) {
   try {
-    let d = state.details.get(cid), fresh = null, idxErr = null;
-    {
-      try { fresh = {...await roundDetail(indexerBase(state.indexer), cid), _src: 'live'}; } catch (err) { idxErr = err; }
-    }
+    let fresh = null, idxErr = null;
+    try { fresh = {...await roundDetail(indexerBase(state.indexer), cid), _src: 'live', _fetchedAt: Date.now()}; ledgerFromDetail(fresh, profile); state.details.set(cid, fresh); }
+    catch (err) { idxErr = err; fresh = null; }
     const loc = await localDetail(cid);
-    // Prefer the newer of (indexer, this browser's accepted successor); fall back to the remembered snapshot.
-    if (fresh && loc && loc.state && fresh.state && !fresh.terminal && (loc.terminal || loc.state.purchaseCount > fresh.state.purchaseCount || loc.state.phase !== fresh.state.phase || loc.state.cursor !== fresh.state.cursor) && loc.updatedAt > (fresh.updatedAt ?? 0)) d = loc;
-    else if (fresh) d = fresh;
-    else if (loc) d = loc;
-    else if (!d) { const v = cachedView(await catalog.get(cid)); if (v?.state) d = {...v, _src: 'cache'}; }
-    if (!fresh && !loc && d) d = {...d, _src:'cache'};
+    let cache = null;
+    if (!fresh && !loc && !state.nodeViews.has(cid)) { const v = cachedView(await catalog.get(cid)); if (v?.state) cache = {...v, _src: 'cache'}; }
+    const d = chooseView({index: fresh, node: state.nodeViews.get(cid) ?? null, local: loc, cache});
     if (!d) throw idxErr ?? new Error('找不到这个轮次');
     ledgerFromDetail(d, profile);
-    state.details.set(cid, d);
-    void catalog.remember(cid, {view: d, source: d._src === 'live' ? 'indexer' : d._src === 'local' ? 'local' : 'opened', mine: d.state?.ownerKey === state.session?.key || undefined}).catch(() => {});
+    if (d._src !== 'cache') void catalog.remember(cid, {view: d, source: d._src === 'live' ? 'indexer' : d._src === 'local' ? 'local' : d._src === 'node' ? 'node' : 'opened', mine: d.state?.ownerKey === state.session?.key || undefined}).catch(() => {});
+    state.rows = await mergedRows();
     if (state.round?.cid !== cid) return;
-    state.round.detail = d; state.round.loading = false; state.round.staleNote = d._src !== 'live' && idxErr ? errorText(idxErr) : null;
-    void engine.records().then(recs => { state.records = recs; if (state.round?.cid === cid && state.view === 'round') render(); }).catch(() => {});
-    render();
-    if (!d.terminal) {
-      const current = state.round;
-      void pair.currentDaa().then(daa => { state.daa = daa; if (state.round === current && state.view === 'round') render(); }).catch(() => {});
-    }
-  } catch (err) { if (state.round?.cid === cid) { state.round.loading = false; state.round.error = errorText(err); render(); } }
+    const R = state.round, changed = R.detail?.latestTxid !== d.latestTxid || R.detail?._src !== d._src;
+    R.detail = d; R.loading = false; R.error = null; R.staleNote = d._src !== 'live' && idxErr ? errorText(idxErr) : null;
+    if (changed && R.replay?.txid !== d.latestTxid) { R.replay = null; R.replayError = null; }
+    if (changed && R.live && R.live.snapshot.tip.transactionId !== d.latestTxid) { R.live = null; R.liveError = null; }
+    void engine.records().then(recs => { state.records = recs; if (state.round === R && state.view === 'round' && !quiet) render(); }).catch(() => {});
+    if (!quiet || changed) render();
+    if (!d.terminal && !quiet) void pair.currentDaa().then(daa => { state.daa = daa; if (state.round === R && state.view === 'round') render(); }).catch(() => {});
+  } catch (err) { if (state.round?.cid === cid && !quiet) { state.round.loading = false; state.round.error = errorText(err); render(); } }
+}
+/** Display-only: every live snapshot this page verified on the node (plan, "verify current UTXO") becomes the round's
+ * node view, so the page never keeps showing a state the node has already moved past. Actions still re-verify. */
+function rememberNodeView(live, cid) {
+  let v; try { v = viewFromLive(live, cid); } catch { return; }
+  state.nodeViews.set(cid, v);
+  void catalog.remember(cid, {view: v, source: 'node'}).catch(() => {});
+  if (state.round?.cid === cid) void refreshRound(cid, {quiet: true});
+  else void mergedRows().then(rows => { state.rows = rows; if (state.view === 'explore') render(); }).catch(() => {});
 }
 /** Build a detail view from this browser's own accepted records (indexer not caught up yet). Values are re-verified
  * against the configured active node before any action (liveRound), so this is only a display convenience. */
@@ -401,10 +413,10 @@ function renderRound(v) {
     <button class="btn sm" id="star">${icon('star')}${state.saved.has(d.cid) ? '已关注' : '关注'}</button>
     <button class="btn sm" id="exp">${icon('download')}导出</button></div>
   <div class="panel t-${p.tone}">
-    <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${p.tone}">${p.label}</span><span class="mono small muted">${e(d.indexStatus)}</span><span class="spacer"></span>${({local: '<span class="tag kas">本机已接受 · 索引同步中</span>', cache: '<span class="tag">本机缓存</span>'})[d._src] ?? ''}</div>
-    ${R.staleNote ? `<div class="notice warn" style="margin-top:8px">索引暂不可用（${e(R.staleNote)}），显示的是${d._src === 'local' ? '本机已被链上接受的最新状态' : '本机记住的快照'}；操作前仍会向节点核对。</div>` : ''}
+    <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${p.tone}">${p.label}</span><span class="mono small muted">${e(d.indexStatus)}</span><span class="spacer"></span>${({local: '<span class="tag kas">本机已接受 · 索引同步中</span>', node: '<span class="tag kas">节点已核验 · 索引同步中</span>', cache: '<span class="tag">本机缓存</span>'})[d._src] ?? ''}</div>
+    ${R.staleNote ? `<div class="notice warn" style="margin-top:8px">索引暂不可用（${e(R.staleNote)}），显示的是${d._src === 'local' ? '本机已被链上接受的最新状态' : d._src === 'node' ? '本页在节点上核验过的状态' : '本机记住的快照'}；操作前仍会向节点核对。</div>` : ''}
     <h2 style="margin-top:8px">轮次 ${hashHtml(d.cid, {n: 14})}</h2>
-    <div class="source-strip small">${d._src === 'live' ? '索引详情' : d._src === 'local' ? '本机接受记录' : '本机缓存'} · 更新于 ${timeHtml(d.updatedAt)} · ${R.live ? '本次已核验当前 UTXO' : R.replay ? '本次已复验最近交易' : '本次尚未完成节点核验'}。索引展示不是接受证明。</div>
+    <div class="source-strip small">${d._src === 'live' ? '索引详情' : d._src === 'node' ? '节点核验快照' : d._src === 'local' ? '本机接受记录' : '本机缓存'} · 更新于 ${timeHtml(d.updatedAt)} · ${R.live ? '本次已核验当前 UTXO' : R.replay ? '本次已复验最近交易' : '本次尚未完成节点核验'}。索引展示不是接受证明。</div>
     ${stepper(d)}
     <div class="cols3">
       <div class="kpi"><small>${d.terminal === 'PAID' ? '奖池（票款总额）' : '当前票款'}</small><strong>${kas(pool)} <span class="small muted">TKAS</span></strong><span>${e(st.sold.toLocaleString())} 张 × ${kas(price)} TKAS</span></div>
@@ -443,7 +455,7 @@ function renderRound(v) {
           <dt>最近交易</dt><dd>${hashHtml(d.latestTxid, {link: d.latestTxid && explorerTx(d.latestTxid)})}</dd>
           <dt>接受块</dt><dd>${hashHtml(d.accepting, {link: d.accepting && explorerBlock(d.accepting)})}</dd>
           ${d.tip ? `<dt>状态 UTXO</dt><dd class="mono">${e(shortHash(d.tip.transactionId, 10, 6))}:${e(d.tip.index)}</dd>` : ''}
-          <dt>索引更新</dt><dd>${timeHtml(d.updatedAt)}</dd>
+          <dt>${d._src === 'live' ? '索引更新' : '本机核验时间'}</dt><dd>${timeHtml(d.updatedAt)}</dd>
         </dl>
       </div>
     </div>
@@ -595,7 +607,7 @@ async function verifyLatest(d) {
 }
 async function verifyLive(d) {
   const R = state.round; $('liveBox').innerHTML = '<div class="notice" style="margin-top:10px">读取实时状态…</div>';
-  try { await pair.connect(); state.daa = await pair.currentDaa(); R.live = await liveRound(pair, indexerBase(state.indexer), profile, d.cid, state.daa); R.liveError = null; }
+  try { await pair.connect(); state.daa = await pair.currentDaa(); R.live = await liveRound(pair, indexerBase(state.indexer), profile, d.cid, state.daa, await engine.localTip(d.cid).catch(() => null)); R.liveError = null; rememberNodeView(R.live, d.cid); }
   catch (err) { R.live = null; R.liveError = errorText(err); }
   if (state.round === R) render();
 }
@@ -620,7 +632,7 @@ async function runPlan(request, epoch) {
   engine.onStatus = s => { const el = $('pstat'); if (el) el.textContent = s; };
   let plan;
   try { plan = await engine.plan(request, state.session); }
-  catch (err) { lockModal(false); engine.onStatus = () => {}; $('prog').innerHTML = ''; $('pErr').textContent = errorText(err); $('mFoot').hidden = false; $('mFoot').innerHTML = `<button class="btn" id="cancel">关闭</button>`; $('cancel').onclick = closeModal; return; }
+  catch (err) { if (request.cid && state.round?.cid === request.cid) void refreshRound(request.cid, {quiet: true}); lockModal(false); engine.onStatus = () => {}; $('prog').innerHTML = ''; $('pErr').textContent = errorText(err); $('mFoot').hidden = false; $('mFoot').innerHTML = `<button class="btn" id="cancel">关闭</button>`; $('cancel').onclick = closeModal; return; }
   engine.onStatus = () => {}; lockModal(false);
   if (epoch !== state.walletEpoch) { $('pErr').textContent = '钱包已变化，请重新开始'; return; }
   showPlan(plan, epoch);
@@ -638,13 +650,14 @@ function showPlan(plan, epoch) {
     <h3 style="margin:0 0 8px">全部输出（${t.outputs.length}）</h3>
     <div class="outs">${plan.outputs.map(o => `<div class="out ${o.mine ? 'mine' : ''}"><span class="r">${o.index} · ${e(lab(o))}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>
     <div class="sum"><span>网络手续费</span><span>${kas(plan.fee)} TKAS</span></div>
+    ${plan.feeClamped ? `<div class="notice warn">按节点当前费率估计，这笔交易需要 ${kas(plan.loadFee)} TKAS 才能按正常顺序被打包，已按 ${kas(FEE_CAP)} TKAS 保护上限封顶。网络繁忙时它可能在内存池中等待较久；在被接受或查明失败前，页面会保留输入占用，不会重发。</div>` : plan.feeMode === 'load' && plan.loadFee > plan.standardFee ? `<p class="small muted">节点费率按交易全部质量（含存储质量）计价；仅满足最低转发费（${kas(plan.standardFee)} TKAS）的交易在网络繁忙时可能长时间停留在内存池。</p>` : ''}
     <div class="sum"><span>你的钱包净支出</span><span>${net >= 0n ? kas(net) : '净收入 ' + kas(-net)} TKAS</span></div>
     ${plan.before ? `<dl class="kv small"><dt>状态变化</dt><dd>阶段 ${plan.before.phase} → ${plan.after ? plan.after.phase : '终局 ' + plan.terminal}；售出 ${plan.before.sold} → ${plan.after?.sold ?? plan.before.sold}；记录 ${plan.before.purchaseCount} → ${plan.after?.purchaseCount ?? plan.before.purchaseCount}${plan.after && plan.after.cursor !== plan.before.cursor ? `；退款游标 ${plan.before.cursor} → ${plan.after.cursor}` : ''}</dd></dl>` : ''}
     <details style="margin-top:8px"><summary class="small muted">技术细节</summary><dl class="kv small" style="margin-top:8px">
       <dt>交易 ID</dt><dd class="mono">${e(plan.draft.txid)}</dd><dt>CID</dt><dd class="mono">${e(plan.cid)}</dd>
       <dt>Compute budget</dt><dd>输入 0：${plan.budget}（含 ${BUDGET_MARGIN} 单位余量）· 资金输入各 10</dd>
       <dt>质量</dt><dd>compute ${plan.quote.computeMass} · storage ${plan.quote.storageMass} · transient ${plan.quote.transientMass}</dd>
-      <dt>费率</dt><dd>节点普通费率 ${plan.feerate} sompi/gram · 上限 ${kas(FEE_CAP)} TKAS</dd>
+      <dt>费率</dt><dd>节点估计 ${plan.feerate} sompi/gram · 本笔实际 ${plan.orderingFeerate ?? '—'} sompi/gram（按排序质量）· 上限 ${kas(FEE_CAP)} TKAS</dd>
       <dt>需签名输入</dt><dd>${plan.draft.authorizedInputIndices.join(', ') || '无（permissionless）'}</dd>
       ${t.lockTime ? `<dt>lockTime</dt><dd>${t.lockTime}</dd>` : ''}${t.inputs[0].sequence ? `<dt>sequence</dt><dd>${t.inputs[0].sequence}</dd>` : ''}
       ${plan.proof ? `<dt>PASS-A</dt><dd>目标块 ${e(shortHash(plan.proof.target.hash))} · 边界 DAA ${plan.proof.boundaryDaa} · 节点 ${e(plan.proof.nodes.join(' / '))}</dd>` : ''}
@@ -698,7 +711,7 @@ async function autoReconcile(txid) {
         state.details.delete(r.cid);
         state.rows = await mergedRows();
         if (r.action === 'GENESIS' && state.view === 'create') void openRound(r.cid);
-        else if (state.round?.cid === r.cid) { state.round.replay = null; state.round.live = null; void openRound(r.cid, {push: false}); }
+        else if (state.round?.cid === r.cid) { state.round.replay = null; state.round.live = null; void refreshRound(r.cid); }
         return;
       }
     }
@@ -843,7 +856,7 @@ async function renderMine(v) {
 function renderMineRounds() {
   if (state.view !== 'mine' || !$('mineRounds')) return;
   const me = state.session?.key;
-  const mine = me ? state.rows.filter(r => { const d = state.details.get(r.cid); return d?.state && (d.state.ownerKey === me || d.purchases?.some(p => p.key === me)); }) : [];
+  const mine = me ? state.rows.filter(r => r.state && (r.state.ownerKey === me || r.purchases?.some(p => p.key === me))) : [];
   $('mineRoundsNote').innerHTML = state.live ? `轮次状态取自索引（${timeHtml(state.liveAt)} 读取），仍属待节点核验的候选信息。` : '索引暂未读取或不可用：以下为本机缓存/本机记录，可能不是最新状态。';
   $('mineRounds').innerHTML = !me ? '<div class="empty">连接钱包后显示你创建或购买过的轮次。</div>' : mine.length ? mine.map(card).join('') : '<div class="empty">已读取的详情中没有找到相关轮次；不代表全网没有你的参与记录。可在广场打开目标 CID。</div>';
   document.querySelectorAll('#mineRounds [data-cid]').forEach(c => c.onclick = () => openRound(c.dataset.cid));
@@ -953,7 +966,7 @@ function settingsDialog() {
       ensure(urls.length >= 1, '至少需要一个节点');
       state.indexer = idx; state.nodes = urls; LS.set('indexer', idx); LS.set('nodes', urls); LS.set('configVersion', CONFIG_VERSION);
       pair.close(); pair = new NodeLink(urls); pair.onChange(renderNodeChip);
-      engine = new Engine({pair, profile, indexer: idx});
+      engine = new Engine({pair, profile, indexer: idx, onLive: rememberNodeView}); state.nodeViews.clear();
       closeModal(); toast('已保存'); renderNodeChip(); void loadRows();
     } catch (err) { $('sErr').textContent = errorText(err); }
   };
@@ -993,4 +1006,6 @@ route();
 void mergedRows().then(rows => { state.rows = rows; if(state.view==='explore') render(); }).then(() => loadRows({quiet: true}));
 // Keep the live view fresh while the tab is visible.
 setInterval(() => { if (document.visibilityState === 'visible' && ['explore', 'mine'].includes(state.view)) void loadRows({quiet: true}); }, 60_000);
+// An open round re-reads its indexer detail every 30 s; a newer state replaces the view without a reload.
+setInterval(() => { if (document.visibilityState === 'visible' && state.view === 'round' && state.round?.cid && !state.round.loading) void refreshRound(state.round.cid, {quiet: true}); }, 30_000);
 document.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches?.('.card')) ev.target.click(); });
