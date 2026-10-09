@@ -15,6 +15,8 @@ Header=228B、Magic=KW20、目录从228起；OPEN 8参数，SEALED/REFUNDING 6�
 
 固定SilverScript v1.0.0：`3ed973335b59269293564805cc2c58a14595ec03`，binary SHA256 `81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00`。不升级工具链。
 
+下一次升级合约时一并处理的优化见 [NEXT-PROFILE-BACKLOG.md](NEXT-PROFILE-BACKLOG.md)（当前 Profile 不改）。
+
 ## 版本及发布顺序（执行验证须另获授权）
 
 1. 固定TypeScript 5.8.3重新生成核心lib，不手改生成物。
