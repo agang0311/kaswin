@@ -1,7 +1,7 @@
 {
   "artifact": "index.html",
-  "bytes": 343268,
-  "sha256": "30f884f18725aa78cc32d83cea8977d88df6afbba27b0ecea7063623144553ba",
+  "bytes": 342276,
+  "sha256": "aa4e48df100045d7461195b6e4ccf99109a3fb0afcf7857e99eecf10dda7a17e",
   "esbuild": "0.28.2",
   "releaseMode": "TN10_ACCEPTANCE_CANDIDATE",
   "tradingEnabled": true,
@@ -94,7 +94,7 @@
     "packages/f3.2-core/lib/genesis-discovery.js": "15efc547b591f6ec9b1c442d25fefd0d024f4f8432c5f634269917aaf92d8ad3",
     "apps/kaswin-v2/scripts/shared/replay.mjs": "87e6b0f45fe89161a9078aff50263b1f981df5d20aa0665b5a915f2a0ce7c124",
     "apps/kaswin-v2/scripts/shared/catalog.mjs": "69fd3e4c3c536755246092f39b5c618f603746bd5cf509c5b8220ea6cc0fcb83",
-    "apps/kaswin-v2/visual/messages-en.mjs": "f6f53079c552be5d023031c3587793e44e6d278b6f2e6d293b22f874b20ebefe",
+    "apps/kaswin-v2/visual/messages-en.mjs": "38158d1dbf3c008d2a0be6439b0629d35dd3079f6bca7b2d9f53c654686e8349",
     "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
     "apps/kaswin-v2/visual/icons.mjs": "12ff0be47df4f5bdca0b9d0fe21300200ffaf0d663e11b27721cee131d516fd2",
     "apps/kaswin-v2/scripts/app.mjs": "e7c4f81a6866dce07df2a7f8b8ff39afe8d8d1ca87fbaf79abe1dfee26c95f1a",

@@ -52,9 +52,7 @@ const scriptHash = createHash('sha256').update(js).digest('base64');
 assert.equal(tpl.split('__APPLICATION_HASH__').length, 2, 'Missing/duplicate CSP hash placeholder');
 assert.equal(tpl.split('/* APPLICATION */').length, 2, 'Missing/duplicate inline application placeholder');
 assert.equal(tpl.split('<!-- RELEASE_STATUS -->').length, 2, 'Missing/duplicate release status placeholder');
-const warning = tn10Candidate
-  ? '<aside class="notice warn" role="alert" data-no-i18n><b>TN10 可交易验收候选 / TN10 TRADABLE ACCEPTANCE CANDIDATE</b><br>仅测试资金，非公开上线批准。已有377笔历史接受回执；未完成真实KasWare端到端验收、256目录退款资源或超时退款验证，不是VM预算校准。Test funds only; public launch not approved. Real-wallet E2E, 256-directory refunds and timeout refunds remain unverified.<br>Profile: ' + profile.id + '<br>旧轮次须使用其原版本工具。Existing rounds require their original version.</aside>'
-  : tradingEnabled ? '' : '<aside class="notice warn" role="alert" data-no-i18n><b>只读候选 / READ-ONLY CANDIDATE</b><br>尚未满足交易发布门槛；交易计划、签名和提交已禁用。Release gate not satisfied; transaction planning, signing and submission are disabled.<br>Profile: ' + profile.id + '<br>仅支持新 Profile；旧轮次请使用其原版本工具。New Profile only; existing rounds require their original version.</aside>';
+const warning = tradingEnabled ? '' : '<aside class="notice warn" role="alert" data-no-i18n><b>只读候选 / READ-ONLY CANDIDATE</b><br>尚未满足交易发布门槛；交易计划、签名和提交已禁用。Release gate not satisfied; transaction planning, signing and submission are disabled.<br>Profile: ' + profile.id + '<br>仅支持新 Profile；旧轮次请使用其原版本工具。New Profile only; existing rounds require their original version.</aside>';
 const html = tpl.replace('__APPLICATION_HASH__', `sha256-${scriptHash}`)
   .replace('<!-- RELEASE_STATUS -->', () => warning)
   .replace('/* STYLES */', () => css).replace('/* APPLICATION */', () => js);

@@ -1,7 +1,7 @@
 {
   "artifact": "index.html",
-  "bytes": 343268,
-  "sha256": "30f884f18725aa78cc32d83cea8977d88df6afbba27b0ecea7063623144553ba",
+  "bytes": 340451,
+  "sha256": "a6d34cf30b0f443b348dd3973aabdc77a8a7bb80e1804efac9e864ac28730247",
   "esbuild": "0.28.2",
   "releaseMode": "TN10_ACCEPTANCE_CANDIDATE",
   "tradingEnabled": true,
@@ -94,11 +94,11 @@
     "packages/f3.2-core/lib/genesis-discovery.js": "15efc547b591f6ec9b1c442d25fefd0d024f4f8432c5f634269917aaf92d8ad3",
     "apps/kaswin-v2/scripts/shared/replay.mjs": "87e6b0f45fe89161a9078aff50263b1f981df5d20aa0665b5a915f2a0ce7c124",
     "apps/kaswin-v2/scripts/shared/catalog.mjs": "69fd3e4c3c536755246092f39b5c618f603746bd5cf509c5b8220ea6cc0fcb83",
-    "apps/kaswin-v2/visual/messages-en.mjs": "f6f53079c552be5d023031c3587793e44e6d278b6f2e6d293b22f874b20ebefe",
+    "apps/kaswin-v2/visual/messages-en.mjs": "236302f8a24cc58c632a375cfb0d549f697836a8bd1e51960514aa76296ec1a4",
     "apps/kaswin-v2/visual/i18n.mjs": "9c33e5d904783611be19cbb6e75c6aa9e780f1bdc7c7b83932b1fe0de4d0fc6b",
     "apps/kaswin-v2/visual/icons.mjs": "12ff0be47df4f5bdca0b9d0fe21300200ffaf0d663e11b27721cee131d516fd2",
-    "apps/kaswin-v2/scripts/app.mjs": "e7c4f81a6866dce07df2a7f8b8ff39afe8d8d1ca87fbaf79abe1dfee26c95f1a",
-    "apps/kaswin-v2/visual/styles.css": "21d5bee6d68bb441017db64f9ea2c4875dfe0dd8e04ecdc8b9a15915d4cdaca0",
+    "apps/kaswin-v2/scripts/app.mjs": "9c9a1740fe2597ea9d58e2fda2597c29c94a173377db50a5e1b4dec1bb7bfc74",
+    "apps/kaswin-v2/visual/styles.css": "9260e2b93bb8730106723dd376d9f570ede2c40c3ffba7965d486a8b6097de38",
     "apps/kaswin-v2/visual/index.template.html": "f7b319e24d36d42557b1ccb3060d45136b5a82d7571c9506644ca7edc590dd0f",
     "packages/f3.2-core/tsconfig.json": "9a138431ba1d38ce995f7d79b00f9e0b4e12bd5258ac008d6d23b6e0077142b8",
     "contracts/f3.2/profile.json": "763a7e8220a18c71ea3cfb311f9f7ca4bd2d5cc01e91171d479569f651a56064",
@@ -107,7 +107,7 @@
     "contracts/f3.2/tools/tn10-evidence.mjs": "8355944fc405167f9b9d7a4aaf67194fb8b5539e5507a5cefe5a1b245a5dbbfd",
     "contracts/f3.2/tools/budget-gate.mjs": "0ac15ff2ba54bafb3606c1795c48e080be4e26a5bad64ace39428d6b4e6538c3",
     "contracts/f3.2/tools/linking.mjs": "4341e47c79daa7b8e966592d1e7c476e4a7e39cde9c1640c5a3d71511c2641ed",
-    "apps/kaswin-v2/tools/build.mjs": "7e70c841be58548e3e9ba21e741c1ee12ebab107cf788de099712151eee650d9"
+    "apps/kaswin-v2/tools/build.mjs": "4415c6cd4c7239016dbe15e608d45709e92dc980b2b677292f3ca968de596c48"
   },
   "externalRuntime": [
     "user-configured indexer (GET /v1/rounds*), default https://tn10.kaspay.top/indexer",

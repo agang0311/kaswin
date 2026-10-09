@@ -222,13 +222,14 @@ function render() {
 
 /* ================================================================== EXPLORE */
 function renderExplore(v) {
-  const rows = state.rows, groups = {all: rows.length, open: 0, sealed: 0, refund: 0, done: 0};
-  for (const r of rows) { const k = phaseInfo(r).key; if (k === 'open') groups.open++; else if (k === 'sealed') groups.sealed++; else if (k === 'refund') groups.refund++; else if (['paid', 'refunded', 'empty'].includes(k)) groups.done++; }
-  const own = rows.filter(r => phaseInfo(r).key !== 'other'), others = rows.length - own.length;
+  const rows = state.rows;
+  const own = rows.filter(r => phaseInfo(r).key !== 'other'), otherList = rows.filter(r => phaseInfo(r).key === 'other'), others = otherList.length;
+  const groups = {all: own.length, open: 0, sealed: 0, refund: 0, done: 0};
+  for (const r of own) { const k = phaseInfo(r).key; if (k === 'open') groups.open++; else if (k === 'sealed') groups.sealed++; else if (k === 'refund') groups.refund++; else if (['paid', 'refunded', 'empty'].includes(k)) groups.done++; }
   const locked = own.reduce((a, r) => a + (r.terminal ? 0n : BigInt(r.value ?? '0')), 0n);
   const paid = own.filter(r => r.terminal === 'PAID').length;
   const q = state.query.trim().toLowerCase();
-  let list = rows.filter(r => {
+  let list = own.filter(r => {
     const k = phaseInfo(r).key;
     if (state.filter === 'saved' && !state.saved.has(r.cid)) return false;
     if (state.filter === 'open' && k !== 'open') return false;
@@ -238,6 +239,7 @@ function renderExplore(v) {
     return !q || r.cid.includes(q) || (r.genesisTxid ?? '').includes(q) || (r.latestTxid ?? '').includes(q);
   });
   list.sort((a, b) => state.sort === 'value' ? (BigInt(b.value) > BigInt(a.value) ? 1 : -1) : (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const filteredOther = otherList.filter(r => !q || r.cid.includes(q) || (r.genesisTxid ?? '').includes(q) || (r.latestTxid ?? '').includes(q));
   v.innerHTML = `
   <section class="hero">
     <div>
@@ -254,7 +256,7 @@ function renderExplore(v) {
   </section>
   <div class="section-title"><h2>轮次广场</h2><span class="muted small">当前数据源中的已知轮次 · 非全网统计</span></div>
   <section class="kpis">
-    <div class="kpi"><small>已知轮次</small><strong>${own.length}</strong><span>${state.live ? `索引 ${state.live.length}` : '实时索引未连接'} · 缓存 ${state.cached}${others ? ` · 另有其他 Profile ${others}（仅显示）` : ''}</span></div>
+    <div class="kpi"><small>已知轮次</small><strong>${own.length}</strong><span>${state.live ? `索引 ${state.live.length}` : '实时索引未连接'} · 缓存 ${state.cached}${others ? ` · 另有其他 Profile ${others}（已折叠）` : ''}</span></div>
     <div class="kpi"><small>售票中</small><strong>${groups.open}</strong><span>可购买 / 可封盘</span></div>
     <div class="kpi"><small>待开奖 / 退款中</small><strong>${groups.sealed} / ${groups.refund}</strong><span>任何人可推进</span></div>
     <div class="kpi"><small>已派奖轮次</small><strong>${paid}</strong><span>共 ${groups.done} 轮已结束</span></div>
@@ -265,6 +267,21 @@ function renderExplore(v) {
     <label class="search">${icon('search')}<input id="q" placeholder="搜索 CID / 交易 ID，或粘贴 64 位 CID 直接打开" value="${e(state.query)}" autocomplete="off" spellcheck="false"></label>
     <div class="seg"><button data-sort="new" aria-pressed="${state.sort === 'new'}">最近</button><button data-sort="value" aria-pressed="${state.sort === 'value'}">锁定价值</button></div>
     <button class="icon-btn" id="refreshRows" aria-label="刷新">${icon('refresh')}</button>
+    ${others ? `
+    <details class="other-rounds-details">
+      <summary class="btn ghost sm" style="cursor:pointer;color:var(--dim);border:1px solid var(--line)" title="查看不适用轮次（其他合约或旧 Profile）">
+        ${icon('archive')}<span>不适用轮次 (${others})</span>
+      </summary>
+      <div class="other-rounds-box panel" style="margin-top:14px;background:var(--panel2);border:1px dashed var(--line2)">
+        <div class="row" style="margin-bottom:12px;justify-content:space-between">
+          <div>
+            <h3 style="margin:0;font-size:14px;color:var(--dim)">不适用的轮次（${others}）</h3>
+            <span class="muted small">以下轮次属于其他合约版本或历史 Profile，本页不支持直接交互</span>
+          </div>
+        </div>
+        <div class="grid">${filteredOther.length ? filteredOther.map(card).join('') : '<div class="empty">无匹配的不适用轮次</div>'}</div>
+      </div>
+    </details>` : ''}
   </div>
   ${state.meta?.rejected ? `<div class="notice warn">索引返回的 ${e(state.meta.rejected)} 个轮次格式不合规，已忽略（不显示、不缓存）。若持续出现，请更换数据源。</div>` : ''}
   ${state.liveError ? `<div class="notice warn">实时索引暂不可用（<span class="mono">${e(state.indexer)}</span>）：${e(state.liveError)}。仍显示本机记住的轮次。<button class="link" id="openSettings">${icon('settings')}设置数据源</button></div>` : state.live ? `<div class="source-strip"><span class="dot ok"></span><span>索引数据 · ${timeHtml(state.liveAt)} · <b>尚未逐轮节点核验</b>${state.listLimited ? ' · 已达分页上限，并非完整列表' : ''}<br><span class="small muted">${e(state.meta?.source ?? '')} · 检查点 ${timeHtml(state.meta?.lastCheckpointAt)} · 操作前重新核对</span></span></div>` : ''}
@@ -721,8 +738,10 @@ function showRecord(r, fresh = false) {
 
 /* ================================================================== CREATE */
 const DURATIONS = [['10', '10 分钟'], ['30', '30 分钟'], ['60', '1 小时'], ['360', '6 小时'], ['1440', '24 小时'], ['custom', '自定义']];
+const DEFAULT_CREATE = {price: '1', cap: '100000', min: '3', pcap: '256', dur: '60', custom: '120', registry: true};
 function renderCreate(v) {
-  const f = state.createForm ??= {price: '1', cap: '256', min: '3', pcap: '256', dur: '60', custom: '120', registry: true};
+  const saved = LS.get('createForm', null);
+  const f = state.createForm ??= (saved ? {...DEFAULT_CREATE, ...saved} : {...DEFAULT_CREATE});
   v.innerHTML = `
   <div class="cols">
     <div class="panel">
@@ -749,6 +768,7 @@ function renderCreate(v) {
   </div>`;
   const read = () => {
     f.price = $('cPrice').value.trim(); f.cap = $('cCap').value.trim(); f.min = $('cMin').value.trim(); f.pcap = $('cPcap').value.trim(); f.custom = $('cCustom').value.trim(); f.registry = $('cReg').checked;
+    LS.set('createForm', {price: f.price, cap: f.cap, min: f.min, pcap: f.pcap, dur: f.dur, custom: f.custom, registry: f.registry});
     const int = (s, lo, hi, n) => { ensure(/^[1-9][0-9]*$/.test(s) && +s >= lo && +s <= hi, `${n} 须为 ${lo}–${hi} 的整数`); return +s; };
     const minutes = f.dur === 'custom' ? int(f.custom, 1, 10080, '自定义分钟') : +f.dur;
     let price; try { price = kasToSompi(f.price); } catch { throw new UserError('票价格式错误（最多 8 位小数）'); }
@@ -765,8 +785,8 @@ function renderCreate(v) {
       $('cPrev').innerHTML = facts([['满票奖池', `${kas(pool)} TKAS`], ['满票时中奖者约得', `${kas(pool - S.FINALIZER)} TKAS（−1 TKAS 赏金 −网络费）`], ['单张中奖概率（满票）', `1 / ${cfg.ticketCap.toLocaleString()}`], ['最早封盘', `约 ${minutes >= 60 ? (minutes / 60).toFixed(minutes % 60 ? 1 : 0) + ' 小时' : minutes + ' 分钟'} 后`], ['购买记录', `${cfg.purchaseCap} 条（退款需 ${Math.ceil(cfg.purchaseCap / 32)} 批）`], ['不足 ' + cfg.minTickets + ' 张', '封盘后全部退款（每条扣 0.01 TKAS 执行费）']]);
     } catch (err) { $('cErr').textContent = errorText(err); $('cPrev').innerHTML = ''; }
   };
-  v.querySelectorAll('input').forEach(i => i.addEventListener('input', preview));
-  v.querySelectorAll('[data-dur]').forEach(b => b.onclick = () => { f.dur = b.dataset.dur; v.querySelectorAll('[data-dur]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('cCustom').hidden = f.dur !== 'custom'; preview(); });
+  v.querySelectorAll('input').forEach(i => { i.addEventListener('input', preview); i.addEventListener('change', preview); });
+  v.querySelectorAll('[data-dur]').forEach(b => b.onclick = () => { f.dur = b.dataset.dur; LS.set('createForm', {price: f.price, cap: f.cap, min: f.min, pcap: f.pcap, dur: f.dur, custom: f.custom, registry: f.registry}); v.querySelectorAll('[data-dur]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('cCustom').hidden = f.dur !== 'custom'; preview(); });
   preview();
   $('cExport').onclick = () => { try { const {cfg, minutes} = read(); download({kind: 'KASWIN_V2_UNSIGNED_CONFIGURATION', profileId: PROFILE_ID, network: 'testnet-10', durationMinutes: minutes, config: {...cfg, closeEligibleDaa: '（创建时由节点 DAA 计算）'}, note: '仅参数，不是交易'}, 'kaswin-config.json'); } catch (err) { $('cErr').textContent = errorText(err); } };
   $('cGo').onclick = async () => {

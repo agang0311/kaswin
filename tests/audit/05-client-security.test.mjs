@@ -18,7 +18,7 @@ test('published candidate manifest, evidence, HTML fingerprint and CSP agree', a
     const raw = await fs.readFile(new URL('../../contracts/f3.2/tn10-release-evidence.json', import.meta.url));
     assert.equal(createHash('sha256').update(raw).digest('hex'), manifest.tn10EvidenceSha256);
     assert.equal(JSON.parse(raw).vmCalibrated, false);
-    assert.ok(html.includes('TN10 TRADABLE ACCEPTANCE CANDIDATE'));
+    assert.equal(html.includes('TN10 TRADABLE ACCEPTANCE CANDIDATE'), false);
   } else {
     assert.equal(manifest.releaseMode, 'READ_ONLY_UNVERIFIED_CANDIDATE');
     assert.equal(manifest.tradingEnabled, false);
