@@ -9,7 +9,7 @@ import {S, ensure, hash32, hex, unhex, buildAction, buildOpenGenesis, availableA
 import {convergeFee, quoteMass, MassLimitError} from './mass.mjs';
 import {FEE_TIERS, isIdle, waitSeconds, recommendTier, orderingRate} from './feetiers.mjs';
 import {decodeSpend} from '../../../../packages/f3.2-core/lib/accepted.js';
-import {commonUtxos, verifyInputsLive, acceptedPair, searchAccepted, mempoolEntry, matchesDraft} from './chain.mjs';
+import {commonUtxos, verifyInputsLive, acceptedPair, searchAccepted, mempoolEntry, matchesDraft, REORG_RECHECK_DAA, acceptanceDepth} from './chain.mjs';
 import {signWithWallet} from './wallet.mjs';
 import {txToRpc, txFromRpc} from './nodes.mjs';
 import {spkToAddress} from './lib/address.mjs';
@@ -24,6 +24,16 @@ const PLAN_TTL_MS = 90_000;
 export const ACTION_LABEL = {GENESIS: '创建轮次', BUY: '购买', CLOSE: '封盘', DRAW_AND_PAY: '开奖并派奖', TIMEOUT_REFUND: '超时转退款', REFUND: '退款批次'};
 const ROLE_LABEL = {WINNER: '中奖者奖金', CREATOR: '创建者押金返还', EXECUTOR: '执行者', BUYER_REFUND: '买家退款', CHANGE: '找零', STATE: '轮次状态（covenant 后继）', REGISTRY: 'Registry 登记'};
 const key = o => `${o.transactionId}:${o.index}`;
+/** First verified acceptance -> CONFIRMING; ACCEPTED only when acceptance is verified (again) with the accepting block at
+ * least REORG_RECHECK_DAA deep. Every field check has already passed for this very block (acceptedAt + matchesDraft). */
+export function acceptanceStep(r, ev, virtualDaa, threshold = REORG_RECHECK_DAA, now = Date.now()) {
+  const depth = acceptanceDepth(virtualDaa, ev.acceptingDaa);
+  const first = r.firstAcceptedAt && r.firstAccepting ? {firstAcceptedAt: r.firstAcceptedAt, firstAccepting: r.firstAccepting} : {firstAcceptedAt: now, firstAccepting: ev.accepting};
+  if (depth >= threshold) return {...first, status: 'ACCEPTED', accepted: true, depthDaa: depth, recheckedAt: now,
+    note: `节点当前选中链已接受，接受块已深入 ${depth} DAA 后再次核对；批准的输入、输出、费用和预算均已核对（合约费用见证严格匹配；不是不可逆最终性）`};
+  return {...first, status: 'CONFIRMING', accepted: false, depthDaa: depth,
+    note: `节点选中链已接受且字段一致；接受块目前深 ${depth} DAA，深入 ${threshold} DAA（约 10 秒）后再核对一次，防短程重组`};
+}
 // crypto.randomUUID / navigator.locks are secure-context only; plain-http LAN pages need fallbacks.
 const planId = () => { const b = new Uint8Array(16); crypto.getRandomValues(b); return Array.from(b, x => x.toString(16).padStart(2, '0')).join(''); };
 /** A renewable HTTP/LAN lease is advisory. The atomic input-reserving journal insert
@@ -62,8 +72,9 @@ export function leaseLocks(openStore, ttlMs = 120_000) {
 export class Engine {
   /** onLive(live, cid): display-only notice of each node-verified live snapshot read while planning (also when the
    * action then turns out unavailable). It cannot alter the plan; the page uses it to stop showing a stale view. */
-  constructor({pair, profile, indexer, onStatus = () => {}, onLive = () => {}, openStore = () => IndexedStore.open(STORE), locks = null, drawProof = acquireDrawProof}) {
-    Object.assign(this, {pair, profile, indexer, onStatus, onLive, openStore, drawProof}); this.plans = new Map(); this.tierBuilds = new Map(); this.storeP = null;
+  constructor({pair, profile, indexer, onStatus = () => {}, onLive = () => {}, openStore = () => IndexedStore.open(STORE), locks = null, drawProof = acquireDrawProof, reorgRecheckDaa = REORG_RECHECK_DAA}) {
+    if (typeof reorgRecheckDaa !== 'bigint' || reorgRecheckDaa < 0n) throw Error('REORG_RECHECK_DAA');
+    Object.assign(this, {pair, profile, indexer, onStatus, onLive, openStore, drawProof, reorgRecheckDaa}); this.plans = new Map(); this.tierBuilds = new Map(); this.storeP = null;
     this.locks = locks ?? globalThis.navigator?.locks ?? leaseLocks(() => this.store());
   }
   store() { return this.storeP ??= this.openStore(); }
@@ -365,7 +376,7 @@ export class Engine {
       if (replacesKey && record.status === 'SUBMITTED') {
         for (let i = 0; i < 4; i++) {
           const cur = await store.get(replacesKey);
-          if (!cur || cur.value.status === 'ACCEPTED') break;
+          if (!cur || ['ACCEPTED', 'CONFIRMING'].includes(cur.value.status)) break;
           try { await store.compareAndSet(replacesKey, cur.revision, {...cur.value, status: 'REPLACED', replacedBy: plan.draft.txid, replacedAt: Date.now()}); break; } catch {}
         }
       }
@@ -399,16 +410,23 @@ export class Engine {
         r = {...r, status: sticky ?? (entry ? 'PENDING' : 'UNKNOWN'), mempool: {present: !!entry, fee: entry?.fee ?? null, checkedAt: Date.now()},
           note: entry ? '交易在节点内存池中，等待被打包接受（在内存池中不等于已接受）' : '本次有界查询没有在选中链上找到，节点内存池中也没有（可能已被替换、被挤出或尚未传播）；不代表失败，不会自动重发'};
       } else {
+        const virtualDaa = await this.pair.currentDaa(); // read before the check: the depth below is a lower bound
         const ev = await acceptedPair(this.pair, txid, accepting);
         const fee = matchesDraft(ev, r.draft);
-        r = {...r, status: 'ACCEPTED', accepted: true, accepting, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations, actualFee: fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(),
-          note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（合约费用见证严格匹配；不是不可逆最终性）'};
+        r = {...r, ...acceptanceStep(r, ev, virtualDaa, this.reorgRecheckDaa), accepting, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations, actualFee: fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now()};
       }
     } catch (e) {
       r = {...r, status: sticky ?? 'UNKNOWN', accepted: false, error: errorText(e), note: '本次核验未完成；保留输入占用，不会重发'};
     }
     await store.compareAndSet(k, stored.revision, r);
     return this.settleFamily(r);
+  }
+  /** Milliseconds until a CONFIRMING record's accepting block should be deep enough for the recheck, at the 10 DAA/s
+   * target plus a margin (scheduling only; the recheck itself measures the depth on the node). */
+  recheckDelayMs(r) {
+    if (r?.status !== 'CONFIRMING') return null;
+    const left = this.reorgRecheckDaa - BigInt(r.depthDaa ?? 0n);
+    return Number(left > 0n ? left : 0n) * 100 + 1500;
   }
   /** A fee-bump family (original + replacements) spends the same inputs, so at most one member can be accepted.
    * Once one is ACCEPTED (node-verified), the others can never take effect: mark them SUPERSEDED (inputs released,
@@ -422,7 +440,7 @@ export class Engine {
     let self = r;
     for (const x of family) {
       const v = x.record.value;
-      if (v.txid === winner.txid || ['ACCEPTED', 'SUPERSEDED', 'ARCHIVED'].includes(v.status)) continue;
+      if (v.txid === winner.txid || ['ACCEPTED', 'CONFIRMING', 'SUPERSEDED', 'ARCHIVED'].includes(v.status)) continue;
       const next = {...v, status: 'SUPERSEDED', supersededBy: winner.txid, supersededAt: Date.now(), accepted: false,
         note: `同一组替换交易中的 ${winner.txid.slice(0, 12)}… 已被接受；这笔花费相同输入，不可能再生效`};
       try { await store.compareAndSet(x.key, x.record.revision, next); if (v.txid === r.txid) self = next; } catch {}
@@ -434,7 +452,7 @@ export class Engine {
   async archive(txid) {
     const store = await this.store(), k = PREFIX + hash32(txid), stored = await store.get(k);
     ensure(stored, '没有此记录');
-    ensure(stored.value.status !== 'ACCEPTED', '已接受的交易不能归档释放');
+    ensure(!['ACCEPTED', 'CONFIRMING'].includes(stored.value.status), '已接受的交易不能归档释放');
     const inputs = stored.value.draft.inputUtxos;
     await this.pair.connect();
     // Release only if at least one input is provably no longer live on the configured node (cannot double-spend anymore),

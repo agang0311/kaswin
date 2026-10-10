@@ -26,7 +26,7 @@ function harness(opts = {}) {
   const wallet = fakeKasware(opts.wallet);
   globalThis.kasware = wallet;
   const store = new MemoryStore();
-  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, drawProof: opts.drawProof});
+  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, reorgRecheckDaa: 0n, drawProof: opts.drawProof});
   return {chain, pair, idx, wallet, engine, store};
 }
 const config = (daa, extra = {}) => ({ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: daa + 1000n, ...extra});

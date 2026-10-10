@@ -40,6 +40,24 @@ export class SimChain {
     this.blocks.set(hash, b); this.chain.push(hash); return b;
   }
   advance(n) { for (let i = 0; i < n; i++) this.addBlock(); }
+  /** Short selected-chain reorg: the chain block `hash` is replaced by a sibling with the same selected parent and DAA.
+   * reaccept=true: the sibling accepts the same transactions (same UTXO effects). reaccept=false: they are undone
+   * (inputs restored, outputs removed, no longer accepted). Returns the sibling hash. Simulator, not consensus. */
+  reorgBlock(hash, {reaccept = true} = {}) {
+    const i = this.chain.indexOf(hash); if (i < 0) throw Error('NOT_CHAIN');
+    const b = this.blocks.get(hash), sib = this.h();
+    this.blocks.set(sib, {...b, hash: sib, txs: reaccept ? [...b.txs] : []});
+    this.chain[i] = sib;
+    if (this.chain[i + 1]) this.blocks.get(this.chain[i + 1]).parent = sib;
+    for (const id of reaccept ? [] : b.txs) {
+      const a = this.accepted.get(id);
+      a.tx.outputs.forEach((_, index) => this.utxos.delete(`${id}:${index}`));
+      for (const u of a.inputs) this.utxos.set(`${u.outpoint.transactionId}:${u.outpoint.index}`, u);
+      this.accepted.delete(id);
+    }
+    for (const id of reaccept ? b.txs : []) this.accepted.get(id).block = sib;
+    return sib;
+  }
   fund(address, value) {
     const spk = {version: 0, script: '20' + TEST_KEY + 'ac'};
     const op = {transactionId: this.h(), index: 0};
@@ -115,7 +133,7 @@ export class SimChain {
       // Optional (chain.feeEstimate = {estimate, verbose}); absent by default so the page's getFeeEstimate fallback is exercised.
       getFeeEstimateExperimental: () => { if (!chain.feeEstimate?.verbose) throw {message: 'unsupported getFeeEstimateExperimental'}; return chain.feeEstimate; },
       getUtxosByAddresses: ({addresses}) => ({entries: [...chain.utxos.values()].filter(u => addresses.includes(u.address)).map(u => ({address: u.address, outpoint: u.outpoint, utxoEntry: {amount: u.value.toString(), scriptPublicKey: spkText(u.spk), blockDaaScore: u.daa.toString(), isCoinbase: false, covenantId: u.covenantId}}))}),
-      getBlock: ({hash}) => { const b = chain.blocks.get(hash); if (!b) throw {message: 'block not found'}; return {block: {header: header(b), verboseData: {isChainBlock: true, selectedParentHash: b.parent ?? '00'.repeat(32)}}}; },
+      getBlock: ({hash}) => { const b = chain.blocks.get(hash); if (!b) throw {message: 'block not found'}; return {block: {header: header(b), verboseData: {isChainBlock: chain.chain.includes(hash), selectedParentHash: b.parent ?? '00'.repeat(32)}}}; },
       getVirtualChainFromBlockV2: ({startHash}) => {
         const i = chain.chain.indexOf(startHash); if (i < 0) throw {message: 'unknown start'};
         const added = chain.chain.slice(i + 1, i + 6);

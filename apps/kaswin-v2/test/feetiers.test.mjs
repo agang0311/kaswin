@@ -22,7 +22,7 @@ function harness(fee) {
   const chain = new SimChain(); chain.feeEstimate = fee;
   const pair = new NodeLink(['wss://alpha.sim/kaspa/testnet-10/wrpc/json'], {WebSocketImpl: wsFactory(chain)});
   const idx = simIndexer(chain, profile); globalThis.fetch = idx.fetch; globalThis.kasware = fakeKasware();
-  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => new MemoryStore(), locks: testLocks});
+  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => new MemoryStore(), locks: testLocks, reorgRecheckDaa: 0n});
   chain.fund(TEST_ADDRESS, 50_000_000_000n);
   return {chain, idx, engine};
 }

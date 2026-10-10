@@ -46,6 +46,10 @@ const signPskt = ({txJsonString, options}) => {
   for (const {index} of options.signInputs) out.inputs[index].signatureScript = sdk.createInputSignature(tx, index, pk, sdk.SighashType.All);
   return JSON.stringify(out);
 };
+// The simulated chain produces blocks at the TN10 target rate (1 per 100 ms = 10 DAA/s), so the page's first check
+// (2.5 s after submit, ~25 DAA deep) shows "Confirming" and the 100 DAA recheck follows ~10 s later. Simulation, not consensus.
+const ticker = setInterval(() => chain.advance(1), 100);
+let sawConfirming = false;
 const browser = await chromium.launch();
 const english = process.argv.includes('--en'), untranslated = new Set();
 const errors = [], steps = [];
@@ -86,6 +90,8 @@ async function approveAndSubmit(label) {
   await page.waitForSelector('#recTx', {state: 'attached', timeout: 60000});
   const status = await page.locator('#mBody .badge').first().textContent();
   steps.push([label, status]);
+  // First acceptance is shown as "Confirming" until the recheck at >= 100 DAA depth passes.
+  try { await page.waitForFunction(() => /确认中|Confirming/.test(document.querySelector('#mBody .badge')?.textContent ?? ''), null, {timeout: 8000}); sawConfirming = true; } catch {}
   // wait for auto-reconcile to report acceptance
   await page.waitForFunction(() => /已接受|Accepted/.test(document.querySelector('#mBody .badge')?.textContent ?? ''), null, {timeout: 60000});
   await scanEnglish();
@@ -187,8 +193,10 @@ try {
   steps.push(['mine-rows', String(await page.locator('#mineList tbody tr').count())]);
   await scanEnglish();
   await shot('mine');
+  if (!sawConfirming) throw Error('never showed the Confirming state before Accepted');
+  steps.push(['confirming-before-accepted', 'true']);
 } catch (e) { errors.push('E2E: ' + e.message.split('\n')[0]); await page.screenshot({path: new URL('../test-results/screenshots/e2e-failure.png', import.meta.url).pathname}).catch(() => {}); }
-finally { await browser.close(); httpServer.close(); wss.close(); }
+finally { clearInterval(ticker); await browser.close(); httpServer.close(); wss.close(); }
 const final = [...chain.accepted.values()].map(a => a.tx.outputs.length);
 const report = {at: new Date().toISOString(), origin: base, steps, errors, submits: chain.submits, acceptedTxs: chain.accepted.size, outputsPerTx: final,
   untranslated: [...untranslated], language: english ? 'en' : 'zh-CN',

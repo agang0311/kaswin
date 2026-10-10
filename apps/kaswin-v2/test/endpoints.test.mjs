@@ -66,7 +66,7 @@ test('engine: search cursor saved under the retired URL is resumed on the new no
   const chain = new SimChain(), url = 'wss://alpha.sim/kaspa/testnet-10/wrpc/json';
   const pair = new NodeLink([url], {WebSocketImpl: wsFactory(chain)});
   globalThis.fetch = simIndexer(chain, loadProfile()).fetch; globalThis.kasware = fakeKasware();
-  const store = new MemoryStore(), engine = new EngineV2({pair, profile: loadProfile(), indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, restQuery: null, legacyUrls: [OLD_NODE]});
+  const store = new MemoryStore(), engine = new EngineV2({pair, profile: loadProfile(), indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, reorgRecheckDaa: 0n, restQuery: null, legacyUrls: [OLD_NODE]});
   t.after(() => pair.close());
   chain.fund(TEST_ADDRESS, 50_000_000_000n);
   chain.advance(2); // make the newer search cursor distinct from the original anchor below
@@ -90,7 +90,7 @@ for (const mode of ['pruned', 'reorg', 'tampered fields', 'CAS conflict']) {
     const chain = new SimChain(), pair = new NodeLink([DEFAULT_NODE], {WebSocketImpl: wsFactory(chain)});
     t.after(() => pair.close());
     globalThis.fetch = simIndexer(chain, loadProfile()).fetch; globalThis.kasware = fakeKasware();
-    const store = new MemoryStore(), engine = new EngineV2({pair, profile: loadProfile(), indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, restQuery: null});
+    const store = new MemoryStore(), engine = new EngineV2({pair, profile: loadProfile(), indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, reorgRecheckDaa: 0n, restQuery: null});
     chain.fund(TEST_ADDRESS, 50_000_000_000n);
     const session = await readSession(globalThis.kasware, {request: true});
     const plan = await engine.plan({action: 'GENESIS', config: {ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: chain.daa + 1000n}, registry: false}, session);

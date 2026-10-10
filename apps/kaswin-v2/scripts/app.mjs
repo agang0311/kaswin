@@ -742,12 +742,16 @@ function showPlan(plan, epoch) {
 }
 /** Bounded follow-up (~10 min): only queries, never resubmits. Keeps the open record dialog in sync, including the
  * mempool state, so a stuck transaction shows as "in mempool" and can be bumped. */
-async function autoReconcile(txid) {
+async function autoReconcile(txid, first = 2500) {
+  let wait = first;
   for (let i = 0; i < 20; i++) {
-    await new Promise(r => setTimeout(r, Math.min(2500 + i * 1500, 60_000)));
+    await new Promise(r => setTimeout(r, wait));
+    wait = Math.min(2500 + (i + 1) * 1500, 60_000);
     try {
       const r = await engine.reconcile(txid);
-      if ($('modal').open && $('recTx')?.dataset.tx === txid && !modalBusy && ['PENDING', 'UNKNOWN', 'REPLACED', 'SUPERSEDED'].includes(r.status)) showRecord(r);
+      if ($('modal').open && $('recTx')?.dataset.tx === txid && !modalBusy && ['PENDING', 'UNKNOWN', 'REPLACED', 'SUPERSEDED', 'CONFIRMING'].includes(r.status)) showRecord(r);
+      // First acceptance seen: recheck once the accepting block is ~100 DAA deep (short-reorg window), then settle.
+      if (r.status === 'CONFIRMING') { wait = engine.recheckDelayMs(r); continue; }
       if (r.status === 'SUPERSEDED') { if (state.view === 'mine') render(); return; }
       if (['ACCEPTED','REST_ACCEPTED'].includes(recordStatus(r))) {
         toast(`${ACTION_LABEL[r.action]} ${txStatus(recordStatus(r)).label}`);
@@ -810,7 +814,7 @@ function showRecord(r, fresh = false) {
     ${fresh && r.status === 'SUBMITTED' ? '<div class="notice ok">节点已接收交易。<b>接收 ≠ 接受</b>：页面会自动在选中链上核对，也可随时手动对账。</div>' : ''}
     ${r.status === 'UNKNOWN' && needsAttention(r) ? '<div class="notice warn">提交结果未知（例如网络中断）。交易可能已经广播。<b>不要重新创建同类交易</b>；请点击对账。相关输入在本页保持占用，防止重复花费。</div>' : ''}
     ${r.status === 'REJECTED' ? `<div class="notice bad">节点明确拒绝：${e(r.error ?? '')}。这是提交拒绝回执，不是整体余额证明。</div>` : ''}
-    ${facts([['状态', statusBadge(r)], ['交易 ID', hashHtml(r.txid, {link: explorerTx(r.txid)})], ['轮次 CID', hashHtml(r.cid)], ['网络费', `${kas(r.fee)} TKAS`], r.actualFee !== undefined && ['实际费用', `${kas(r.actualFee)} TKAS`], r.accepting && ['接受块', hashHtml(r.accepting, {link: explorerBlock(r.accepting)})], r.locatedBy === 'REST' && ['接受块定位', 'REST 提供位置，节点已完整复验'], r.acceptingDaa && ['接受 DAA', String(r.acceptingDaa)], ['创建时间', timeHtml(r.createdAt)], r.verifiedAt && ['最近核验', timeHtml(r.verifiedAt)]])}
+    ${facts([['状态', statusBadge(r)], ['交易 ID', hashHtml(r.txid, {link: explorerTx(r.txid)})], ['轮次 CID', hashHtml(r.cid)], ['网络费', `${kas(r.fee)} TKAS`], r.actualFee !== undefined && ['实际费用', `${kas(r.actualFee)} TKAS`], r.accepting && ['接受块', hashHtml(r.accepting, {link: explorerBlock(r.accepting)})], r.locatedBy === 'REST' && ['接受块定位', 'REST 提供位置，节点已完整复验'], r.acceptingDaa && ['接受 DAA', String(r.acceptingDaa)], r.depthDaa != null && ['接受块深度', `${String(r.depthDaa)} DAA（核对时）`], ['创建时间', timeHtml(r.createdAt)], r.verifiedAt && ['最近核验', timeHtml(r.verifiedAt)]])}
     ${replaceBox(r)}
     ${restBox(r)}
     ${r.note ? `<p class="small muted">节点核对：${e(r.note)}</p>` : ''}${r.error && (needsAttention(r)||r.restCheck) ? `<p class="small muted">节点信息：${e(r.error)}</p>` : ''}
@@ -1074,6 +1078,8 @@ $('nodeChip').onclick = async () => { try { await pair.connect(); state.daa = aw
 
 /* ------------------------------------------------------------------ start */
 route();
+// Records left CONFIRMING by a closed tab: recheck them once their accepting block is deep enough (query only).
+void engine.records().then(rs => rs.filter(r => r.status === 'CONFIRMING').slice(0, 10).forEach(r => void autoReconcile(r.txid, 500))).catch(() => {});
 void mergedRows().then(rows => { state.rows = rows; if(state.view==='explore') render(); }).then(() => loadRows({quiet: true}));
 // Keep the live view fresh while the tab is visible.
 setInterval(() => { if (document.visibilityState === 'visible' && ['explore', 'mine'].includes(state.view)) void loadRows({quiet: true}); }, 60_000);

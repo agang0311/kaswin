@@ -7,6 +7,7 @@
 import {Engine} from './shared/engine.mjs';
 import {ensure, hash32, errorText, NETWORK_GENESIS, PROFILE_ID} from './shared/core.mjs';
 import {commonUtxos, acceptedAt, matchesDraft} from './shared/chain.mjs';
+import {acceptanceStep} from './shared/engine.mjs';
 import {spkToAddress} from './shared/lib/address.mjs';
 import {uint} from './shared/lib/json.mjs';
 import {queryRest, REST_BASE} from './rest.mjs';
@@ -85,7 +86,7 @@ export class EngineV2 extends Engine {
   async archive(txid) {
     const store = await this.store(), k = PREFIX + hash32(txid), cur = await store.get(k);
     ensure(cur, '没有此记录');
-    ensure(!['ACCEPTED', 'ARCHIVED', 'SUBMITTING'].includes(cur.value.status), '此记录当前不能归档');
+    ensure(!['ACCEPTED', 'CONFIRMING', 'ARCHIVED', 'SUBMITTING'].includes(cur.value.status), '此记录当前不能归档');
     await this.pair.connect();
     let absent = false;
     if (cur.value.status !== 'REJECTED') {
@@ -160,9 +161,10 @@ export class EngineV2 extends Engine {
     // NOT_FOUND / ERROR carry no new information (REST retention, rate limit, network): keep an earlier observation.
     const hint = check.outcome === 'ACCEPTED' ? {acceptingBlockHash: check.acceptingBlockHash, acceptingBlueScore: check.acceptingBlueScore ?? null, from: 'REST'}
       : witness ? {acceptingBlockHash: witness.acceptingBlockHash, acceptingBlueScore: witness.acceptingBlueScore ?? null, from: 'WITNESS'} : null;
-    let v = null, node = null;
+    let v = null, node = null, virtualDaa = null;
     if (hint) {
       onProgress('正在用节点核对 REST 给出的接受块…');
+      try { virtualDaa = await this.pair.currentDaa(); } catch {}
       v = await verifyAtHint(this.pair, result, hint.acceptingBlockHash, hint.acceptingBlueScore);
       node = {result: v.result, chainBlock: v.chainBlock ?? null, pruningBlue: v.pruningBlue ?? null, error: v.error ?? null, checkedAt: Date.now()};
       if (v.result === 'CONFLICT') witness = null; // The trusted node contradicts REST: the node wins.
@@ -170,12 +172,12 @@ export class EngineV2 extends Engine {
     // nodeSearch: why the node's own search did not settle it (transparency; e.g. beyond the bounded range, pruned).
     const restCheck = {...check, txid, nodeCheckedAt: result.checkedAt, nodeSearch: result.error ?? result.note ?? null, hint, node};
     let next;
-    if (v?.result === 'VERIFIED') {
-      // Genuine node verification (the same checks as a normal reconcile); REST only located the block.
-      const {error: _stale, ...base} = result, ev = v.ev;
-      next = {...base, status: 'ACCEPTED', accepted: true, accepting: hint.acceptingBlockHash, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations,
+    if (v?.result === 'VERIFIED' && virtualDaa !== null) {
+      // Genuine node verification (the same checks as a normal reconcile); REST only located the block. Same reorg-depth rule.
+      const {error: _stale, ...base} = result, ev = v.ev, step = acceptanceStep(base, ev, virtualDaa, this.reorgRecheckDaa);
+      next = {...base, ...step, accepting: hint.acceptingBlockHash, acceptingDaa: ev.acceptingDaa, confirmations: ev.confirmations,
         actualFee: v.fee, computeMass: ev.computeMass, storageMass: ev.tx.storageMass, verifiedAt: Date.now(), locatedBy: 'REST',
-        note: '节点当前选中链已接受，批准的输入、输出、费用和预算均已核对（REST仅提供位置；合约费用见证严格匹配；不是不可逆最终性）', restWitness: witness, restCheck};
+        note: `${step.note}（REST 仅提供接受块位置）`, restWitness: witness, restCheck};
     } else next = {...result, restWitness: witness, restCheck};
     // Otherwise status stays UNKNOWN: inputs stay reserved, no localTip, no resubmission. REST-only is display-level.
     await store.compareAndSet(k, current.revision, next);

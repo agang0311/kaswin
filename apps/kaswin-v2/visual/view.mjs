@@ -11,7 +11,8 @@ export const TX_STATUS = {
   SUPERSEDED: {label:'未生效 · 已被替代', tone:'muted', open:false, meaning:'同一组替换交易中的另一笔已被节点选中链接受；这笔花费相同输入，不可能再生效。输入占用已释放。'},
   RECHECKING: {label:'核验中', tone:'violet', open:true, meaning:'只查询接受结果，不会重新广播。'},
   UNKNOWN: {label:'结果未知', tone:'amber', open:true, meaning:'尚未查明是否生效。输入继续保留占用；只核对、不重发，时间久或内存池查不到都不证明失败。'},
-  ACCEPTED: {label:'已接受', tone:'mint', open:false, meaning:'在最近一次核验时，节点选中链接受了这笔交易，且字段与批准内容一致；不代表不可逆最终性。'},
+  CONFIRMING: {label:'确认中', tone:'violet', open:true, meaning:'节点选中链已接受这笔交易，字段与批准内容一致；等接受块再深入约 100 DAA（约 10 秒）后再核对一次，防止短程重组把它撤销。再次核对通过前不计为已接受。只查询，不重发。'},
+  ACCEPTED: {label:'已接受', tone:'mint', open:false, meaning:'节点选中链接受了这笔交易，字段与批准内容一致，并在接受块深入约 100 DAA 后再次核对通过；不代表不可逆最终性。'},
   REJECTED: {label:'被拒绝', tone:'muted', open:false, meaning:'节点明确拒绝了这次提交；不是钱包整体资金未变化的证明。'},
   ARCHIVED: {label:'已归档', tone:'muted', open:false, meaning:'本机不再为这条记录保留输入。归档不证明原交易失败；它可能已经被接受，或被竞争交易取代。'},
 };

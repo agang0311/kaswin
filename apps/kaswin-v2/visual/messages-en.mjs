@@ -216,5 +216,13 @@ export const EN = [
 ['节点估计 低 {0} / 正常 {1} / 优先 {2} sompi/gram · 本笔实际 {3} sompi/gram（按排序质量）· 上限 {4} TKAS','Node estimate low {0} / normal {1} / priority {2} sompi/gram · this transaction {3} sompi/gram (ordering mass) · cap {4} TKAS'],
 ['{0} sompi/gram · 经济档','{0} sompi/gram · Economy'],['{0} sompi/gram · 快速档','{0} sompi/gram · Fast'],
 ['按节点费率需要 {0} TKAS，已按 {1} TKAS 保护上限封顶，排序会低于正常档','The node feerate needs {0} TKAS; capped at the {1} TKAS safety limit, so it ranks below the normal tier'],
+['确认中','Confirming'],
+['节点选中链已接受这笔交易，字段与批准内容一致；等接受块再深入约 100 DAA（约 10 秒）后再核对一次，防止短程重组把它撤销。再次核对通过前不计为已接受。只查询，不重发。','The node’s selected chain accepted this transaction and its fields match what you approved. It is checked once more after the accepting block is about 100 DAA deeper (about 10 seconds), so a short reorg cannot silently undo it. It does not count as accepted until that second check passes. Queries only; never resubmitted.'],
+['节点选中链接受了这笔交易，字段与批准内容一致，并在接受块深入约 100 DAA 后再次核对通过；不代表不可逆最终性。','The node’s selected chain accepted this transaction, its fields match what you approved, and a second check passed after the accepting block was about 100 DAA deep. This is not irreversible finality.'],
+['节点选中链已接受且字段一致；接受块目前深 {0} DAA，深入 {1} DAA（约 10 秒）后再核对一次，防短程重组','Accepted on the node’s selected chain with matching fields; the accepting block is {0} DAA deep and is checked again at {1} DAA (about 10 seconds) against short reorgs'],
+['节点当前选中链已接受，接受块已深入 {0} DAA 后再次核对；批准的输入、输出、费用和预算均已核对（合约费用见证严格匹配；不是不可逆最终性）','Accepted on the node’s current selected chain and checked again after the accepting block was {0} DAA deep; approved inputs, outputs, fee and budget all verified (contract fee witness matched exactly; not irreversible finality)'],
+['节点当前选中链已接受，接受块已深入 {0} DAA 后再次核对；批准的输入、输出、费用和预算均已核对（合约费用见证严格匹配；不是不可逆最终性）（REST 仅提供接受块位置）','Accepted on the node’s current selected chain and checked again after the accepting block was {0} DAA deep; approved inputs, outputs, fee and budget all verified (contract fee witness matched exactly; not irreversible finality) (REST only supplied the block location)'],
+['节点选中链已接受且字段一致；接受块目前深 {0} DAA，深入 {1} DAA（约 10 秒）后再核对一次，防短程重组（REST 仅提供接受块位置）','Accepted on the node’s selected chain with matching fields; the accepting block is {0} DAA deep and is checked again at {1} DAA (about 10 seconds) against short reorgs (REST only supplied the block location)'],
+['接受块深度','Accepting block depth'],['{0} DAA（核对时）','{0} DAA (at check time)'],
 ['中奖者奖金','Winner’s prize'],['创建者押金返还','Creator’s deposit return'],['轮次状态（covenant 后继）','Round state (covenant successor)'],['信标','Beacon'],
 ];

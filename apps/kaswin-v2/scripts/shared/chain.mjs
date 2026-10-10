@@ -54,6 +54,15 @@ export async function acceptedAt(rpc, txid, accepting) {
     inputs: raw.inputs.map(i => i.verboseData?.utxoEntry ? {value: uint(i.verboseData.utxoEntry.amount), daa: uint(i.verboseData.utxoEntry.blockDaaScore), covenantId: i.verboseData.utxoEntry.covenantId ?? null, spk: i.verboseData.utxoEntry.scriptPublicKey} : null)};
 }
 
+/** Reorg recheck depth (project policy, NOT consensus finality). Read-only VSPC monitor (tools/vspc-reorg-monitor.mjs,
+ * references/reorg-results): deepest selected-chain removal 83 DAA on mainnet over 24 h (2026-09-26/27; run marked
+ * incomplete: 6 data gaps, 12,135 dropped events) and 75 DAA on TN10 over 5.3 h. A first acceptance is only a
+ * candidate; the record becomes ACCEPTED when acceptance is verified again with the accepting block at least this deep
+ * below the node's virtual DAA (about 10 s at 10 DAA/s). Deeper reorgs were not observed, not ruled out. */
+export const REORG_RECHECK_DAA = 100n;
+/** DAA depth of an accepting block below the virtual DAA read BEFORE the acceptance check (conservative). */
+export const acceptanceDepth = (virtualDaa, acceptingDaa) => virtualDaa > acceptingDaa ? virtualDaa - acceptingDaa : 0n;
+
 /** Accepted transaction at `accepting`, read from the connected node. */
 export async function acceptedPair(link, txid, accepting) {
   const [n] = await link.connect();

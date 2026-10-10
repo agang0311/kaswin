@@ -72,7 +72,7 @@ async function simUnknown() {
   const chain = new SimChain(), pair = new NodeLink(['wss://alpha.sim/kaspa/testnet-10/wrpc/json'], {WebSocketImpl: wsFactory(chain)});
   globalThis.fetch = simIndexer(chain, profile).fetch; globalThis.kasware = fakeKasware();
   const store = new MemoryStore(), h = {chain, pair, store, respond: async () => status(404), restCalls: 0};
-  h.engine = new EngineV2({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks,
+  h.engine = new EngineV2({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, reorgRecheckDaa: 0n,
     restQuery: r => queryRest(r, {fetcher: (...a) => { h.restCalls++; return h.respond(...a); }})});
   chain.fund(TEST_ADDRESS, 50_000_000_000n);
   const session = await readSession(globalThis.kasware, {request: true});
@@ -162,7 +162,7 @@ test('offline node + historical receipt: REST-only display; a slow lookup never 
   const record = await historyRecord(), store = new MemoryStore(), k = PREFIX + record.txid;
   await store.compareAndSet(k, null, record);
   const pair = {nodes: [], connect: async () => { throw Error('没有可用的 TN10 节点：x（无法连接：x）'); }};
-  const engine = new EngineV2({pair, openStore: async () => store, locks: testLocks, restQuery: r => queryRest(r, {fetcher: async () => ok(restDTO(record))})});
+  const engine = new EngineV2({pair, openStore: async () => store, locks: testLocks, reorgRecheckDaa: 0n, restQuery: r => queryRest(r, {fetcher: async () => ok(restDTO(record))})});
   const r = await engine.reconcile(record.txid);
   assert.equal(recordStatus(r), 'REST_ACCEPTED'); assert.equal(r.restCheck.node.result, 'UNAVAILABLE'); assert.equal((await engine.reserved()).size, 2);
   let wake, started; const ready = new Promise(x => started = x), wait = new Promise(x => wake = x);

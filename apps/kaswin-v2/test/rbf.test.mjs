@@ -20,7 +20,7 @@ function harness(opts = {}) {
   const chain = new SimChain(opts.chain), pair = new NodeLink(['wss://alpha.sim/kaspa/testnet-10/wrpc/json'], {WebSocketImpl: wsFactory(chain)});
   const idx = simIndexer(chain, profile); globalThis.fetch = idx.fetch; globalThis.kasware = fakeKasware();
   const store = new MemoryStore();
-  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, drawProof: opts.drawProof});
+  const engine = new Engine({pair, profile, indexer: 'http://localhost/indexer', openStore: async () => store, locks: testLocks, reorgRecheckDaa: 0n, drawProof: opts.drawProof});
   return {chain, pair, idx, engine, store};
 }
 const cfg = (daa, x = {}) => ({ticketPrice: 100_000_000n, ticketCap: 3, purchaseCap: 256, minTickets: 3, closeEligibleDaa: daa + 1000n, ...x});
