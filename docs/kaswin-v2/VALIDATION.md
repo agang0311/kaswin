@@ -1,5 +1,9 @@
 # Kaswin F3.2 / V2 验证记录与边界
 
+## 经济/快速手续费选择（2026-10-10，S/L，模拟节点）
+
+[记录](FEE-TIERS-20261010.md)：HTML `faa65101…`（375643字节）。报价时探测 getFeeEstimateExperimental（待打包规模+三档费率，按 rusty-kaspa v2.1.0 估计曲线），同状态给出经济（low 档×入池质量）与快速（normal 档×含存储排序质量）两份完整报价；切档作废旧计划并清空批准。应用84PASS/1TODO，E2E中英含切档，UI、audit10、377回执通过；线上只读解析正常。真实排队时间未测。
+
 ## 内存池状态与手续费替换 RBF（2026-10-09，S/L，模拟节点）
 
 [记录](MEMPOOL-RBF-20261009.md)：HTML `357c9ecb…`（365006字节）。按 rusty-kaspa v2.1.0（线上节点版本）核对 `submitTransactionReplacement`=RbfPolicy::Mandatory。新增“内存池中/已被替换/未生效·已被替代”状态与加速（同输入、同状态变化、只提高费用）。应用80PASS/1TODO，E2E中英各8次提交含卡池→加速→接受，UI、audit10套、377回执、内部站只读检查通过。真实TN10替换未执行。

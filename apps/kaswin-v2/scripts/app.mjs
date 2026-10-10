@@ -626,6 +626,39 @@ async function actionDialog(action, d) {
   }
   runPlan({action, cid: d.cid}, epoch);
 }
+const rateText = v => typeof v === 'number' && Number.isFinite(v) ? (v >= 100 ? v.toFixed(0) : v.toFixed(2)) : '—';
+/** Estimated wait as text; the node's estimator is an expectation, not a promise. */
+function waitText2(s, x) {
+  if (x?.belowLow) return '要等网络空闲';
+  if (s === null || s === undefined) return '无法估计';
+  if (s < 1) return '约 1 秒内';
+  if (s < 60) return `约 ${Math.ceil(s)} 秒`;
+  if (s < 3600) return `约 ${Math.ceil(s / 60)} 分钟`;
+  return s < 86400 ? `约 ${Math.ceil(s / 3600)} 小时` : '超过 1 天';
+}
+function networkLine(plan) {
+  const c = plan.conditions, m = c.mempool;
+  const busy = plan.network.idle ? '空闲' : '繁忙';
+  const pool = m ? `待打包 ${m.readyCount} 笔（约 ${(m.readyMass / 500000).toFixed(1)} 个区块容量）` : '内存池规模未提供';
+  return `网络${busy} · ${pool} · 节点费率 低 ${rateText(c.low.feerate)} / 正常 ${rateText(c.normal.feerate)} / 优先 ${rateText(c.priority.feerate)} sompi/gram · 探测于 ${timeHtml(c.checkedAt)}`;
+}
+function feeChoiceHtml(plan) {
+  if (!plan.tiers || plan.replaces) return '';
+  const card = (t, name, desc) => {
+    const x = plan.tiers[t];
+    if (!x.available) return `<button type="button" class="tier" data-tier="${t}" disabled aria-pressed="false"><b>${name}</b><span class="small muted">不可用：${e(x.reason)}</span></button>`;
+    const rec = plan.recommendedTier === t ? '<span class="badge t-mint">推荐</span>' : '';
+    return `<button type="button" class="tier" data-tier="${t}" aria-pressed="${plan.tier === t}"><span class="tier-h"><b>${name}</b>${rec}</span><span class="tier-fee">${kas(x.fee)} TKAS</span><span class="small muted">预计等待 ${e(waitText2(x.waitSeconds, x))} · ${e(x.orderingFeerate)} sompi/gram</span><span class="small muted">${x.clamped ? `按节点费率需要 ${kas(x.loadFee)} TKAS，已按 ${kas(FEE_CAP)} TKAS 保护上限封顶，排序会低于正常档` : desc}</span></button>`;
+  };
+  const same = plan.tiers.economy.sameAs === 'fast';
+  return `<div class="feebox"><p class="small muted net-line">${networkLine(plan)}</p>
+    ${same ? `<p class="small muted">经济与快速报价相同（这笔交易的存储质量不高于计算质量），只有一档。</p>` : `<div class="tiers" role="group" aria-label="手续费档位">
+      ${card('economy', '经济', '按节点低档费率、最低转发规则计价，不为存储质量付费；网络繁忙时可能排队较久，之后可在交易记录中加速')}
+      ${card('fast', '快速', '按节点正常档费率、含存储质量的全部排序质量计价，繁忙时也按正常顺序打包')}
+    </div>`}
+    ${!same && plan.tier === 'economy' && !plan.network.idle ? `<div class="notice warn">网络繁忙：经济档可能在内存池中等待较久。在被接受或查明失败前输入保持占用，页面不会重发；可随时在交易记录中「加速」。</div>` : ''}
+  </div>`;
+}
 async function runPlan(request, epoch) {
   modal(ACTION_LABEL[request.action], `<ul class="progress" id="prog"><li class="run" id="pstat">准备…</li></ul><p class="err" id="pErr"></p>`);
   lockModal(true);
@@ -650,6 +683,7 @@ function showPlan(plan, epoch) {
     ${plan.sponsored ? `<div class="notice warn">本批退款的执行费池不足以覆盖网络费/存储质量，需由你的一笔普通 UTXO 赞助；赞助本金会随执行者输出退回给你。</div>` : ''}
     <h3 style="margin:0 0 8px">全部输出（${t.outputs.length}）</h3>
     <div class="outs">${plan.outputs.map(o => `<div class="out ${o.mine ? 'mine' : ''}"><span class="r">${o.index} · ${e(lab(o))}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>
+    ${feeChoiceHtml(plan)}
     <div class="sum"><span>网络手续费</span><span>${kas(plan.fee)} TKAS</span></div>
     ${plan.feeClamped ? `<div class="notice warn">按节点当前费率估计，这笔交易需要 ${kas(plan.loadFee)} TKAS 才能按正常顺序被打包，已按 ${kas(FEE_CAP)} TKAS 保护上限封顶。网络繁忙时它可能在内存池中等待较久；在被接受或查明失败前，页面会保留输入占用，不会重发。</div>` : plan.feeMode === 'load' && plan.loadFee > plan.standardFee ? `<p class="small muted">节点费率按交易全部质量（含存储质量）计价；仅满足最低转发费（${kas(plan.standardFee)} TKAS）的交易在网络繁忙时可能长时间停留在内存池。</p>` : ''}
     <div class="sum"><span>你的钱包净支出</span><span>${net >= 0n ? kas(net) : '净收入 ' + kas(-net)} TKAS</span></div>
@@ -658,7 +692,7 @@ function showPlan(plan, epoch) {
       <dt>交易 ID</dt><dd class="mono">${e(plan.draft.txid)}</dd><dt>CID</dt><dd class="mono">${e(plan.cid)}</dd>
       <dt>Compute budget</dt><dd>输入 0：${plan.budget}（含 ${BUDGET_MARGIN} 单位余量）· 资金输入各 10</dd>
       <dt>质量</dt><dd>compute ${plan.quote.computeMass} · storage ${plan.quote.storageMass} · transient ${plan.quote.transientMass}</dd>
-      <dt>费率</dt><dd>节点估计 ${plan.feerate} sompi/gram · 本笔实际 ${plan.orderingFeerate ?? '—'} sompi/gram（按排序质量）· 上限 ${kas(FEE_CAP)} TKAS</dd>
+      <dt>费率</dt><dd>${plan.tiers ? `节点估计 低 ${rateText(plan.conditions.low.feerate)} / 正常 ${rateText(plan.conditions.normal.feerate)} / 优先 ${rateText(plan.conditions.priority.feerate)} sompi/gram` : `节点估计 ${plan.feerate} sompi/gram`} · 本笔实际 ${plan.orderingFeerate ?? '—'} sompi/gram（按排序质量）· 上限 ${kas(FEE_CAP)} TKAS</dd>
       <dt>需签名输入</dt><dd>${plan.draft.authorizedInputIndices.join(', ') || '无（permissionless）'}</dd>
       ${t.lockTime ? `<dt>lockTime</dt><dd>${t.lockTime}</dd>` : ''}${t.inputs[0].sequence ? `<dt>sequence</dt><dd>${t.inputs[0].sequence}</dd>` : ''}
       ${plan.proof ? `<dt>PASS-A</dt><dd>目标块 ${e(shortHash(plan.proof.target.hash))} · 边界 DAA ${plan.proof.boundaryDaa} · 节点 ${e(plan.proof.nodes.join(' / '))}</dd>` : ''}
@@ -669,6 +703,12 @@ function showPlan(plan, epoch) {
   const tick = setInterval(() => { const left = Math.max(0, Math.round((expires - Date.now()) / 1000)); if ($('ttl')) $('ttl').textContent = left ? `报价 ${left} 秒内有效` : '报价已过期，请重新报价'; if (!left) { $('sign') && ($('sign').disabled = true); clearInterval(tick); } }, 500);
   modalCleanup = () => clearInterval(tick);
   $('approve').onchange = () => { $('sign').disabled = !$('approve').checked || Date.now() >= expires; };
+  // Switching the fee tier yields a NEW plan (new id); the approval checkbox starts unchecked again.
+  document.querySelectorAll('[data-tier]').forEach(b => b.onclick = () => {
+    if (modalBusy || b.disabled || b.getAttribute('aria-pressed') === 'true') return;
+    try { showPlan(engine.chooseTier(plan, b.dataset.tier), epoch); }
+    catch (err) { $('xErr').textContent = errorText(err); }
+  });
   $('cancel').onclick = closeModal;
   $('sign').onclick = async () => {
     lockModal(true);
@@ -728,7 +768,7 @@ const canBump = r => ['SUBMITTED', 'PENDING'].includes(r.status) && !r.replacedB
 function replaceBox(r) {
   const rows = [];
   if (r.mempool) rows.push(['节点内存池', r.mempool.present ? `在内存池中 · 费用 ${kas(r.mempool.fee)} TKAS · 核对于 ${timeHtml(r.mempool.checkedAt)}` : `未在内存池中 · 核对于 ${timeHtml(r.mempool.checkedAt)}`]);
-  if (r.orderingFeerate) rows.push(['本笔排序费率', `${e(r.orderingFeerate)} sompi/gram`]);
+  if (r.orderingFeerate) rows.push(['本笔排序费率', `${e(r.orderingFeerate)} sompi/gram${r.feeTier === 'economy' ? ' · 经济档' : r.feeTier === 'fast' ? ' · 快速档' : ''}`]);
   if (r.replaces) rows.push(['替换了', `${hashHtml(r.replaces, {link: explorerTx(r.replaces)})} · 原费用 ${kas(r.previousFee)} TKAS`]);
   if (r.replacedBy) rows.push(['已被替换为', hashHtml(r.replacedBy, {link: explorerTx(r.replacedBy)})]);
   if (r.supersededBy) rows.push(['已生效的交易', hashHtml(r.supersededBy, {link: explorerTx(r.supersededBy)})]);

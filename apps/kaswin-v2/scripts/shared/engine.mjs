@@ -7,6 +7,7 @@
 import {S, ensure, hash32, hex, unhex, buildAction, buildOpenGenesis, availableActions, actionBudget, referenceTxId, stable, kas, errorText,
   DEFAULT_REGISTRY_SPK, REGISTRATION_SOMPI, PROFILE_ID, NETWORK_GENESIS, IndexedStore, UserError} from './core.mjs';
 import {convergeFee, quoteMass, MassLimitError} from './mass.mjs';
+import {FEE_TIERS, isIdle, waitSeconds, recommendTier, orderingRate} from './feetiers.mjs';
 import {decodeSpend} from '../../../../packages/f3.2-core/lib/accepted.js';
 import {commonUtxos, verifyInputsLive, acceptedPair, searchAccepted, mempoolEntry, matchesDraft} from './chain.mjs';
 import {signWithWallet} from './wallet.mjs';
@@ -62,7 +63,7 @@ export class Engine {
   /** onLive(live, cid): display-only notice of each node-verified live snapshot read while planning (also when the
    * action then turns out unavailable). It cannot alter the plan; the page uses it to stop showing a stale view. */
   constructor({pair, profile, indexer, onStatus = () => {}, onLive = () => {}, openStore = () => IndexedStore.open(STORE), locks = null, drawProof = acquireDrawProof}) {
-    Object.assign(this, {pair, profile, indexer, onStatus, onLive, openStore, drawProof}); this.plans = new Map(); this.storeP = null;
+    Object.assign(this, {pair, profile, indexer, onStatus, onLive, openStore, drawProof}); this.plans = new Map(); this.tierBuilds = new Map(); this.storeP = null;
     this.locks = locks ?? globalThis.navigator?.locks ?? leaseLocks(() => this.store());
   }
   store() { return this.storeP ??= this.openStore(); }
@@ -110,7 +111,8 @@ export class Engine {
     this.onStatus('连接 TN10 节点…');
     await this.pair.connect();
     const currentDaa = await this.pair.currentDaa();
-    const feerate = await this.pair.feerate();
+    this.onStatus('探测网络费率与内存池…');
+    const conditions = await this.pair.feeConditions(), feerate = conditions.normal.feerate;
     let live = null, op = null, proof = null, registry = null;
     if (action === 'GENESIS') {
       S.validateConfig(request.config);
@@ -140,42 +142,88 @@ export class Engine {
     for (const i of live ? [live.snapshot.tip] : []) ensure(!reservedSet.has(key(i)), '本浏览器已有一笔花费此轮状态的提交尚未对账，请先在「交易记录」中对账', 'PENDING_LOCAL');
     const available = needsFunds || action === 'REFUND' ? await this.funding(session) : [];
     const make = funds => fee => action === 'GENESIS' ? buildOpenGenesis(this.profile, session.key, request.config, funds, fee, registry) : buildAction(live.snapshot, this.profile, op, fee, funds, actionBudget(action, s));
-    let funds = needsFunds ? this.pick(available, principal + 3_000_000n) : [], priced, sponsored = false;
-    // 'load' (default): priced on the node estimate x mempool ordering mass; see mass.mjs convergeFee.
-    const attempt = f => convergeFee(make(f), feerate, {mode: request.feeMode ?? 'load'});
-    for (let round = 0; ; round++) {
-      try { priced = attempt(funds); break; }
-      catch (e) {
-        const code = e?.code ?? e?.message;
-        if (action === 'REFUND' && funds.length === 0 && (code === 'REFUND_FEE_POOL' || e instanceof MassLimitError)) {
-          // Executor pool (k × 0.01) too small or an all-tiny-output batch exceeds storage mass: sponsor with ONE wallet UTXO.
-          const big = available.find(u => u.value >= 100_000_000n);
-          ensure(big, `该批退款需要执行者赞助一笔普通输入（执行费池 ${kas(pool)} TKAS 不足或存储质量超限），但钱包没有 ≥1 TKAS 的可用 UTXO`, 'SPONSOR');
-          funds = [big]; sponsored = true; continue;
+    // Two complete, independently funded quotes on the same live state (only the fee and, if needed, the funding differ):
+    //  economy: the node's LOW bucket rate on max(compute, normalized transient) = the mempool admission rule
+    //           (check_transaction_standard.rs). Storage mass is not paid for, so a storage-heavy transaction ranks low
+    //           and may wait until the ready mempool fits a block (everything is taken then).
+    //  fast:    the node's NORMAL bucket rate on the full ordering mass incl. storage (feerate_key.rs), cap-clamped.
+    const priceTier = (mode, rate) => {
+      let funds = needsFunds ? this.pick(available, principal + 3_000_000n) : [], priced, sponsored = false;
+      for (let round = 0; ; round++) {
+        try { priced = convergeFee(make(funds), rate, {mode}); break; }
+        catch (e) {
+          const code = e?.code ?? e?.message;
+          if (action === 'REFUND' && funds.length === 0 && (code === 'REFUND_FEE_POOL' || e instanceof MassLimitError)) {
+            // Executor pool (k × 0.01) too small or an all-tiny-output batch exceeds storage mass: sponsor with ONE wallet UTXO.
+            const big = available.find(u => u.value >= 100_000_000n);
+            ensure(big, `该批退款需要执行者赞助一笔普通输入（执行费池 ${kas(pool)} TKAS 不足或存储质量超限），但钱包没有 ≥1 TKAS 的可用 UTXO`, 'SPONSOR');
+            funds = [big]; sponsored = true; continue;
+          }
+          if (needsFunds && (code === 'INSUFFICIENT_FUNDING' || code === 'GENESIS_FUNDS') && round < 3) { funds = this.pick(available, principal + 50_000_000n * BigInt(round + 1)); continue; }
+          if (e instanceof MassLimitError) throw new UserError(`交易质量超出区块上限（storage ${e.quote.storageMass} / compute ${e.quote.computeMass}）。可改用面额更大的资金 UTXO。`, 'MASS');
+          throw e;
         }
-        if (needsFunds && (code === 'INSUFFICIENT_FUNDING' || code === 'GENESIS_FUNDS') && round < 3) { funds = this.pick(available, principal + 50_000_000n * BigInt(round + 1)); continue; }
-        if (e instanceof MassLimitError) throw new UserError(`交易质量超出区块上限（storage ${e.quote.storageMass} / compute ${e.quote.computeMass}）。可改用面额更大的资金 UTXO。`, 'MASS');
-        throw e;
       }
-    }
-    const draft = priced.draft;
-    draft.txid = referenceTxId(draft.transaction);
-    for (const f of draft.inputUtxos.slice(action === 'GENESIS' ? 0 : 1)) ensure(!reservedSet.has(key(f.outpoint)), '资金输入已被一笔未对账的本地提交占用', 'PENDING_LOCAL');
-    const plan = {
-      id: planId(), createdAt: Date.now(), action, cid: action === 'GENESIS' ? draft.transaction.outputs[0].covenant.covenantId : request.cid,
-      session, draft, fee: priced.fee, quote: priced.quote, feerate, currentDaa, sponsored,
-      feeMode: priced.mode, orderingFeerate: priced.orderingFeerate, standardFee: priced.standardFee, loadFee: priced.loadFee, feeClamped: priced.clamped, proof: proof ? {target: proof.target, parent: proof.parent, boundaryDaa: proof.boundaryDaa, nodes: proof.nodes} : null,
-      outputs: describeOutputs(draft, live, session), budget: draft.transaction.inputs[0].computeBudget,
-      before: live ? {phase: live.ledger.phase, sold: live.ledger.sold, purchaseCount: live.ledger.purchaseCount, cursor: live.ledger.cursor, value: live.snapshot.value} : null,
-      after: draft.transition?.next ? {phase: draft.transition.next.phase, sold: draft.transition.next.sold, purchaseCount: draft.transition.next.purchaseCount, cursor: draft.transition.next.cursor, value: draft.transaction.outputs[0].value} : null,
-      terminal: draft.transition?.terminal ?? null,
-      winner: action === 'DRAW_AND_PAY' ? proof.winner : null,
-      origin: action === 'GENESIS' ? draft.inputUtxos[0].outpoint : live.snapshot.origin, genesisTxid: live?.row?.genesisTxid ?? null,
-      nextLedger: action === 'GENESIS' ? hex(S.encodeLedger(S.newOpen(session.key, request.config))) : draft.transition.next ? hex(S.encodeLedger(draft.transition.next)) : null,
-      nextValue: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].value : null, nextSpk: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].scriptPublicKey : null,
+      const draft = priced.draft;
+      draft.txid = referenceTxId(draft.transaction);
+      for (const f of draft.inputUtxos.slice(action === 'GENESIS' ? 0 : 1)) ensure(!reservedSet.has(key(f.outpoint)), '资金输入已被一笔未对账的本地提交占用', 'PENDING_LOCAL');
+      return {priced, sponsored, rate};
     };
+    const quoted = {}, failures = {};
+    for (const [tier, mode, rate] of [['economy', 'standard', conditions.low.feerate], ['fast', 'load', conditions.normal.feerate]]) {
+      try { quoted[tier] = priceTier(mode, rate); } catch (e) { failures[tier] = e; }
+    }
+    if (!quoted.economy && !quoted.fast) throw failures.fast ?? failures.economy;
+    // Economy never costs more than fast; if it would (different funding), there is a single option.
+    if (quoted.economy && quoted.fast && quoted.economy.priced.fee >= quoted.fast.priced.fee) quoted.economy = quoted.fast;
+    const tiers = {};
+    for (const t of FEE_TIERS) {
+      const q = quoted[t];
+      if (!q) { tiers[t] = {available: false, reason: errorText(failures[t])}; continue; }
+      const p = q.priced, rate = orderingRate(p);
+      tiers[t] = {available: true, fee: p.fee, mode: p.mode, bucketFeerate: q.rate, orderingFeerate: p.orderingFeerate, clamped: p.clamped, standardFee: p.standardFee, loadFee: p.loadFee, waitSeconds: waitSeconds(conditions, rate), belowLow: !isIdle(conditions) && rate < conditions.low.feerate, sponsored: q.sponsored, sameAs: q === quoted.fast && t === 'economy' ? 'fast' : null};
+    }
+    const recommended = !tiers.economy.available ? 'fast' : !tiers.fast.available ? 'economy' : recommendTier(conditions, tiers.economy, tiers.fast);
+    const base = {
+      createdAt: Date.now(), action, session, feerate, currentDaa, conditions, network: {idle: isIdle(conditions)}, tiers, recommendedTier: recommended,
+      proof: proof ? {target: proof.target, parent: proof.parent, boundaryDaa: proof.boundaryDaa, nodes: proof.nodes} : null,
+      before: live ? {phase: live.ledger.phase, sold: live.ledger.sold, purchaseCount: live.ledger.purchaseCount, cursor: live.ledger.cursor, value: live.snapshot.value} : null,
+      winner: action === 'DRAW_AND_PAY' ? proof.winner : null,
+      origin: null, genesisTxid: live?.row?.genesisTxid ?? null,
+    };
+    const materialize = tier => {
+      const {priced, sponsored} = quoted[tier], draft = priced.draft;
+      return {
+        tier, cid: action === 'GENESIS' ? draft.transaction.outputs[0].covenant.covenantId : request.cid,
+        draft, fee: priced.fee, quote: priced.quote, sponsored,
+        feeMode: priced.mode, orderingFeerate: priced.orderingFeerate, standardFee: priced.standardFee, loadFee: priced.loadFee, feeClamped: priced.clamped,
+        outputs: describeOutputs(draft, live, session), budget: draft.transaction.inputs[0].computeBudget,
+        after: draft.transition?.next ? {phase: draft.transition.next.phase, sold: draft.transition.next.sold, purchaseCount: draft.transition.next.purchaseCount, cursor: draft.transition.next.cursor, value: draft.transaction.outputs[0].value} : null,
+        terminal: draft.transition?.terminal ?? null,
+        origin: action === 'GENESIS' ? draft.inputUtxos[0].outpoint : live.snapshot.origin,
+        nextLedger: action === 'GENESIS' ? hex(S.encodeLedger(S.newOpen(session.key, request.config))) : draft.transition.next ? hex(S.encodeLedger(draft.transition.next)) : null,
+        nextValue: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].value : null, nextSpk: draft.transaction.outputs[0].covenant ? draft.transaction.outputs[0].scriptPublicKey : null,
+      };
+    };
+    const wanted = request.tier && tiers[request.tier]?.available ? request.tier : recommended;
+    const plan = {id: planId(), ...base, ...materialize(wanted)};
+    this.tierBuilds.set(plan.id, materialize);
     this.plans.set(plan.id, plan);
     return plan;
+  }
+
+  /** Switch a quoted plan to the other fee tier. Returns a NEW plan (new id, same quote time and live state); the old
+   * plan is invalidated, so an approval can only ever apply to the exact fee and outputs on screen. */
+  chooseTier(plan, tier) {
+    ensure(this.plans.get(plan.id) === plan, '交易计划已失效，请重新报价');
+    ensure(FEE_TIERS.includes(tier) && plan.tiers?.[tier]?.available, '这一档手续费不可用');
+    if (plan.tier === tier) return plan;
+    const materialize = this.tierBuilds.get(plan.id);
+    ensure(materialize, '交易计划已失效，请重新报价');
+    const next = {...plan, ...materialize(tier), id: planId()};
+    this.plans.delete(plan.id); this.tierBuilds.delete(plan.id);
+    this.plans.set(next.id, next); this.tierBuilds.set(next.id, materialize);
+    return next;
   }
 
   /** Fee bump (RBF) of this browser's own transaction that is still in the node mempool. Rebuilds the SAME transition on
@@ -255,7 +303,7 @@ export class Engine {
     requireTradingRelease();
     ensure(approved === true, '尚未勾选批准');
     ensure(this.plans.get(plan.id) === plan, '交易计划已失效，请重新报价');
-    this.plans.delete(plan.id);
+    this.plans.delete(plan.id); this.tierBuilds.delete(plan.id);
     ensure(Date.now() - plan.createdAt < PLAN_TTL_MS, '报价已超过 90 秒，请重新报价（链上状态与费率可能已变化）');
     ensure(this.locks, '浏览器不支持 Web Locks，无法防止多标签页重复提交');
     return this.locks.request('kaswin-opus-submit', {ifAvailable: true}, async lock => {
@@ -284,7 +332,7 @@ export class Engine {
         txid: plan.draft.txid, action: plan.action, cid: plan.cid, createdAt: Date.now(), status: 'SUBMITTING', accepted: false,
         fee: plan.fee, quote: plan.quote, budget: plan.budget, session: {address: plan.session.address, key: plan.session.key},
         inputs: plan.draft.inputUtxos.map(f => f.outpoint), draft: plan.draft, signed: tx, anchors, cursors: Object.fromEntries(anchors.map(a => [a.url, a.sink])),
-        outputs: plan.outputs, terminal: plan.terminal, winner: plan.winner, proof: plan.proof, orderingFeerate: plan.orderingFeerate ?? null,
+        outputs: plan.outputs, terminal: plan.terminal, winner: plan.winner, proof: plan.proof, orderingFeerate: plan.orderingFeerate ?? null, feeTier: plan.tier ?? null,
         ...(plan.replaces ? {replaces: plan.replaces, replaceRoot: plan.replaceRoot, previousFee: plan.previousFee} : {}),
         origin: plan.origin, genesisTxid: plan.action === 'GENESIS' ? plan.draft.txid : plan.genesisTxid, nextLedger: plan.nextLedger, nextValue: plan.nextValue, nextSpk: plan.nextSpk, walletEchoDiffers: sigs.echoDiffers === true,
       };

@@ -100,8 +100,25 @@ try {
   await page.fill('#cPrice', '1'); await page.fill('#cCap', '3'); await page.fill('#cMin', '3');
   await page.click('.advanced summary'); await page.fill('#cPcap', '256');
   await page.click('[data-dur="10"]');
+  // Busy network (live TN10 buckets 2026-10-10 under stress): the dialog probes fees + mempool and offers two tiers.
+  chain.feeEstimate = {estimate: {lowBuckets: [{estimatedSeconds: 0.8548, feerate: 111.97}], normalBuckets: [{estimatedSeconds: 0.3002, feerate: 158.77}, {estimatedSeconds: 0.5512, feerate: 129.63}], priorityBucket: {estimatedSeconds: 0.1, feerate: 229.28}},
+    verbose: {mempoolReadyTransactionsCount: 1792, mempoolReadyTransactionsTotalMass: 3440070, networkMassPerSecond: 5000000}};
   await page.click('#cGo');
+  await page.waitForSelector('[data-tier="economy"]', {timeout: 60000});
+  if (!/网络繁忙|Network busy/.test(await page.locator('.net-line').textContent())) throw Error('busy network not shown');
+  const feeOf = () => page.locator('#mBody .sum').first().textContent();
+  if (await page.getAttribute('[data-tier="fast"]', 'aria-pressed') !== 'true') throw Error('fast tier not recommended on a busy network');
+  const fastFee = await feeOf();
+  await page.check('#approve');
+  await page.click('[data-tier="economy"]');
+  await page.waitForFunction(() => document.querySelector('[data-tier="economy"]')?.getAttribute('aria-pressed') === 'true');
+  if (await page.locator('#approve').isChecked()) throw Error('approval survived a fee tier switch');
+  const ecoFee = await feeOf();
+  if (ecoFee === fastFee) throw Error('tier switch did not change the fee');
+  steps.push(['genesis-tiers', `${fastFee.replace(/\s+/g, ' ')} -> ${ecoFee.replace(/\s+/g, ' ')}`]);
+  await scanEnglish(); await shot('genesis-tiers');
   await approveAndSubmit('genesis');
+  chain.feeEstimate = null;
   // The new round: track it in the simulated indexer from the chain's accepted genesis (as the real indexer would via Registry).
   const g = [...chain.accepted.values()].at(-1), cid = g.tx.outputs[0].covenant.covenantId;
   // Lagging indexer whose server clock is far ahead: it keeps serving the OPEN genesis state with a later timestamp.

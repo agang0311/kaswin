@@ -111,7 +111,9 @@ export class SimChain {
       getInfo: () => ({p2pId}),
       getSink: () => ({sink: chain.chain.at(-1)}),
       getSinkBlueScore: () => ({blueScore: Number(chain.blue)}),
-      getFeeEstimate: () => ({estimate: {normalBuckets: [{feerate: 1, estimatedSeconds: 1}], priorityBucket: {feerate: 1, estimatedSeconds: 1}}}),
+      getFeeEstimate: () => chain.feeEstimate ? {estimate: chain.feeEstimate.estimate} : {estimate: {normalBuckets: [{feerate: 1, estimatedSeconds: 1}], priorityBucket: {feerate: 1, estimatedSeconds: 1}}},
+      // Optional (chain.feeEstimate = {estimate, verbose}); absent by default so the page's getFeeEstimate fallback is exercised.
+      getFeeEstimateExperimental: () => { if (!chain.feeEstimate?.verbose) throw {message: 'unsupported getFeeEstimateExperimental'}; return chain.feeEstimate; },
       getUtxosByAddresses: ({addresses}) => ({entries: [...chain.utxos.values()].filter(u => addresses.includes(u.address)).map(u => ({address: u.address, outpoint: u.outpoint, utxoEntry: {amount: u.value.toString(), scriptPublicKey: spkText(u.spk), blockDaaScore: u.daa.toString(), isCoinbase: false, covenantId: u.covenantId}}))}),
       getBlock: ({hash}) => { const b = chain.blocks.get(hash); if (!b) throw {message: 'block not found'}; return {block: {header: header(b), verboseData: {isChainBlock: true, selectedParentHash: b.parent ?? '00'.repeat(32)}}}; },
       getVirtualChainFromBlockV2: ({startHash}) => {

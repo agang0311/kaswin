@@ -8,6 +8,7 @@
 import {parseJson, jsonText, uint} from './lib/json.mjs';
 import {ensure, hash32, NETWORK_ID, errorText} from './core.mjs';
 import {requireTradingRelease} from './release-safety.mjs';
+import {parseFeeEstimate} from './feetiers.mjs';
 
 /** Default node. Public TN10 nodes are fallbacks,
  * tried in order only if the preferred node is unreachable or unsynced. */
@@ -20,7 +21,7 @@ export const TN10_JSON_NODES = Object.freeze([
   'wss://electron-10.kaspa.stream/kaspa/testnet-10/wrpc/json',
 ]);
 const READ = new Set(['getServerInfo', 'getInfo', 'getBlockDagInfo', 'getSink', 'getSinkBlueScore', 'getBlock', 'getUtxosByAddresses',
-  'getVirtualChainFromBlock', 'getVirtualChainFromBlockV2', 'getFeeEstimate', 'getSeqCommitLaneProof', 'getMempoolEntriesByAddresses', 'getMempoolEntry']);
+  'getVirtualChainFromBlock', 'getVirtualChainFromBlockV2', 'getFeeEstimate', 'getFeeEstimateExperimental', 'getSeqCommitLaneProof', 'getMempoolEntriesByAddresses', 'getMempoolEntry']);
 const MAX_FRAME = 64 * 1024 * 1024;
 
 /** Node endpoint: wss:// or ws:// (e.g. your own kaspad with `--rpclisten-json` on the LAN). */
@@ -145,11 +146,14 @@ export class NodeLink {
   }
   /** Node fee estimate in sompi per gram of the mempool ORDERING mass max(compute, normalized transient, storage)
    * (rusty-kaspa cfafeb4 mining/src/mempool/model/frontier/feerate_key.rs from_tx). Price against that mass. */
-  async feerate() {
-    const e = await this.call('getFeeEstimate');
-    const v = e?.estimate?.normalBuckets?.[0]?.feerate ?? e?.estimate?.priorityBucket?.feerate;
-    ensure(typeof v === 'number' && Number.isFinite(v) && v > 0, '节点未返回费率');
-    return v;
+  async feerate() { return (await this.feeConditions()).normal.feerate; }
+  /** Fee buckets plus, when the node serves it, the ready-mempool size (getFeeEstimateExperimental verbose; read-only,
+   * rusty-kaspa v2.1.0 rpc/core). Falls back to getFeeEstimate; never guesses mempool data it was not given. */
+  async feeConditions() {
+    let r = null;
+    try { r = await this.call('getFeeEstimateExperimental', {verbose: true}, 8000); } catch {}
+    if (r?.estimate) { try { return parseFeeEstimate(r, r.verbose ?? null); } catch {} }
+    return parseFeeEstimate(await this.call('getFeeEstimate'));
   }
 }
 /** @deprecated name kept so older imports keep working; it is a single-node link now. */
