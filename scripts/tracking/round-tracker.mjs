@@ -92,9 +92,11 @@ export class RoundTracker {
       if (removed.includes(this.lookupStart?.hash)) this.lookupStart = null;
       if (relevant) { this.invalidate({anchor: true}); this.onStatus('SYNCING'); this.wake(); }
     }), this.link.on?.('gap', () => {
-      if (!this.terminal) {
-        this.invalidate({anchor: true}); this.onStatus('SYNCING'); this.wake();
-      }
+      // Notifications may have been missed (failover, reconnect, subscription failure, unknown chain data). A settled
+      // final view is not current any more, but a gap is no evidence of a reorg: invalidate() keeps it on disk as a
+      // historical record (no revokeTerminal) and only drops the in-memory observation, so it is verified afresh.
+      const settled = this.terminal;
+      this.invalidate({anchor: true}); this.onStatus(settled ? 'TERMINAL_RECHECK' : 'SYNCING'); this.wake();
     }), this.evidence?.onProof(proof => {
       if (this.stopped || proof.origin === this.key) return; // the active detail read already owns this very body
       this.offerAccepted({ev: proof.ev, context: proof.context, shared: true});

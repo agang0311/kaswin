@@ -53,12 +53,12 @@ export class RestRoundResolver {
     const {evidence = null, ...rest} = options;
     this.net = requireNet(rest.net); this.profile = profile; this.options = {...rest, net: this.net}; this.sharedEvidence = evidence;
     ensure(!evidence || (evidence.net.genesis === this.net.genesis && evidence.profileId === profile.id), 'RESOLVER_EVIDENCE_CONTEXT');
-    this.offsets = new Map(); this.discoveryOffsets = new Map(); this.nodeCursors = new Map(); this.searchVersion = 0;
+    this.offsets = new Map(); this.prunedOffsets = new Map(); this.discoveryOffsets = new Map(); this.nodeCursors = new Map(); this.searchVersion = 0;
   }
   pageEvidence(link, page, txid, accepting, sink = null) {
     return this.sharedEvidence ? this.sharedEvidence.fromPage(link, page, txid, accepting, sink) : acceptanceFromPage(page, txid, accepting, sink);
   }
-  resetSearch(cid) { this.searchVersion++; this.nodeCursors.delete(cid); this.offsets.delete(cid); }
+  resetSearch(cid) { this.searchVersion++; this.nodeCursors.delete(cid); this.offsets.delete(cid); this.prunedOffsets.delete(cid); }
   searchProgress(cid) {
     const c = this.nodeCursors.get(cid);
     return c ? {pages: c.pages, blueScore: String(c.blue), source: 'node'} : null;
@@ -139,7 +139,9 @@ export class RestRoundResolver {
   readOrigin(link) { return this.origins?.get(link) ?? null; }
   /** History pruned by the node: an untrusted candidate ledger (indexer detail or cached view) is verified against the
    * live UTXO below the pruning point (liveBelowPruningPoint). If that state was spent meanwhile, its spender is recent:
-   * the newest REST page of the ledger-derived state address locates it, and replay verifies its body as usual.
+   * REST pages of the ledger-derived state address locate it, and replay verifies its body as usual. Like the main
+   * spender walk, each call rereads the newest page plus ONE saved continuation page, so a spender pushed past page 1
+   * is reached across refreshes. The cursor is scoped to (address, stale tip); REST is only a location hint.
    * Returns {result} (a resolve() result), {ev} (the spender's accepted evidence) or null. */
   async prunedFallback(link, cid, row, signal) {
     if (!row?.state || !row.purchases || !row.origin) return null;
@@ -148,22 +150,35 @@ export class RestRoundResolver {
     try {
       const live = await liveBelowPruningPoint(link, this.profile, cid, {ledger, origin: row.origin, genesisTxid: row.genesisTxid ?? null});
       signal?.throwIfAborted();
-      this.offsets.delete(cid); this.nodeCursors.delete(cid);
+      this.offsets.delete(cid); this.prunedOffsets.delete(cid); this.nodeCursors.delete(cid);
       return {result: {view: {...viewFromLive(live, cid), basis: PRUNED_BASIS}, live, replay: null, terminal: false}};
     } catch (e) {
       signal?.throwIfAborted();
       if (e?.code !== 'STALE_TIP' || !row.tip) return null;
     }
-    let page;
-    try { page = await restAddressTransactions(spkToAddress(p2sh(hex(blake2b256(S.scriptOf(ledger, this.profile)))), this.net.addressPrefix), {...this.options, signal}); }
-    catch { signal?.throwIfAborted(); return null; }
-    for (const raw of page.items.filter(raw => spends(raw, row.tip))) {
-      try {
-        const ev = await this.evidence(link, hash32(raw.transaction_id), raw.accepting_block_hash, signal);
-        ensure(ev.tx.inputs.some(i => i.previousOutpoint.transactionId === row.tip.transactionId && i.previousOutpoint.index === row.tip.index), 'SPENDER_MISMATCH');
-        return {ev};
-      } catch { signal?.throwIfAborted(); }
+    const address = spkToAddress(p2sh(hex(blake2b256(S.scriptOf(ledger, this.profile)))), this.net.addressPrefix);
+    const scope = `${address}/${row.tip.transactionId}:${row.tip.index}`;
+    const previous = this.prunedOffsets.get(cid), offset = previous?.scope === scope ? previous.offset : 0;
+    let tail = null;
+    const seen = new Set();
+    for (const at of offset ? [0, offset] : [0]) {
+      let page;
+      try { page = await restAddressTransactions(address, {...this.options, signal, offset: at}); }
+      catch { signal?.throwIfAborted(); continue; }
+      if (at === offset) tail = page;
+      for (const raw of page.items.filter(raw => spends(raw, row.tip))) {
+        try {
+          const txid = hash32(raw.transaction_id); if (seen.has(txid)) continue; seen.add(txid);
+          const ev = await this.evidence(link, txid, raw.accepting_block_hash, signal);
+          ensure(ev.tx.inputs.some(i => i.previousOutpoint.transactionId === row.tip.transactionId && i.previousOutpoint.index === row.tip.index), 'SPENDER_MISMATCH');
+          this.prunedOffsets.delete(cid);
+          return {ev};
+        } catch { signal?.throwIfAborted(); }
+      }
     }
+    // Only a successfully read continuation page moves the cursor; a read error never implies end of history.
+    if (tail?.nextOffset != null) this.prunedOffsets.set(cid, {scope, offset: tail.nextOffset});
+    else if (tail) this.prunedOffsets.delete(cid);
     return null;
   }
   async resolve(link, cid, candidate, {signal, maxSteps = 12, nodePages = 3, anchor = null, initialEvidence = null, origin: readerOrigin = null, captured = false} = {}) {

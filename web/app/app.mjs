@@ -152,6 +152,12 @@ function trackDetail(cid, {force = false} = {}) {
         R.history = false; R.live = null; R.syncing = true; state.nodeViews.delete(cid);
         R.staleNote = '终局交易的接受块已离开选中链（链重组），正在向节点重新核验';
       }
+      if (status === 'TERMINAL_RECHECK') {
+        // Notifications may have been missed. Not a reorg: the final result stays as a historical record until re-verified.
+        if (R.detail?._src === 'node') R.detail = {...R.detail, _src: 'cache'};
+        R.history = true; R.historyAt = R.verifiedAt ?? R.detail?.updatedAt ?? null; R.syncing = true; state.nodeViews.delete(cid);
+        R.staleNote = '节点连接或链通知曾中断，终局结果暂作历史核验记录，正在向节点重新核验';
+      }
       if (['SYNCING', 'CATCHING_UP', 'UNAVAILABLE'].includes(status)) R.syncing = !tracker.observationCurrent();
       if (status === 'CATCHING_UP') R.staleNote = '链上状态已变化，正在同步最新状态；约 2 秒后重试';
       if (status === 'UNAVAILABLE') { R.recoveryFailure = !!R.recovering; state.nodeViews.delete(cid); R.live = null; if (R.detail?._src === 'node') R.detail = {...R.detail, _src: 'cache'}; }
