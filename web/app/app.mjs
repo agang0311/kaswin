@@ -146,6 +146,12 @@ function trackDetail(cid, {force = false} = {}) {
     onStatus(status, error) {
       if (detailTracker !== tracker || state.round !== R || state.view !== 'round') return;
       R.tracking = status; R.loading = !R.detail && !error;
+      if (status === 'REORGED') {
+        // The node removed the accepting block of the verified final transaction: that verdict no longer holds.
+        if (R.detail) R.detail = {...R.detail, terminalSettled: false, _src: 'cache'};
+        R.history = false; R.live = null; R.syncing = true; state.nodeViews.delete(cid);
+        R.staleNote = '终局交易的接受块已离开选中链（链重组），正在向节点重新核验';
+      }
       if (['SYNCING', 'CATCHING_UP', 'UNAVAILABLE'].includes(status)) R.syncing = !tracker.observationCurrent();
       if (status === 'CATCHING_UP') R.staleNote = '链上状态已变化，正在同步最新状态；约 2 秒后重试';
       if (status === 'UNAVAILABLE') { R.recoveryFailure = !!R.recovering; state.nodeViews.delete(cid); R.live = null; if (R.detail?._src === 'node') R.detail = {...R.detail, _src: 'cache'}; }

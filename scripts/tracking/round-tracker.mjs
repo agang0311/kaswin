@@ -24,11 +24,11 @@ export class RoundTracker {
     this.key = Symbol(cid); this.epoch = 0; this.off = []; this.stopped = true; this.work = null; this.dirty = false;
     this.version = 0; this.hardVersion = 0; this.checkpoint = null; this.lookupStart = null; this.observation = null; this.liveWork = null; this.lastError = null;
   }
-  invalidate({anchor = false, candidate = false, cancel = false, utxo = false} = {}) {
+  invalidate({anchor = false, candidate = false, cancel = false, utxo = false, revokeTerminal = false} = {}) {
     const settled = this.terminal;
     this.version++; this.dirty = true;
     if (!utxo) { this.hardVersion++; this.acceptedEvidence = null; }
-    this.observation = null; this.draw?.invalidate(); this.store.invalidate(this.cid, {terminal: !settled});
+    this.observation = null; this.draw?.invalidate(); this.store.invalidate(this.cid, {terminal: revokeTerminal || !settled});
     if (anchor) { this.anchor = null; this.lookupStart = null; this.checkpoint = null; this.resolver.resetSearch?.(this.cid); }
     if (candidate) this.candidate = null;
     if (cancel) this.readCtl?.abort(failure('READ_VIEW_CHANGED'));
@@ -68,7 +68,16 @@ export class RoundTracker {
     }), this.link.on?.('chain', ({rpc, data} = {}) => {
       const removed = data?.removedChainBlockHashes;
       this.draw?.hint(); // The existing subscription wakes read-only progress; notifications never supply scores.
-      if (this.terminal || !removed?.length) return;
+      if (!removed?.length) return;
+      if (this.terminal) {
+        // A settled final state is only a 100-DAA recheck, not finality. The PRIMARY connection explicitly removing its
+        // accepting block revokes it in memory and on disk, then the round is resolved again. Standby reports do not.
+        if (rpc && rpc !== this.link.nodes?.[0]) return;
+        const accepting = this.acceptingBlocks();
+        if (!removed.some(hash => accepting.has(hash))) return;
+        this.invalidate({anchor: true, revokeTerminal: true}); this.onStatus('REORGED'); this.wake();
+        return;
+      }
       const accepting = this.acceptingBlocks(), relevant = removed.some(hash => accepting.has(hash));
       if (rpc && rpc !== this.link.nodes?.[0]) {
         // Standby observations never revoke a primary verdict. An already-running primary read answers this hint.
@@ -275,7 +284,8 @@ export class RoundTracker {
       this.candidate = result.candidate ?? result.view; this.anchor = result.anchor;
       // Connection objects stay in memory; only result.view/replay go to the persistent cache above.
       this.observation = incomplete ? null : {result: structuredClone(result), context, version: result.readVersion};
-      if (this.terminal) { this.link.unwatch?.(this.key); this.release?.(); this.release = null; }
+      // A final view keeps its chain-only watch (no addresses) and connection lease while this detail is open, so an
+      // explicit removal of its accepting block still reaches the handler above. stop() releases both.
       this.onUpdate(result); this.draw?.hint(); this.onStatus(incomplete ? 'CATCHING_UP' : result.terminal && !this.terminal ? 'CONFIRMING' : 'CURRENT');
       return result;
     })().catch(e => {

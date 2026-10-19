@@ -18,7 +18,7 @@ import {txToRpc, txFromRpc} from '../chain/nodes.mjs';
 import {spkToAddress, addressToSpk} from '../wallet/address.mjs';
 import {acquireDrawProof, waitForDrawTarget, checkDraftDraw, fenceDraw} from './passa.mjs';
 import {liveRound} from './rounds.mjs';
-import {reservedInputs} from '../tracking/reservations.mjs';
+import {reservedInputs, familyKeys} from '../tracking/reservations.mjs';
 import {OperationEngine} from './operation-engine.mjs';
 import {CasIntentStore} from '../store/intent-store.mjs';
 import {SessionStore} from '../store/session-store.mjs';
@@ -764,7 +764,11 @@ export class Engine {
     const stored = await (await this.store()).get(this.prefix + txid);
     if (stored?.value.status === 'REJECTED') return stored.value; // explicit manual rechecks use reconcile(), never restart automatic work
     let r = await this.reconcile(txid, onProgress);
-    if (!TRACKED.has(r.status) || r.searchComplete !== true || !r.signed || r.replacedBy || this.acceptance.peek(txid) || this.evidence.has(txid)) return r;
+    if (r.status === 'REPLACED') r = await this.#reviveIfReplacementRejected(r);
+    // A REPLACED member is diagnosed only for a lost verdict (never a resend), and only once no other member of its
+    // fee-bump family can still take effect; otherwise its reservation would outlive a DRIFTED/CONFLICTED replacement.
+    const replaced = r.status === 'REPLACED' && await this.#replacedLossDecidable(r);
+    if (!(TRACKED.has(r.status) || replaced) || r.searchComplete !== true || !r.signed || (r.replacedBy && !replaced) || this.acceptance.peek(txid) || this.evidence.has(txid)) return r;
     if (!manualResend && !r.displacedAt && Date.now() - (r.lastResendAt ?? r.submittedAt ?? r.createdAt ?? 0) < PENDING_GRACE_MS) return r;
     onProgress('未在选中链上找到，正在诊断（只查询）…');
     const d = await diagnose(this.pair, r, await this.records(), this.profile);
@@ -772,21 +776,47 @@ export class Engine {
     let cur = await store.get(k);
     // Bind to exactly this reconcile result: another tab or a newer check wins.
     if (this.disposed || this.acceptance.peek(txid) || this.evidence.has(txid)) return cur?.value ?? r;
-    if (!cur || cur.value.checkedAt !== r.checkedAt || !TRACKED.has(cur.value.status)) return cur?.value ?? r;
+    if (!cur || cur.value.checkedAt !== r.checkedAt || !(TRACKED.has(cur.value.status) || (replaced && cur.value.status === 'REPLACED'))) return cur?.value ?? r;
     const now = Date.now(), g = cur.value.guard ?? {}, streak = g.last === d.verdict ? g.since ?? now : now;
     const confirmed = d.verdict === 'DRIFT' || (g.last === d.verdict && now - streak >= DIAG_GAP_MS);
     const guard = {last: d.verdict, since: streak, at: now, ...(d.error ? {error: d.error} : {})};
     const lose = (status, reason) => ({...cur.value, status, accepted: false, guard, lostAt: now, lostReason: reason, note: VERDICT_TEXT[reason] ?? reason});
-    let next = {...cur.value, guard, note: VERDICT_TEXT[d.verdict] ?? cur.value.note};
+    let next = {...cur.value, guard, note: replaced ? cur.value.note : VERDICT_TEXT[d.verdict] ?? cur.value.note};
     if (confirmed && ['CONFLICT', 'FUNDING_CONFLICT', 'PARENT_LOST'].includes(d.verdict)) next = lose('CONFLICTED', d.verdict);
     else if (confirmed && ['DRIFT', 'PROOF_INVALID'].includes(d.verdict)) next = lose('DRIFTED', d.verdict);
     await store.compareAndSet(k, cur.revision, next);
-    if (d.verdict !== 'DROPPED' || !(confirmed || manualResend)) return next;
+    if (replaced || d.verdict !== 'DROPPED' || !(confirmed || manualResend)) return next;
     if (typeof next.signedWire !== 'string') return {...next, resendAvailable: false, note: '旧记录缺少原签名字节承诺，仅允许查询，不自动重发'};
     if (!manualResend && !inResendWindow(next, now)) return {...next, resendAvailable: true};
     if ((next.resends ?? 0) >= RESEND_LIMIT) return {...next, resendAvailable: false};
     onProgress('交易已从网络消失且输入仍未花费：按原签名字节重发…');
     return this.resend(txid);
+  }
+  /** True when a REPLACED record may get its own lost verdict: same-input family members exist, none is on the
+   * selected chain, and every member that was not itself replaced is already lost (DRIFTED / CONFLICTED).
+   * A REJECTED replacement revives its original instead (below). ARCHIVED and SUPERSEDED do not count: an archived
+   * member may still have been accepted. */
+  async #replacedLossDecidable(r) {
+    const rows = await (await this.store()).list(this.prefix), keys = familyKeys(rows, this.prefix + hash32(r.txid));
+    const others = rows.filter(x => keys.has(x.key)).map(x => x.record.value).filter(v => v.txid !== r.txid);
+    const lost = v => ['DRIFTED', 'CONFLICTED'].includes(v.status);
+    return others.some(lost) && others.every(v => v.status === 'REPLACED' || lost(v));
+  }
+  /** The node definitively REJECTED this record's direct replacement (two resend rejections in a row), so it never took
+   * the original's place. The original returns to normal tracking: it may be diagnosed, resent with its identical signed
+   * bytes and bumped again. Every member spends the same inputs, and each resend re-checks they are live and absent from
+   * the mempool, so at most one member can still take effect. A bump chain is linear (only an unreplaced record can be
+   * bumped), so reviving the direct parent of the rejected member is enough. */
+  async #reviveIfReplacementRejected(r) {
+    if (r.status !== 'REPLACED' || !r.replacedBy) return r;
+    const store = await this.store(), rep = await store.get(this.prefix + hash32(r.replacedBy));
+    if (rep?.value.status !== 'REJECTED') return r;
+    const k = this.prefix + hash32(r.txid), cur = await store.get(k);
+    if (!cur || cur.value.status !== 'REPLACED' || cur.value.replacedBy !== r.replacedBy) return cur?.value ?? r;
+    const {replacedBy, replacedAt, ...rest} = cur.value;
+    const next = {...rest, status: 'UNKNOWN', revivedFrom: replacedBy, revivedAt: Date.now(),
+      note: `替换交易 ${replacedBy.slice(0, 12)}… 已被节点明确拒绝，恢复跟踪原交易`};
+    try { return (await store.compareAndSet(k, cur.revision, next)).value; } catch { return (await store.get(k))?.value ?? r; }
   }
   /** The ONLY send outside execute(): the identical persisted signed bytes, under the submit lock, after fresh checks
    * (all inputs live with unchanged covenant/value/script, absent from the mempool, fresh 100 blue-score draw target),
