@@ -15,7 +15,7 @@ import {txStatus, txLabel, recordStatus as networkRecordStatus, needsAttention a
 import {drawReadinessView} from '../ui/draw-readiness.mjs';
 import {readSession, waitForProvider, watchWallet, provider} from '../../scripts/wallet/kasware.mjs';
 import {BROWSER_TEST_WALLET_ENABLED, browserTestWallet, importBrowserTestWallet, clearBrowserTestWallet, isBrowserTestWallet} from '../../scripts/wallet/browser-test.mjs';
-import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, viewFromLive, checkRow, stateConfirming, indexerBehind, phaseInfo as basePhaseInfo} from '../../scripts/round/rounds.mjs';
+import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, viewFromLive, checkRow, stateConfirming, indexerBehind, PRUNED_BASIS, phaseInfo as basePhaseInfo} from '../../scripts/round/rounds.mjs';
 import {chooseView} from '../../scripts/round/progress.mjs';
 const phaseInfo = row => { const p = basePhaseInfo(row); return p.key === 'refunded' ? {...p, label:'退款完成'} : p; };
 import {replayAccepted} from '../../scripts/round/replay.mjs';
@@ -753,7 +753,7 @@ function renderRound(v) {
       <div class="panel">
         <h3>${icon('shield')} 链上复验</h3>
         <p class="sub">所列交易的复验只核对该笔历史，不代表轮次最新状态。获取最新状态请使用“重新向节点同步”；结果仍须节点完整核验。</p>
-        <div id="verifyBox">${R.replay ? replayHtml(R.replay) : R.replayError ? `<div class="notice warn">${e(R.replayError)}</div>` : ''}</div>
+        <div id="verifyBox">${R.replay ? replayHtml(R.replay) : R.replayError ? `<div class="notice warn">${e(R.replayError)}</div>` : d.basis === PRUNED_BASIS ? `<div class="notice">${PRUNED_NOTE}</div>` : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="verifyLatest" ${d.latestTxid && d.accepting ? '' : 'disabled'}>${icon('node')}复验所列历史交易</button>${!d.terminal ? `<button class="btn" id="verifyLive">${icon('refresh')}复验当前状态 UTXO</button>` : ''}</div>
         <div id="liveBox">${R.live ? liveHtml(R.live) : R.liveError ? `<div class="notice warn" style="margin-top:10px">${e(R.liveError)}</div>` : ''}</div>
       </div>
@@ -934,8 +934,10 @@ function replayHtml(x) {
   <div class="outs">${x.outputs.map((o, i) => `<div class="out"><span class="r">${i} · ${e(lab[o.role] ?? o.role)}</span><span class="out-addr">${outAddressHtml(o)}</span><span class="v">${kas(o.value)}</span></div>`).join('')}</div>
   <dl class="kv small" style="margin-top:8px"><dt>交易</dt><dd>${hashHtml(x.txid, {link: explorerTx(x.txid)})}</dd><dt>网络费</dt><dd>${kas(x.fee)} ${e(U())} · compute mass ${x.computeMass ?? '—'} · budget ${x.budget}</dd>${x.draw ? `<dt>PASS-A 目标块</dt><dd>${hashHtml(x.draw.target, {link: explorerBlock(x.draw.target)})} · 边界 DAA ${x.draw.boundaryDaa}；${x.draw.headerChecked ? '节点区块头的序列承诺与证明一致' : '当前未取得目标区块头，仅依赖已接受交易执行时的共识校验'}</dd>` : ''}</dl>`;
 }
+const PRUNED_NOTE = '该状态的接受块已被节点裁剪，无法复验所列历史交易；当前状态已按节点 UTXO 核验（早于裁剪点，已不可重组）。';
 function liveHtml(l) {
   const acts = availableActions(l.snapshot, profile).filter(a => ACTION_LABEL[a]);
+  if (l.basis === PRUNED_BASIS) return `<div class="notice ok" style="margin-top:10px">状态 UTXO 仍未花费，且早于节点裁剪点（已不可重组）；接受交易已被裁剪，账本、Genesis CID、P2SH 与锁定金额 ${kas(l.snapshot.value)} ${e(U())} 已按该 UTXO 核验。当前 DAA ${l.snapshot.currentDaa}。当前可执行：<b>${acts.map(a => ACTION_LABEL[a]).join('、') || '无（需等待）'}</b>。</div>`;
   return `<div class="notice ok" style="margin-top:10px">状态 UTXO 仍未花费；模板、Genesis CID、P2SH 与锁定金额 ${kas(l.snapshot.value)} ${e(U())} 均与固定 Profile 吻合。当前 DAA ${l.snapshot.currentDaa}。当前可执行：<b>${acts.map(a => ACTION_LABEL[a]).join('、') || '无（需等待）'}</b>。</div>`;
 }
 /** TN10 nodes keep ~30 h of block bodies (rusty-kaspa PRUNING_DURATION = 108,000 s); older accepting blocks are gone. */

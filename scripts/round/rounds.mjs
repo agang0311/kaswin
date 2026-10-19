@@ -4,7 +4,7 @@
  *    tip UTXO checked live on the configured node -> its accepting tx checked on that node.
  *    The indexer is never trusted for value; the node is trusted as the window onto Kaspa consensus.
  */
-import {S, ensure, hash32, cat, le, unhex, CONTRACT_TAG, UserError, stable} from '../core.mjs';
+import {S, ensure, hash32, cat, le, hex, unhex, p2sh, blake2b256, CONTRACT_TAG, UserError, stable} from '../core.mjs';
 import {requireNet, linkNet} from '../chain/network-schema.mjs';
 import {parseJson, uint} from '../chain/json.mjs';
 import {commonUtxos, acceptedPair} from '../chain/chain.mjs';
@@ -232,10 +232,51 @@ export async function verifyCandidate(pair, profile, cid, currentDaa, cand) {
   const u = live.find(x => x.outpoint.transactionId === cand.tip.transactionId && x.outpoint.index === cand.tip.index);
   ensure(u, '轮次状态 UTXO 已不是未花费输出（可能刚被他人推进，请稍后刷新再试）', 'STALE_TIP');
   ensure(u.value === snapshot.value && stable(u.spk) === stable(snapshot.scriptPublicKey) && u.daa === snapshot.utxoDaa && u.covenantId === cid, '实时 UTXO 与账本不一致', 'TIP_MISMATCH');
-  const acc = await acceptedPair(pair, cand.tip.transactionId, cand.accepting);
+  let acc;
+  try { acc = await acceptedPair(pair, cand.tip.transactionId, cand.accepting); }
+  catch (err) {
+    // The node may have pruned the accepting block. Only a state below its pruning point may go on without the body.
+    let pruned = null;
+    try { pruned = await liveBelowPruningPoint(pair, profile, cid, cand, currentDaa); } catch {}
+    if (!pruned || stable(pruned.snapshot.tip) !== stable(cand.tip)) throw err;
+    return {...pruned, source: cand.source, genesisTxid: cand.genesisTxid};
+  }
   const o = acc.tx.outputs[cand.tip.index];
   ensure(o && o.value === snapshot.value && stable(o.scriptPublicKey) === stable(snapshot.scriptPublicKey) && o.covenant?.covenantId === cid && acc.acceptingDaa === snapshot.utxoDaa, '接受交易输出与状态 UTXO 不一致');
   return {ledger: cand.ledger, snapshot, accepting: cand.accepting, acceptedTx: acc, source: cand.source, genesisTxid: cand.genesisTxid};
+}
+export const PRUNED_BASIS = 'UTXO_BELOW_PRUNING_POINT';
+/** Live state whose accepting block the node has pruned, so no accepted transaction body can be read.
+ * The UTXO alone still authenticates it: the address is derived from the candidate ledger itself (P2SH of the ledger
+ * script), exactly one live UTXO there must carry this CID, and verifySnapshot binds origin (CID = rootId(origin, OPEN
+ * root)), ledger (P2SH) and value. Being in the node's UTXO set means its creating transaction was accepted; a UTXO DAA
+ * below the pruning point's DAA means that acceptance precedes the pruning point and can no longer be reorganized.
+ * Only the "body output equals UTXO" consistency check and the accepting block location are lost: such a live state
+ * has accepting/acceptedTx null and cannot feed PASS-A (DRAW_AND_PAY), which needs the accepted SEALED body. */
+export async function liveBelowPruningPoint(link, profile, cid, cand, currentDaa = null) {
+  requireRuntimeProfile(profile); hash32(cid); hash32(cand?.origin?.transactionId, 'origin');
+  const read = async rpc => {
+    S.validateLedger(cand.ledger);
+    const spk = p2sh(hex(blake2b256(S.scriptOf(cand.ledger, profile))));
+    const rows = (await commonUtxos(rpc, spkToAddress(spk, linkNet(rpc).addressPrefix))).filter(u => u.covenantId === cid);
+    ensure(rows.length <= 1, '同一轮次存在多个状态 UTXO', 'TIP_MISMATCH');
+    ensure(rows.length === 1, '账本对应的状态 UTXO 已不是未花费输出（可能已被推进）', 'STALE_TIP');
+    const u = rows[0];
+    ensure(!u.isCoinbase && stable(u.spk) === stable(spk), '实时 UTXO 与账本不一致', 'TIP_MISMATCH');
+    const pp = hash32((await rpc.call('getBlockDagInfo')).pruningPointHash);
+    const header = (await rpc.call('getBlock', {hash: pp, includeTransactions: false})).block?.header;
+    ensure(header?.hash === pp, '裁剪点区块哈希不符');
+    const ppDaa = uint(header.daaScore);
+    ensure(u.daa < ppDaa, '状态 UTXO 不早于节点裁剪点，仍须核验完整接受交易', 'NOT_PRUNED');
+    const now = currentDaa ?? await rpc.currentDaa();
+    ensure(now >= u.daa, '节点 DAA 落后于状态 UTXO', 'SINK_BEHIND');
+    const snapshot = {ledger: S.encodeLedger(cand.ledger), tip: u.outpoint, origin: cand.origin, scriptPublicKey: spk,
+      covenantId: cid, value: u.value, utxoDaa: u.daa, currentDaa: now};
+    const ledger = S.verifySnapshot(snapshot, profile); // pinned frame + canonical OPEN CID + P2SH + exact locked value
+    return {ledger, snapshot, accepting: null, acceptedTx: null, basis: PRUNED_BASIS, pruningPoint: {hash: pp, daa: ppDaa},
+      source: cand.source ?? null, genesisTxid: cand.genesisTxid ?? null};
+  };
+  return typeof link.pinned === 'function' ? link.pinned(read) : read(link);
 }
 /** Display view of a node-verified live snapshot (same shape as an indexer detail). The ledger preimage re-encodes to
  * the P2SH of the live UTXO, so phase, sales and purchase directory shown here are exactly what the chain locks. */

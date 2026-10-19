@@ -30,6 +30,8 @@ export async function acquireRoundProof(rpc, profile, live) {
   requireRuntimeProfile(profile);
   const x = live.snapshot, s = live.ledger;
   if (s.phase !== S.Phase.SEALED || x.currentDaa < x.utxoDaa + S.DRAW_DELAY) throw failure('DRAW_NOT_READY');
+  // PASS-A needs the accepted SEALED body. A sealed state already below the pruning point is far past the draw window.
+  ensure(live.acceptedTx, '封存交易的接受块已被节点裁剪，无法取得开奖证明；该轮应走超时退款', 'DRAW_HISTORY_PRUNED');
   const context = queryContext(rpc), key = stable({profile: profile.id, snapshot: {...x, currentDaa: null}, accepting: live.accepting});
   let cache = proofCache.get(context.node);
   if (!cache) { cache = new Map(); proofCache.set(context.node, cache); }

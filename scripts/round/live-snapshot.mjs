@@ -5,15 +5,18 @@ import {commonUtxos, sameInput} from '../chain/chain.mjs';
 import {linkNet} from '../chain/network-schema.mjs';
 import {spkToAddress} from '../wallet/address.mjs';
 import {requireRuntimeProfile} from '../contract/runtime.mjs';
+import {PRUNED_BASIS} from './rounds.mjs';
 
 export async function recheckLiveSnapshot(link, profile, cid, live) {
   requireRuntimeProfile(profile); hash32(cid);
   const next = structuredClone(live), x = next.snapshot, ev = next.acceptedTx;
   const ledger = S.verifySnapshot(x, profile);
   ensure(x.covenantId === cid, '详情快照不属于所选轮次', 'LIVE_SNAPSHOT_CID');
-  // The live UTXO and the previous, fully verified accepted transaction must describe the same output.
+  // The live UTXO and the previous, fully verified accepted transaction must describe the same output. A state verified
+  // below the pruning point has no body; the exact UTXO check below still applies (the pruning point only moves forward).
   const o = ev?.tx?.outputs?.[x.tip.index];
-  ensure(ev?.txid === x.tip.transactionId && ev.accepting === next.accepting && ev.acceptingDaa === x.utxoDaa &&
+  if (next.basis === PRUNED_BASIS) ensure(ev == null && next.accepting == null, '详情快照来源不一致', 'LIVE_SNAPSHOT_EVIDENCE');
+  else ensure(ev?.txid === x.tip.transactionId && ev.accepting === next.accepting && ev.acceptingDaa === x.utxoDaa &&
     o?.value === x.value && stable(o.scriptPublicKey) === stable(x.scriptPublicKey) && o.covenant?.covenantId === cid &&
     o.covenant.authorizingInput === 0, '详情快照与已核验接受交易不一致', 'LIVE_SNAPSHOT_EVIDENCE');
   const address = spkToAddress(x.scriptPublicKey, linkNet(link).addressPrefix);

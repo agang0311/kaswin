@@ -4,7 +4,7 @@ import {requireNet, linkNet} from '../chain/network-schema.mjs';
 import {restAddressTransactions, restTransaction, restAcceptance} from '../chain/rest.mjs';
 import {acceptedPair, commonUtxos, acceptanceFromPage, REORG_RECHECK_DAA} from '../chain/chain.mjs';
 import {replayEvidence} from './replay.mjs';
-import {viewFromLive} from './rounds.mjs';
+import {viewFromLive, ledgerFromDetail, liveBelowPruningPoint, PRUNED_BASIS} from './rounds.mjs';
 import {spkToAddress} from '../wallet/address.mjs';
 import {uint} from '../chain/json.mjs';
 import {terminalCheck, terminalSettled} from '../tracking/terminal-state.mjs';
@@ -137,6 +137,35 @@ export class RestRoundResolver {
     throw new Error('REST_DISCOVERY_CONTINUES');
   }
   readOrigin(link) { return this.origins?.get(link) ?? null; }
+  /** History pruned by the node: an untrusted candidate ledger (indexer detail or cached view) is verified against the
+   * live UTXO below the pruning point (liveBelowPruningPoint). If that state was spent meanwhile, its spender is recent:
+   * the newest REST page of the ledger-derived state address locates it, and replay verifies its body as usual.
+   * Returns {result} (a resolve() result), {ev} (the spender's accepted evidence) or null. */
+  async prunedFallback(link, cid, row, signal) {
+    if (!row?.state || !row.purchases || !row.origin) return null;
+    let ledger;
+    try { ledger = ledgerFromDetail(row, this.profile); } catch { return null; }
+    try {
+      const live = await liveBelowPruningPoint(link, this.profile, cid, {ledger, origin: row.origin, genesisTxid: row.genesisTxid ?? null});
+      signal?.throwIfAborted();
+      this.offsets.delete(cid); this.nodeCursors.delete(cid);
+      return {result: {view: {...viewFromLive(live, cid), basis: PRUNED_BASIS}, live, replay: null, terminal: false}};
+    } catch (e) {
+      signal?.throwIfAborted();
+      if (e?.code !== 'STALE_TIP' || !row.tip) return null;
+    }
+    let page;
+    try { page = await restAddressTransactions(spkToAddress(p2sh(hex(blake2b256(S.scriptOf(ledger, this.profile)))), this.net.addressPrefix), {...this.options, signal}); }
+    catch { signal?.throwIfAborted(); return null; }
+    for (const raw of page.items.filter(raw => spends(raw, row.tip))) {
+      try {
+        const ev = await this.evidence(link, hash32(raw.transaction_id), raw.accepting_block_hash, signal);
+        ensure(ev.tx.inputs.some(i => i.previousOutpoint.transactionId === row.tip.transactionId && i.previousOutpoint.index === row.tip.index), 'SPENDER_MISMATCH');
+        return {ev};
+      } catch { signal?.throwIfAborted(); }
+    }
+    return null;
+  }
   async resolve(link, cid, candidate, {signal, maxSteps = 12, nodePages = 3, anchor = null, initialEvidence = null, origin: readerOrigin = null, captured = false} = {}) {
     if (this.sharedEvidence && !captured) return this.sharedEvidence.capture(link, shared => {
       this.origins ??= new WeakMap(); this.origins.set(shared, readerOrigin);
@@ -166,6 +195,14 @@ export class RestRoundResolver {
         }
       } catch { signal?.throwIfAborted(); fast = false; }
     }
+    // A state already verified below the pruning point has no body to read: recheck it (or find its spender) first.
+    let prunedTried = false;
+    if (!ev && row.basis === PRUNED_BASIS) {
+      prunedTried = true;
+      const p = await this.prunedFallback(link, cid, row, signal);
+      if (p?.result) return p.result;
+      if (p?.ev) ev = p.ev;
+    }
     if (!ev) try { ev = await this.evidence(link, row.latestTxid, row.accepting, signal); }
     catch (e) {
       // An old accepting location may have been displaced. REST only supplies a new location; still verify it.
@@ -173,9 +210,18 @@ export class RestRoundResolver {
       try { ev = await this.evidence(link, row.latestTxid, null, signal); }
       catch (moved) {
         signal?.throwIfAborted();
-        if (!row.genesisTxid || row.genesisTxid === row.latestTxid) throw moved;
-        // A cached successor/terminal can disappear entirely. Restart at authenticated genesis, not at the stale tip.
-        ev = await this.evidence(link, row.genesisTxid, null, signal); this.offsets.delete(cid);
+        try {
+          if (!row.genesisTxid || row.genesisTxid === row.latestTxid) throw moved;
+          // A cached successor/terminal can disappear entirely. Restart at authenticated genesis, not at the stale tip.
+          ev = await this.evidence(link, row.genesisTxid, null, signal); this.offsets.delete(cid);
+        } catch (lost) {
+          signal?.throwIfAborted();
+          // Every body is unreadable, e.g. pruned by the node. A candidate ledger may still match the live UTXO.
+          const p = prunedTried ? null : await this.prunedFallback(link, cid, row, signal);
+          if (p?.result) return p.result;
+          if (!p?.ev) throw lost;
+          ev = p.ev;
+        }
       }
     }
     for (let step = 0; step < maxSteps; step++) {
