@@ -548,7 +548,19 @@ function renderExplore(v) {
   qi.oninput = () => { state.query = qi.value; const c = qi.value.trim().toLowerCase(); if (/^[0-9a-f]{64}$/.test(c) && !state.rows.some(r => r.cid === c)) { openRound(c); return; } renderExploreGrid(); };
   function renderExploreGrid() { const pos = qi.selectionStart; render(); const n = $('q'); n.focus(); n.setSelectionRange(pos, pos); }
 }
+/** One malformed row must not blank the whole list: it falls back to a minimal card (or none without a valid CID). */
 function card(r) {
+  try { return cardBody(r); }
+  catch {
+    if (!/^[0-9a-f]{64}$/.test(r?.cid ?? '')) return '';
+    return `<article class="card t-muted" data-cid="${r.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(r.cid)}">
+    <div class="row"><span class="badge t-muted">摘要异常</span></div>
+    <div class="mono dim small">CID ${shortHash(r.cid, 12, 8)}</div>
+    <div class="card-next">这条轮次摘要格式异常，未能展示；可打开详情向节点核验。</div>
+  </article>`;
+  }
+}
+function cardBody(r) {
   if (phaseInfo(r).key === 'other') return `<article class="card t-muted" data-cid="${r.cid}" data-profile="other" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(r.cid)}">
     <div class="row"><span class="badge t-muted">其他 Profile</span></div>
     <div class="mono dim small">CID ${shortHash(r.cid, 12, 8)}</div>
@@ -586,8 +598,9 @@ async function openRound(cid, {push = true} = {}) {
   if (push && location.hash !== `#/round/${cid}`) history.pushState(null, '', `#/round/${cid}`);
   render();
   const opening = state.round;
-  await refreshRound(cid);
-  if (state.view === 'round' && state.round === opening) trackDetail(cid);
+  // Node tracking is what recovers a summary-only or unreadable cached view, so it must start either way.
+  try { await refreshRound(cid); }
+  finally { if (state.view === 'round' && state.round === opening) trackDetail(cid); }
 }
 /** Display cached/session data immediately. Network work belongs to the cancellable detail tracker. */
 async function refreshRound(cid, {quiet = false} = {}) {
@@ -650,6 +663,28 @@ function stepper(d) {
   const focus = Math.min(pos, labels.length - 1);
   return `<div class="stepper">${labels.map(([k, l], i) => `<div class="step ${i < pos ? 'done' : i === pos && !t ? 'now' : ''} ${k.startsWith('REFUND') ? 'alt' : ''}"${i === focus ? ' data-focus' : ''}><div class="b">${i < pos ? '✓' : i + 1}</div>${l}</div>`).join('')}</div>`;
 }
+/** A discovery summary without a ledger (Indexer detail and REST fallback unavailable). Display only: no actions are
+ * offered; the detail tracker keeps verifying on the node and replaces this view once a ledger is verified. */
+function renderRoundSummary(v, R) {
+  const d = R.detail, p = phaseInfo(d), other = d.contract !== CONTRACT_TAG;
+  const n = x => Number.isSafeInteger(x) && x >= 0 ? x : null, sold = n(d.sold), cap = n(d.ticketCap);
+  let price = null, value = null;
+  try { price = d.ticketPrice != null ? kas(BigInt(d.ticketPrice)) : null; } catch {}
+  try { value = d.value != null ? kas(BigInt(d.value)) : null; } catch {}
+  v.innerHTML = `
+  <div class="toolbar"><button class="btn sm" id="back">${icon('arrow')}返回广场</button></div>
+  <div class="panel t-${p.tone}" data-round-phase="${e(String(d.phase ?? ''))}" data-current="false" data-terminal="${e(d.terminal ?? '')}" data-summary="true">
+    <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${p.tone}">${p.label}</span><span class="spacer"></span><span class="tag amber">${other ? '其他 Profile' : '仅摘要 · 节点核验中'}</span></div>
+    <h2 style="margin:8px 0 14px">轮次 ${hashHtml(d.cid, {n: 14})}</h2>
+    ${facts([sold !== null && cap !== null && ['售出 / 上限', `${e(sold.toLocaleString())} / ${e(cap.toLocaleString())}`], price && ['票价', `${price} ${e(U())}`],
+      value && ['合约锁定金额', `${value} ${e(U())}`], d.contract && ['合约', `<span class="mono">${e(d.contract)}</span>`], ['摘要更新于', timeHtml(d.updatedAt)]])}
+    ${R.syncError ? `<div class="notice warn" role="status">${e(R.syncError)}</div>` : ''}
+    <div class="notice ${other ? '' : 'warn'}" style="margin-top:10px">${other ? '这是索引收录的其他（旧版）合约轮次；本页只支持固定 V2.0.2 Profile，不读取账本、不复验、不提供操作。' : '暂时只取得轮次摘要，未取得账本（Indexer 详情与 REST 备用查询都未成功）。页面会继续向节点核验；取得并核验账本前不提供任何操作。'}</div>
+    <button class="btn sm" id="retryRound" style="margin-top:10px">重新向节点同步</button>
+  </div>`;
+  $('back').onclick = () => go('explore');
+  $('retryRound').onclick = () => retryRoundSync(R.cid);
+}
 /** Narrow screens scroll the stepper horizontally: keep the current step centered (horizontal only, page stays put). */
 function centerStepper(root) {
   const bar = root.querySelector('.stepper'), step = bar?.querySelector('[data-focus]');
@@ -664,6 +699,7 @@ function renderRound(v) {
     $('retryEmptyRound').onclick = () => retryRoundSync(R.cid); return;
   }
   if (R.error && !R.detail) { v.innerHTML = `<div class="panel"><div class="notice warn">${e(R.error)}</div><p class="muted">CID：<span class="mono">${e(R.cid)}</span>。${/不是固定的 V2\.0\.\d+ Profile/.test(R.error) ? '这是索引收录的其他（旧版）合约轮次；本页只支持固定 V2.0.2 Profile，不读取账本、不复验、不提供操作。' : '可在设置中切换 Indexer，或确认 CID 是否正确。'}</p><button class="btn sm" id="retryEmptyRound">重新向节点同步</button><button class="btn" id="back">${icon('arrow')}返回</button></div>`; $('retryEmptyRound').onclick = () => retryRoundSync(R.cid); $('back').onclick = () => go('explore'); return; }
+  if (!R.detail.state) { renderRoundSummary(v, R); return; }
   const d = R.detail, st = d.state, c = st.config, p = phaseInfo(d);
   // One local display tick only while viewing SEALED; chain reads belong to the existing detail session.
   if (st.phase === S.Phase.SEALED && detailTracker?.cid === d.cid && !document.hidden) {
@@ -1788,7 +1824,8 @@ recovery = new ForegroundRecovery({
   },
 });
 void resumeRecords(engine);
-void mergedRows().then(rows => { state.rows = rows; if(state.view==='explore') render(); }).then(() => loadRows({quiet: true}));
+// The list request must not depend on the cached render succeeding (a bad cached row would otherwise block recovery).
+void mergedRows().then(rows => { state.rows = rows; if(state.view==='explore') render(); }).catch(() => {}).then(() => loadRows({quiet: true}));
 // List stays a session snapshot. Foreground recovery covers the current detail and bounded pending records only.
 let foregroundWasHidden = document.hidden;
 document.addEventListener('visibilitychange', () => {

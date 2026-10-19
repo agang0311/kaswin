@@ -92,6 +92,10 @@ export function checkRow(v, {cached = false} = {}) {
   ensure(v.phase === null || (Number.isInteger(v.phase) && v.phase >= 1 && v.phase <= 5), '未知阶段');
   if (v.tip) { hash32(v.tip.transactionId); ensure(Number.isInteger(v.tip.index) && v.tip.index >= 0, 'tip'); }
   uint(v.value, 'VALUE');
+  // Summary display fields of rows without a ledger feed BigInt/number formatting in cards. Reject malformed ones here,
+  // so they reach neither a template nor the persistent cache (cached views are re-checked on load as well).
+  if (v.ticketPrice != null) uint(v.ticketPrice, 'ticketPrice');
+  for (const f of ['sold', 'ticketCap', 'purchaseCount', 'minTickets', 'purchaseCap']) if (v[f] != null) ensure(Number.isSafeInteger(v[f]) && v[f] >= 0, `${f}格式错误`);
   for (const field of ['genesisTxid', 'latestTxid', 'accepting']) if (v[field] != null) hash32(v[field], field);
   if (v.purchases != null) {
     ensure(Array.isArray(v.purchases) && v.purchases.length <= S.MAX_PURCHASES, '购买目录格式错误');
