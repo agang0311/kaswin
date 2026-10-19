@@ -1,0 +1,204 @@
+{
+  "comment": "场景参数。cap=总票数, min=最低票数, buy=购票计划, minutes=最早封盘分钟。改这里不需要动代码。",
+  "scenarios": {
+    "1": {
+      "name": "empty",
+      "title": "空轮退盘",
+      "terminal": "EMPTY",
+      "cap": 10,
+      "min": 3,
+      "minutes": 1,
+      "buy": [],
+      "expect": {
+        "terminal": "EMPTY",
+        "depositRefundedTo": "creator"
+      }
+    },
+    "2": {
+      "name": "refund-2ticket",
+      "title": "单笔多票不足额退款",
+      "terminal": "REFUNDED",
+      "cap": 10,
+      "min": 3,
+      "minutes": 1,
+      "buy": [
+        {
+          "who": "b1",
+          "qty": 2
+        }
+      ],
+      "expect": {
+        "terminal": "REFUNDED",
+        "tickets": 2,
+        "note": "单笔 2 票 < 3 门槛；单记录多票只扣一次 0.02"
+      }
+    },
+    "3": {
+      "name": "payout",
+      "title": "标准开奖派奖",
+      "terminal": "PAID",
+      "cap": 10,
+      "min": 3,
+      "minutes": 1,
+      "buy": [
+        {
+          "who": "b1",
+          "qty": 2
+        },
+        {
+          "who": "b2",
+          "qty": 1
+        }
+      ],
+      "expect": {
+        "terminal": "PAID",
+        "tickets": 3
+      }
+    },
+    "4": {
+      "name": "A4",
+      "title": "临界卖满开奖",
+      "terminal": "PAID",
+      "cap": 5,
+      "min": 3,
+      "minutes": 1,
+      "buy": [
+        {
+          "who": "b1",
+          "qty": 1
+        },
+        {
+          "who": "b2",
+          "qty": 1
+        },
+        {
+          "who": "b1",
+          "qty": 1
+        },
+        {
+          "who": "b2",
+          "qty": 1
+        },
+        {
+          "who": "b1",
+          "qty": 1
+        }
+      ],
+      "expect": {
+        "terminal": "PAID",
+        "tickets": 5,
+        "note": "第 5 条记录触发 PUSHDATA1→PUSHDATA2；卖满免等时间立即封盘"
+      }
+    },
+    "5": {
+      "name": "R225",
+      "title": "225 笔多批退款",
+      "terminal": "REFUNDED",
+      "cap": 300,
+      "min": 300,
+      "minutes": 1,
+      "buys": 225,
+      "buyAlternate": [
+        "b1",
+        "b2"
+      ],
+      "refundBatches": 8,
+      "refundAlternate": [
+        "b1",
+        "b2"
+      ],
+      "expect": {
+        "terminal": "REFUNDED",
+        "tickets": 225,
+        "note": "前 7 批各 34 输出，尾批清算押金；游标 32→…→224"
+      }
+    },
+    "6": {
+      "name": "P256",
+      "title": "买满 256 笔派奖",
+      "terminal": "PAID",
+      "cap": 256,
+      "min": 3,
+      "minutes": 1,
+      "buys": 256,
+      "buyAlternate": [
+        "b1",
+        "b2"
+      ],
+      "expect": {
+        "terminal": "PAID",
+        "tickets": 256,
+        "note": "满目录 9296B；卖满免等立即封盘"
+      }
+    },
+    "7": {
+      "name": "R256",
+      "title": "买满 256 笔退款",
+      "terminal": "REFUNDED",
+      "cap": 300,
+      "min": 300,
+      "minutes": 1,
+      "buys": 256,
+      "buyAlternate": [
+        "b1",
+        "b2"
+      ],
+      "refundBatches": 8,
+      "refundAlternate": [
+        "b1",
+        "b2"
+      ],
+      "expect": {
+        "terminal": "REFUNDED",
+        "tickets": 256,
+        "note": "8 批全部满载 34 输出"
+      }
+    },
+    "8": {
+      "name": "TIMEOUT_REFUND",
+      "title": "超时退款",
+      "terminal": "REFUNDED",
+      "enabled": false,
+      "reason": "SEALED 需滞留 432,000 DAA（约 12 小时），实链自动化排除；由 SCRIPT_VM 注入时间戳覆盖。",
+      "cap": 10,
+      "min": 3,
+      "minutes": 1,
+      "buy": [
+        {
+          "who": "b1",
+          "qty": 2
+        },
+        {
+          "who": "b2",
+          "qty": 1
+        }
+      ],
+      "expect": {
+        "terminal": "REFUNDED",
+        "layer": "V"
+      }
+    },
+    "9": {
+      "name": "concurrent-race",
+      "title": "多用户并发竞争",
+      "terminal": "PAID",
+      "cap": 33,
+      "min": 3,
+      "minutes": 1,
+      "concurrency": {
+        "buyers": [
+          "b1",
+          "b2"
+        ],
+        "buyUntilSoldOut": true,
+        "raceClose": true,
+        "raceDraw": true
+      },
+      "expect": {
+        "terminal": "PAID",
+        "tickets": 33,
+        "note": "链上归属需等于 cap；封盘/开奖各恰一方成功"
+      }
+    }
+  }
+}

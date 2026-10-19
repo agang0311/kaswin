@@ -1,0 +1,29 @@
+{
+  "$schema": "./README.md",
+  "network": {
+    "name": "testnet-10",
+    "indexer": "http://127.0.0.1/indexer/tn10",
+    "node": "wss://muon-10.kaspa.blue/kaspa/testnet-10/wrpc/json",
+    "page": "http://127.0.0.1/kaswin.html",
+    "contractPrefix": "kaswin-v2.0.2"
+  },
+  "timing": {
+    "stepMs": 30000,
+    "quotePollMs": 250,
+    "statePollMs": 1200,
+    "heartbeatMs": 5000
+  },
+  "round": {
+    "defaultMinutes": 1,
+    "comment": "最早封盘时间（分钟）。用户约定：创建轮次统一用自定义 1 分钟。"
+  },
+  "wallets": {
+    "dir": "./wallets",
+    "comment": "null = 自动查找：$KASWIN_WALLETS → ./wallets (tests/web/wallets)",
+    "roles": {
+      "creator": "tn10-test-only.json",
+      "b1": "tn10-f3-buyer-1.json",
+      "b2": "tn10-f3-buyer-2.json"
+    }
+  }
+}

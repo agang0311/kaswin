@@ -1,0 +1,7 @@
+{
+  "name": "kaswin-core",
+  "version": "2.0.2",
+  "private": true,
+  "type": "module",
+  "description": "Kaswin V2.0.2 source candidate; lib remains historical V2.0.1 until an authorized rebuild and Profile review"
+}

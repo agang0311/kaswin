@@ -1,0 +1,252 @@
+pragma silverscript ^0.1.0;
+/*
+ * Kaswin SEALED Covenant V2.0.2 (Chained Hash / No Routes / No NetworkGenesis)
+ * Language: SilverScript v1.0.0, target commit 3ed973335b59269293564805cc2c58a14595ec03.
+ * Architecture: Hardcoded forward reference to REFUNDING template hash.
+ * No checkRoot; no genesisTail.
+ * Header: 80 bytes (magic KW21). Directory (4B cumulative end + 32B buyer key per record) starts at 80.
+ * Spend ABI: action, programTailBytes, nextTail, data, actorPk, fee (6 parameters).
+ * Entry accepts only action 4 or 9; the final else remains an explicit rejection guard.
+ * Outputs: at most 3 (DRAW: prize, deposit, bounty; TIMEOUT: state + optional change).
+ * The draw is computed in-transaction (seed, sample, ticket); no phase 3/4 ledger is built and no draw field is persisted.
+ */
+contract KaswinSealed(byte[] initialLedger) {
+    byte[] ledger = initialLedger;
+    // BEGIN GENERATED LEDGER LAYOUT (contracts/ledger-layout.json)
+    int constant OFFSET_MAGIC = 0;
+    int constant OFFSET_PHASE = 4;
+    int constant OFFSET_TICKET_PRICE = 8;
+    int constant OFFSET_TICKET_CAP = 16;
+    int constant OFFSET_PURCHASE_CAP = 20;
+    int constant OFFSET_MIN_TICKETS = 24;
+    int constant OFFSET_CLOSE_ELIGIBLE_DAA = 28;
+    int constant OFFSET_SOLD = 36;
+    int constant OFFSET_PURCHASE_COUNT = 40;
+    int constant OFFSET_REFUND_CURSOR = 44;
+    int constant OFFSET_OWNER_KEY = 48;
+    int constant HEADER_BYTES = 80;
+    int constant RECORD_BYTES = 36;
+    int constant RECORD_OFFSET_END = 0;
+    int constant RECORD_OFFSET_BUYER_KEY = 4;
+    int constant U32_BYTES = 4;
+    int constant U63_BYTES = 8;
+    int constant KEY_BYTES = 32;
+    // END GENERATED LEDGER LAYOUT
+    
+    // Hardcoded forward target template hash:
+    // Placed upon compiling refunding.sil.
+    byte[32] constant REFUNDING_TEMPLATE_HASH = byte[32](0x0f3649d95a57cec4005c34d33cc3e1ea48b427a709e2398d7360327d20f60ce6);
+
+    int constant MAX_PURCHASES = 256;
+    int constant DEPOSIT = 400000000;
+    int constant MIN_PRICE = 100000000;
+    int constant FINALIZER = 100000000;
+    int constant MAX_PAY_FEE = 50000000;
+    int constant DRAW_DELAY = 100;
+    int constant TIMEOUT_DELAY = 432000;
+    int constant DAA_LIMIT = 500000000000;
+    int constant VALUE_LIMIT = 9000000000000000;
+    byte[32] constant ZERO = byte[32](0x0000000000000000000000000000000000000000000000000000000000000000);
+    byte[32] constant KEY_CTX = byte[32](0x536571436f6d6d69744d65726765736574436f6e746578740000000000000000);
+    byte[32] constant KEY_BRANCH = byte[32](0x536571436f6d6d69746d656e744d65726b6c654272616e636848617368000000);
+
+    function u32(byte[] buf, int at): int {
+        require(at >= 0 && at <= length(buf) - 4);
+        byte[] part = buf.slice(at, at + 4);
+        require(unsigned(part[3]) < 128);
+        return OpBin2Num(part);
+    }
+
+    function u63(byte[] buf, int at): int {
+        require(at >= 0 && at <= length(buf) - 8);
+        byte[] part = buf.slice(at, at + 8);
+        require(unsigned(part[7]) < 128);
+        return OpBin2Num(part);
+    }
+
+    function set4(byte[] buf, int at, int value): byte[] {
+        require(at >= 0 && at <= length(buf) - 4);
+        require(value >= 0 && value <= 2147483647);
+        return buf.slice(0, at) + byte[](value as byte[4]) + buf.slice(at + 4, length(buf));
+    }
+
+    function ownerKey(): pubkey { return pubkey(ledger.slice(OFFSET_OWNER_KEY, HEADER_BYTES)); }
+
+    function pushLedger(byte[] value): byte[] {
+        int n = length(value);
+        require(n >= HEADER_BYTES && n <= HEADER_BYTES + MAX_PURCHASES * RECORD_BYTES);
+        byte[] prefix = byte[](0x4d) + byte[](n as byte[4]).slice(0, 2);
+        if (n <= 255) {
+            prefix = byte[](0x4c) + byte[](n as byte[4]).slice(0, 1);
+        }
+        return prefix + value;
+    }
+
+    function scriptFor(byte[] value, byte[] tail): byte[] {
+        return byte[](0x6b) + pushLedger(value) + tail;
+    }
+
+    function authenticatedTail(int tailBytes): byte[] {
+        int sigLen = OpTxInputScriptSigLen(0);
+        require(tailBytes > 0 && tailBytes <= 1000000 && tailBytes < sigLen);
+        byte[] tail = OpTxInputScriptSigSubstr(0, sigLen - tailBytes, sigLen);
+        require(tail.slice(0, 1) == byte[](0x6c));
+        require(tx.inputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(ledger, tail))));
+        return tail;
+    }
+
+    function recordEnd(byte[] st, int record): int {
+        require(record >= 0 && record < u32(st, OFFSET_PURCHASE_COUNT));
+        int result = u32(st, HEADER_BYTES + record * RECORD_BYTES);
+        require(result > 0 && result <= u32(st, OFFSET_SOLD));
+        return result;
+    }
+
+    function recordKey(byte[] st, int record): pubkey {
+        require(record >= 0 && record < u32(st, OFFSET_PURCHASE_COUNT));
+        return pubkey(st.slice(HEADER_BYTES + record * RECORD_BYTES + RECORD_OFFSET_BUYER_KEY, HEADER_BYTES + (record + 1) * RECORD_BYTES));
+    }
+
+    function checkLedger() {
+        require(ledger.slice(OFFSET_MAGIC, OFFSET_PHASE) == byte[](0x4b573231));
+        require(u32(ledger, OFFSET_PHASE) == 2);
+        require(length(ledger) == HEADER_BYTES + u32(ledger, OFFSET_PURCHASE_COUNT) * RECORD_BYTES);
+        require(u32(ledger, OFFSET_SOLD) >= u32(ledger, OFFSET_MIN_TICKETS) && tx.inputs[0].value == DEPOSIT + u32(ledger, OFFSET_SOLD) * u63(ledger, OFFSET_TICKET_PRICE));
+    }
+
+    function checkFee(int fee) {
+        require(fee > 0 && fee <= MAX_PAY_FEE);
+        int totalIn = 0;
+        int totalOut = 0;
+        for (fi, 0, tx.inputs.length, 9) {
+            int amountIn = tx.inputs[fi].value;
+            require(amountIn > 0 && amountIn <= VALUE_LIMIT);
+            totalIn = totalIn + amountIn;
+        }
+        for (fo, 0, tx.outputs.length, 3) {
+            int amountOut = tx.outputs[fo].value;
+            require(amountOut > 0 && amountOut <= VALUE_LIMIT);
+            totalOut = totalOut + amountOut;
+        }
+        require(totalIn - totalOut == fee);
+    }
+
+    function ordinary(int index, int amount, pubkey recipient) {
+        require(amount > 0 && amount <= VALUE_LIMIT);
+        require(tx.outputs[index].value == amount);
+        require(tx.outputs[index].scriptPubKey == byte[](new ScriptPubKeyP2PK(recipient)));
+        require(OpOutputCovenantId(index) == ZERO);
+    }
+
+    function terminal(int count) {
+        require(tx.outputs.length == count);
+        require(OpAuthOutputCount(0) == 0);
+        require(OpCovOutputCount(OpInputCovenantId(0)) == 0);
+        require(OpOutputCovenantId(0) == ZERO);
+    }
+
+    function successor(byte[] next, byte[] tail, int value) {
+        byte[32] cid = OpInputCovenantId(0);
+        require(length(tail) > 0 && tail.slice(0, 1) == byte[](0x6c));
+        require(templateHash(byte[](0x6b), tail) == REFUNDING_TEMPLATE_HASH);
+        require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
+        require(OpCovOutputCount(cid) == 1 && OpCovOutputIdx(cid, 0) == 0);
+        require(OpOutputCovenantId(0) == cid);
+        require(tx.outputs[0].value == value);
+        require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(next, tail))));
+    }
+
+    function openSeq(byte[] proof, int base, byte[32] parentSeq): byte[32] {
+        byte[] context = proof.slice(base + 64, base + 88);
+        byte[32] ctx = blake3WithKey(context, KEY_CTX);
+        byte[32] pc = blake3WithKey(byte[](ctx) + proof.slice(base + 32, base + 64), KEY_BRANCH);
+        byte[32] root = blake3WithKey(proof.slice(base, base + 32) + byte[](pc), KEY_BRANCH);
+        return blake3WithKey(byte[](parentSeq) + byte[](root), KEY_BRANCH);
+    }
+
+    // PASS-A opening checks and seed derivation (unchanged formula; domain KASWIN_V2_DRAW). Returns the seed only.
+    function drawSeed(byte[] proof): byte[32] {
+        require(length(proof) == 240);
+        int d = OpTxInputDaaScore(0);
+        require(d >= 0 && d < DAA_LIMIT - TIMEOUT_DELAY);
+        require(this.ageDaa >= DRAW_DELAY);
+        int boundary = d + DRAW_DELAY;
+        {
+            int pd = u63(proof, 224);
+            int td = u63(proof, 104);
+            require(pd < boundary && td >= boundary && td < DAA_LIMIT);
+            require(u63(proof, 112) > u63(proof, 232));
+            require(u63(proof, 96) >= 0 && u63(proof, 216) >= 0);
+        }
+        byte[32] pseq = openSeq(proof, 152, byte[32](proof.slice(120, 152)));
+        byte[32] tseq = openSeq(proof, 32, pseq);
+        byte[32] thash = byte[32](proof.slice(0, 32));
+        require(tseq == OpChainblockSeqCommit(thash));
+        byte[32] frozen = blake2b(ledger.slice(OFFSET_TICKET_PRICE, OFFSET_REFUND_CURSOR) + ledger.slice(HEADER_BYTES, length(ledger)));
+        return blake2b(byte[]("KASWIN_V2_DRAW")
+            + byte[](OpInputCovenantId(0)) + byte[](tx.inputs[0].outpointTxId)
+            + byte[](tx.inputs[0].outpointIndex as byte[4]) + byte[](frozen)
+            + byte[](boundary as byte[8]) + byte[](thash) + byte[](tseq));
+    }
+
+    // Sample preimage keeps the former 8-byte zero counter (KASWIN_V2_SAMPLE || seed || 0^8); no redraw.
+    function sample(byte[32] seed): int {
+        byte[32] digest = blake2b(byte[]("KASWIN_V2_SAMPLE") + byte[](seed)
+            + byte[](0x0000000000000000));
+        return OpBin2Num(byte[](digest).slice(0, 7) + byte[](0x00));
+    }
+
+    function limit(int sold): int {
+        int space = 72057594037927936;
+        return space - space % sold;
+    }
+
+    function payout(int ticket, int hint, pubkey executor, int fee) {
+        require(tx.inputs.length == 1);
+        require(fee <= MAX_PAY_FEE);
+        int begin = 0;
+        if (hint > 0) { begin = recordEnd(ledger, hint - 1); }
+        int end = recordEnd(ledger, hint);
+        require(begin <= ticket && ticket < end);
+        int prize = u63(ledger, OFFSET_TICKET_PRICE) * u32(ledger, OFFSET_SOLD) - FINALIZER - fee;
+        require(prize >= MIN_PRICE);
+        terminal(3);
+        ordinary(0, prize, recordKey(ledger, hint));
+        ordinary(1, DEPOSIT, ownerKey());
+        ordinary(2, FINALIZER, executor);
+    }
+
+    entry spend(int action, int programTailBytes, byte[] nextTail, byte[] data, pubkey actorPk, int fee) {
+        require(this.activeInputIndex == 0 && tx.version == 1);
+        require(tx.inputs.length >= 1 && tx.inputs.length <= 9);
+        require(tx.outputs.length >= 1 && tx.outputs.length <= 3);
+        require(length(byte[](ownerKey())) == 32 && length(byte[](actorPk)) == 32);
+        byte[32] cid = OpInputCovenantId(0);
+        require(cid != ZERO && OpCovInputCount(cid) == 1 && OpCovInputIdx(cid, 0) == 0);
+        byte[] tail = authenticatedTail(programTailBytes);
+        checkLedger();
+        checkFee(fee);
+        int phase = u32(ledger, OFFSET_PHASE);
+
+        require(action == 4 || action == 9);
+        if (action == 4) {
+            require(length(nextTail) == 0);
+            require(phase == 2 && length(data) == 244);
+            int a4Ticket = 0;
+            {
+                byte[32] a4Seed = drawSeed(data.slice(0, 240));
+                int a4Value = sample(a4Seed);
+                int a4Sold = u32(ledger, OFFSET_SOLD);
+                require(a4Value < limit(a4Sold));
+                a4Ticket = a4Value % a4Sold;
+            }
+            payout(a4Ticket, u32(data, 240), actorPk, fee);
+        } else if (action == 9) {
+            require(phase == 2 && length(data) == 0);
+            int a9Anchor = OpTxInputDaaScore(0);
+            require(a9Anchor >= 0 && a9Anchor < DAA_LIMIT - TIMEOUT_DELAY);
+            require(this.ageDaa >= TIMEOUT_DELAY);
+            successor(set4(ledger, OFFSET_PHASE, 5), nextTail, tx.inputs[0].value);
+        } else { require(false); }
+    }
+}

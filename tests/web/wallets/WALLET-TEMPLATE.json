@@ -1,0 +1,8 @@
+{
+  "_template": "复制本文件为 <角色文件名>.json 并填入真实值。文件名在 config/network.json 的 wallets.roles 里指定。",
+
+  "network": "testnet-10",
+  "purpose": "Kaswin TN10 browser test only",
+  "address": "kaspatest:qxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "privateKey": "0000000000000000000000000000000000000000000000000000000000000000"
+}

@@ -1,0 +1,15 @@
+{
+  "comment": "清理策略。phase: 1=售票中, 2=已封存, 5=退款中。",
+  "cleanup": {
+    "phases": [1, 2, 5],
+    "maxRefundBatches": 12,
+    "settleBudgetMs": 120000,
+    "minRoundAgeMs": 0
+  },
+  "preflight": {
+    "comment": "scenarios.mjs 启动时的未终局轮次预检。",
+    "enabled": true,
+    "failOnOpen": false,
+    "showLimit": 20
+  }
+}

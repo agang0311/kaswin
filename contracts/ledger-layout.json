@@ -1,0 +1,42 @@
+{
+  "schema": "KASWIN_LEDGER_LAYOUT_1",
+  "sourceVersion": "V2.0.2",
+  "magic": "KW21",
+  "constants": {
+    "OFFSET_MAGIC": 0,
+    "OFFSET_PHASE": 4,
+    "OFFSET_TICKET_PRICE": 8,
+    "OFFSET_TICKET_CAP": 16,
+    "OFFSET_PURCHASE_CAP": 20,
+    "OFFSET_MIN_TICKETS": 24,
+    "OFFSET_CLOSE_ELIGIBLE_DAA": 28,
+    "OFFSET_SOLD": 36,
+    "OFFSET_PURCHASE_COUNT": 40,
+    "OFFSET_REFUND_CURSOR": 44,
+    "OFFSET_OWNER_KEY": 48,
+    "HEADER_BYTES": 80,
+    "RECORD_BYTES": 36,
+    "RECORD_OFFSET_END": 0,
+    "RECORD_OFFSET_BUYER_KEY": 4,
+    "U32_BYTES": 4,
+    "U63_BYTES": 8,
+    "KEY_BYTES": 32
+  },
+  "header": [
+    {"name": "magic", "offset": "OFFSET_MAGIC", "width": "U32_BYTES", "encoding": "ascii"},
+    {"name": "phase", "offset": "OFFSET_PHASE", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "ticketPrice", "offset": "OFFSET_TICKET_PRICE", "width": "U63_BYTES", "encoding": "u63-le"},
+    {"name": "ticketCap", "offset": "OFFSET_TICKET_CAP", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "purchaseCap", "offset": "OFFSET_PURCHASE_CAP", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "minTickets", "offset": "OFFSET_MIN_TICKETS", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "closeEligibleDaa", "offset": "OFFSET_CLOSE_ELIGIBLE_DAA", "width": "U63_BYTES", "encoding": "u63-le"},
+    {"name": "sold", "offset": "OFFSET_SOLD", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "purchaseCount", "offset": "OFFSET_PURCHASE_COUNT", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "cursor", "offset": "OFFSET_REFUND_CURSOR", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "ownerKey", "offset": "OFFSET_OWNER_KEY", "width": "KEY_BYTES", "encoding": "bytes"}
+  ],
+  "record": [
+    {"name": "cumulativeEnd", "offset": "RECORD_OFFSET_END", "width": "U32_BYTES", "encoding": "signed-domain-u32-le"},
+    {"name": "buyerKey", "offset": "RECORD_OFFSET_BUYER_KEY", "width": "KEY_BYTES", "encoding": "bytes"}
+  ]
+}
