@@ -2,6 +2,12 @@
 
 基于 Kaspa L1 的抽奖协议与单页面应用，使用 SilverScript 合约和 JavaScript/TypeScript 客户端。网页支持 Testnet 10 与主网、KasWare 钱包、轮次创建、购票、开奖、退款及交易状态核验。
 
+## 下载
+
+[Releases](https://github.com/agang0311/kaswin/releases) 提供构建好的主网交易版 `kaswin.html`，附 `build-manifest.json` 与 `SHA256SUMS`。在线版本：https://win.kaspay.top/ 。
+
+推送 `vX.Y.Z` 标签时，[release 工作流](.github/workflows/release.yml) 会从该标签的源码执行 `npm ci && npm run build:mainnet` 并发布 release；标签必须与 `package.json` 的 `version` 一致。手动运行该工作流只构建并输出哈希，不发布。
+
 ## 开始使用
 
 需要 Node.js 22 或更新版本。
