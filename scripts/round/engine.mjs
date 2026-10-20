@@ -33,6 +33,7 @@ import {queryContext, sameQueryContext, sameConnectionContext, failure} from '..
 import {AcceptanceEvidence} from '../chain/acceptance-evidence.mjs';
 
 const FOLLOWING = new Set(['SUBMITTING', 'SUBMITTED', 'PENDING', 'UNKNOWN', 'RECHECKING', 'CONFIRMING', 'REPLACED']);
+const LOST = new Set(['DRIFTED', 'CONFLICTED']);
 async function sharedRead(tasks, key, task) {
   if (tasks.has(key)) return structuredClone(await tasks.get(key));
   const work = Promise.resolve().then(task); tasks.set(key, work);
@@ -765,10 +766,9 @@ export class Engine {
     if (stored?.value.status === 'REJECTED') return stored.value; // explicit manual rechecks use reconcile(), never restart automatic work
     let r = await this.reconcile(txid, onProgress);
     if (r.status === 'REPLACED') r = await this.#reviveIfReplacementRejected(r);
-    // A REPLACED member is diagnosed only for a lost verdict (never a resend), and only once no other member of its
-    // fee-bump family can still take effect; otherwise its reservation would outlive a DRIFTED/CONFLICTED replacement.
-    const replaced = r.status === 'REPLACED' && await this.#replacedLossDecidable(r);
-    if (!(TRACKED.has(r.status) || replaced) || r.searchComplete !== true || !r.signed || (r.replacedBy && !replaced) || this.acceptance.peek(txid) || this.evidence.has(txid)) return r;
+    // A REPLACED member is never diagnosed or resent itself; it only inherits its fee-bump family's lost verdict.
+    if (r.status === 'REPLACED') return this.#settleReplacedLost(r);
+    if (!TRACKED.has(r.status) || r.searchComplete !== true || !r.signed || r.replacedBy || this.acceptance.peek(txid) || this.evidence.has(txid)) return r;
     if (!manualResend && !r.displacedAt && Date.now() - (r.lastResendAt ?? r.submittedAt ?? r.createdAt ?? 0) < PENDING_GRACE_MS) return r;
     onProgress('未在选中链上找到，正在诊断（只查询）…');
     const d = await diagnose(this.pair, r, await this.records(), this.profile);
@@ -776,31 +776,49 @@ export class Engine {
     let cur = await store.get(k);
     // Bind to exactly this reconcile result: another tab or a newer check wins.
     if (this.disposed || this.acceptance.peek(txid) || this.evidence.has(txid)) return cur?.value ?? r;
-    if (!cur || cur.value.checkedAt !== r.checkedAt || !(TRACKED.has(cur.value.status) || (replaced && cur.value.status === 'REPLACED'))) return cur?.value ?? r;
+    if (!cur || cur.value.checkedAt !== r.checkedAt || !TRACKED.has(cur.value.status)) return cur?.value ?? r;
     const now = Date.now(), g = cur.value.guard ?? {}, streak = g.last === d.verdict ? g.since ?? now : now;
     const confirmed = d.verdict === 'DRIFT' || (g.last === d.verdict && now - streak >= DIAG_GAP_MS);
     const guard = {last: d.verdict, since: streak, at: now, ...(d.error ? {error: d.error} : {})};
     const lose = (status, reason) => ({...cur.value, status, accepted: false, guard, lostAt: now, lostReason: reason, note: VERDICT_TEXT[reason] ?? reason});
-    let next = {...cur.value, guard, note: replaced ? cur.value.note : VERDICT_TEXT[d.verdict] ?? cur.value.note};
+    let next = {...cur.value, guard, note: VERDICT_TEXT[d.verdict] ?? cur.value.note};
     if (confirmed && ['CONFLICT', 'FUNDING_CONFLICT', 'PARENT_LOST'].includes(d.verdict)) next = lose('CONFLICTED', d.verdict);
     else if (confirmed && ['DRIFT', 'PROOF_INVALID'].includes(d.verdict)) next = lose('DRIFTED', d.verdict);
     await store.compareAndSet(k, cur.revision, next);
-    if (replaced || d.verdict !== 'DROPPED' || !(confirmed || manualResend)) return next;
+    if (LOST.has(next.status)) void this.#followReplacedFamily(next);
+    if (d.verdict !== 'DROPPED' || !(confirmed || manualResend)) return next;
     if (typeof next.signedWire !== 'string') return {...next, resendAvailable: false, note: '旧记录缺少原签名字节承诺，仅允许查询，不自动重发'};
     if (!manualResend && !inResendWindow(next, now)) return {...next, resendAvailable: true};
     if ((next.resends ?? 0) >= RESEND_LIMIT) return {...next, resendAvailable: false};
     onProgress('交易已从网络消失且输入仍未花费：按原签名字节重发…');
     return this.resend(txid);
   }
-  /** True when a REPLACED record may get its own lost verdict: same-input family members exist, none is on the
-   * selected chain, and every member that was not itself replaced is already lost (DRIFTED / CONFLICTED).
-   * A REJECTED replacement revives its original instead (below). ARCHIVED and SUPERSEDED do not count: an archived
-   * member may still have been accepted. */
-  async #replacedLossDecidable(r) {
-    const rows = await (await this.store()).list(this.prefix), keys = familyKeys(rows, this.prefix + hash32(r.txid));
-    const others = rows.filter(x => keys.has(x.key)).map(x => x.record.value).filter(v => v.txid !== r.txid);
-    const lost = v => ['DRIFTED', 'CONFLICTED'].includes(v.status);
-    return others.some(lost) && others.every(v => v.status === 'REPLACED' || lost(v));
+  /** Mirror of settleFamily() for a lost family. Every fee-bump member spends exactly the same outpoints with the same
+   * intent, so a member's DRIFTED / CONFLICTED verdict is evidence about those shared inputs: DRIFTED = the sealed input
+   * is live again at another DAA (the shared draw proof is void, and nobody spent it); CONFLICTED = the inputs are spent.
+   * In the latter case the spender may be THIS record, so it inherits the verdict only after its own reconcile finished
+   * a complete selected-chain search and it is still REPLACED (not found accepted). It is never resent. The statuses of
+   * other members (REJECTED, ARCHIVED, ...) do not matter; reservations then release it like any lost record, and a
+   * later accepted member still turns it into SUPERSEDED via settleFamily(). */
+  async #settleReplacedLost(r) {
+    if (r.searchComplete !== true || this.acceptance.peek(r.txid) || this.evidence.has(r.txid)) return r;
+    const store = await this.store(), k = this.prefix + hash32(r.txid);
+    const rows = await store.list(this.prefix), keys = familyKeys(rows, k);
+    const lost = rows.find(x => x.key !== k && keys.has(x.key) && LOST.has(x.record.value.status))?.record.value;
+    if (!lost) return r;
+    const cur = await store.get(k);
+    if (this.disposed || this.acceptance.peek(r.txid) || this.evidence.has(r.txid)) return cur?.value ?? r;
+    if (!cur || cur.value.checkedAt !== r.checkedAt || cur.value.status !== 'REPLACED') return cur?.value ?? r;
+    const next = {...cur.value, status: lost.status, accepted: false, lostAt: Date.now(), lostReason: lost.lostReason ?? lost.status,
+      lostVia: lost.txid, note: `同组交易 ${lost.txid.slice(0, 12)}… 已判定失效（共用相同输入），本笔一并失效`};
+    try { return (await store.compareAndSet(k, cur.revision, next)).value; } catch { return (await store.get(k))?.value ?? r; }
+  }
+  /** After a member is lost, settle its REPLACED siblings now instead of at the next foreground recovery. */
+  async #followReplacedFamily(v) {
+    try {
+      const rows = await (await this.store()).list(this.prefix), keys = familyKeys(rows, this.prefix + hash32(v.txid));
+      for (const x of rows) if (keys.has(x.key) && x.record.value.status === 'REPLACED') void this.follow(x.record.value.txid).catch(() => {});
+    } catch {} // a missed wake only delays: foreground recovery follows every REPLACED record again
   }
   /** The node definitively REJECTED this record's direct replacement (two resend rejections in a row), so it never took
    * the original's place. The original returns to normal tracking: it may be diagnosed, resent with its identical signed
