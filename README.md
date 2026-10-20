@@ -1,23 +1,23 @@
 # Kaswin
 
-基于 Kaspa L1 的抽奖协议与单页面应用，使用 SilverScript 合约和 JavaScript/TypeScript 客户端。网页支持 Testnet 10 与主网、KasWare 钱包、轮次创建、购票、开奖、退款及交易状态核验。
+English | [中文](README.zh-CN.md)
 
-## 下载
+A lottery protocol and single-page application on Kaspa L1, built with SilverScript contracts and a JavaScript/TypeScript client. The web app supports Testnet 10 and mainnet, the KasWare and Kastle wallets, and covers creating rounds, buying tickets, drawing, refunds, and verifying transaction status.
 
-[Releases](https://github.com/agang0311/kaswin/releases) 提供构建好的主网交易版 `kaswin.html`，附 `build-manifest.json` 与 `SHA256SUMS`。在线版本：https://win.kaspay.top/ 。
+## Download
 
-推送 `vX.Y.Z` 标签时，[release 工作流](.github/workflows/release.yml) 会从该标签的源码执行 `npm ci && npm run build:mainnet` 并发布 release；标签必须与 `package.json` 的 `version` 一致。手动运行该工作流只构建并输出哈希，不发布。
+[Releases](https://github.com/agang0311/kaswin/releases) provide the prebuilt mainnet trading build `kaswin.html`, together with `build-manifest.json` and `SHA256SUMS`. Live version: https://win.kaspay.top/ .
 
-## 开始使用
+## Getting started
 
-需要 Node.js 22 或更新版本。
+Requires Node.js 22 or newer.
 
 ```sh
 npm ci
 npm run build
 ```
 
-构建先编译 TypeScript 核心库，再生成自包含 HTML。输出位于：
+The build first compiles the TypeScript core library, then produces a self-contained HTML file. Output:
 
 ```text
 dist/
@@ -25,36 +25,36 @@ dist/
   build-manifest.json
 ```
 
-`index.html` 可部署到 HTTPS 静态站点；manifest 记录构建模式、合约身份、工具版本及源码和产物哈希，不包含测试结果。构建不访问网络、不使用钱包、不部署页面。
+`index.html` can be deployed to any HTTPS static site. The manifest records the build mode, contract identity, toolchain versions, and source and artifact hashes; it contains no test results. The build does not access the network, use a wallet, or deploy the page.
 
-## 构建模式
+## Build modes
 
-| 命令 | TN10 | 主网 |
+| Command | TN10 | Mainnet |
 |---|---|---|
-| `npm run build` | 只读 | 只读 |
-| `npm run build:tn10` | 可交易 | 只读 |
-| `npm run build:mainnet` | 可交易 | 可交易 |
+| `npm run build` | read-only | read-only |
+| `npm run build:tn10` | trading | read-only |
+| `npm run build:mainnet` | trading | trading |
 
-所有模式写入同一个 `dist/`，后一次构建替换前一次产物。也可显式传入参数，例如 `npm run build -- --mode=mainnet`；支持的模式为 `readonly`、`tn10`、`mainnet`。
+All modes write to the same `dist/`; each build replaces the previous output. The mode can also be passed explicitly, e.g. `npm run build -- --mode=mainnet`; supported modes are `readonly`, `tn10`, and `mainnet`.
 
-交易模式由构建参数决定，网页切换网络不会改变权限。主网使用真实 KAS，签名仍须用户逐笔确认；TN10 另支持页面内存测试钱包。构建成功表示产物已生成，业务测试、真实钱包流程和链上验证在构建后独立进行。本项目当前未配置自动化测试入口。
+Trading capability is fixed at build time; switching networks in the page does not change it. Mainnet uses real KAS, and every signature still requires the user's confirmation. TN10 additionally supports an in-page memory test wallet. A successful build only means the artifact was produced; business tests, real wallet flows, and on-chain verification are separate steps after the build. The project currently has no automated test entry point.
 
-## 项目结构
+## Project layout
 
 ```text
-build/       核心库编译与 HTML 打包
-contracts/   SilverScript 源码、账本布局与固定编译产物
-scripts/     协议核心、链连接、钱包、轮次、存储与追踪
-web/         应用交互、HTML 模板、样式与多语言
-docs/        架构与开发说明
+build/       core library compilation and HTML bundling
+contracts/   SilverScript sources, ledger layout, and pinned compiled artifacts
+scripts/     protocol core, chain access, wallets, rounds, storage, and tracking
+web/         app interaction, HTML templates, styles, and i18n
+docs/        architecture and development notes
 ```
 
-核心库源码位于 `scripts/core/src/`，生成文件位于 `scripts/core/lib/`。`npm run build:core` 单独编译核心库；`npm run check:core` 独立比较生成文件与源码，不能代替业务测试。
+Core library sources live in `scripts/core/src/`; generated files are in `scripts/core/lib/`. `npm run build:core` compiles the core library alone; `npm run check:core` independently compares the generated files against the sources and is not a substitute for business tests.
 
-## 合约与交易
+## Contract and transactions
 
-当前使用合约 V2.0.2，Profile 为 `ed0387c9e77bb4e0a8f1f4654a326c316d83663f455283ec6a046a095c94856d`。HTML 构建加载固定合约产物并检查源码、模板和 Profile 一致性，不重新编译 SilverScript。
+The current contract is V2.0.2, Profile `ed0387c9e77bb4e0a8f1f4654a326c316d83663f455283ec6a046a095c94856d`. The HTML build loads the pinned contract artifacts and checks that the source, templates, and Profile are consistent; it does not recompile SilverScript.
 
-Kaspa 交易被区块包含不等于被接受。Indexer/REST 用于发现数据，实际状态由节点接受数据与协议规则核验；金额使用 bigint 或十进制字符串。
+A Kaspa transaction being included in a block does not mean it is accepted. Indexer/REST data is used only for discovery; actual state is verified against the node's acceptance data and the protocol rules. Amounts are handled as bigint or decimal strings.
 
-详见[架构说明](docs/ARCHITECTURE.md)和[开发说明](docs/DEVELOPMENT.md)。
+See the [architecture notes](docs/ARCHITECTURE.md) and [development notes](docs/DEVELOPMENT.md) (currently in Chinese).
