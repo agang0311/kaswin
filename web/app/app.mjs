@@ -13,7 +13,7 @@ import {ACTION_LABEL, roleLabel} from '../../scripts/round/engine.mjs';
 import {Engine} from '../../scripts/round/engine.mjs';
 import {txStatus, txLabel, recordStatus as networkRecordStatus, needsAttention as networkNeedsAttention, plannedActions, cardStep, planSummary, walletFlow, CLOSE_OUTCOME, waitText} from '../ui/view.mjs';
 import {drawReadinessView} from '../ui/draw-readiness.mjs';
-import {readSession, waitForProvider, watchWallet, provider} from '../../scripts/wallet/kasware.mjs';
+import {readSession, waitForProvider, watchWallet, provider, availableWallets, preferWallet, walletName} from '../../scripts/wallet/kasware.mjs';
 import {BROWSER_TEST_WALLET_ENABLED, browserTestWallet, importBrowserTestWallet, clearBrowserTestWallet, isBrowserTestWallet} from '../../scripts/wallet/browser-test.mjs';
 import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, viewFromLive, checkRow, stateConfirming, indexerBehind, PRUNED_BASIS, phaseInfo as basePhaseInfo} from '../../scripts/round/rounds.mjs';
 import {chooseView} from '../../scripts/round/progress.mjs';
@@ -372,14 +372,14 @@ $('netSwitch').onclick = () => switchNetwork(NET.key === 'tn10' ? 'mainnet' : 't
 function renderWalletChip() {
   const b = $('walletBtn');
   if (state.session) { b.classList.add('on'); b.innerHTML = `${icon('wallet')}<span class="mono">${e(shortHash(state.session.address.slice(10), 5, 4))}</span>`; }
-  else { b.classList.remove('on'); b.innerHTML = `${icon('wallet')}<span>${BROWSER_TEST_WALLET_ENABLED && NET.key === 'tn10' ? '连接钱包' : '连接 KasWare'}</span>`; }
+  else { b.classList.remove('on'); b.innerHTML = `${icon('wallet')}<span>连接钱包</span>`; }
 }
 
 /* ------------------------------------------------------------------ wallet */
 let unwatchWallet = null;
 function disconnectWallet() {
   unwatchWallet?.(); unwatchWallet = null;
-  clearBrowserTestWallet();
+  clearBrowserTestWallet(); preferWallet(null);
   state.session = null; state.walletEpoch++;
   if ($('testWalletKey')) $('testWalletKey').value = '';
 }
@@ -391,7 +391,8 @@ async function connectProvider(p = null) {
     ensure(epoch === state.walletEpoch && p === provider(), '钱包会话已变化，计划作废');
     unwatchWallet?.();
     state.session = session;
-    toast(isBrowserTestWallet(p) ? '已连接 TN10 内存测试钱包，每笔交易仍须批准' : '已连接 KasWare（仅读取账户，不授予任何签名权限）');
+    toast(isBrowserTestWallet(p) ? '已连接 TN10 内存测试钱包，每笔交易仍须批准' : walletName(p) === 'Kastle' ? '已连接 Kastle（仅读取账户，不授予任何签名权限）'
+      : '已连接 KasWare（仅读取账户，不授予任何签名权限）');
     unwatchWallet = watchWallet(async () => {
       if (p !== provider()) return;
       const changedEpoch = ++state.walletEpoch;
@@ -416,17 +417,36 @@ async function connectProvider(p = null) {
 async function connectWallet() {
   if (state.session) return walletDialog();
   if (BROWSER_TEST_WALLET_ENABLED && NET.key === 'tn10') return testWalletDialog();
+  return connectInjected();
+}
+/** KasWare and/or Kastle: one injected wallet connects directly; several let the user choose. */
+async function connectInjected() {
+  let list = availableWallets();
+  if (!list.length) { await waitForProvider(); list = availableWallets(); }
+  if (list.length > 1) {
+    const id = await chooseWallet(list);
+    if (!id) return;
+    preferWallet(id);
+  } else preferWallet(list[0]?.id ?? null);
   return connectProvider();
+}
+function chooseWallet(list) {
+  return new Promise(resolve => {
+    modal('连接钱包', '<p>检测到多个钱包，请选择本页使用的钱包。每笔交易仍须在钱包中核对并签名。</p>',
+      list.map(w => `<button class="btn" data-wallet="${e(w.id)}">连接 ${e(w.name)}</button>`).join(''));
+    modalCleanup = () => resolve(null);
+    for (const b of $('mFoot').querySelectorAll('[data-wallet]')) b.onclick = () => { modalCleanup = null; closeModal(); resolve(b.dataset.wallet); };
+  });
 }
 function testWalletDialog() {
   return new Promise(resolve => {
-    modal('连接钱包', `<p>选择 KasWare，或导入专用 TN10 测试私钥用于浏览器测试。</p>
+    modal('连接钱包', `<p>连接浏览器钱包（KasWare 或 Kastle），或导入专用 TN10 测试私钥用于浏览器测试。</p>
       <div class="notice warn" id="testWalletNote">只使用专用测试钱包，不要输入主网钱包私钥或助记词。私钥仅留在当前页面内存；断开、切换网络或离开页面后清除。每笔交易仍须核对并批准。</div>
       <label class="field" for="testWalletKey"><span>TN10 测试私钥（64 位十六进制）</span>
         <input id="testWalletKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" aria-describedby="testWalletNote" data-no-i18n>
       </label>
       <div id="testWalletError" class="err" role="alert"></div>`,
-      `<button class="btn" id="connectKasware">连接 KasWare</button><button class="btn pri" id="importTestWallet">导入测试钱包</button>`);
+      `<button class="btn" id="connectKasware">连接浏览器钱包</button><button class="btn pri" id="importTestWallet">导入测试钱包</button>`);
     const field = $('testWalletKey'), error = $('testWalletError');
     let pending = false;
     modalCleanup = () => { field.value = ''; if (pending) disconnectWallet(); resolve(); };
@@ -434,7 +454,7 @@ function testWalletDialog() {
     const disable = () => { $('connectKasware').disabled = true; $('importTestWallet').disabled = true; };
     $('connectKasware').onclick = async () => {
       field.value = ''; disable(); disconnectWallet(); pending = true;
-      await connectProvider();
+      await connectInjected();
       // connectProvider may replace the dialog with an error; keep that error visible.
       if (field.isConnected) finish(); else resolve();
     };
@@ -455,9 +475,9 @@ function testWalletDialog() {
 }
 async function walletDialog() {
   const s = state.session, memory = isBrowserTestWallet(provider());
-  modal('钱包', `${facts([['钱包类型', memory ? 'TN10 内存测试钱包' : 'KasWare'], ['网络', NET.label], ['地址', hashHtml(s.address, {link: explorerAddress(s.address), n: 14})], ['x-only 公钥', hashHtml(s.key)]])}
+  modal('钱包', `${facts([['钱包类型', walletName(provider())], ['网络', NET.label], ['地址', hashHtml(s.address, {link: explorerAddress(s.address), n: 14})], ['x-only 公钥', hashHtml(s.key)]])}
     <div id="balBox" class="notice">正在从节点读取可用余额…</div>
-    <p class="muted small">${memory ? '私钥仅在当前页面内存；断开即清除。仅签署本页逐笔批准的普通资金输入。' : '本页只请求签名你明确批准的单笔交易中属于你的普通输入；永远不会调用 sendKaspa/pushTx，也不会读取私钥。'}</p>`,
+    <p class="muted small">${memory ? '私钥仅在当前页面内存；断开即清除。仅签署本页逐笔批准的普通资金输入。' : '本页只请求签名你明确批准的单笔交易中属于你的普通输入；永远不会调用钱包的转账或广播接口（如 sendKaspa、signAndBroadcastTx），也不会读取私钥。'}</p>`,
     `<button class="btn" id="wDisc">${memory ? '断开并清除私钥' : '断开本页会话'}</button>`);
   $('wDisc').onclick = () => { disconnectWallet(); renderWalletChip(); closeModal(); render(); };
   try {
@@ -1684,7 +1704,7 @@ function renderProtocol(v) {
           <li><b>本页</b>只是一个构建器：用嵌入的固定合约帧与核心库生成交易，用移植自 rusty-kaspa 的质量公式报价，用 BIP-340 校验钱包签名。</li>
           <li><b>Kaspa 节点</b>（默认 ${e(host(DEFAULT_NODE))} 提供的 kaspad 入口，可在设置中更换）是访问共识的入口：页面通过它读取 UTXO、接受数据与区块头，并提交交易。本页信任所配置节点如实反映 Kaspa 共识；资金规则本身由所有节点共同执行的合约脚本保证。</li>
           <li><b>Indexer</b> 只用于发现轮次和提供账本原文；所有数值在操作前都由节点复验。</li>
-          <li><b>KasWare</b> 只签你自己的普通资金输入（SIGHASH_ALL）。v1 签名不覆盖 compute budget / storage mass，所以页面在签名后自行核对这些字段再提交。</li>
+          <li><b>KasWare / Kastle</b> 只签你自己的普通资金输入（SIGHASH_ALL）。v1 签名不覆盖 compute budget / storage mass，所以页面在签名后自行核对这些字段再提交。</li>
         </ul></div>
       <div class="panel"><h3>规则速查</h3><dl class="kv">
         <dt>购买</dt><dd>开放阶段任何人可买；每次购买追加一条目录记录（票号区间 + 买家公钥），票款精确进入状态 UTXO。</dd>

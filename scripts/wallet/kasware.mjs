@@ -1,4 +1,4 @@
-/** KasWare adapter. Pinned source: kasware-wallet 78bb30045edd4d898c4d61c4c75ba1bc37e18748
+/** KasWare adapter (Kastle goes through kastle.mjs into the same checks). Pinned source: kasware-wallet 78bb30045edd4d898c4d61c4c75ba1bc37e18748
  *  pageProvider: requestAccounts/getAccounts/getNetwork/getPublicKey/signPskt; events accountsChanged/networkChanged.
  *  background wallet.signPskt: Transaction.deserializeFromSafeJSON(txJsonString) -> sign listed inputs -> serializeToSafeJSON().
  * In test candidates an explicitly imported TN10-only memory provider may replace the extension; that adapter
@@ -16,8 +16,17 @@ import {spkText} from '../chain/nodes.mjs';
 import {requireTradingRelease} from '../release-safety.mjs';
 import {requireRuntimeVersion} from '../contract/runtime.mjs';
 import {browserTestWallet, isBrowserTestWallet, requireBrowserTestWallet} from './browser-test.mjs';
+import {kastleProvider} from './kastle.mjs';
 
-export const provider = () => browserTestWallet() ?? globalThis.kasware ?? null;
+/** Injected wallets this page can use. Both go through the same session checks and signature verification below. */
+export const WALLETS = Object.freeze([{id: 'kasware', name: 'KasWare'}, {id: 'kastle', name: 'Kastle'}]);
+const injected = id => id === 'kasware' ? globalThis.kasware ?? null : id === 'kastle' ? kastleProvider() : null;
+let preferred = null;
+export const availableWallets = () => WALLETS.filter(w => injected(w.id));
+/** The user's choice when several wallets are injected; null = KasWare first, then Kastle. */
+export function preferWallet(id) { preferred = WALLETS.some(w => w.id === id) ? id : null; }
+export const provider = () => browserTestWallet() ?? (preferred ? injected(preferred) : injected('kasware') ?? injected('kastle'));
+export const walletName = (p = provider()) => isBrowserTestWallet(p) ? 'TN10 内存测试钱包' : p?.walletName ?? 'KasWare';
 
 export async function waitForProvider(ms = 1500) {
   const t0 = Date.now();
@@ -28,19 +37,22 @@ export async function waitForProvider(ms = 1500) {
 /** Current wallet session (address, x-only key, network). Throws with user-facing text. */
 export async function readSession(p = provider(), {net, request = false} = {}) {
   requireNet(net);
-  ensure(p, '未检测到 KasWare 钱包扩展。请在桌面浏览器安装 KasWare，并通过 https 或 localhost 打开本页。');
+  ensure(p, '未检测到 KasWare 或 Kastle 钱包。请在浏览器安装其中一个钱包扩展，并通过 https 或 localhost 打开本页。');
   if (isBrowserTestWallet(p)) requireBrowserTestWallet(net);
-  ensure(typeof p.signPskt === 'function' && typeof p.getPublicKey === 'function', '当前 KasWare 版本不支持 signPskt / getPublicKey，无法用于合约交易');
+  const name = walletName(p);
+  ensure(typeof p.signPskt === 'function' && typeof p.getPublicKey === 'function',
+    name === 'Kastle' ? '当前 Kastle 版本不支持 signTx / getAccount，无法用于合约交易' : '当前 KasWare 版本不支持 signPskt / getPublicKey，无法用于合约交易');
   const accounts = request ? await p.requestAccounts() : await p.getAccounts();
   ensure(Array.isArray(accounts) && typeof accounts[0] === 'string' && accounts[0].length > 0, '钱包未授权本页账户');
   const network = await p.getNetwork();
-  ensure(network === net.kaswareNetwork, `钱包当前网络是 ${network || '未知'}，请在 KasWare 中手动切换到 ${net.label} 后重新连接（本页不会自动切换网络）`);
+  ensure(network === net.kaswareNetwork, name === 'Kastle' ? `钱包当前网络是 ${network || '未知'}，请在 Kastle 中手动切换到 ${net.label} 后重新连接（本页不会自动切换网络）`
+    : `钱包当前网络是 ${network || '未知'}，请在 KasWare 中手动切换到 ${net.label} 后重新连接（本页不会自动切换网络）`);
   const address = accounts[0];
   const {version, payload} = decodeAddress(address, net.addressPrefix);
   ensure(version === 0, '仅支持 Schnorr 地址；ECDSA 账户无法签署本协议的输入');
   const key = hex(payload), pub = String(await p.getPublicKey() ?? '').toLowerCase();
   ensure(pub === key || (/^0[23][0-9a-f]{64}$/.test(pub) && pub.slice(2) === key), '钱包返回的公钥与地址不匹配');
-  return Object.freeze({address, key, spk: addressToSpk(address, net.addressPrefix), network: net.networkId});
+  return Object.freeze({address, key, spk: addressToSpk(address, net.addressPrefix), network: net.networkId, wallet: name});
 }
 
 /** SDK 2.0.1 safe JSON (Transaction.serializeToSafeJSON shape), built without the SDK. utxo.address is set for
@@ -67,17 +79,20 @@ export async function signWithWallet(draft, session, {net, p = provider(), onWai
   requireRuntimeVersion();
   requireNet(net);
   ensure(session.network === net.networkId, 'WALLET_NETWORK_MISMATCH');
+  ensure(!session.wallet || walletName(p) === session.wallet, '钱包已切换，计划作废，请重新报价');
   const current = await readSession(p, {net});
   ensure(current.address === session.address && current.key === session.key, '钱包账户已变化，计划作废，请重新报价');
   if (!draft.authorizedInputIndices.length) return new Map();
   const request = toSafeJson(draft, session);
-  onWaiting?.(isBrowserTestWallet(p) ? '正在使用 TN10 内存测试钱包签署已批准的交易…' : '等待 KasWare 签名（手机端若未自动弹窗，请查看后台标签页或菜单底部的 KasWare）…');
+  onWaiting?.(isBrowserTestWallet(p) ? '正在使用 TN10 内存测试钱包签署已批准的交易…' : walletName(p) === 'Kastle' ? '等待 Kastle 签名…'
+    : '等待 KasWare 签名（手机端若未自动弹窗，请查看后台标签页或菜单底部的 KasWare）…');
   let response;
   try {
     const signPromise = p.signPskt({txJsonString: request, options: {signInputs: draft.authorizedInputIndices.map(index => ({index, sighashType: 1}))}});
     let timer;
     const timeoutPromise = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('等待钱包签名超时（90秒）。手机端若未自动弹出签名窗口，请查看浏览器标签列表中的 KasWare 页面，或在浏览器菜单最底部点击 KasWare 扩展图标完成核准')), timeoutMs);
+      timer = setTimeout(() => reject(new Error(walletName(p) === 'Kastle' ? '等待钱包签名超时（90秒），请在 Kastle 中确认或拒绝后重试'
+        : '等待钱包签名超时（90秒）。手机端若未自动弹出签名窗口，请查看浏览器标签列表中的 KasWare 页面，或在浏览器菜单最底部点击 KasWare 扩展图标完成核准')), timeoutMs);
     });
     try { response = await Promise.race([signPromise, timeoutPromise]); }
     finally { clearTimeout(timer); }

@@ -481,11 +481,12 @@ export class Engine {
         check: async () => { ensure(!this.disposed, '页面运行会话已变化，本次操作已停止', 'READ_VIEW_CHANGED'); requireTradingRelease(this.net); await lock.assertHeld?.(); },
         beforeSign: async () => {
           await checkDraftDraw(this.pair, plan.draft, this.profile, plan.origin);
-          onProgress(plan.draft.authorizedInputIndices.length ? '请在 KasWare 中核对并签名（手机端请查看后台标签页或菜单底部的 KasWare）…' : '此动作无需钱包签名（无外部资金输入）…');
+          onProgress(!plan.draft.authorizedInputIndices.length ? '此动作无需钱包签名（无外部资金输入）…' : plan.session.wallet === 'Kastle' ? '请在 Kastle 中核对并签名…'
+            : '请在 KasWare 中核对并签名（手机端请查看后台标签页或菜单底部的 KasWare）…');
         },
         sign: async () => {
           phase('SIGNING');
-          sigs = await signWithWallet(plan.draft, plan.session, {net: this.net, onWaiting: s => onProgress(s || '等待 KasWare 签名…')});
+          sigs = await signWithWallet(plan.draft, plan.session, {net: this.net, onWaiting: s => onProgress(s || (plan.session.wallet === 'Kastle' ? '等待 Kastle 签名…' : '等待 KasWare 签名…'))});
           const signed = structuredClone(plan.draft.transaction);
           for (const [i, sig] of sigs) signed.inputs[i].signatureScript = sig;
           ensure(referenceTxId(signed) === plan.draft.txid, '签名后交易 ID 变化，已拒绝');
