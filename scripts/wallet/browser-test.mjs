@@ -1,9 +1,10 @@
-/** Opt-in TN10 test wallet. Secrets live only in a revocable closure; no storage, RPC or submit API.
- * Uses the existing pure-JS BIP-340 signer (variable-time BigInt; dedicated test keys only).
- * Compiled candidate gate + explicit TN10 scope, independent of the mainnet release gate.
+/** Opt-in imported-key memory wallet (TN10 and mainnet). Secrets live only in a revocable closure; no storage, RPC or submit API.
+ * Uses the existing pure-JS BIP-340 signer (variable-time BigInt, not third-party audited): the page asks mainnet users to
+ * acknowledge this and to import only a dedicated small-balance key. Mainnet still needs the mainnet release gate.
  */
 import {ensure, hex, unhex} from '../core.mjs';
 import {TN10} from '../chain/tn10.mjs';
+import {MAINNET} from '../chain/mainnet.mjs';
 import {requireNet} from '../chain/network-schema.mjs';
 import {parseJson, jsonText} from '../chain/json.mjs';
 import {parseSpk} from '../chain/nodes.mjs';
@@ -17,10 +18,11 @@ let active = null;
 export const browserTestWallet = () => active;
 export const isBrowserTestWallet = p => !!active && p === active;
 
+const sameNet = (net, ref) => net.key === ref.key && net.genesis === ref.genesis && net.networkId === ref.networkId && net.addressPrefix === ref.addressPrefix && net.kaswareNetwork === ref.kaswareNetwork;
 export function requireBrowserTestWallet(net) {
   requireNet(net);
   ensure(BROWSER_TEST_WALLET_ENABLED, 'TEST_WALLET_BUILD_REQUIRED');
-  ensure(net.key === TN10.key && net.genesis === TN10.genesis && net.networkId === TN10.networkId && net.addressPrefix === TN10.addressPrefix && net.kaswareNetwork === TN10.kaswareNetwork, 'TEST_WALLET_TN10_ONLY');
+  ensure(sameNet(net, TN10) || sameNet(net, MAINNET), 'TEST_WALLET_NETWORK');
   ensure(globalThis.isSecureContext === true, 'TEST_WALLET_SECURE_CONTEXT_REQUIRED');
   requireTradingRelease(net);
 }
@@ -47,6 +49,7 @@ export function importBrowserTestWallet(secretHex, {net} = {}) {
   const check = () => { ensure(alive, 'TEST_WALLET_CLEARED'); requireBrowserTestWallet(net); };
   const decimal = value => { ensure(typeof value === 'string' && /^\d+$/.test(value), 'TEST_WALLET_TRANSACTION_FORMAT'); return BigInt(value); };
   const wallet = Object.freeze({
+    walletName: net.key === TN10.key ? 'TN10 内存测试钱包' : '主网内存钱包',
     requestAccounts: async () => { check(); return [address]; },
     getAccounts: async () => { check(); return [address]; },
     getNetwork: async () => { check(); return net.kaswareNetwork; },

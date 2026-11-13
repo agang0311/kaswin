@@ -37,7 +37,7 @@ dist/
 
 All modes write to the same `dist/`; each build replaces the previous output. The mode can also be passed explicitly, e.g. `npm run build -- --mode=mainnet`; supported modes are `readonly`, `tn10`, and `mainnet`.
 
-Trading capability is fixed at build time; switching networks in the page does not change it. Mainnet uses real KAS, and every signature still requires the user's confirmation. TN10 additionally supports an in-page memory test wallet. A successful build only means the artifact was produced; business tests, real wallet flows, and on-chain verification are separate steps after the build. The project currently has no automated test entry point.
+Trading capability is fixed at build time; switching networks in the page does not change it. Mainnet uses real KAS, and every signature still requires the user's confirmation. Both networks also allow importing a private key into page memory for signing (mainnet requires a risk acknowledgement; use only a dedicated small-balance wallet). A successful build only means the artifact was produced; business tests, real wallet flows, and on-chain verification are separate steps after the build. The project currently has no automated test entry point.
 
 ## Project layout
 

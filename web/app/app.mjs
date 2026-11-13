@@ -14,6 +14,7 @@ import {Engine} from '../../scripts/round/engine.mjs';
 import {txStatus, txLabel, recordStatus as networkRecordStatus, needsAttention as networkNeedsAttention, plannedActions, cardStep, planSummary, walletFlow, CLOSE_OUTCOME, waitText} from '../ui/view.mjs';
 import {drawReadinessView} from '../ui/draw-readiness.mjs';
 import {readSession, waitForProvider, watchWallet, provider, availableWallets, preferWallet, walletName} from '../../scripts/wallet/kasware.mjs';
+import {tradingEnabledFor} from '../../scripts/release-safety.mjs';
 import {BROWSER_TEST_WALLET_ENABLED, browserTestWallet, importBrowserTestWallet, clearBrowserTestWallet, isBrowserTestWallet} from '../../scripts/wallet/browser-test.mjs';
 import {indexerBase, listRounds, roundDetail, ledgerFromDetail, liveRound, viewFromLive, checkRow, stateConfirming, indexerBehind, PRUNED_BASIS, phaseInfo as basePhaseInfo} from '../../scripts/round/rounds.mjs';
 import {chooseView} from '../../scripts/round/progress.mjs';
@@ -391,7 +392,7 @@ async function connectProvider(p = null) {
     ensure(epoch === state.walletEpoch && p === provider(), '钱包会话已变化，计划作废');
     unwatchWallet?.();
     state.session = session;
-    toast(isBrowserTestWallet(p) ? '已连接 TN10 内存测试钱包，每笔交易仍须批准' : walletName(p) === 'Kastle' ? '已连接 Kastle（仅读取账户，不授予任何签名权限）'
+    toast(isBrowserTestWallet(p) ? (NET.key === 'mainnet' ? '已连接主网内存钱包，每笔交易仍须批准' : '已连接 TN10 内存测试钱包，每笔交易仍须批准') : walletName(p) === 'Kastle' ? '已连接 Kastle（仅读取账户，不授予任何签名权限）'
       : '已连接 KasWare（仅读取账户，不授予任何签名权限）');
     unwatchWallet = watchWallet(async () => {
       if (p !== provider()) return;
@@ -416,7 +417,7 @@ async function connectProvider(p = null) {
 }
 async function connectWallet() {
   if (state.session) return walletDialog();
-  if (BROWSER_TEST_WALLET_ENABLED && NET.key === 'tn10') return testWalletDialog();
+  if (BROWSER_TEST_WALLET_ENABLED && tradingEnabledFor(NET)) return testWalletDialog();
   return connectInjected();
 }
 /** KasWare and/or Kastle: one injected wallet connects directly; several let the user choose. */
@@ -439,14 +440,18 @@ function chooseWallet(list) {
   });
 }
 function testWalletDialog() {
+  const mainnet = NET.key === 'mainnet';
   return new Promise(resolve => {
-    modal('连接钱包', `<p>连接浏览器钱包（KasWare 或 Kastle），或导入专用 TN10 测试私钥用于浏览器测试。</p>
+    modal('连接钱包', `${mainnet ? `<p>连接浏览器钱包（KasWare 或 Kastle），或导入私钥在本页签名。</p>
+      <div class="notice warn" id="testWalletNote">主网使用真实 KAS。私钥仅留在当前页面内存，不保存、不上传；断开、切换网络或离开页面后清除。签名使用页面内置的纯 JS 实现（非常量时间，未经第三方审计），请只导入专用的小额钱包，不要输入主钱包私钥或助记词。每笔交易仍须核对并批准。</div>
+      <label class="check"><input type="checkbox" id="testWalletAck"> <span>我已了解上述风险，只导入专用小额钱包</span></label>
+      <label class="field" for="testWalletKey"><span>私钥（64 位十六进制）</span>` : `<p>连接浏览器钱包（KasWare 或 Kastle），或导入专用 TN10 测试私钥用于浏览器测试。</p>
       <div class="notice warn" id="testWalletNote">只使用专用测试钱包，不要输入主网钱包私钥或助记词。私钥仅留在当前页面内存；断开、切换网络或离开页面后清除。每笔交易仍须核对并批准。</div>
-      <label class="field" for="testWalletKey"><span>TN10 测试私钥（64 位十六进制）</span>
+      <label class="field" for="testWalletKey"><span>TN10 测试私钥（64 位十六进制）</span>`}
         <input id="testWalletKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" aria-describedby="testWalletNote" data-no-i18n>
       </label>
       <div id="testWalletError" class="err" role="alert"></div>`,
-      `<button class="btn" id="connectKasware">连接浏览器钱包</button><button class="btn pri" id="importTestWallet">导入测试钱包</button>`);
+      `<button class="btn" id="connectKasware">连接浏览器钱包</button><button class="btn pri" id="importTestWallet">${mainnet ? '导入私钥' : '导入测试钱包'}</button>`);
     const field = $('testWalletKey'), error = $('testWalletError');
     let pending = false;
     modalCleanup = () => { field.value = ''; if (pending) disconnectWallet(); resolve(); };
@@ -459,11 +464,12 @@ function testWalletDialog() {
       if (field.isConnected) finish(); else resolve();
     };
     $('importTestWallet').onclick = async () => {
+      if (mainnet && !$('testWalletAck').checked) { error.textContent = text('请先勾选确认风险提示'); return; }
       let value = field.value, p;
       field.value = ''; error.textContent = '';
       try { p = importBrowserTestWallet(value, {net: NET}); }
       catch (err) {
-        const messages = {TEST_WALLET_KEY_FORMAT: '请输入 64 位十六进制测试私钥', TEST_WALLET_KEY_RANGE: '测试私钥不是合法的 secp256k1 标量', TEST_WALLET_SECURE_CONTEXT_REQUIRED: '测试钱包需要 HTTPS 或 localhost 安全上下文'};
+        const messages = {TEST_WALLET_KEY_FORMAT: mainnet ? '请输入 64 位十六进制私钥' : '请输入 64 位十六进制测试私钥', TEST_WALLET_KEY_RANGE: mainnet ? '私钥不是合法的 secp256k1 标量' : '测试私钥不是合法的 secp256k1 标量', TEST_WALLET_SECURE_CONTEXT_REQUIRED: '测试钱包需要 HTTPS 或 localhost 安全上下文'};
         error.textContent = text(messages[errorText(err)] ?? errorText(err)); return;
       }
       finally { value = ''; }

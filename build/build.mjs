@@ -16,7 +16,7 @@ const mode = args.length === 0 ? 'readonly' : args[0].startsWith('--mode=') ? ar
 if (args.length > 1 || !modes.has(mode)) throw Error('Usage: node build/build.mjs [--mode=readonly|tn10|mainnet]');
 assert.equal(esbuild.version, '0.28.2', 'esbuild 0.28.2 is required');
 const sha256 = data => createHash('sha256').update(data).digest('hex');
-const capabilities = {tn10Trading: mode !== 'readonly', mainnetTrading: mode === 'mainnet', tn10TestWallet: mode !== 'readonly'};
+const capabilities = {tn10Trading: mode !== 'readonly', mainnetTrading: mode === 'mainnet', memoryWallet: mode !== 'readonly'};
 
 // Generate the core before importing modules that consume it. Build inputs never include test results.
 const coreSources = await buildCore();
@@ -34,7 +34,7 @@ const result = await esbuild.build({
   define: {
     __KASWIN_RELEASE_TRADING__: JSON.stringify(capabilities.tn10Trading),
     __KASWIN_MAINNET_TRADING__: JSON.stringify(capabilities.mainnetTrading),
-    __KASWIN_BROWSER_TEST_WALLET__: JSON.stringify(capabilities.tn10TestWallet),
+    __KASWIN_BROWSER_TEST_WALLET__: JSON.stringify(capabilities.memoryWallet),
   },
   plugins: [{name: 'contract-data', setup(build) {
     build.onResolve({filter: /^@kaswin\/data$/}, () => ({path: 'data', namespace: 'contract-data'}));

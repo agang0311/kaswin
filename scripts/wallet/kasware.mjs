@@ -26,7 +26,7 @@ export const availableWallets = () => WALLETS.filter(w => injected(w.id));
 /** The user's choice when several wallets are injected; null = KasWare first, then Kastle. */
 export function preferWallet(id) { preferred = WALLETS.some(w => w.id === id) ? id : null; }
 export const provider = () => browserTestWallet() ?? (preferred ? injected(preferred) : injected('kasware') ?? injected('kastle'));
-export const walletName = (p = provider()) => isBrowserTestWallet(p) ? 'TN10 内存测试钱包' : p?.walletName ?? 'KasWare';
+export const walletName = (p = provider()) => p?.walletName ?? 'KasWare';
 
 export async function waitForProvider(ms = 1500) {
   const t0 = Date.now();
@@ -84,7 +84,7 @@ export async function signWithWallet(draft, session, {net, p = provider(), onWai
   ensure(current.address === session.address && current.key === session.key, '钱包账户已变化，计划作废，请重新报价');
   if (!draft.authorizedInputIndices.length) return new Map();
   const request = toSafeJson(draft, session);
-  onWaiting?.(isBrowserTestWallet(p) ? '正在使用 TN10 内存测试钱包签署已批准的交易…' : walletName(p) === 'Kastle' ? '等待 Kastle 签名…'
+  onWaiting?.(isBrowserTestWallet(p) ? (net.key === 'mainnet' ? '正在使用主网内存钱包签署已批准的交易…' : '正在使用 TN10 内存测试钱包签署已批准的交易…') : walletName(p) === 'Kastle' ? '等待 Kastle 签名…'
     : '等待 KasWare 签名（手机端若未自动弹窗，请查看后台标签页或菜单底部的 KasWare）…');
   let response;
   try {
