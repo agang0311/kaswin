@@ -252,7 +252,20 @@ export class RoundTracker {
         const shared = initialEvidence && this.evidence?.peek(initialEvidence.txid, {accepting: initialEvidence.accepting});
         if (shared) { initialEvidence = shared.ev; shared.scope.close(); } // retain the actual read-before-Full DAA provenance
         if (this.acceptedEvidence === offered) this.acceptedEvidence = null;
-        const r = await this.resolver.resolve(link, this.cid, this.candidate, {signal, anchor: recent, initialEvidence, origin: this.key}); check();
+        let r, resolveError;
+        try { r = await this.resolver.resolve(link, this.cid, this.candidate, {signal, anchor: recent, initialEvidence, origin: this.key}); }
+        catch (e) { check(); resolveError = e; }
+        check();
+        if ((!r || r.incomplete) && this.discovery?.candidate) {
+          // A persisted checkpoint can be a spent predecessor whose successor is also pruned now. Fetch a fresh
+          // ledger hint instead of retrying that same historical block forever. It still needs full node verification.
+          const fresh = await this.discovery.candidate(this.cid, {known: null, signal}); check();
+          if (fresh?.state && fresh.origin && Array.isArray(fresh.purchases)) {
+            this.candidate = fresh;
+            r = await this.resolver.resolve(link, this.cid, fresh, {signal, origin: this.key}); check();
+          }
+        }
+        if (!r) throw resolveError ?? failure('ROUND_SYNC_PENDING');
         readScope.accepting = r.view.accepting;
         if (hardVersion === this.hardVersion && !readScope.overflow && !readScope.removed.has(r.view.accepting))
           this.rememberCheckpoint(r, queryContext(link)); // accepted history remains a useful hint if its live output is spent next

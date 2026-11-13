@@ -1,5 +1,9 @@
 // Reviewed English display catalog. {n} placeholders only interpolate plain text, never HTML.
 export const EN = [
+['历史已裁剪，无法开奖','History pruned; draw unavailable'],
+['当前状态已核验，但开奖所需历史已被节点裁剪','Current state verified, but the node has pruned the history required for drawing'],
+['无需反复同步开奖证明。封存满 432,000 DAA 后可转入退款（还差 {0} DAA）。','Repeated draw-proof synchronization is unnecessary. Refunds can be enabled 432,000 DAA after sealing ({0} DAA remaining).'],
+['无需反复同步开奖证明。请使用下方的「超时转退款」，转入退款阶段后分批退还票款。','Repeated draw-proof synchronization is unnecessary. Use “Timeout to refunds” below, then process the refund batches.'],
 ['两阶段等待（100 DAA 封存 + 目标块 100 blue score 确认）；任何人可执行，执行者获得 1 {0} 赏金','Two-stage wait (100 DAA sealed + 100 blue score target confirmations); anyone may execute for a 1 {0} bounty'],
 ['第一阶段：封存等待还差 {0} DAA','Stage 1: Sealed delay, {0} DAA remaining'],
 ['需先封存满 100 DAA（预计约 {0} 秒），随后等待目标块 100 blue score 确认。','100 DAA sealed delay required (est. {0}s), followed by 100 blue score target confirmations.'],

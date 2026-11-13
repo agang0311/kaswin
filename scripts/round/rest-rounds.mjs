@@ -1,4 +1,5 @@
-// REST supplies locations and display candidates, never reconstructed consensus transactions.
+// REST supplies locations and ledger preimages, never reconstructed consensus transactions.
+import {decodeSpend} from '../core/lib/accepted.js';
 import {S, CONTRACT_TAG, REGISTRATION_SOMPI, ensure, hash32, unhex, hex, ascii, stable, p2sh, blake2b256} from '../core.mjs';
 import {requireNet, linkNet} from '../chain/network-schema.mjs';
 import {restAddressTransactions, restTransaction, restAcceptance} from '../chain/rest.mjs';
@@ -45,6 +46,38 @@ export async function refreshRestCandidate(row, options = {}) {
   if (!raw) return {...row, _src: 'rest', coverage: 'address-window', acceptance: 'UNKNOWN'};
   return {...row, _src: 'rest', indexStatus: 'STALE', acceptance: 'UNKNOWN',
     latestTxid: hash32(raw.transaction_id), accepting: hash32(raw.accepting_block_hash), updatedAt: Date.now(), coverage: 'spender-hint'};
+}
+
+/** Extract a possible successor ledger from an archived witness. This is NOT a replay or acceptance proof: REST
+ * lacks consensus transaction fields. The result is usable only after liveBelowPruningPoint binds the ledger to a
+ * current node UTXO, its CID, value and canonical origin. Terminal payouts cannot be verified this way. */
+export function restSuccessorLedger(raw, profile, cid, row, ledger) {
+  const input = raw.inputs?.find(i => uint(i.index) === 0n);
+  ensure(input && input.previous_outpoint_hash === row.tip.transactionId && uint(input.previous_outpoint_index) === BigInt(row.tip.index), 'REST_SPENDER_INPUT');
+  const w = decodeSpend(input.signature_script, profile, row.origin), s = w.spent;
+  ensure(stable(s) === stable(ledger), 'REST_SPENT_LEDGER');
+  let next = null;
+  if (w.action === 'BUY' && s.phase === S.Phase.OPEN) {
+    ensure(w.data.length === 4, 'REST_BUY_DATA');
+    const quantity = new DataView(w.data.buffer, w.data.byteOffset, w.data.byteLength).getUint32(0, true);
+    next = S.appendPurchase(s, quantity, w.actorKey);
+  } else if (w.action === 'CLOSE' && s.phase === S.Phase.OPEN && s.sold > 0) {
+    ensure(w.data.length === 0, 'REST_CLOSE_DATA');
+    next = {...s, phase: s.sold >= s.config.minTickets ? S.Phase.SEALED : S.Phase.REFUNDING};
+  } else if (w.action === 'TIMEOUT_REFUND' && s.phase === S.Phase.SEALED) {
+    ensure(w.data.length === 0, 'REST_TIMEOUT_DATA');
+    next = {...s, phase: S.Phase.REFUNDING};
+  } else if (w.action === 'REFUND' && s.phase === S.Phase.REFUNDING) {
+    ensure(w.data.length === 0, 'REST_REFUND_DATA');
+    const cursor = Math.min(s.cursor + S.MAX_REFUND_RECORDS, s.purchaseCount);
+    if (cursor < s.purchaseCount) next = {...s, cursor};
+  }
+  if (!next) return null;
+  S.validateLedger(next);
+  const out = raw.outputs?.find(o => uint(o.index) === 0n), script = p2sh(hex(blake2b256(S.scriptOf(next, profile))));
+  ensure(out?.covenant_id === cid && uint(out.covenant_authorizing_input) === 0n &&
+    out.script_public_key === script.script && uint(out.amount) === S.valueOf(next), 'REST_SUCCESSOR_HINT');
+  return {ledger: next, origin: w.origin, genesisTxid: row.genesisTxid ?? null, source: 'rest'};
 }
 
 /** Stateful, bounded resolver. Cursors are hints scoped to this detail session; every result is rechecked on node. */
@@ -173,7 +206,20 @@ export class RestRoundResolver {
           ensure(ev.tx.inputs.some(i => i.previousOutpoint.transactionId === row.tip.transactionId && i.previousOutpoint.index === row.tip.index), 'SPENDER_MISMATCH');
           this.prunedOffsets.delete(cid);
           return {ev};
-        } catch { signal?.throwIfAborted(); }
+        } catch {
+          signal?.throwIfAborted();
+          // The spender itself may now be pruned too. Recover its ledger preimage from the archive, not its
+          // acceptance. Only an exact current UTXO below this node's pruning point can authorize this result.
+          try {
+            const next = restSuccessorLedger(raw, this.profile, cid, row, ledger);
+            if (!next) continue;
+            const live = await liveBelowPruningPoint(link, this.profile, cid, next);
+            signal?.throwIfAborted();
+            ensure(live.snapshot.tip.transactionId === raw.transaction_id && live.snapshot.tip.index === 0, 'REST_SUCCESSOR_TIP');
+            this.offsets.delete(cid); this.prunedOffsets.delete(cid); this.nodeCursors.delete(cid);
+            return {result: {view: viewFromLive(live, cid), live, replay: null, terminal: false}};
+          } catch { signal?.throwIfAborted(); }
+        }
       }
     }
     // Only a successfully read continuation page moves the cursor; a read error never implies end of history.
@@ -212,7 +258,7 @@ export class RestRoundResolver {
     }
     // A state already verified below the pruning point has no body to read: recheck it (or find its spender) first.
     let prunedTried = false;
-    if (!ev && row.basis === PRUNED_BASIS) {
+    if (!ev && !row.terminal && row.basis === PRUNED_BASIS) {
       prunedTried = true;
       const p = await this.prunedFallback(link, cid, row, signal);
       if (p?.result) return p.result;
@@ -222,7 +268,13 @@ export class RestRoundResolver {
     catch (e) {
       // An old accepting location may have been displaced. REST only supplies a new location; still verify it.
       signal?.throwIfAborted();
-      try { ev = await this.evidence(link, row.latestTxid, null, signal); }
+      // Try the current ledger/UTXO immediately after the first body lookup fails. Do not spend the refresh budget
+      // searching relocated/genesis bodies first. A missing header alone is not evidence of pruning.
+      const p = prunedTried || row.terminal ? null : await this.prunedFallback(link, cid, row, signal);
+      prunedTried = true;
+      if (p?.result) return p.result;
+      if (p?.ev) ev = p.ev;
+      else try { ev = await this.evidence(link, row.latestTxid, null, signal); }
       catch (moved) {
         signal?.throwIfAborted();
         try {
@@ -231,11 +283,7 @@ export class RestRoundResolver {
           ev = await this.evidence(link, row.genesisTxid, null, signal); this.offsets.delete(cid);
         } catch (lost) {
           signal?.throwIfAborted();
-          // Every body is unreadable, e.g. pruned by the node. A candidate ledger may still match the live UTXO.
-          const p = prunedTried ? null : await this.prunedFallback(link, cid, row, signal);
-          if (p?.result) return p.result;
-          if (!p?.ev) throw lost;
-          ev = p.ev;
+          throw lost;
         }
       }
     }

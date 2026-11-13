@@ -4,6 +4,7 @@ import {acquireRoundProof, confirmRoundTarget} from '../round/passa.mjs';
 import {drawTargetFromOpening, assertFreshDrawConfirmation, DRAW_REUSE_MS, DRAW_MIN_CONFIRMATIONS, DRAW_MAX_TARGET_DEPTH} from '../round/draw-confirmations.mjs';
 import {failure, queryContext, sameConnectionContext, scopedLink, withDeadline} from '../chain/operation.mjs';
 import {uint} from '../chain/json.mjs';
+import {PRUNED_BASIS} from '../round/rounds.mjs';
 
 // A READY view whose short-lived confirmation expired is re-verified silently; only these read failures may keep it
 // on screen meanwhile (bounded by READY_GRACE_MS). Display only: the draw quote always re-proves and re-confirms.
@@ -47,6 +48,16 @@ export class DrawReadiness {
       this.binding = {key: identity(live), context: queryContext(this.link)};
       this.publish({phase: 'CHECKING', sealedDaa: live.snapshot.utxoDaa, boundaryDaa: live.snapshot.utxoDaa + S.DRAW_DELAY,
         currentDaa: live.snapshot.currentDaa});
+    }
+    // Only a node-authenticated live snapshot can establish pruning. Missing-header errors alone cannot.
+    // Keep normal round/UTXO tracking active, but do not repeatedly acquire an unavailable draw proof.
+    const phase = live.basis === PRUNED_BASIS && !live.acceptedTx ? 'PRUNED'
+      : live.snapshot.currentDaa >= live.snapshot.utxoDaa + S.TIMEOUT_DELAY ? 'EXPIRED' : null;
+    if (phase) {
+      if (this.progress?.phase !== phase || this.progress.currentDaa !== live.snapshot.currentDaa)
+        this.publish({phase, sealedDaa: live.snapshot.utxoDaa, boundaryDaa: live.snapshot.utxoDaa + S.DRAW_DELAY,
+          currentDaa: live.snapshot.currentDaa});
+      return;
     }
     if (this.progress?.phase === 'READY') {
       try { assertFreshDrawConfirmation(this.confirmation, this.confirmation, Date.now(), this.link); return; }
@@ -98,6 +109,7 @@ export class DrawReadiness {
       if (currentDaa < live.snapshot.utxoDaa) throw failure('SINK_BEHIND');
       observedDaa = currentDaa;
       const base = {sealedDaa: live.snapshot.utxoDaa, boundaryDaa: live.snapshot.utxoDaa + S.DRAW_DELAY, currentDaa, observedAt: Date.now()};
+      if (live.basis === PRUNED_BASIS && !live.acceptedTx) return {...base, phase: 'PRUNED'};
       // Page timeout policy only: refund maturity and actual submission remain independently verified.
       if (currentDaa >= live.snapshot.utxoDaa + S.TIMEOUT_DELAY) return {...base, phase: 'EXPIRED'};
       if (currentDaa < base.boundaryDaa) return {...base, phase: 'DAA_WAIT'};

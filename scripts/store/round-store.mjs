@@ -37,7 +37,7 @@ export class RoundStore {
     if (revision !== null && this.revisions.get(cid) !== revision) return;
     this.begin(cid); const r = this.rows.get(cid);
     if (r && (terminal || !r.terminalVerified)) {
-      r.verified = false;
+      r.verified = false; r.observed = false;
       if (terminal) { r.terminalVerified = false; r.terminalCheck = null; }
       if (r.view) r.view = {...r.view, terminalSettled: false, _src: 'cache'};
       if (terminal && r.view?.terminal) this.persist(cid, r);

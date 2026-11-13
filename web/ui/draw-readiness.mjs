@@ -5,6 +5,12 @@ export function drawReadinessView(progress, now = Date.now(), unit = 'TKAS') {
   const waiting = {ready: false, button: '正在核验开奖条件…', label: '正在向节点核验开奖等待条件…', percent: null, detail: null};
   const required = progress?.requiredConfirmations;
   const utxoDaa = progress?.sealedDaa ?? progress?.utxoDaa;
+  if (progress?.phase === 'PRUNED') {
+    const left = utxoDaa + S.TIMEOUT_DELAY - progress.currentDaa;
+    return {ready: false, button: '历史已裁剪，无法开奖', label: '当前状态已核验，但开奖所需历史已被节点裁剪', percent: null,
+      detail: left > 0n ? `无需反复同步开奖证明。封存满 432,000 DAA 后可转入退款（还差 ${left} DAA）。`
+        : '无需反复同步开奖证明。请使用下方的「超时转退款」，转入退款阶段后分批退还票款。'};
+  }
   const expired = progress?.phase === 'EXPIRED' ||
     (typeof progress?.currentDaa === 'bigint' && typeof utxoDaa === 'bigint' && progress.currentDaa >= utxoDaa + S.TIMEOUT_DELAY);
   if (expired) {

@@ -282,7 +282,7 @@ export async function liveBelowPruningPoint(link, profile, cid, cand, currentDaa
  * the P2SH of the live UTXO, so phase, sales and purchase directory shown here are exactly what the chain locks. */
 export function viewFromLive(live, cid, now = Date.now()) {
   const s = live.ledger, x = live.snapshot;
-  return {cid, genesisTxid: live.genesisTxid ?? live.row?.genesisTxid ?? null, contract: CONTRACT_TAG, status: s.phase === 1 ? 'open' : s.phase === 5 ? 'close' : 'sealed',
+  return {cid, ...(live.basis === PRUNED_BASIS ? {basis: PRUNED_BASIS} : {}), genesisTxid: live.genesisTxid ?? live.row?.genesisTxid ?? null, contract: CONTRACT_TAG, status: s.phase === 1 ? 'open' : s.phase === 5 ? 'close' : 'sealed',
     phase: s.phase, terminal: null, indexStatus: 'NODE', tip: x.tip, value: String(x.value), latestTxid: x.tip.transactionId, accepting: live.accepting,
     utxoDaa: String(x.utxoDaa), updatedAt: now, verifiedAt: now, origin: x.origin, scriptPublicKey: x.scriptPublicKey, _src: 'node',
     state: {...s, config: {...s.config, ticketPrice: s.config.ticketPrice.toString(), closeEligibleDaa: s.config.closeEligibleDaa.toString()}, directory: undefined},
@@ -292,7 +292,7 @@ export function viewFromLive(live, cid, now = Date.now()) {
 /** Pure view helpers (work on archive rows and indexer rows alike). */
 export function phaseInfo(row) {
   if (row.contract !== CONTRACT_TAG) return {key: 'other', label: '其他 Profile', tone: 'muted'};
-  if (row.indexStatus === 'STALE') return {key: 'stale', label: '待同步', tone: 'amber'};
+  if (row.indexStatus === 'STALE' || (!row.terminal && row._src !== 'node' && Number.isSafeInteger(row.tipSpentSeenAt))) return {key: 'stale', label: '待同步', tone: 'amber'};
   if (row.indexStatus === 'ROLLED_BACK') return {key: 'stale', label: '已回滚', tone: 'amber'};
   if (row.terminal === 'PAID') return {key: 'paid', label: '已派奖', tone: 'gold'};
   if (row.terminal === 'REFUNDED') return {key: 'refunded', label: '已全额退款', tone: 'muted'};

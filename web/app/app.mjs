@@ -260,6 +260,7 @@ function go(view, param = null) {
   const hash = view === 'round' && param ? `#/round/${param}` : `#/${view}`;
   if (location.hash !== hash) history.pushState(null, '', hash);
   render();
+  if (view === 'explore' && Date.now() - (state.liveAt ?? 0) > 15000) void loadRows({quiet: true});
 }
 window.addEventListener('popstate', route);
 function route() {
@@ -279,10 +280,13 @@ async function mergedRows() {
   const remembered = await catalog.list();
   state.cached = remembered.length;
   for (const c of remembered) if (c?.cid) slot(c.cid).cache = {...(cachedView(c) ?? {cid: c.cid, contract: CONTRACT_TAG, indexStatus: 'UNKNOWN', phase: null, terminal: null, value: '0', updatedAt: Number.isSafeInteger(c.updatedAt) ? c.updatedAt : null}), _src: 'cache'};
-  for (const c of remembered) if (c?.observed && c.view?.state) slot(c.cid).node = {...c.view, _src: c.verified ? 'node' : 'cache'};
+  // Stored observations are historical hints. Only state.nodeViews (the active runtime) may override discovery.
   const records = await engine.records().catch(() => []); // one journal read for the whole merge, never one per CID
   for (const cid of await localCids(records)) { const d = await localDetail(cid, records); if (d) slot(cid).local = d; }
-  for (const r of state.live ?? []) { const d = state.details.get(r.cid); slot(r.cid).index = d && r.latestTxid && d.latestTxid === r.latestTxid ? d : r; }
+  for (const r of state.live ?? []) {
+    const d = state.details.get(r.cid), v = d && r.latestTxid && d.latestTxid === r.latestTxid ? d : r;
+    slot(r.cid)[v._src === 'node' ? 'node' : 'index'] = v;
+  }
   for (const [cid, v] of state.nodeViews) slot(cid).node = v;
   return [...src.values()].map(chooseView).filter(Boolean);
 }
@@ -300,16 +304,22 @@ async function loadRows({quiet = false, more = false} = {}) {
   try {
     const p = more && state.listCursor
       ? await discovery.page({cursor: state.listCursor, signal: request.signal})
-      : await discovery.refresh({known: state.rows, signal: request.signal});
+      : await discovery.refresh({known: state.rows, signal: request.signal, link: pair});
     if (request !== listRequest) return;
     const rows = p.items;
     state.meta = {source: p.source === 'indexer' ? state.indexer : 'REST 备用查询', lastCheckpointAt: p.lastCheckpointAt, coverage: p.coverage, rejected: p.rejected};
-    const incoming = rows.map(r => ({...r, _src: p.source === 'indexer' ? 'live' : r._src ?? 'rest'}));
+    const incoming = rows.map(r => ({...r, _src: r._src === 'node' ? 'node' : p.source === 'indexer' ? 'live' : r._src ?? 'rest'}));
     state.live = [...new Map([...(more ? state.live ?? [] : []), ...incoming].map(r => [r.cid, r])).values()]; state.liveAt = Date.now();
     state.listCursor = p.nextCursor; state.listLimited = !!p.nextCursor;
     for (const r of state.live) {
+      // A fresh list supersedes detached observations; an actively tracked detail owns its own live proof.
+      if (!(detailTracker?.cid === r.cid && detailTracker.observationCurrent())) {
+        state.nodeViews.delete(r.cid);
+        catalog.invalidate(r.cid);
+      }
       if (r.state) state.details.set(r.cid, r);
-      await catalog.remember(r.cid, {view: r, source: p.source});
+      else state.details.delete(r.cid);
+      await catalog.remember(r.cid, {view: r, source: r._src === 'node' ? 'node' : p.source});
     }
   } catch (err) {
     if (request !== listRequest) return;
@@ -923,7 +933,8 @@ function bindMatrixEvents(v, recs, d, draw, me, price) {
 }
 function drawProgress() {
   const R = state.round, tracker = detailTracker;
-  return R && !R.syncing && !R.recovering && !R.history && tracker?.cid === R.cid ? tracker.draw?.view() : null;
+  return R && !R.syncing && !R.recovering && !R.history && tracker?.cid === R.cid ? tracker.draw?.view()
+    : R?.syncError ? {phase: 'UNAVAILABLE'} : null;
 }
 function drawWaitHtml(model) {
   return `<div class="draw-wait ${model.ready ? 'ok' : ''}"><b role="status">${e(model.label)}</b>${model.percent === null ? '' : `<progress max="100" value="${model.percent}" aria-label="开奖等待进度"></progress>`}${model.detail ? `<span class="small muted">${e(model.detail)}</span>` : ''}</div>`;
@@ -968,7 +979,7 @@ function replayHtml(x) {
 }
 const PRUNED_NOTE = '该状态的接受块已被节点裁剪，无法复验所列历史交易；当前状态已按节点 UTXO 核验（早于裁剪点，已不可重组）。';
 function liveHtml(l) {
-  const acts = availableActions(l.snapshot, profile).filter(a => ACTION_LABEL[a]);
+  const acts = availableActions(l.snapshot, profile).filter(a => ACTION_LABEL[a] && !(a === 'DRAW_AND_PAY' && l.basis === PRUNED_BASIS));
   if (l.basis === PRUNED_BASIS) return `<div class="notice ok" style="margin-top:10px">状态 UTXO 仍未花费，且早于节点裁剪点（已不可重组）；接受交易已被裁剪，账本、Genesis CID、P2SH 与锁定金额 ${kas(l.snapshot.value)} ${e(U())} 已按该 UTXO 核验。当前 DAA ${l.snapshot.currentDaa}。当前可执行：<b>${acts.map(a => ACTION_LABEL[a]).join('、') || '无（需等待）'}</b>。</div>`;
   return `<div class="notice ok" style="margin-top:10px">状态 UTXO 仍未花费；模板、Genesis CID、P2SH 与锁定金额 ${kas(l.snapshot.value)} ${e(U())} 均与固定 Profile 吻合。当前 DAA ${l.snapshot.currentDaa}。当前可执行：<b>${acts.map(a => ACTION_LABEL[a]).join('、') || '无（需等待）'}</b>。</div>`;
 }

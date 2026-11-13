@@ -1,6 +1,7 @@
 import {requireNet, linkNet} from '../chain/network-schema.mjs';
 import {listRounds, roundDetail, ledgerFromDetail} from './rounds.mjs';
 import {discoverRestRounds, RestRoundResolver, refreshRestCandidate} from './rest-rounds.mjs';
+import {withDeadline, scopedLink} from '../chain/operation.mjs';
 
 /** Explicit refresh only. Each provider owns its cursor; Indexer hashes never become REST offsets.
  * The Indexer gets a shorter budget than the generic fetch so an outage does not hold the first list paint. */
@@ -20,7 +21,7 @@ export class RoundDiscovery {
     const p = await discoverRestRounds(this.profile, {...this.rest, cursor: cursor?.source === 'rest' ? cursor.value : 0, limit, signal});
     return {...p, nextCursor: p.nextCursor === null ? null : {source: 'rest', value: p.nextCursor}};
   }
-  async refresh({known = [], signal, pages = 4} = {}) {
+  async refresh({known = [], signal, pages = 4, link = null} = {}) {
     const items = new Map(); let cursor = null, source = null, coverage = null, rejected = 0, lastCheckpointAt = null;
     for (let i = 0; i < pages; i++) {
       let p;
@@ -48,6 +49,25 @@ export class RoundDiscovery {
         }
       }
     }));
+    // Lists are discovery hints too. Resolve active rows on the node so a lagging indexer does not keep a cold
+    // browser on OPEN after CLOSE. Bound both concurrency and per-round work; failed reads stay labelled hints.
+    if (link) {
+      if (linkNet(link).genesis !== this.net.genesis) throw new Error('DISCOVERY_NETWORK_MISMATCH');
+      const active = [...items.values()].filter(r => !r.terminal && r.tip && r.state && r.origin).slice(0, 20);
+      let at = 0;
+      await Promise.all(Array.from({length: 2}, async () => {
+        while (at < active.length) {
+          const row = active[at++]; signal?.throwIfAborted();
+          try {
+            const resolved = await withDeadline(scope => link.pinned(rpc =>
+              this.resolver.resolve(scopedLink(rpc, scope), row.cid, row, {signal: scope.signal}),
+            {signal: scope.signal, retries: 0}), {signal, timeoutMs: 15000, code: 'ROUND_LIST_SYNC_PENDING'});
+            signal?.throwIfAborted();
+            if (!resolved.incomplete && (resolved.live || resolved.terminal)) items.set(row.cid, resolved.view);
+          } catch { signal?.throwIfAborted(); }
+        }
+      }));
+    }
     return {items: [...items.values()], nextCursor: cursor, source, coverage, rejected, lastCheckpointAt};
   }
   async current(link, cid, {known = null, signal} = {}) {
@@ -62,9 +82,7 @@ export class RoundDiscovery {
     return r.live;
   }
   async candidate(cid, {known = null, signal} = {}) {
-    if (known && (known._src === 'node' || known.verified)) {
-      return known; // Node-verified proof (terminal or active) already in hand! Resolver verifies tip live on node.
-    }
+    // Persisted or earlier-session node views are fallback hints, not a reason to skip fresh discovery.
     try {
       if (!this.base) throw new Error('INDEXER_NOT_CONFIGURED');
       const row = await this.detail(this.base, cid, {net: this.net, signal, timeoutMs: INDEXER_MS});
