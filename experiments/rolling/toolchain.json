@@ -1,0 +1,26 @@
+{
+  "compilerPackage": "silverscript-lang",
+  "compilerPackageVersion": "1.0.1",
+  "repository": "https://github.com/kaspanet/silverscript",
+  "compilerCommit": "a17db2c7c95cf9f12f8e1264b21f32a8552af8df",
+  "sourceArchiveUrl": "https://codeload.github.com/kaspanet/silverscript/tar.gz/a17db2c7c95cf9f12f8e1264b21f32a8552af8df",
+  "sourceArchiveSha256": "8d8e9da1a21a161b83283e18e9fea0bc23145af0fd380e9ec920a67421df5de0",
+  "publishedCrateSha256": "24c4ede7723b39f62f97648324b209a848b37d6fac24d75098c69c76b2560b08",
+  "artifactSchemaVersion": 1,
+  "artifactCompilerVersion": "0.1.0",
+  "languagePragma": "^0.1.0",
+  "kaspaDependencyVersion": "2.1.0",
+  "rustToolchainVersion": "1.98.0",
+  "pathBase": "kaswin repository root",
+  "sourceDirectory": "../references/silverscript-v1.0.1",
+  "binaryPath": "../references/toolchains/silverscript-1.0.1-a17db2c/bin/silverc",
+  "compilerBinarySha256": "07f58766893ed151a2c03d43c030af8a31fd36a65cd57127bc4b40e3f03667d8",
+  "compilerInstallation": "SUCCEEDED",
+  "installationWarnings": [
+    "Upstream Cargo.lock pins async-executor 1.14.0 and chacha20 0.10.1, which crates.io marks as yanked; the upstream lock was retained."
+  ],
+  "rollingCompilation": "SUCCEEDED_2026-11-13_ALL_FIVE_TEMPLATES_REPRODUCIBLE",
+  "rollingTests": "NOT_RUN",
+  "rollingVm": "NOT_RUN",
+  "rollingSizeMassQuotation": "OFFLINE_SIZE_ONLY_COMPUTE_BUDGET_NOT_MEASURED"
+}

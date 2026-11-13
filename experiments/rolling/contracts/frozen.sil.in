@@ -1,0 +1,37 @@
+pragma silverscript ^0.1.0;
+// SOURCE CANDIDATE / NOT_RUN. Authenticate input 0; do not duplicate its business logic.
+contract KaswinRollingFrozen(byte[] initialLedger) {
+    byte[] ledger = initialLedger;
+    byte[32] constant ZERO = byte[32](0x0000000000000000000000000000000000000000000000000000000000000000);
+    byte[32] constant WIN_HASH = byte[32](0x{{WIN_HASH}});
+    byte[32] constant REFUND_HASH = byte[32](0x{{REFUND_HASH}});
+    entry spend(int managerRedeemBytes, int managerTailBytes) {
+        int own = this.activeInputIndex;
+        require(tx.version == 1 && own > 0 && own <= 16 && tx.inputs.length >= 2 && tx.inputs.length <= 17);
+        require(length(ledger) == 9217 && ledger.slice(0, 1) == byte[](0x00));
+        require(OpInputCovenantId(own) != ZERO && OpInputCovenantId(own) == OpInputCovenantId(0));
+        require(OpAuthOutputCount(own) == 0);
+        int sigLen = OpTxInputScriptSigLen(0);
+        require(managerRedeemBytes > 0 && managerRedeemBytes <= 250000 && managerRedeemBytes < sigLen);
+        require(managerTailBytes > 0 && managerTailBytes < managerRedeemBytes);
+        byte[] raw = OpTxInputScriptSigSubstr(0, sigLen - managerRedeemBytes, sigLen);
+        require(tx.inputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(raw)));
+        require(raw.slice(0, 1) == byte[](0x6b) && length(raw) >= 4);
+        int tag = unsigned(raw[1]);
+        int off = 2;
+        int n = tag;
+        if (tag == 76) { off = 3; n = unsigned(raw[2]); require(n > 75); }
+        else if (tag == 77) {
+            off = 4;
+            n = OpBin2Num(raw.slice(2, 4) + byte[](0x00));
+            require(n > 255);
+        } else { require(tag >= 1 && tag <= 75); }
+        require(n >= 63 && n <= 18453 && off + n + managerTailBytes == length(raw));
+        require(raw.slice(off, off + 1) == byte[](0x01));
+        byte[] tail = raw.slice(off + n, length(raw));
+        require(tail.slice(0, 1) == byte[](0x6c));
+        byte[32] hash = templateHash(byte[](0x6b), tail);
+        require(hash == WIN_HASH || hash == REFUND_HASH);
+        if (hash == WIN_HASH) { require(n >= 93); }
+    }
+}

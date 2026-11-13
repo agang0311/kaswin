@@ -1,0 +1,19 @@
+[package]
+name = "kaswin-rolling-vm"
+version = "0.0.0"
+edition = "2024"
+publish = false
+rust-version = "1.94.0"
+description = "Offline script-engine runner for the rolling shard templates: no node, network, key or signature"
+
+# Standalone crate: not part of any upstream workspace. Cargo.lock is copied from the pinned SilverScript 1.0.1 checkout
+# so kaspa-* resolve to the same versions as the compiler used for the artifacts.
+[workspace]
+
+[dependencies]
+kaspa-consensus-core = "=2.1.0"
+kaspa-hashes = "=2.1.0"
+kaspa-txscript = "=2.1.0"
+kaspa-txscript-errors = "=2.1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

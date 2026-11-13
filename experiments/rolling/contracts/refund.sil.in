@@ -1,0 +1,135 @@
+pragma silverscript ^0.1.0;
+// SOURCE CANDIDATE. Leaf: direct serial refunds; no independent refund shard.
+contract KaswinRollingRefund(byte[] initialLedger) {
+    byte[] ledger = initialLedger;
+    int constant HEADER = 63;
+    int constant TARGET_INPUTS = 2;
+    int constant FEE_INPUTS = 9;
+    int constant FEE_OUTPUTS = 36;
+{{COMMON}}
+    entry spend(int action, int ownTailBytes, byte[] targetSizes) {
+        int cnt = U16(ledger, 57);
+        int dir = HEADER + 36 * cnt;
+        int lc = (length(ledger) - dir) / 36;
+        int base = 0;
+        if (cnt > 0) { base = U32(ledger, dir - 4); }
+        int ltk = 0;
+        if (lc > 0) { ltk = U32(ledger, dir + (lc - 1) * 36); }
+        int pr = U63(ledger, 33);
+        int cap = U32(ledger, 41);
+        int minT = U32(ledger, 45);
+        { checkManager(cnt, dir, lc, cap, minT, pr, base, ltk); }
+        byte[] tail = byte[](0x00);
+        { tail = selfTail(ownTailBytes); }
+        int r = U16(ledger, 59);
+        int c = U16(ledger, 61);
+        bool merge = cnt > 0 && ltk * pr < TAIL_POOL_MIN;
+        require(base + ltk > 0 && r <= cnt - (merge ? 1 : 0));
+        require(c <= 255 && c % 32 == 0);
+        // Tickets already refunded from the local ledger; only meaningful once every old shard is done (r == cnt).
+        int paid = 0;
+        if (r < cnt) {
+            require(c <= 224 && tx.inputs[0].value == DEPOSIT + ltk * pr);
+        } else {
+            require(lc > 0 && c < lc);
+            if (c > 0) { paid = U32(ledger, dir + (c - 1) * 36); }
+            require(tx.inputs[0].value == DEPOSIT + (ltk - paid) * pr);
+        }
+        // Both refund actions pay buyers from a record list with identical rules, so one shared loop serves both:
+        // src is the frozen ledger (action 30) or this ledger's local directory (action 31).
+        byte[] src = byte[](0x00);
+        int at0 = 0;       // offset of record c in src
+        int mm = 0;        // records refunded by this transaction
+        int limit = 0;     // ticket total of src
+        int tickets = 0;
+        int first = 0;     // output index of the first buyer refund
+        int previous = 0;  // tickets already refunded before record c
+        bool last = false;
+        bool finalBatch = false;
+        if (action == 30) {
+            { checkTargets(1); }
+            require(r < cnt && length(targetSizes) == 4);
+            { src = frozenLedger(1, r, U32(targetSizes, 0), cnt); }
+            if (c > 0) { previous = U32(src, 1 + 36 * (c - 1)); }
+            tickets = U32(src, 9181);
+            require(previous >= 0 && previous < tickets);
+            require(tx.inputs[1].value == (tickets - previous) * pr);
+            last = c == 224;
+            finalBatch = last && r == cnt - 1 && merge;
+            first = last ? 1 : 2;
+            if (finalBatch) { first = 0; require(lc <= 2); }
+            require(tx.outputs.length == (finalBatch ? 34 + lc : (last ? 34 : 35)));
+            at0 = 1 + 36 * c;
+            mm = 32;
+            limit = tickets;
+        } else if (action == 31) {
+            { checkSolo(0); }
+            require(r == cnt && !merge && lc > 0 && length(targetSizes) == 0);
+            mm = lc - c;
+            if (mm > 32) { mm = 32; }
+            require(mm > 0 && mm <= 32 && tx.outputs.length == mm + 2);
+            last = c + mm == lc;
+            first = last ? 0 : 1;
+            previous = paid;
+            src = ledger;
+            at0 = dir + 36 * c;
+            limit = ltk;
+        } else { require(false); } // Retired EMPTY_EXIT is not accepted.
+        int originalPrevious = previous;
+        int paidFee = 0;
+        { paidFee = fee(50000000); }
+        byte[32] zero = ZERO;
+        for (record, 0, mm, 32) {
+            int at = at0 + 36 * record;
+            int end = U32(src, at);
+            require(end > previous && end <= limit);
+            // pay() written out: the loop is unrolled 32 times and a call would bind four parameters per copy.
+            int oi = first + record;
+            require(tx.outputs[oi].value == (end - previous) * pr - REFUND_FEE);
+            require(tx.outputs[oi].scriptPubKey == byte[](new ScriptPubKeyP2PK(pubkey(src.slice(at + 4, at + 36)))) && OpOutputCovenantId(oi) == zero);
+            previous = end;
+        }
+        if (last) { require(previous == limit); }
+        else { require(previous < limit); }
+        if (action == 30) {
+            if (finalBatch) {
+                // Refund every local record once, then return the full deposit.
+                int localPrevious = 0;
+                for (localRecord, 0, lc, 2) {
+                    int at = dir + 36 * localRecord;
+                    int end = U32(ledger, at);
+                    require(end > localPrevious && end <= ltk);
+                    pay(32 + localRecord, (end - localPrevious) * pr - REFUND_FEE, pubkey(ledger.slice(at + 4, at + 36)), zero);
+                    localPrevious = end;
+                }
+                require(localPrevious == ltk);
+                { stateCount(0); }
+                { ordinary(32 + lc, DEPOSIT, pubkey(ledger.slice(1, 33))); }
+                { chosenPayment(33 + lc, (32 + lc) * REFUND_FEE - paidFee); }
+            } else {
+                byte[] next = set2(ledger, 61, c + 32);
+                if (last) {
+                    next = set2(set2(ledger, 59, r + 1), 61, 0);
+                    { stateCount(1); }
+                } else {
+                    { stateCount(2); }
+                    require(tx.outputs[1].scriptPubKey == tx.inputs[1].scriptPubKey);
+                    require(tx.outputs[1].value == (tickets - previous) * pr);
+                }
+                { stateOutput(0, next, tail, tx.inputs[0].value); }
+                { chosenPayment(first + 32, 32 * REFUND_FEE - paidFee); }
+            }
+        } else {
+            int pool = mm * REFUND_FEE;
+            if (last) {
+                { stateCount(0); }
+                { ordinary(mm, DEPOSIT - REFUND_FEE, pubkey(ledger.slice(1, 33))); }
+                pool = pool + REFUND_FEE;
+            } else {
+                { stateCount(1); }
+                { stateOutput(0, set2(ledger, 61, c + mm), tail, tx.inputs[0].value - (previous - originalPrevious) * pr); }
+            }
+            { chosenPayment(mm + 1, pool + externalValue(1) - paidFee); }
+        }
+    }
+}

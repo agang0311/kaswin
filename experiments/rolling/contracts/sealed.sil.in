@@ -1,0 +1,106 @@
+pragma silverscript ^0.1.0;
+// SOURCE CANDIDATE. Fixed PASS-A, one 56-bit sample, separate WIN decision.
+contract KaswinRollingSealed(byte[] initialLedger) {
+    byte[] ledger = initialLedger;
+    int constant HEADER = 59;
+    int constant TARGET_INPUTS = 1; // unused here; common.sil.inc resolves every loop bound
+    int constant FEE_INPUTS = 9;
+    int constant FEE_OUTPUTS = 2;
+    byte[32] constant WIN_HASH = byte[32](0x{{WIN_HASH}});
+    byte[32] constant REFUND_HASH = byte[32](0x{{REFUND_HASH}});
+    byte[32] constant KEY_CTX = byte[32](0x536571436f6d6d69744d65726765736574436f6e746578740000000000000000);
+    byte[32] constant KEY_BRANCH = byte[32](0x536571436f6d6d69746d656e744d65726b6c654272616e636848617368000000);
+{{COMMON}}
+    function openSeq(byte[] proof, int base, byte[32] parent): byte[32] {
+        byte[32] ctx = blake3WithKey(proof.slice(base + 64, base + 88), KEY_CTX);
+        byte[32] pc = blake3WithKey(byte[](ctx) + proof.slice(base + 32, base + 64), KEY_BRANCH);
+        byte[32] root = blake3WithKey(proof.slice(base, base + 32) + byte[](pc), KEY_BRANCH);
+        return blake3WithKey(byte[](parent) + byte[](root), KEY_BRANCH);
+    }
+    function ticket(byte[] proof, int total): int {
+        require(length(proof) == 240);
+        require(this.ageDaa >= 100);
+        int d = OpTxInputDaaScore(0);
+        require(d >= 0 && d < DAA_LIMIT - TIMEOUT);
+        int boundary = d + 100;
+        // U63 reads are signed; the explicit non-negative checks keep the old top-bit rejection.
+        require(U63(proof, 224) >= 0 && U63(proof, 224) < boundary);
+        require(U63(proof, 104) >= boundary && U63(proof, 104) < DAA_LIMIT);
+        require(U63(proof, 232) >= 0 && U63(proof, 112) > U63(proof, 232));
+        require(U63(proof, 96) >= 0 && U63(proof, 216) >= 0);
+        byte[32] pseq = openSeq(proof, 152, byte[32](proof.slice(120, 152)));
+        byte[32] tseq = openSeq(proof, 32, pseq);
+        byte[32] thash = byte[32](proof.slice(0, 32));
+        require(tseq == OpChainblockSeqCommit(thash));
+        byte[32] seed = blake2b(byte[]("KASWIN_ROLLING_DRAW_V1") + byte[](OpInputCovenantId(0))
+            + byte[](tx.inputs[0].outpointTxId) + byte[](tx.inputs[0].outpointIndex as byte[8]).slice(0, 4)
+            + byte[](boundary as byte[8]) + byte[](thash) + byte[](tseq));
+        byte[32] digest = blake2b(byte[]("KASWIN_V2_SAMPLE") + byte[](seed) + byte[](0x0000000000000000));
+        int sample = OpBin2Num(byte[](digest).slice(0, 7) + byte[](0x00));
+        int space = 72057594037927936;
+        require(sample < space - space % total);
+        return sample % total;
+    }
+    entry spend(int action, int ownTailBytes, byte[] nextTail, byte[] data) {
+        int cnt = U16(ledger, 57);
+        int dir = HEADER + 36 * cnt;
+        int lc = (length(ledger) - dir) / 36;
+        int base = 0;
+        if (cnt > 0) { base = U32(ledger, dir - 4); }
+        int ltk = 0;
+        if (lc > 0) { ltk = U32(ledger, dir + (lc - 1) * 36); }
+        int pr = U63(ledger, 33);
+        int cap = U32(ledger, 41);
+        int minT = U32(ledger, 45);
+        { checkSolo(1); }
+        { checkManager(cnt, dir, lc, cap, minT, pr, base, ltk); }
+        byte[] tail = byte[](0x00);
+        { tail = selfTail(ownTailBytes); }
+        int total = base + ltk;
+        require(length(tail) > 0 && total >= minT);
+        require(tx.inputs[0].value == DEPOSIT + ltk * pr);
+        int paidFee = 0;
+        { paidFee = fee(50000000); }
+        byte[] next = ledger;
+        if (action == 4) {
+            require(length(data) >= 248 && length(data) <= 250000);
+            require(templateHash(byte[](0x6b), nextTail) == WIN_HASH);
+            int t = 0;
+            { t = ticket(data.slice(0, 240), total); }
+            int j = U16(data, 240);
+            int i = U16(data, 242);
+            int rawLen = U32(data, 244);
+            require(j <= cnt && length(data) == 248 + rawLen);
+            int start = 0;
+            if (j > 0) { start = U32(ledger, HEADER + 36 * j - 4); }
+            int end = total;
+            byte[] directory = ledger.slice(dir, length(ledger));
+            if (j < cnt) {
+                end = U32(ledger, HEADER + 36 * j + 32);
+                require(rawLen > 0);
+                byte[] raw = data.slice(248, length(data));
+                require(byte[](blake2b(raw)) == ledger.slice(59 + 36 * j, 91 + 36 * j));
+                byte[] b = byte[](0x00);
+                b = frozenBody(raw);
+                require(U32(b, 9181) == end - start);
+                directory = b.slice(1, 9217);
+            } else { require(rawLen == 0); }
+            require(start <= t && t < end && i < length(directory) / 36);
+            int before = 0;
+            if (i > 0) { before = U32(directory, 36 * (i - 1)); }
+            int after = U32(directory, 36 * i);
+            require(before <= t - start && t - start < after && after <= end - start);
+            byte[] winner = directory.slice(36 * i + 4, 36 * i + 36);
+            next = ledger.slice(0, 59) + winner + byte[](0x0000) + ledger.slice(59, length(ledger));
+        } else if (action == 9) {
+            require(length(data) == 0 && templateHash(byte[](0x6b), nextTail) == REFUND_HASH);
+            int d = OpTxInputDaaScore(0);
+            require(d >= 0 && d < DAA_LIMIT - TIMEOUT);
+            require(this.ageDaa >= TIMEOUT);
+            next = ledger.slice(0, 59) + byte[](0x00000000) + ledger.slice(59, length(ledger));
+        } else { require(false); }
+        { stateCount(1); }
+        { stateOutput(0, next, nextTail, tx.inputs[0].value); }
+        { change(1, paidFee, externalValue(1)); }
+    }
+}

@@ -1,0 +1,4 @@
+generated/
+artifacts/
+local-pins.json
+vm/target/

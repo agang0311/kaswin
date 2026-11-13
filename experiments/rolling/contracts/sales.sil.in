@@ -1,0 +1,99 @@
+pragma silverscript ^0.1.0;
+// SOURCE CANDIDATE. Expand with prepare-sources.mjs; never compile placeholders.
+contract KaswinRollingSales(byte[] initialLedger) {
+    byte[] ledger = initialLedger;
+    int constant HEADER = 59;
+    int constant TARGET_INPUTS = 1; // unused here; common.sil.inc resolves every loop bound
+    int constant FEE_INPUTS = 9;
+    int constant FEE_OUTPUTS = 3;
+    byte[32] constant SEALED_HASH = byte[32](0x{{SEALED_HASH}});
+    byte[32] constant REFUND_HASH = byte[32](0x{{REFUND_HASH}});
+    byte[32] constant FROZEN_HASH = byte[32](0x{{FROZEN_HASH}});
+{{COMMON}}
+    function checkRoot(byte[32] originTxId, int originIndex, byte[] tail) {
+        require(originTxId != ZERO && originIndex >= 0 && originIndex <= 4294967295);
+        byte[] genesis = ledger.slice(0, 57) + byte[](0x0000);
+        byte[] spk = byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(genesis, tail)));
+        byte[] preimage = byte[](originTxId) + byte[](originIndex as byte[8]).slice(0, 4)
+            + byte[](0x0100000000000000) + byte[](0x00000000)
+            + byte[](DEPOSIT as byte[8]) + spk.slice(0, 2)
+            + byte[](0x2300000000000000) + spk.slice(2, 37);
+        require(blake2bWithKey(preimage, byte[]("CovenantID")) == OpInputCovenantId(0));
+    }
+    entry spend(int action, byte[32] originTxId, int originIndex, int ownTailBytes, byte[] nextTail, byte[] data) {
+        int cnt = U16(ledger, 57);
+        int dir = HEADER + 36 * cnt;
+        int lc = (length(ledger) - dir) / 36;
+        int base = 0;
+        if (cnt > 0) { base = U32(ledger, dir - 4); }
+        int ltk = 0;
+        if (lc > 0) { ltk = U32(ledger, dir + (lc - 1) * 36); }
+        int pr = U63(ledger, 33);
+        int cap = U32(ledger, 41);
+        int minT = U32(ledger, 45);
+        { checkSolo(1); }
+        { checkManager(cnt, dir, lc, cap, minT, pr, base, ltk); }
+        byte[] tail = byte[](0x00);
+        { tail = selfTail(ownTailBytes); }
+        { checkRoot(originTxId, originIndex, tail); }
+        int total = base + ltk;
+        require(tx.inputs[0].value == DEPOSIT + ltk * pr);
+        int paidFee = 0;
+        { paidFee = fee(50000000); }
+        int ext = 0;
+        { ext = externalValue(1); }
+        // The manager successor, the optional frozen shard and the change are validated once, after the action sets these.
+        byte[] outLedger = ledger;
+        byte[] outTail = tail;
+        int outValue = tx.inputs[0].value;
+        int nState = 1;        // covenant outputs: 0 = empty exit, 1 = manager, 2 = manager + frozen shard
+        int changeAt = 1;
+        int cost = paidFee;    // external funds consumed; the remainder returns as change
+        byte[] frozen = byte[](0x00);
+        int frozenValue = 0;
+        if (action == 1) {
+            require(cnt < 256 && length(data) == 36);
+            int q = U32(data, 0);
+            require(q > 0 && q <= cap - total);
+            byte[] record = byte[]((ltk + q) as byte[4]) + data.slice(4, 36);
+            cost = q * pr + paidFee;
+            if (lc == 255) {
+                require(templateHash(byte[](0x6b), nextTail) == FROZEN_HASH);
+                frozen = byte[](0x00) + ledger.slice(dir, length(ledger)) + record;
+                byte[32] hash = blake2b(scriptFor(frozen, nextTail));
+                outLedger = ledger.slice(0, 57) + byte[]((cnt + 1) as byte[2])
+                    + ledger.slice(59, dir) + byte[](hash) + byte[]((total + q) as byte[4]);
+                outValue = DEPOSIT;
+                frozenValue = (ltk + q) * pr;
+                nState = 2;
+                changeAt = 2;
+            } else {
+                require(length(nextTail) == 0);
+                outLedger = ledger + record;
+                outValue = tx.inputs[0].value + q * pr;
+            }
+        } else if (action == 2) {
+            require(length(data) == 0);
+            if (total < cap && cnt < 256) {
+                require(tx.daa >= U63(ledger, 49) - 1);
+            }
+            if (total == 0) {
+                require(length(nextTail) == 0);
+                nState = 0;
+                { ordinary(0, DEPOSIT, pubkey(ledger.slice(1, 33))); }
+            } else {
+                byte[32] target = SEALED_HASH;
+                if (total < minT) {
+                    target = REFUND_HASH;
+                    outLedger = ledger.slice(0, 59) + byte[](0x00000000) + ledger.slice(59, length(ledger));
+                }
+                require(templateHash(byte[](0x6b), nextTail) == target);
+                outTail = nextTail;
+            }
+        } else { require(false); }
+        { stateCount(nState); }
+        if (nState > 0) { stateOutput(0, outLedger, outTail, outValue); }
+        if (nState == 2) { stateOutput(1, frozen, nextTail, frozenValue); }
+        { change(changeAt, cost, ext); }
+    }
+}
