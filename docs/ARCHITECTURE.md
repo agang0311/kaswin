@@ -1,57 +1,56 @@
 # 架构说明
 
-Kaswin 由链上轮次状态、链下协议核心与浏览器应用组成。构建工具只生成网页产物；业务测试和部署是独立步骤。
+Kaswin 当前源码以 Rolling 为主实现，保留 `contracts/`、`scripts/`、`web/`、`build/`、`tests/`、`docs/` 的顶层分层。网络仅为 Testnet 10，候选 Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` 仍为 **UNVALIDATED**。重组后统一核心、隔离候选页面构建与离线/真实 VM 测试套件已由 `tester` 验证通过；现有 `dist/` 页面与线上部署未改。
 
 ## 模块
 
-| 目录 | 责任 |
+| 目录 / 入口 | 责任 |
 |---|---|
-| `contracts/` | OPEN、SEALED、REFUNDING 三种固定模板、KW21布局与Profile |
-| `scripts/core/` | 状态编码、交易构造、模板与CID身份、接受解释、PASS-A与密码学基础 |
-| `scripts/chain/` | 显式网络上下文、节点池、RPC/REST、费用与接受证据读取 |
-| `scripts/round/` | 计划、报价、批准、执行、轮次发现、历史解释与开奖确认 |
-| `scripts/store/` | 会话记录、IndexedDB CAS与轮次缓存 |
-| `scripts/tracking/` | 详情与未决交易追踪、重组恢复和诊断 |
-| `scripts/wallet/` | KasWare、TN10内存钱包、签名与地址辅助 |
-| `web/app/` | 页面交互与操作编排 |
-| `web/ui/` | 模板、样式、翻译与展示辅助 |
-| `build/` | 编译核心库、校验固定产物、生成HTML与来源清单 |
+| `contracts/` | `sales`、`sealed`、`win`、`refund`、`frozen` 五份固定源码与产物；`templates/` 保存输入，`pins.json` 固定身份 |
+| `scripts/core/src/` | Rolling 状态、Profile、交易、mass、接受解释、收款规则，以及字节、哈希、交易序列化、CID、PASS-A 等通用基础能力 |
+| `scripts/core.mjs` | 统一协议入口，连接生成核心与所需密码学/地址能力 |
+| `scripts/contract/` | `protocol.mjs` 协议常量与数据格式；`profile-data.mjs` 浏览器 Profile 数据；`bundle.mjs` 固定产物加载 |
+| `scripts/chain/` | 网络上下文、节点连接、RPC/REST、费用和接受证据读取；应用只接 TN10 |
+| `scripts/round/` | controller、轮次状态、准备与预算、追赶同步、索引客户端、开奖证明及确认 |
+| `scripts/store/` | `codec.mjs` 持久化编码；`round-store.mjs` 轮次与意图存储 |
+| `scripts/tracking/` | `intent.mjs` 提交意图与恢复；`conflict.mjs` 拒绝和冲突分类 |
+| `scripts/wallet/` | 内存钱包、扩展钱包、Kaspire 接入及通用地址/签名能力 |
+| `scripts/indexer/` | 只读索引服务及原实验归档、索引、HTTP 和节点接受适配模块 |
+| `web/app/` | `app.ts` 入口、`bridge.ts` 运行时接线、类型、设置、分享与环境声明 |
+| `web/ui/` | 模板、样式、视图、UI、交互、格式化和词典 |
+| `build/` | 统一核心编译与主页面构建；合约重编译为显式工具 |
+| `tests/` | 合约/VM/旧 MJS 差分基线、网页集成、单测与节点替身 |
 
-运行时脚本不反向依赖网页或测试工具。视觉层不能调用钱包、节点连接或交易执行模块。
+核心不选择端点、不连接节点、不接触 DOM 或钱包。网页通过运行时操作轮次；索引服务与浏览器共享协议核心，但服务端归档和节点扫描器不进入网页运行时。旧 MJS 协议实现留在 `tests/contracts/` 作为差分基线，不构成第二套应用核心。
 
 ## 状态与资金
 
+每轮由一个活动管理 UTXO 与若干冻结片 UTXO 组成。管理片保存轮次参数、冻结片索引和当前购票记录；活动记录达到分片边界后，购票历史冻结为独立片，管理片继续接受新购买。
+
 ```text
-普通资金 → GENESIS → OPEN
-OPEN → BUY → OPEN
-OPEN → CLOSE → SEALED / REFUNDING / EMPTY
-SEALED → DRAW_AND_PAY → PAID
-SEALED → TIMEOUT_REFUND → REFUNDING
-REFUNDING → REFUND → REFUNDING / REFUNDED
+普通资金 → GENESIS → sales
+sales → BUY → sales（按边界产生 frozen）
+sales → CLOSE → sealed / refund / EMPTY
+sealed → DRAW → win
+sealed → TIMEOUT → refund
+win + frozen → 分批派奖 → PAID
+refund + frozen → 分批退款 → REFUNDED
 ```
 
-每轮共享一个顺序状态 UTXO，跨轮独立。CID标识轮次谱系，P2SH承诺当前状态与脚本；相同CID不代表状态合法，仍需完整核对模板、账本、金额、绑定与后继。
+这是阶段示意，具体输入输出、尾片合并及动作约束由五模板和核心解释器决定。冻结片不是独立可随意花费的资金：必须与对应管理片、模板、CID、原像、金额及授权上下文一起核验。相同 CID 不足以证明状态合法。
 
-KW21账本为80字节头加每条36字节购买记录，上限256条。持久阶段仅OPEN、SEALED、REFUNDING；退款推进cursor，开奖中间值在交易内计算。终局生成普通付款，不产生状态后继。
+金额在内存中使用 sompi 整数 bigint，对外数据使用十进制字符串。押金、票款、收款、执行者款和网络费分别计算；页面预算来自本地 `scripts/round/budget.mjs`，普通应用不依赖历史预算引擎 HTTP 服务。合约约束、客户端政策、离线 VM 结果和节点接受事实分别记录。
 
-金额以sompi整数处理。押金、票款、退款、执行者款与网络费分别计算，满足输入等于输出加手续费。客户端登记政策与合约约束分开。具体规则以固定合约和协议核心为准。
+## 网络、钱包与核验
 
-## 网络、授权与核验
+默认节点参照原 V2.0.2 的 `TN10.web.nodes`，配置来源为 `scripts/chain/tn10.mjs`；默认索引为 `https://indexer.kaspay.top/tn10`。端点的配置不表示本轮已验证服务可用、Profile 路由或兼容性。通用链工具中保留的网络定义不扩大 Rolling 的 TN10 范围。
 
-TN10与主网显式配置并隔离钱包、连接、缓存、交易记录和输入占用。Indexer/REST/通知用于发现和唤醒，不能裁定接受或资金归属；节点接受数据仍须由客户端复算核验。区块包含不等于交易接受。
+Indexer/REST、订阅通知与本地缓存提供发现和同步线索。轮次必须经自身节点的 accepted 数据、真实输入上下文及协议解释器复算；DRAW 还需核验相应链上证明。区块包含不等于接受，索引终态标签也不能独立证明资金已结算。
 
-构建模式控制页面交易能力：readonly两网只读，tn10仅测试网可交易，mainnet两网可交易。主网仅KasWare；TN10内存钱包只保存当前页面会话。每笔交易仍需批准、网络/账户核对、签名核对和实际接受跟踪，构建参数不代替这些检查。
+钱包层负责内存签名与扩展接入，交易编排仍需逐笔批准、网络和账户核对、授权输入及返回签名检查。未决提交保留意图，通过接受证据恢复；不能把超时直接视为失败并重复创建交易。节点连接、账户变化、重组与本地存储冲突需要各自处理。
 
-未知提交不按超时释放输入，自动重发仅使用原签名字节。重组、切网、连接失效与异步任务取消分别处理；本地缓存不是当前链上状态的证明。
+## 构建与证据边界
 
-开奖中的100 DAA合约等待、PASS-A目标100 blue-score客户端确认、交易接受后100 DAA复核是不同条件，不能互相替代。
+`build/core.mjs` 统一编译 `scripts/core/src/` 到 `scripts/core/lib/`；`build/build.mjs` 导出 `buildKaswin`，以 `web/app/app.ts` 为入口，生成 `dist/index.html` 与 `dist/build-manifest.json`。默认及 `build:tn10` 均为 TN10，不支持 mainnet。普通构建使用固定合约产物；`build/compile-contracts.mjs` 与 `build/prepare-sources.mjs` 只在明确重编合约时使用。
 
-封存输入的实际节点DAA达到 `utxoDaa + 432000`，或开奖进度报 `PROOF_CONTEXT_INVALID` 时，本页禁用开奖并显示“开奖已超时”，引导使用“超时转退款”。这是前端入口策略；该错误也可能来自目标块离开选中链，不能据此证明退款已成熟或不可逆最终性。退款仍独立核验真实DAA和原合约条件，提示本身不转账、不修改链上阶段。
-
-## 构建与测试边界
-
-HTML构建编译核心库、核对固定模板/布局/Profile、生成CSP与来源哈希，不需要链上回执、VM预算报告或历史发布产物。`dist/build-manifest.json`描述本次构建，不声称合约/浏览器/网络测试通过。
-
-当前Profile：`ed0387c9e77bb4e0a8f1f4654a326c316d83663f455283ec6a046a095c94856d`。SilverScript来源固定为 `kaspanet/silverscript` 提交 `3ed973335b59269293564805cc2c58a14595ec03`；共识参考为 `kaspanet/rusty-kaspa` 提交 `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`。这些固定来源不表示当前任意节点都已通过兼容验证。
-
-合约产物和已有Profile身份保持固定；新合约设计仍须分别解决身份、授权、资金守恒、随机性、退出与foreign模板验证，再执行对应验证。构建成功不构成生产批准。
+重组后上述统一核心编译、隔离候选构建及离线/VM 测试已由 `tester` 验证（详见[重组记录](REORGANIZATION.md)）。历史实链证据位于 [rolling/](rolling/README.md) 与[此前集成交接](ROLLING-INTEGRATION-HANDOFF.md)，仅适用于各自记录的源码、产物和执行范围。源码布局替换不迁移 V2.0.2 链上轮次、不修改历史证据，也不代表现有站点已切换。

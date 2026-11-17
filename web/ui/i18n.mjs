@@ -1,5 +1,5 @@
-/** Display-only localization shared by V2 and Rolling. Never visits values, URLs, data attributes, or engine objects. */
-import {EN} from './messages-en.mjs';
+/** Display-only localization for Kaswin Rolling. Never visits values, URLs, data attributes, or engine objects. */
+import {EN} from './messages-common-en.mjs';
 export const normalize = s => String(s).replace(/\s+/g, ' ').trim();
 export function chooseLanguage(saved, languages = []) {
   if (saved === 'zh-CN' || saved === 'en') return saved;
@@ -45,8 +45,8 @@ export function formatLocalTime(timestamp, lang = language) {
 }
 export function installLocalization(doc = document, {
   messages = EN,
-  titles = {en: 'Kaswin V2.0.2 · Clarity at every step', 'zh-CN': 'Kaswin V2.0.2 · 每一步，都看得清'},
-  descriptions = {en: 'Kaswin V2.0.2: review tickets, fees, purchase records and data sources before approving a Kaspa transaction.', 'zh-CN': 'Kaswin V2.0.2：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa 交易。'},
+  titles = {en: 'Kaswin Rolling · Testnet 10 experiment', 'zh-CN': 'Kaswin Rolling · Testnet 10 实验版'},
+  descriptions = {en: 'Kaswin Rolling: review tickets, fees, purchase records and data sources before approving a Kaspa transaction.', 'zh-CN': 'Kaswin Rolling：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa 交易。'},
 } = {}) {
   const translate = messages === EN ? englishText : createTranslator([...EN, ...messages]);
   const sources = new WeakMap();

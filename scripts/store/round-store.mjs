@@ -1,82 +1,77 @@
-import {PROFILE_ID, hash32} from '../core.mjs';
-import {checkRow} from '../round/rounds.mjs';
-import {terminalSettled} from '../tracking/terminal-state.mjs';
+/** Local persistence of round records (each record carries its single pending intent, so "persist the intent" and
+ * "block replacement" are ONE compare-and-set). IndexedDB via the repository's IndexedStore; MemoryStore is for
+ * tests / browsers without IndexedDB and reports persistent:false, in which case the page refuses to send. */
+import {IndexedStore} from '../core/lib/persistence.js';
+import {outpointKey} from '../core/lib/transaction.js';
+import {check} from '../core.mjs';
+import {TN10_GENESIS,TN10_PROFILE_ID} from '../contract/protocol.mjs';
 
-/** Per-session views with optional persistence. Persisted verification is never current-session authority. */
+export class MemoryStore {
+  persistent=false;#rows=new Map();
+  async get(key){const r=this.#rows.get(key);return r?structuredClone(r):null;}
+  async compareAndSet(key,expected,value){
+    const prev=this.#rows.get(key);check((prev?.revision??null)===expected,'STALE_CACHE_REVISION');
+    const rec={revision:(prev?.revision??-1)+1,value:structuredClone(value)};this.#rows.set(key,rec);return structuredClone(rec);
+  }
+  async compareAndSetWithCheck(key,expected,value,prefix,inspect){
+    const prev=this.#rows.get(key);check((prev?.revision??null)===expected,'STALE_CACHE_REVISION');
+    inspect([...this.#rows].filter(([k])=>k.startsWith(prefix)).map(([k,record])=>({key:k,record:structuredClone(record)})));
+    const rec={revision:(prev?.revision??-1)+1,value:structuredClone(value)};this.#rows.set(key,rec);return structuredClone(rec);
+  }
+  async insertIfAbsentWithCheck(key,value,prefix,inspect){
+    check(key.startsWith(prefix)&&!this.#rows.has(key),'INTENT_ALREADY_EXISTS');
+    inspect([...this.#rows].filter(([k])=>k.startsWith(prefix)).map(([k,record])=>({key:k,record:structuredClone(record)})));
+    const rec={revision:0,value:structuredClone(value)};this.#rows.set(key,rec);return structuredClone(rec);
+  }
+  async remove(key,expected){check(this.#rows.get(key)?.revision===expected,'STALE_CACHE_REVISION');this.#rows.delete(key);}
+  async list(prefix){return [...this.#rows].filter(([k])=>k.startsWith(prefix)).map(([key,record])=>({key,record:structuredClone(record)}));}
+}
+export async function openRoundStore({factory=globalThis.indexedDB}={}) {
+  if(!factory)return new MemoryStore();
+  try {const s=await IndexedStore.open('kaswin-rolling-tn10',factory);s.persistent=true;return s;}
+  catch {return new MemoryStore();}
+}
+/** An intent still owns its inputs unless it was never sent, was accepted, or lost its inputs to another spend. */
+export const intentBlocks=i=>!!i&&['PREPARED','SUBMITTED','UNKNOWN','REJECTED'].includes(i.status);
+export const intentOutpoints=round=>round.intent?round.intent.draft.transaction.inputs.map(i=>outpointKey(i.previousOutpoint)):[];
+/** Inputs spent by candidates that are not yet re-verified: the node's UTXO index may still list them, so they must never be reused as funding. */
+export const pendingOutpoints=round=>(round.pending??[]).flatMap(p=>p.intent.draft.transaction.inputs.map(i=>outpointKey(i.previousOutpoint)));
+
 export class RoundStore {
-  constructor(openStore = null, {network, profile = PROFILE_ID} = {}) {
-    this.network = hash32(network, '网络 Genesis');
-    this.openStore = openStore; this.prefix = `${network}/${profile}/round/`; this.rows = new Map(); this.listeners = new Set(); this.revisions = new Map();
-    this.loaded = null; this.queue = Promise.resolve(); this.backend = null;
+  constructor(store){this.store=store;this.prefix=`${TN10_GENESIS}/${TN10_PROFILE_ID}/round/`;}
+  get persistent(){return this.store.persistent!==false;}
+  key(cid){return this.prefix+cid;}
+  async list(){return (await this.store.list(this.prefix)).map(x=>({round:x.record.value,revision:x.record.revision}));}
+  async get(cid){const r=await this.store.get(this.key(cid));return r?{round:r.value,revision:r.revision}:null;}
+  /** Atomic create. Refuses an existing cid and any record whose pending intent shares an input with the new one. */
+  async create(round){
+    const mine=new Set(intentOutpoints(round));
+    return this.store.insertIfAbsentWithCheck(this.key(round.cid),round,this.prefix,rows=>{
+      for(const {record} of rows){const o=record.value;
+        if(intentBlocks(o.intent)&&intentOutpoints(o).some(k=>mine.has(k)))throw Object.assign(new Error('INPUT_RESERVED_BY_PENDING_INTENT'),{code:'INPUT_RESERVED_BY_PENDING_INTENT'});}
+    });
   }
-  async load() {
-    return this.loaded ??= (async () => {
-      try {
-        this.backend = this.openStore ? await this.openStore() : null;
-        for (const x of await this.backend?.list(this.prefix) ?? []) {
-          const r = x.record.value;
-          try { const view = r.view ? checkRow(r.view, {cached: true}) : null;
-            if (view && view.cid !== r.cid) continue;
-            const isTerm = !!(r.terminalVerified && terminalSettled(view, r.terminalCheck));
-            this.rows.set(hash32(r.cid), {
-              ...r,
-              verified: isTerm,
-              observed: isTerm,
-              terminalVerified: isTerm,
-              replay: r.replay ?? null,
-              view: view ? {...view, terminalSettled: isTerm, _src: isTerm ? 'node' : 'cache'} : null
-            });
-          } catch {}
-        }
-      } catch { this.backend = null; }
-    })();
+  /** Compare-and-set replace. Callers MUST pass the revision they read; a stale revision never overwrites. */
+  async replace(round,expectedRevision){
+    if(!round.intent)return this.store.compareAndSet(this.key(round.cid),expectedRevision,round);
+    const mine=new Set(intentOutpoints(round)),inspect=rows=>{
+      for(const {key,record} of rows)if(key!==this.key(round.cid)&&intentBlocks(record.value.intent))
+        check(!intentOutpoints(record.value).some(k=>mine.has(k)),'INPUT_RESERVED_BY_PENDING_INTENT');
+    };
+    if(this.store.compareAndSetWithCheck)return this.store.compareAndSetWithCheck(this.key(round.cid),expectedRevision,round,this.prefix,inspect);
+    check(this.store.db,'ATOMIC_STORE_REQUIRED');
+    return new Promise((resolve,reject)=>{
+      const tx=this.store.db.transaction('records','readwrite'),object=tx.objectStore('records'),rows=[];let cause,result,previous=null;
+      const req=object.openCursor();
+      req.onsuccess=()=>{try{const c=req.result;if(c){if(c.key===this.key(round.cid))previous=c.value;
+        if(typeof c.key==='string'&&c.key.startsWith(this.prefix))rows.push({key:c.key,record:c.value});c.continue();}
+        else {check((previous?.revision??null)===expectedRevision,'STALE_CACHE_REVISION');inspect(rows);
+          result={revision:(previous?.revision??-1)+1,value:round};object.put(result,this.key(round.cid));}}
+        catch(e){cause=e;tx.abort();}};
+      tx.oncomplete=()=>resolve(result);tx.onabort=()=>reject(cause??tx.error??new Error('IDB_ABORT'));tx.onerror=()=>reject(cause??tx.error);
+    });
   }
-  onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  begin(cid) { const n = (this.revisions.get(cid) ?? 0) + 1; this.revisions.set(cid, n); return n; }
-  invalidate(cid, {terminal = false, revision = null} = {}) {
-    if (revision !== null && this.revisions.get(cid) !== revision) return;
-    this.begin(cid); const r = this.rows.get(cid);
-    if (r && (terminal || !r.terminalVerified)) {
-      r.verified = false; r.observed = false;
-      if (terminal) { r.terminalVerified = false; r.terminalCheck = null; }
-      if (r.view) r.view = {...r.view, terminalSettled: false, _src: 'cache'};
-      if (terminal && r.view?.terminal) this.persist(cid, r);
-    }
-  }
-  async list() { await this.load(); return [...this.rows.values()].map(x => structuredClone(x)); }
-  async get(cid) { await this.load(); return structuredClone(this.rows.get(hash32(cid)) ?? null); }
-  async remember(cid, {view = null, source, mine = null, revision = null, verified = false, replay = null, terminalCheck = null} = {}) {
-    hash32(cid); await this.load();
-    if (revision !== null && this.revisions.get(cid) !== revision) return null;
-    if (view) { view = checkRow(structuredClone(view), {cached: true}); if (view.cid !== cid) throw new Error('ROUND_STORE_CID'); }
-    const old = this.rows.get(cid) ?? {cid, sources: [], firstSeenAt: Date.now(), view: null, mine: false};
-    // Fresh node observations may roll back progress. External list responses cannot overwrite them.
-    const keep = old.observed && !verified;
-    const finalView = keep ? old.view : view ?? old.view;
-    const same = finalView?.latestTxid === old.view?.latestTxid && finalView?.accepting === old.view?.accepting && finalView?.terminal === old.view?.terminal;
-    const check = verified ? terminalCheck : same ? old.terminalCheck ?? null : null;
-    const isTerm = !!((verified || old.terminalVerified) && terminalSettled(finalView, check));
-    if (finalView?.terminal) finalView.terminalSettled = isTerm;
-    const next = {...old, view: finalView, verified: keep ? old.verified : verified, observed: old.observed || verified,
-      terminalVerified: isTerm, terminalCheck: check, replay: replay ?? (same ? old.replay ?? null : null),
-      sources: [...new Set([...old.sources, source].filter(Boolean))], mine: old.mine || mine === true, updatedAt: Date.now()};
-    this.rows.set(cid, next);
-    for (const fn of this.listeners) { try { fn(structuredClone(next)); } catch {} }
-    this.persist(cid, {...next, verified: isTerm});
-    return structuredClone(next);
-  }
-  persist(cid, value) {
-    const snapshot = structuredClone(value);
-    // Ordered revocations also fence a terminal result invalidated while an earlier disk write was in flight.
-    this.queue = this.queue.catch(() => {}).then(async () => {
-      if (!this.backend) return;
-      const key = this.prefix + cid, current = await this.backend.get(key);
-      await this.backend.compareAndSet(key, current?.revision ?? null, snapshot);
-    }).catch(() => { this.backend = null; });
-  }
-  async forget(cid) {
-    await this.load(); this.invalidate(cid); this.rows.delete(cid);
-    this.queue = this.queue.catch(() => {}).then(async () => { if (!this.backend) return; const k = this.prefix + hash32(cid), cur = await this.backend.get(k); if (cur) await this.backend.remove(k, cur.revision); }).catch(() => { this.backend = null; });
-    await this.queue;
-  }
+  async remove(cid,revision){return this.store.remove(this.key(cid),revision);}
+  /** Inputs reserved by any pending intent (advisory for funding selection). */
+  async reserved(){const set=new Set();for(const {round} of await this.list()){if(intentBlocks(round.intent))for(const k of intentOutpoints(round))set.add(k);for(const k of pendingOutpoints(round))set.add(k);}return set;}
 }

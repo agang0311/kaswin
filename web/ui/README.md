@@ -1,10 +1,9 @@
 # 展示层
 
-- `index.template.html`：页面骨架、CSP和内嵌脚本/样式占位。
+- `index.template.html`：页面骨架、CSP 和内嵌脚本/样式占位。
 - `styles.css`：布局与响应式样式。
-- `i18n.mjs`、`messages-en.mjs`：语言切换与英文翻译。
-- `icons.mjs`：图标。
-- `view.mjs`：纯展示辅助。
-- `draw-readiness.mjs`：开奖等待进度显示。
+- `views.ts`、`ui.ts`、`interaction.ts`、`format.mjs`：纯展示视图、DOM 渲染、交互绑定与格式化辅助。
+- `i18n.mjs`、`messages-common-en.mjs`、`messages-en.mjs`、`messages.ts`：中英文切换、共享词典、Rolling 词典与状态文案。
+- `icons.mjs`：图标数据。
 
-展示层不连接钱包或节点、不生成交易、不判定acceptance。倒计时是估计，不能代替节点核验条件。构建会限制此层导入交易执行模块。
+展示层不直接连接节点或签名交易，也不独立判定 transaction acceptance。倒计时是估计，不能代替节点核验条件。

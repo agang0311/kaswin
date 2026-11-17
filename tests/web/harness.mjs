@@ -1,560 +1,458 @@
-// Page-driven harness: every fact comes from the page's own DOM, not from polling the indexer.
-//  - Full hashes (CID/txid) live in the `title` attribute of the truncated hash links.
-//  - The round view auto-refreshes itself (RoundTracker), so no external state polling is needed.
-//  - A freshly accepted state is usable at once: continue at 确认中 (CONFIRMING), not at the later 100-DAA recheck.
+// Rolling TN10 页面驱动。只通过页面 UI 操作，不直接构造交易、不读私钥以外的内部状态。
+// 密钥仅在内存中传给页面输入框；不打印、不落盘。
 import {chromium} from 'playwright';
 import fs from 'node:fs';
-import {readQuoteState, waitForQuote} from './quote-state.mjs';
-import {NETWORK, TIMING, walletDir, walletRoles} from './config.mjs';
+import path from 'node:path';
+import {parseJson,jsonText} from '../../scripts/chain/json.mjs';
+import {RpcError} from '../../scripts/chain/nodes.mjs';
 
-export const IDX = NETWORK.indexer;
-export const NODE = NETWORK.node;
-export const PAGE = NETWORK.page;
-export const CONTRACT_PREFIX = NETWORK.contractPrefix;
+const HERE = path.dirname(new URL(import.meta.url).pathname);
+const WALLETS = path.join(HERE, './wallets');
+const wallet = name => JSON.parse(fs.readFileSync(path.join(WALLETS, `${name}.json`), 'utf8'));
 
-/** Test wallets (TN10 only). Directory resolution lives in config.mjs.
- *  Keys never leave this process and are never printed. */
-const WDIR = walletDir();
-const ROLES = walletRoles();
-const readWallet = role => JSON.parse(fs.readFileSync(`${WDIR}/${ROLES[role]}`, 'utf8'));
-export const W = {
-  creator: readWallet('creator'),
-  b1: readWallet('b1'),
-  b2: readWallet('b2'),
+/** 仅公开地址（不把私钥交给只需要地址的调用方）。 */
+export const walletAddress = role => wallet(ROLES[role]).address;
+
+export const ROLES = {
+  creator: 'tn10-test-only',
+  b1: 'tn10-f3-buyer-1',
+  b2: 'tn10-f3-buyer-2',
 };
 
-// Policy (2026-10-18): no single step may block longer than 30s. Longer conditions (the contract's own
-// DAA waits) are satisfied by repeating bounded steps, never by one long wait.
-const STEP_MS = TIMING.stepMs;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const now = () => new Date().toISOString().slice(11, 19);
 
-// ---------------------------------------------------------------- live output
-// Every long operation prints progress as it happens. Nothing is buffered: the caller
-// must not pipe through `tail`, which would hide the stream until the process ends.
-const T0 = Date.now();
-const ts = () => `+${String(Math.round((Date.now() - T0) / 1000)).padStart(4)}s`;
-/** Set KASWIN_LOG=0 to silence, KASWIN_LOG=verbose for per-poll detail. */
-const LOG = process.env.KASWIN_LOG !== '0';
-const VERBOSE = process.env.KASWIN_LOG === 'verbose';
-export const log = (...a) => { if (LOG) console.log(`[${ts()}]`, ...a); };
-export const logv = (...a) => { if (LOG && VERBOSE) console.log(`[${ts()}]`, ...a); };
+export class RollingPage {
+  constructor(opts) { this.o = opts; this.log = opts.log ?? (() => {}); }
 
-/** Run `fn` while printing a heartbeat every `everyMs` so a stall is visible immediately.
- *  The heartbeat never extends the work: `fn` keeps its own bounded steps. */
-export async function withHeartbeat(label, fn, { everyMs = 5000, getState = null } = {}) {
-  let ticks = 0;
-  const timer = setInterval(async () => {
-    ticks++;
-    let extra = '';
-    if (getState) { try { const v = await getState(); if (v != null) extra = ` ${v}`; } catch {} }
-    log(`  ⏳ ${label} 进行中 ${ticks * Math.round(everyMs / 1000)}s${extra}`);
-  }, everyMs);
-  if (timer.unref) timer.unref();
-  try { return await fn(); } finally { clearInterval(timer); }
-}
-
-/** A stall guard: throws with the last observed state instead of hanging to the tool timeout. */
-export function stallGuard(label, ms = STEP_MS) {
-  const t = Date.now();
-  return (what = '') => {
-    if (Date.now() - t > ms) throw Error(`${label}: stalled ${Math.round((Date.now() - t) / 1000)}s${what ? ` (${what})` : ''}`);
-  };
-}
-
-// ---------------------------------------------------------------- lifecycle
-// A round's GENESIS is on chain the moment it is submitted. If the process dies between
-// GENESIS and the terminal step, that round stays in 售票中 with its deposit locked. Two
-// guards make that visible instead of silent:
-//   1. scanOpenRounds() at start  — show anything a previous run left behind
-//   2. installInterruptGuard()    — on SIGINT/SIGTERM print the in-flight CIDs and how to finish them
-const inflight = new Map(); // cid -> {label, since}
-export function trackRound(cid, label) { if (cid) inflight.set(cid, { label, since: Date.now() }); }
-export function untrackRound(cid) { if (cid) inflight.delete(cid); }
-export function inflightRounds() { return [...inflight.entries()].map(([cid, v]) => ({ cid, ...v })); }
-
-let guardInstalled = false;
-/** Print what is still unfinished when the process is asked to stop. Never pretends to clean up:
- *  a round needs a real transaction, so the operator gets the exact command instead. */
-export function installInterruptGuard({ cleanupCmd = 'node tests/web/cleanup.mjs' } = {}) {
-  if (guardInstalled) return;
-  guardInstalled = true;
-  let stopping = false;
-  const handler = sig => {
-    if (stopping) { console.log(`\n收到 ${sig}，强制退出`); process.exit(130); }
-    stopping = true;
-    const rows = inflightRounds();
-    console.log('');
-    log(`⚠️  收到 ${sig}，准备退出`);
-    if (!rows.length) {
-      log('   没有在途轮次，可安全退出');
+  async open() {
+    // A persistent profile keeps the round record on disk, so a failed run can be reopened and settled
+    // instead of leaving the deposit locked in a covenant nobody has the state for.
+    // Background tabs get their timers throttled (the page polls every 8s), which made confirmation
+    // take minutes in automation. Disable that throttling and keep the page in front.
+    const args = ['--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'];
+    if (this.o.profileDir) {
+      fs.mkdirSync(this.o.profileDir, {recursive: true});
+      this.ctx = await chromium.launchPersistentContext(this.o.profileDir, {viewport: {width: 1280, height: 1100}, args});
+      this.p = this.ctx.pages()[0] ?? await this.ctx.newPage();
     } else {
-      log(`   有 ${rows.length} 个在途轮次（GENESIS 已上链，可能停在售票中）：`);
-      for (const r of rows) log(`     ${r.cid}  (${r.label}, 已 ${Math.round((Date.now() - r.since) / 1000)}s)`);
-      log('   收尾命令：');
-      log(`     ${cleanupCmd}                      # 全部未终局轮次`);
-      for (const r of rows) log(`     ${cleanupCmd} --only=${r.cid}`);
+      this.browser = await chromium.launch({args});
+      this.ctx = await this.browser.newContext({viewport: {width: 1280, height: 1100}});
+      this.p = await this.ctx.newPage();
     }
-    log('');
-    log('   提示：不要用外层 timeout 硬杀；用 --budget=<秒> 让脚本自己报错并保留收尾信息。');
-    process.exit(130);
-  };
-  process.on('SIGINT', () => handler('SIGINT'));
-  process.on('SIGTERM', () => handler('SIGTERM'));
-}
-
-/** Non-terminal rounds currently on chain. A pre-flight check, not a source of truth:
- *  it only exists to make a previous interrupted run impossible to miss. */
-export async function scanOpenRounds({ phases = [1, 2, 5] } = {}) {
-  const r = await fetch(`${IDX}/v1/rounds?limit=200`, { signal: AbortSignal.timeout(STEP_MS) }).then(x => x.json());
-  return (r.items || [])
-    .filter(i => (i.contract || '').startsWith(CONTRACT_PREFIX) && !i.terminal && phases.includes(i.phase))
-    .map(i => ({ cid: i.cid, phase: i.phase, value: i.value, updatedAt: i.updatedAt }))
-    .sort((a, b) => a.updatedAt - b.updatedAt);
-}
-
-const HASH64=/^[0-9a-f]{64}$/;
-const READY=/确认中|\d+ confirms|已接受/;
-const STOP=/结果未知|待核验|失败|被拒绝|已失效|已归档|未生效/;
-
-/** Read every 64-hex value exposed in the current modal (full value, from title/href). */
-const modalHashes = page => page.evaluate(() => {
-  const out=[];
-  for(const el of document.querySelectorAll('#modal [title], #modal a[href]')){
-    const t=el.getAttribute('title'); if(t&&/^[0-9a-f]{64}$/.test(t))out.push(t);
-    const h=el.getAttribute('href')||''; const m=h.match(/[0-9a-f]{64}/); if(m)out.push(m[0]);
-  }
-  return [...new Set(out)];
-});
-
-export class User {
-  /** Absolute wall-clock deadline (ms). Long loops consult this and fail fast. */
-  set deadline(ms){ this._deadline=ms; }
-  get deadline(){ return this._deadline ?? Infinity; }
-  /** Throw when past the deadline. `where` names the step for the message. */
-  checkDeadline(where=''){
-    if(Date.now()>=this.deadline)
-      throw Error(`${this.label}: 超出总预算${where?`（${where}）`:''}，已用 ${Math.round((Date.now()-(this._startedAt||Date.now()))/1000)}s`);
-  }
-  constructor(browser,label){
-    this._startedAt=Date.now(); this.browser=browser; this.label=label; this.page=null; this.ctx=null; this.key=null; this.roundCid=null; }
-  async open(){
-    this.ctx=await this.browser.newContext({ignoreHTTPSErrors:true,locale:'zh-CN'});
-    this.page=await this.ctx.newPage();
-    this.errs=[];
-    this.page.on('pageerror',e=>this.errs.push(e.message.slice(0,120)));
-    await this.page.goto(PAGE,{waitUntil:'domcontentloaded',timeout:STEP_MS});
-    await this.page.waitForTimeout(1000);
-    // MANDATORY preflight: verify and correct the page's node + indexer endpoints before any operation.
-    await this.page.locator('#settingsBtn').click(); await this.page.waitForTimeout(400);
-    const curIdx=await this.page.locator('#sIdx').inputValue().catch(()=>'');
-    const nf=this.page.locator('#sNodes');
-    const curNodes=await nf.count()?await nf.inputValue().catch(()=>''):'';
-    const idxOk=curIdx.replace(/\/+$/,'')===IDX;
-    const nodeOk=curNodes.split(/\s+/).filter(Boolean)[0]===NODE;
-    this.endpoints={indexer:{before:curIdx,ok:idxOk},node:{before:curNodes.split(/\s+/)[0]||'',ok:nodeOk}};
-    if(!idxOk||!nodeOk){
-      await this.page.locator('#sIdx').fill(IDX);
-      if(await nf.count()) await nf.fill(NODE);
-      await this.page.locator('#sSave, #saveSettings, button:has-text("保存")').first().click();
-      await this.page.waitForTimeout(700);
-      this.endpoints.corrected=true;
+    if (this.o.wsTap || this.o.submitGate) {
+      // Forward original page frames; optional read-only probes use this same node connection for identity/mempool evidence.
+      await this.p.routeWebSocket(/.*/, ws => {
+        const server = ws.connectToServer(), sent = new Map(),probes=new Map();let probeId=8000000000000000n;
+        this.probeConnectionUrl=ws.url();
+        const probeCall=(method,params={})=>new Promise((resolve,reject)=>{
+          if(!['getInfo','getMempoolEntry'].includes(method)){reject(new Error('READ_ONLY_PROBE_METHOD'));return;}
+          const id=String(++probeId),timer=setTimeout(()=>{probes.delete(id);reject(new Error('NODE_PROBE_TIMEOUT'));},10000);
+          probes.set(id,{method,resolve,reject,timer});server.send(`{"id":${id},"method":${JSON.stringify(method)},"params":${jsonText(params)}}`);
+        });
+        this.probeCall=probeCall;
+        ws.onMessage(m => {
+          let submitting=false;
+          try { const j = parseJson(String(m)); if (j.method === 'submitTransaction') { submitting=true;sent.set(String(j.id), Date.now());this.o.wsTap?.({kind: 'submit', at: Date.now()}); } } catch {}
+          // Optional test barrier holds already-signed RPC bytes briefly so distinct real nodes can receive conflicting spends together.
+          // No frame content is changed, and no node result is fabricated.
+          if(submitting&&this.o.submitGate){let released=false;const send=()=>{if(!released){released=true;server.send(m);}};this.o.submitGate(send,{probeCall,url:ws.url()});return;}
+          server.send(m);
+        });
+        server.onMessage(m => {
+          try {
+            const j=parseJson(String(m)),id=String(j.id),probe=probes.get(id);
+            if(probe){clearTimeout(probe.timer);probes.delete(id);if(j.error)probe.reject(new RpcError(probe.method,j.error));else probe.resolve(j.params);return;}
+            if(sent.has(id)){this.o.wsTap?.({kind:'submitReply',at:Date.now(),txid:j.params?.transactionId??null,error:j.error?jsonText(j.error).slice(0,400):null});sent.delete(id);}
+          }catch{}
+          ws.send(m);
+        });
+        ws.onClose((code, reason) => server.close({code, reason}));
+        server.onClose((code, reason) => ws.close({code, reason}));
+      });
     }
+    this.errors = [];
+    this.p.on('pageerror', e => this.errors.push(String(e).slice(0, 200)));
+    this.p.on('console', m => { if (m.type() === 'error') this.errors.push('[console] ' + m.text().slice(0, 160)); });
+    await this.p.goto(this.o.url, {waitUntil: 'domcontentloaded'});
+    await this.p.bringToFront().catch(() => {});
+    await this.p.waitForTimeout(2500);
     return this;
   }
-  /** Connect (or switch) a wallet; reuses the session when the key is unchanged. */
-  async use(key){
-    if(this.key===key)return this;
-    const p=this.page;
-    if(await p.locator('#modal[open]').count()) await p.locator('#mClose').click().catch(()=>{});
-    await p.locator('#walletBtn').click(); await p.waitForTimeout(350);
-    if(await p.locator('#wDisc').count()){ await p.locator('#wDisc').click(); await p.waitForTimeout(250); await p.locator('#walletBtn').click(); await p.waitForTimeout(350); }
-    await p.locator('#testWalletKey').fill(key.privateKey);
-    await p.locator('#importTestWallet').click();
-    for(let i=0;i<60;i++){ await p.waitForTimeout(200); const t=await p.locator('#walletBtn').innerText().catch(()=>''); if(/…/.test(t))break; }
-    this.key=key; return this;
+
+  /** Switch this page's Testnet 10 node; all transaction actions continue through the page. */
+  async setNode(url) {
+    await this.p.click('#settingsBtn');
+    await this.p.waitForTimeout(700);
+    await this.p.locator('#sNodes').fill(url);
+    await this.p.locator('[data-act=applyConn]').click();
+    await this.p.waitForTimeout(6000);
+    await this.p.keyboard.press('Escape');
+    await this.p.waitForTimeout(800);
+    const chip = await this.p.evaluate(() => document.getElementById('nodeChip').innerText.trim());
+    this.log(`  节点: ${chip}`);
+    return chip;
   }
-  /** Open a round by CID. Waits for the action area instead of a fixed sleep. */
-  async round(cid){
-    const p=this.page;
-    if(this.roundCid===cid)return this;
-    if(await p.locator('#modal[open]').count()) await p.locator('#mClose').click().catch(()=>{});
-    for(let a=0;a<8;a++){
-      await p.locator('.nav [data-go="explore"]').click(); await p.waitForTimeout(400);
-      const q=p.locator('#q'); if(await q.count()){ await q.fill(cid); await p.waitForTimeout(350); }
-      const card=p.locator(`[data-cid="${cid}"]`);
-      if(await card.count()){
-        await card.first().click(); this.roundCid=cid; this.cid=cid;
-        // Wait for a usable round view: either the action area or a terminal notice,
-        // and not the "轮次正在补齐" placeholder (the page is still verifying on the node).
-        for(let i=0;i<120;i++){
-          await p.waitForTimeout(200);
-          const txt=await p.locator('#view').innerText().catch(()=>'');
-          if(/正在补齐|读取中|加载中/.test(txt))continue;
-          if(await p.locator('#view .actions, #view .notice.ok').count())break;
-        }
-        return this;
-      }
-      if(await p.locator('#refreshRows').count()) await p.locator('#refreshRows').click().catch(()=>{});
-      await p.waitForTimeout(700);
-    }
-    throw Error(`${this.label}: round not found ${cid}`);
+
+  /** Apply node / service / indexer settings via the real UI and require zero inline error. */
+  async setSettings({node = null, service = null, indexer = null} = {}) {
+    await this.p.click('#settingsBtn');
+    await this.p.waitForTimeout(700);
+    if (node !== null) await this.p.locator('#sNodes').fill(node);
+    if (service !== null) await this.p.locator('#sSvc').fill(service);
+    if (indexer !== null) await this.p.locator('#sIndexer').fill(indexer);
+    await this.p.locator('[data-act=applyConn]').click();
+    await this.p.waitForTimeout(6000);
+    const err = (await this.p.locator('#sErr').innerText().catch(() => '')).trim();
+    if (err) throw new Error(`SETTINGS_APPLY_FAILED ${err}`);
+    await this.p.keyboard.press('Escape');
+    await this.p.waitForTimeout(800);
+    const chip = await this.p.evaluate(() => document.getElementById('nodeChip').innerText.trim());
+    this.log(`  设置已保存，节点: ${chip}`);
+    return chip;
   }
-  quoteReady(maxMs=STEP_MS){ return waitForQuote(this.page,{timeoutMs:maxMs}); }
-  /** Approve + sign + wait for FIRST acceptance. Optional DOM fields never inherit Locator's default wait. */
-  async submit(){
-    const p=this.page;
-    const observe=()=>p.evaluate(()=>{
-      const modal=document.querySelector('#modal[open]'), rec=modal?.querySelector('#recTx');
-      let execution=null; try{ execution=JSON.parse(rec?.dataset.execution||'null'); }catch{}
-      const rawMs=rec?.dataset.transportMs;
-      return {text:modal?.innerText||'', machine:rec?.dataset.state||'', tx:rec?.dataset.tx||null,
-        roundReady:rec?.dataset.roundReady==='true', transportMs:rawMs&&/^\d+$/.test(rawMs)?Number(rawMs):null,
-        execution, phase:modal?.querySelector('#xprog')?.dataset.phase||'', observedAt:Date.now(),
-        error:modal?.querySelector('#xErr')?.textContent?.trim()||'',
-        rejectionReason:rec?.dataset.state==='REJECTED'?modal?.querySelector('.notice.bad')?.textContent?.trim().slice(0,8000)||null:null};
-    });
-    await p.locator('#modal[open] #approve').check();
-    log(`    勾选批准 → 点签名并提交`);
-    const t0=Date.now();
-    await p.locator('#sign').click();
-    let state='?', text='', machine='', roundReady=false, snapshot=null;
-    while(Date.now()-t0<STEP_MS){
-      await p.waitForTimeout(150);
-      snapshot=await observe(); ({text,machine}=snapshot);
-      const m=text.match(/状态\s*\n\s*(\S+)/); state=m?m[1]:'?';
-      const done = snapshot.error || (machine ? ['CONFIRMING','ACCEPTED','REJECTED','CONFLICTED','DRIFTED','SUPERSEDED','ARCHIVED'].includes(machine) || (machine==='UNKNOWN' && Date.now()-t0>4000) : READY.test(state)||STOP.test(state));
-      if(done){
-        log(`    回执 machine=${machine||'-'} state=${state} ${Date.now()-t0}ms${snapshot.error?' err='+snapshot.error.slice(0,60):''}`);
-        break;
-      }
-      if((Date.now()-t0)%3000<200) logv(`    等待回执 ${Math.round((Date.now()-t0)/1000)}s state=${state} machine=${machine||'-'}`);
-    }
-    snapshot??=await observe();
-    const hashes=await modalHashes(p);
-    const cidText=(text.match(/轮次 CID\s*\n\s*([0-9a-f]{6,})/)||[])[1]??'';
-    const txid=snapshot.tx??hashes.find(h=>h.startsWith((text.match(/交易 ID\s*\n\s*([0-9a-f]{6,})/)||[])[1]??'\u0000'))??hashes[0];
-    const cid=hashes.find(h=>h!==txid&&h.startsWith(cidText))??hashes.find(h=>h!==txid);
-    const ms=Date.now()-t0, accepted=machine ? ['CONFIRMING','ACCEPTED'].includes(machine) : READY.test(state);
-    const metrics={transportMs:snapshot.transportMs, execution:snapshot.execution, lastPhase:snapshot.phase,
-      resultAgeMs:snapshot.execution?Math.max(0,snapshot.observedAt-snapshot.execution.finishedAt):null,
-      error:snapshot.error||null,rejectionReason:snapshot.rejectionReason};
-    if(!accepted)return {tx:txid,cid,state,machine,ms,syncMs:0,totalMs:Date.now()-t0,...metrics,roundReady:false,ok:false};
-    const tSync=Date.now();
-    while(Date.now()-tSync<8000){
-      roundReady=(await observe()).roundReady;
-      if(roundReady)break;
-      await p.waitForTimeout(150);
-    }
-    const syncMs=Date.now()-tSync;
-    if(await p.locator('#modal[open]').count())await p.locator('#mClose').click().catch(()=>{});
-    return {tx:txid,cid,state,machine,ms,syncMs,totalMs:Date.now()-t0,...metrics,roundReady,ok:true};
+
+  async text() { return (await this.p.evaluate(() => document.body.innerText)).replace(/\n{2,}/g, '\n'); }
+
+  async actions() {
+    return this.p.evaluate(() => [...document.querySelectorAll('[data-act]')].filter(e => e.offsetParent)
+      .map(e => ({act: e.dataset.act, text: (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 20), dis: !!e.disabled})));
   }
-  /** Shared quote→approve→submit driver for BUY / CLOSE / REFUND / DRAW.
-   * Error classification (same policy for every action):
-   *   - sync-class error  → close modal, refresh the round, retry (bounded attempts)
-   *   - any other error   → throw immediately (never wait out the full budget)
-   *   - STALE_TIP text    → re-open the round, retry
-   *   - ready             → submit
-   * `fill` runs after the action button click (BUY needs a quantity).
-   * `preCheck` may return a retry reason string; it runs before each click. */
-  async quoteAction({act, fill=null, label, attempts=3, perTryMs=STEP_MS, preCheck=null}){
-    const p=this.page;
-    let lastError='';
-    for(let attempt=0;attempt<attempts;attempt++){
-      this.checkDeadline(label);
-      log(`  ${label}: 第 ${attempt+1}/${attempts} 次尝试`);
-      if(await p.locator('#modal[open]').count()){ await p.locator('#mClose').click().catch(()=>{}); await p.waitForTimeout(250); }
-      if(preCheck){
-        const why=await preCheck();
-        if(why){ await this.refreshRound(); await this.waitUsable(); continue; }
-      }
-      const btn=p.locator(`#view [data-act="${act}"]`);
-      if(!await btn.count()){ log(`  ${label}: 动作按钮未出现，等待页面可用`); await this.waitUsable(); continue; }
-      if(!(await btn.isEnabled().catch(()=>false))){
-        log(`  ${label}: 按钮暂不可用，等待 (第 ${attempt+1} 次)`);
-        await p.waitForTimeout(1200); await this.refreshRound(); continue;
-      }
-      await btn.click({timeout:10_000}).catch(e=>log(`  ${label}: 点击失败 ${String(e.message).slice(0,60)}`));
-      if(fill) await fill();
-      log(`  ${label}: 已点动作，等待报价就绪`);
-      const t0=Date.now();
-      while(Date.now()-t0<perTryMs){
-        const quote=await readQuoteState(p);
-        if(quote.record)throw Error(`${this.label}: previous transaction record is still open; no new quote was created`);
-        if(quote.ready){ log(`  ${label}: 报价就绪 ${Date.now()-t0}ms`); return this.submit(); }
-        const err=quote.error.trim();
-        if(err){
-          lastError=err;
-          if(!/同步|链视图|ROUND_SYNC_PENDING|READ_VIEW_CHANGED|LIVE_STATE_MISMATCH|REST_HTTP|FETCH|网络|NETWORK/.test(err))throw Error(`${this.label}: ${label} quote ${err.slice(0,140)}`);
-          log(`  ${label}: 同步类错误，刷新后重试 → ${err.slice(0,70)}`);
-          await p.locator('#mClose').click().catch(()=>{});
-          await this.refreshRound(); await this.waitUsable(); break;
-        }
-        if(/正在补齐|暂不能操作/.test(quote.text)){
-          await p.locator('#mClose').click().catch(()=>{});
-          await this.refreshRound(); await this.waitUsable(); break;
-        }
-        if((Date.now()-t0)%3000<260) logv(`  ${label}: 报价中 ${Math.round((Date.now()-t0)/1000)}s`);
-        await p.waitForTimeout(250);
-      }
-      log(`  ${label}: 本次报价未就绪 (${Date.now()-t0}ms)`);
-    }
-    const t=await p.locator('#modal').innerText().catch(()=>'');
-    throw Error(`${this.label}: ${label} quote ${(lastError||t).slice(0,140)}`);
+
+  async enabled(act) {
+    const b = this.p.locator(`[data-act=${act}]`).first();
+    if ((await b.count()) === 0) return false;
+    // The element can detach between count() and isDisabled(); never let that wait 30s.
+    return !(await b.isDisabled({timeout: 2000}).catch(() => true));
   }
-  /** Force the round view to re-read the node. */
-  async refreshRound(){
-    this.roundCid=null;
-    const cid=this.cid||(await this.currentCid());
-    if(cid)await this.round(cid).catch(()=>{});
+
+  async waitEnabled(act, ms, every = 2500) {
+    const t = Date.now();
+    while (Date.now() - t < ms) { if (await this.enabled(act)) return true; await this.p.waitForTimeout(every); }
+    return false;
   }
-  /** BUY n tickets. Returns {submitted, soldBefore, soldAfter, applied}.
-   * `applied` is the only success signal: the on-chain `sold` figure actually advanced.
-   * A submitted-but-not-applied buy is a lost race, not a success. */
-  async buy(q){
-    return this.quoteAction({act:'BUY', label:'buy',
-      fill:async()=>{ await this.page.waitForTimeout(300); await this.page.locator('#qty').fill(String(q)); await this.page.locator('#go').click(); }});
-  }
-  async currentCid(){ return this.cid||this.roundCid||null; }
-  /** Wait until the round view offers an action button (the page re-verifies after wallet switches). */
-  async waitUsable(maxMs=STEP_MS){
-    this.checkDeadline('waitUsable');
-    const _t0=Date.now();
-    const t0=Date.now();
-    while(Date.now()-t0<maxMs){
-      if(await this.page.locator('#view .actions button:not([disabled])').count())return true;
-      const txt=await this.page.locator('#view').innerText().catch(()=>'');
-      if(/正在补齐|暂不能操作|读取中/.test(txt)){
-        if(await this.page.locator('#refreshRound').count()) await this.page.locator('#refreshRound').click().catch(()=>{});
-      }
-      await this.page.waitForTimeout(400);
+
+  /** 页面每 8 秒整体重渲染，动作按钮常常在 Playwright 的 stability 等待中失效：强制点击并重试。 */
+  async clickAct(act, tries = 6) {
+    for (let i = 0; i < tries; i++) {
+      const b = this.p.locator(`[data-act=${act}]`).first();
+      if ((await b.count()) === 0) { await this.p.waitForTimeout(1200); continue; }
+      try { await b.click({force: true, timeout: 4000}); return true; } catch {}
+      await this.p.waitForTimeout(1500);
     }
     return false;
   }
-  async createRound(cap,min,minutes=1,onStep=()=>{}){
-    const p=this.page;
-    onStep('navigate-create');
-    await p.locator('.nav [data-go="create"]').click(); await p.waitForTimeout(500);
-    await p.locator('#cCap').fill(String(cap)); await p.locator('#cMin').fill(String(min));
-    await p.locator('[data-dur="custom"]').click(); await p.waitForTimeout(200);
-    await p.locator('#cCustom').fill(String(minutes)); await p.waitForTimeout(200);
-    onStep('click-quote');
-    await p.locator('#cGo').click();
-    const qr=await this.quoteReady();
-    onStep('quote-'+(qr?'ready':'timeout'));
-    if(!qr){ const t=await p.locator('#modal').innerText().catch(()=>''); throw Error(`${this.label}: create quote ${t.slice(0,140)}`); }
-    const r=await this.submit();
-    onStep('submitted');
-    if(!r.cid)throw Error(`${this.label}: CID not captured from modal`);
-    // GENESIS is on chain from here on: track it until the round reaches a terminal state.
-    trackRound(r.cid, `${this.label} cap=${cap} min=${min} ${minutes}min`);
-    log(`  ⚠ 已登记在途轮次 ${r.cid.slice(0,16)}（中断时用 cleanup.mjs 收尾）`);
-    this.roundCid=null;
-    return r;
-  }
-  /** CLOSE: if not yet sold-out, the contract requires DAA >= closeEligibleDaa - 1.
-   * If the modal says 还差 N DAA, we wait boundedly and retry; sold-out rounds quote immediately. */
-  async closeRound({maxMs=STEP_MS, onWait=()=>{}}={}){
-    const p=this.page;
-    const startedAt=Date.now();
-    let lastWait=null;
-    // maxMs bounds ONE quote attempt; the DAA countdown is the contract's own wait and is not a stall.
-    for(let attempt=0; attempt<200; attempt++){
-      const attemptAt=Date.now();
-      this.checkDeadline('close');
-      if(Date.now()-attemptAt>=maxMs) throw Error(`${this.label}: close attempt timeout after ${Math.round((Date.now()-attemptAt)/1000)}s${lastWait!=null?`, 还差 ${lastWait} DAA`:''}`);
-      if(await p.locator('#modal[open]').count()){ await p.locator('#mClose').click().catch(()=>{}); await p.waitForTimeout(200); }
-      const btn=p.locator('#view [data-act="CLOSE"]');
-      if(!await btn.count()){
-        log(`  close: 封盘按钮未出现，刷新轮次 (第 ${attempt+1} 次)`);
-        await this.refreshRound();
-        await p.waitForTimeout(1000); continue;
-      }
-      if(!(await btn.isEnabled().catch(()=>false))){
-        log(`  close: 封盘按钮暂不可用，等待 (第 ${attempt+1} 次)`);
-        await p.waitForTimeout(1500);
-        await this.refreshRound();
-        continue;
-      }
-      await btn.click({timeout:10_000}).catch(e=>log(`  close: 点击失败 ${String(e.message).slice(0,60)}`));
-      let q=await readQuoteState(p);
-      const q0=Date.now();
-      while(!q.ready&&!q.error.trim()&&!q.record&&!/未到封盘时间|还差|还需/.test(q.text)&&Date.now()-q0<STEP_MS){
-        await p.waitForTimeout(250); q=await readQuoteState(p);
-      }
-      if(q.ready){
-        const result=await this.submit();
-        return {...result, actionMs:Date.now()-startedAt};
-      }
-      const errText = (q.error || q.text || '');
-      const m = errText.match(/(?:还差|还需)\s*约?\s*(\d+)\s*DAA/);
-      if(m){
-        lastWait=Number(m[1]); onWait(lastWait);
-        logv(`  close: 合约时间锁未到，还差约 ${lastWait} DAA`);
-        await p.locator('#modal[open] #mClose').click().catch(()=>{});
-        // Wait proportional to remaining DAA, max 4s per step (bounded, <=30s)
-        await p.waitForTimeout(Math.min(4000, Math.max(1000, lastWait * 90)));
-        continue;
-      }
-      if(q.error.trim()){
-        if(/已由其他交易|已被其他|抢先|已封存|被拒绝/.test(q.error))
-          throw Error(`${this.label}: close not available — ${q.error.slice(0,100)}`);
-        if(!/同步|链视图|ROUND_SYNC_PENDING|READ_VIEW_CHANGED/.test(q.error))
-          throw Error(`${this.label}: close quote ${q.error.slice(0,140)}`);
-      }
-      await p.locator('#modal[open] #mClose').click().catch(()=>{});
-      await p.waitForTimeout(1200);
-      await this.refreshRound();
+
+  /** 连接钱包（私钥或仅收款地址）。key 只在内存中传给输入框。 */
+  async connect(role, {publicOnly = false} = {}) {
+    const w = wallet(ROLES[role]);
+    await this.p.click('#walletBtn');
+    await this.p.waitForTimeout(600);
+    if(await this.p.locator('[data-act=disconnect]').count()){
+      await this.p.locator('[data-act=disconnect]').click();await this.p.waitForTimeout(300);
+      await this.p.click('#walletBtn');await this.p.waitForTimeout(300);
     }
-    throw Error(`${this.label}: close attempts exhausted`);
-  }
-  /** Wait until the sealed round is past DRAW_DELAY (100 DAA) and the draw action is offered.
-   * Polls the page (it re-reads the node); never guesses from wall-clock time. Returns {waited, lastRemaining}. */
-  async waitDrawable({maxMs=STEP_MS,onWait=()=>{},roundCid=null}={}){
-    const p=this.page;
-    const t0=Date.now();
-    let lastRemaining=null;
-    for(;;){
-      if(Date.now()-t0>=maxMs)return {ok:false,waited:Date.now()-t0,lastRemaining};
-      const txt=await p.locator('#view').innerText().catch(()=>'');
-      if(/已派奖|空轮|全部购买记录已退款/.test(txt))return {ok:false,waited:Date.now()-t0,terminal:true};
-      // "还差 N DAA" is shown by the action hint inside #view (see waitText) AND by the quote modal.
-      // Treat either as not-ready, so we never submit a DRAW before DRAW_DELAY.
-      const hint=txt.match(/还差\s*(\d+)\s*DAA/);
-      const btn=p.locator('#view [data-act="DRAW_AND_PAY"]');
-      const present=await btn.count();
-      const disabled=present?await btn.isDisabled().catch(()=>false):true;
-      if(present&&!hint&&!disabled)return {ok:true,waited:Date.now()-t0,lastRemaining:null};
-      if(hint){ lastRemaining=Number(hint[1]); onWait(lastRemaining); }
-      else if(!present){ lastRemaining=null; onWait(null); }
-      // Refresh the round periodically so the page re-reads the node DAA.
-      if(Math.floor((Date.now()-t0)/5000)%4===3&&roundCid){ this.roundCid=null; await this.round(roundCid).catch(()=>{}); }
-      await p.waitForTimeout(1000);
+    if (publicOnly) {
+      await this.p.click('[data-wtab=addr]');
+      await this.p.waitForTimeout(300);
+      await this.p.fill('#wAddr', w.address);
+    } else {
+      await this.p.click('[data-wtab=key]');await this.p.waitForTimeout(300);
+      try{await this.p.fill('#wKey',w.privateKey);}catch{throw new Error('TEST_WALLET_KEY_INPUT_FAILED');}
     }
+    await this.p.click('[data-act=connectWallet]');
+    await this.p.waitForTimeout(4000);
+    const btn = await this.p.evaluate(() => document.getElementById('walletBtn').innerText.trim());
+    this.log(`  钱包 ${role}: ${btn}`);
+    return btn;
   }
-  /** DRAW: the contract requires the SEALED input to be >= DRAW_DELAY (100 DAA) old. The authoritative readiness
-   * signal is the quote itself (the page may not surface "还差 N DAA" right after a close, and the button may stay
-   * enabled). We retry bounded quotes until the node accepts; we never submit a DRAW the node would reject.
-   * Uses the same error classification as buy/close/refund. */
-  async draw({roundCid=null,onWait=()=>{},maxMs=5*60_000}={}){
-    const p=this.page;
-    const t0=Date.now();
-    let lastRemaining=null;
-    // maxMs is the whole draw budget, not one attempt: DRAW_DELAY alone can exceed 30s and
-    // each retry costs a refresh. The per-step bound still comes from User.deadline.
-    for(let attempt=0;attempt<120;attempt++){
-      this.checkDeadline('draw');
-      if(Date.now()-t0>=maxMs)throw Error(`${this.label}: draw timeout after ${Math.round((Date.now()-t0)/1000)}s${lastRemaining!=null?`, 还差 ${lastRemaining} DAA`:''}`);
-      if(await p.locator('#modal[open]').count()){ await p.locator('#mClose').click().catch(()=>{}); await p.waitForTimeout(200); }
-      const btn=p.locator('#view [data-act="DRAW_AND_PAY"]');
-      if(!await btn.count()){
-        log(`  draw: 开奖按钮未出现，等待视图就绪 (第 ${attempt+1} 次)`);
-        // The view may still be "同步中"; wait for the action area instead of immediately reloading.
-        let found=false;
-        for(let i=0;i<20;i++){ await p.waitForTimeout(500); if(await btn.count()){found=true;break;} }
-        if(!found){ log(`  draw: 10s 内仍无按钮，刷新轮次`); await this.refreshRound(); await p.waitForTimeout(800); }
-        continue;
+
+  /** 创建后等到轮次页就绪。只点开轮次一次：反复点卡片会让页面不断重渲染并打断意图确认。 */
+  async waitRoundReady(ms = 220000, every = 2500) {
+    const t = Date.now();
+    let clicked = false;
+    while (Date.now() - t < ms) {
+      if (await this.enabled('BUY') || await this.enabled('CLOSE') || await this.enabled('DRAW')) return true;
+      if (!clicked) {
+        const card = this.p.locator('[data-open]').first();
+        if (await card.count()) { await card.click().catch(() => {}); clicked = true; await this.p.waitForTimeout(3000); continue; }
       }
-      // The button exists but may still be disabled (view syncing, or DRAW_DELAY not reached).
-      // A bare click() would throw a 30s TimeoutError and abort the whole scenario.
-      // Read the DOM property directly: isEnabled() waits for "stable" and can disagree with
-      // a view that re-renders on every poll.
-      const drawDisabled = await btn.evaluate(el => !!el.disabled).catch(() => true);
-      if(drawDisabled){
-        log(`  draw: 开奖按钮 disabled，等待 (第 ${attempt+1} 次)`);
-        await p.waitForTimeout(1500);
-        continue;
-      }
-      await btn.click({timeout:10_000}).catch(async e=>{ log(`  draw: 点击失败 ${String(e.message).slice(0,60)}`); });
-      // The quote is computed asynchronously; poll until it is ready, errored, or clearly waiting on DRAW_DELAY.
-      let q=await readQuoteState(p);
-      const q0=Date.now();
-      // Poll until the quote reaches a terminal observation: approvable, errored, or a DRAW_DELAY wait hint.
-      while(!q.ready&&!q.error.trim()&&!q.record&&!/还差\s*\d+\s*DAA/.test(q.text)&&Date.now()-q0<STEP_MS){
-        await p.waitForTimeout(250); q=await readQuoteState(p);
-      }
-      if(q.ready){ log(`  draw: 开奖报价就绪`); return this.submit(); }
-      const m=q.text.match(/还差\s*(\d+)\s*DAA/);
-      // DRAW_DELAY not yet reached: keep waiting, never treat it as a failure.
-      if(m){ lastRemaining=Number(m[1]); onWait(lastRemaining); logv(`  draw: 封存时间锁未到，还差 ${lastRemaining} DAA`); }
-      else if(q.error.trim()){
-        if(/已由其他交易|已派奖|轮次已结束|被拒绝/.test(q.error))
-          throw Error(`${this.label}: draw not available — ${q.error.slice(0,100)}`);
-        if(/还差\s*\d+\s*DAA/.test(q.error)){ const mm=q.error.match(/还差\s*(\d+)/); lastRemaining=Number(mm[1]); onWait(lastRemaining); }
-        else if(!/同步|链视图|ROUND_SYNC_PENDING|READ_VIEW_CHANGED|LIVE_STATE_MISMATCH|REST_HTTP|FETCH|网络|NETWORK/.test(q.error))
-          throw Error(`${this.label}: draw quote ${q.error.slice(0,140)}`);
-      }
-      else if(/已由其他交易|已派奖|轮次已结束/.test(q.text))
-        throw Error(`${this.label}: draw not available — ${q.text.slice(0,80)}`);
-      else { lastRemaining=null; onWait(null); }
-      await p.locator('#mClose').click().catch(()=>{});
-      await p.waitForTimeout(1500);
-      await this.refreshRound();
+      await this.p.waitForTimeout(every);
     }
-    throw Error(`${this.label}: draw attempts exhausted${lastRemaining!=null?`, 还差 ${lastRemaining} DAA`:''}`);
+    return false;
   }
-  async refund(){
-    return this.quoteAction({act:'REFUND', label:'refund', attempts:3});
+
+  /** 报价弹窗：等 send 可用再点。返回报价文本。 */
+  async confirmSend(label, ms = 150000) {
+    const t = Date.now();
+    let opened = false;
+    while (Date.now() - t < ms) {
+      if (!opened) {
+        if (await this.p.locator('#modal[open]').count()) opened = true;
+        else { await this.p.waitForTimeout(700); continue; }
+      }
+      const s = this.p.locator('#modal[open] [data-act=send]');
+      if (await s.count() && !(await s.isDisabled())) {
+        const body = (await this.p.locator('#modal[open]').innerText()).replace(/\n{2,}/g, '\n');
+        await s.click();
+        return body;
+      }
+      await this.p.waitForTimeout(700);
+    }
+    this.log(`  ${label}: 报价超时`);
+    return null;
   }
-  /** Current round figures straight from the DOM (the page auto-refreshes them). */
-  async figures(){
-    const t=await this.page.locator('#view').innerText().catch(()=>'');
-    const s=(t.match(/售出\s*\/\s*上限\s*\n?\s*(\d+)\s*\/\s*(\d+)/)||[]);
-    const r=(t.match(/(\d+)\/(\d+)\s*笔记录/)||[]);
-    const phaseState=await this.page.evaluate(()=>{
-      const el=document.querySelector('#view [data-round-phase]');
-      return el?{current:el.dataset.current==='true',phase:el.dataset.roundPhase,terminal:el.dataset.terminal}:null;
+
+  async create({price, cap, min, minutes}) {
+    await this.p.getByRole('button', {name: '创建', exact: true}).first().click();
+    await this.p.waitForTimeout(500);
+    const set = async (sel, v) => { const e = this.p.locator(sel); await e.fill(''); await e.fill(String(v)); await this.p.waitForTimeout(120); };
+    await set('#cPrice', price); await set('#cCap', cap); await set('#cMin', min);
+    await this.p.getByRole('button', {name: '自定义', exact: true}).click();
+    await this.p.waitForTimeout(300);
+    await this.p.locator('#cCustom').fill(String(minutes));
+    await this.p.waitForTimeout(300);
+    await this.p.locator('button[data-act=create]').click();
+    return this.confirmSend('GENESIS');
+  }
+
+  /** 创建轮次，遇到节点拒绝时放弃并重试（拒绝通常来自过期的资金 UTXO 视图）。 */
+  async createRobust(cfg, tries = 1) {
+    for (let i = 1; i <= tries; i++) {
+      await this.create(cfg);
+      const t = Date.now();
+      while (Date.now() - t < 240000) {
+        if (await this.enabled('BUY') || await this.enabled('CLOSE') || await this.enabled('DRAW')) return true;
+        const txt = await this.text();
+        if (/被节点拒绝/.test(txt)) {
+          this.log(`  GENESIS 被节点拒绝（第 ${i}/${tries} 次），放弃后重试`);
+          if (await this.enabled('discard')) {
+            await this.p.locator('[data-act=discard]').first().click().catch(() => {});
+            await this.p.waitForTimeout(4000);
+          }
+          break;
+        }
+        await this.p.waitForTimeout(3000);
+      }
+      if (await this.enabled('BUY') || await this.enabled('CLOSE')) return true;
+      await this.p.getByRole('button', {name: '创建', exact: true}).first().click().catch(() => {});
+      await this.p.waitForTimeout(1500);
+    }
+    return false;
+  }
+
+  /** 买 1 张（页面每次购买固定 1 张；数量控件在动作卡 #qty）。 */
+  async buy() {
+    if (!await this.waitEnabled('BUY', 180000)) return false;
+    if (!await this.clickAct('BUY')) return false;
+    await this.p.waitForTimeout(1200);
+    const q = this.p.locator('#qty');
+    if (await q.count()) { await q.fill('1'); await this.p.waitForTimeout(600); }
+    const r = await this.confirmSend('BUY');
+    return !!r;
+  }
+
+  /** 连续买 n 笔（每笔一条购买记录）。 */
+  async buyMany(n, onEach) {
+    let done = 0;
+    for (let i = 0; i < n; i++) {
+      if (!await this.buy()) { this.log(`  买票在第 ${i + 1} 笔失败`); break; }
+      done++;
+      if (onEach) await onEach(done);
+    }
+    return done;
+  }
+
+  async close(maxMs = 240000) {
+    if (!await this.waitEnabled('CLOSE', maxMs)) return false;
+    if (!await this.clickAct('CLOSE')) return false;
+    await this.p.waitForTimeout(1200);
+    return !!(await this.confirmSend('CLOSE'));
+  }
+
+  async draw(maxMs = 240000) {
+    if (!await this.waitEnabled('DRAW', maxMs)) return false;
+    if (!await this.clickAct('DRAW')) return false;
+    await this.p.waitForTimeout(1500);
+    return !!(await this.confirmSend('DRAW'));
+  }
+
+  async act(name, maxMs = 240000) {
+    if (!await this.waitEnabled(name, maxMs)) return false;
+    if (!await this.clickAct(name)) return false;
+    await this.p.waitForTimeout(1500);
+    return !!(await this.confirmSend(name));
+  }
+
+  /** 反复执行某个动作直到出现终局或次数用尽。页面可能跳回广场，先自动打开轮次。 */
+  async actUntilTerminal(names, maxRounds, maxMs = 240000) {
+    for (let i = 0; i < maxRounds; i++) {
+      const t0 = await this.text();
+      const term0 = /空轮结束/.test(t0) ? 'EMPTY' : /退款完成/.test(t0) ? 'REFUNDED' : /已派奖/.test(t0) ? 'PAID' : null;
+      if (term0) return {rounds: i, terminal: term0, text: t0};
+      // A pending intent hides every action behind "等待确认"; that is not a terminal state.
+      if (/等待确认|确认中|正在提交/.test(t0)) { await this.p.waitForTimeout(6000); continue; }
+      let acts = await this.actions();
+      if (!acts.some(a => names.includes(a.act) && !a.dis)) {
+        const card = this.p.locator('[data-open]').first();
+        if (await card.count()) { await card.click().catch(() => {}); await this.p.waitForTimeout(3500); continue; }
+      }
+      const act = (await this.actions()).find(a => names.includes(a.act) && !a.dis);
+      // Nothing clickable yet (page still reconciling, or the round view is loading): keep waiting,
+      // the page's acceptance tracking can take minutes on TN10.
+      if (!act) { await this.p.waitForTimeout(8000); continue; }
+      if (!await this.act(act.act, maxMs)) return {rounds: i, terminal: null, text: await this.text()};
+      await this.p.waitForTimeout(7000);
+    }
+    return {rounds: maxRounds, terminal: null, text: await this.text()};
+  }
+
+  /** 轮次页关键数字。 */
+  /** Phase comes from which actions the page offers, not from page copy: the progress stepper always
+   *  contains "封盘 · 待开奖" and "派奖", so text matching mislabels every round. */
+  async state() {
+    const t = await this.text();
+    const acts = (await this.actions()).map(a => a.act);
+    const has = a => acts.includes(a);
+    const sold = (t.match(/售出\s*\/\s*上限\n?(\d+)\s*\/\s*(\d+)/) || [])[1];
+    const terminal = /空轮结束/.test(t) ? 'EMPTY' : /退款完成/.test(t) ? 'REFUNDED' : /已派奖/.test(t) ? 'PAID' : null;
+    const phase = terminal ? 'terminal'
+      : has('BUY') || has('CLOSE') ? 'sales'
+      : has('DRAW') || has('TIMEOUT') ? 'sealed'
+      : has('PAY_OLD') || has('PAY_SELF') ? 'win'
+      : has('REFUND_OLD') || has('REFUND_SELF') ? 'refund' : 'unknown';
+    const fees = (t.match(/累计网络费\n([\d.]+)/) || [])[1];
+    return {sold: sold ? Number(sold) : null, phase, terminal, fees, acts, text: t};
+  }
+
+  /** 填写创建表单但不点“创建”（双页测试要在同一时刻才点）。 */
+  async fillCreate({price, cap, min, minutes}) {
+    await this.p.getByRole('button', {name: '创建', exact: true}).first().click();
+    await this.p.waitForTimeout(500);
+    const set = async (sel, v) => { const e = this.p.locator(sel); await e.fill(''); await e.fill(String(v)); await this.p.waitForTimeout(120); };
+    await set('#cPrice', price); await set('#cCap', cap); await set('#cMin', min);
+    await this.p.getByRole('button', {name: '自定义', exact: true}).click();
+    await this.p.waitForTimeout(300);
+    await this.p.locator('#cCustom').fill(String(minutes));
+    await this.p.waitForTimeout(300);
+  }
+  async clickCreate() { await this.p.locator('button[data-act=create]').click(); }
+
+  /** 报价弹窗已打开且“发送”可用时返回弹窗文本（不点击），否则 null。 */
+  async quoteText() {
+    const s = this.p.locator('#modal[open] [data-act=send]');
+    if (!(await s.count()) || await s.isDisabled().catch(() => true)) return null;
+    return (await this.p.locator('#modal[open]').innerText()).replace(/\n{2,}/g, '\n');
+  }
+  async waitQuote(ms = 150000) {
+    const t = Date.now();
+    while (Date.now() - t < ms) { const q = await this.quoteText(); if (q) return q; await this.p.waitForTimeout(300); }
+    return null;
+  }
+  async clickSend() { await this.p.locator('#modal[open] [data-act=send]').click({timeout: 5000}); }
+
+  /** 发送之后的结果：'REJECTED'（页面显示被节点拒绝）/ 'OK'（轮次已可操作）/ null（超时）。
+   *  只适用于创建（GENESIS）：创建之前轮次页上没有 BUY。**不适用于买票**——弹窗后面的 BUY 按钮仍然可点，会在发送还没完成时就返回 'OK'；买票请用 sendResult()。 */
+  async waitSendOutcome(ms = 120000) {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (/被节点拒绝/.test(await this.text())) return 'REJECTED';
+      if (await this.enabled('BUY') || await this.enabled('CLOSE')) return 'OK';
+      await this.p.waitForTimeout(400);
+    }
+    return null;
+  }
+  /** 点“发送”之后的结果，按页面自己的流程判定：发送期间弹窗一直打开（显示正在签名/提交），结束后关闭并弹出结果提示。
+   *  不能用“BUY 按钮可用”判断——轮次页后面的 BUY 在弹窗打开时仍然是可点的。
+   *  status: SUBMITTED | REJECTED | UNSENT | UNKNOWN（页面自己报告的），CLOSED_NO_TOAST（弹窗关了但没抓到提示），null（超时）。 */
+  async sendResult(ms = 120000) {
+    const t = Date.now(), seen = new Set();
+    let closed = false;
+    while (Date.now() - t < ms) {
+      const toast = await this.toastText(); if (toast) seen.add(toast);
+      if (!(await this.p.locator('#modal[open]').count())) { closed = true; break; }
+      await this.p.waitForTimeout(100);
+    }
+    if (closed) {                       // 弹窗关闭后提示还会显示几秒：再采样一会儿
+      const t2 = Date.now();
+      while (Date.now() - t2 < 1500) { const x = await this.toastText(); if (x) seen.add(x); await this.p.waitForTimeout(150); }
+    }
+    const all = [...seen].join(' ');
+    const status = !closed ? null : /交易被节点拒绝/.test(all) ? 'REJECTED' : /已提交，等待节点确认/.test(all) ? 'SUBMITTED' : /没有发出/.test(all) ? 'UNSENT'
+      : /暂未确认/.test(all) ? 'UNKNOWN' : 'CLOSED_NO_TOAST';
+    return {status, toasts: [...seen].map(s => s.slice(0, 200))};
+  }
+  /** 被拒面板：文字与其中带 data-copy 的完整哈希（占用方交易）。 */
+  async noticeInfo() {
+    return this.p.evaluate(() => {
+      const n = document.querySelector('.notice.bad'); if (!n) return null;
+      return {text: n.innerText.replace(/\s+/g, ' ').trim(), copies: [...n.querySelectorAll('[data-copy]')].map(e => e.dataset.copy)};
     });
-    const lastPhase=(t.match(/已封存|售票中|退款中|已派奖|空轮|全部购买记录已退款/)||[])[0]??'?';
-    const phase=phaseState?phaseState.current?({PAID:'已派奖',EMPTY:'空轮',REFUNDED:'全部购买记录已退款'}[phaseState.terminal]??({'1':'售票中','2':'已封存','5':'退款中'}[phaseState.phase]??'?')):'同步中':lastPhase;
-    return {sold:s[1]?Number(s[1]):null,cap:s[2]?Number(s[2]):null,records:r[1]?Number(r[1]):null,phase,current:phaseState?.current??null,lastPhase:phaseState?phaseState.phase:lastPhase};
   }
-  async dispose(){ if(this.ctx) await this.ctx.close().catch(()=>{}); }
-}
+  /** 当前可见的提示（弹窗内外两处容器）。 */
+  async toastText() {
+    return this.p.evaluate(() => ['toasts', 'mToasts'].map(id => document.getElementById(id)?.innerText ?? '').join(' ').replace(/\s+/g, ' ').trim());
+  }
+  /** 运行日志（折叠的 <details> 里，用 textContent 读）。 */
+  async logLines() {
+    await this.p.click('#settingsBtn'); await this.p.waitForTimeout(600);
+    const lines = await this.p.evaluate(() => [...document.querySelectorAll('.log > div')].map(d => d.textContent.trim()));
+    await this.p.keyboard.press('Escape'); await this.p.waitForTimeout(500);
+    return lines;
+  }
+  /** 轮次页“导出”：返回导出文本（含签名脚本，调用方只应取需要的字段，不要整体打印）。 */
+  async exportRoundText() {
+    // A focused quantity input is restored by background renders and can scroll the export button away mid-click.
+    // Blur before the real UI click; retry detached/invisible targets without accumulating timed-out download promises.
+    await this.p.evaluate(()=>document.activeElement?.blur());
+    const downloads=[],receive=download=>downloads.push(download);
+    this.p.on('download',receive);
+    try {
+      for(let attempt=0;attempt<6;attempt++) {
+        await this.p.locator('[data-act=export]').first().click({force:true,timeout:2000}).catch(()=>{});
+        for(let n=0;n<10&&!downloads.length;n++)await this.p.waitForTimeout(50);
+        if(downloads.length)return fs.readFileSync(await downloads[0].path(),'utf8');
+      }
+      throw new Error('ROUND_EXPORT_UI_RETRY_EXHAUSTED');
+    } finally{this.p.off('download',receive);}
+  }
 
-/** Wait until the indexer lists this CID (the explore list is indexer-driven). */
-export async function waitIndexed(cid,{tries=60,onWait=()=>{}}={}){
-  for(let i=0;i<tries;i++){
-    const r=await fetch(IDX+'/v1/rounds?limit=200').then(x=>x.json()).catch(()=>({items:[]}));
-    if((r.items||[]).some(x=>x.cid===cid))return true;
-    onWait(i+1);
-    await new Promise(r=>setTimeout(r,2000));
+  /** Fill quantity before a real button click; an existing preparing modal means the first request is still running. */
+  async prepareBuy() {
+    if(await this.p.locator('#modal[open]').count())return true;
+    if (!await this.waitEnabled('BUY', 180000)) return false;
+    const q=this.p.locator('#qty');if(await q.count())await q.fill('1');
+    await this.p.locator('[data-act=BUY]').first().click({timeout:5000});
+    this.buyPrepareClicks=(this.buyPrepareClicks??0)+1;
+    return true;
   }
-  return false;
-}
-/** Authoritative on-chain sold figure from the indexer (falls back to the page when unavailable). */
-export async function chainSold(cid){
-  try{
-    const r=await fetch(`${IDX}/v1/rounds/${cid}`,{signal:AbortSignal.timeout(STEP_MS)}).then(x=>x.json());
-    const v=r?.item?.state?.sold;
-    return Number.isInteger(v)?v:null;
-  }catch{ return null; }
-}
-export async function launch(){ return chromium.launch(); }
+  /** Count click attempts separately from quote wait windows; never re-click BUY behind an active preparation modal. */
+  async buyQuote(tries = 6, waitMs = 8000) {
+    let clicks=0;
+    for (let i = 1; i <= tries; i++) {
+      if(!await this.p.locator('#modal[open]').count()) {if(!await this.prepareBuy())return null;clicks++;}
+      const q = await this.waitQuote(waitMs);
+      if (q) return {quote: q, clicks};
+    }
+    return null;
+  }
+  async modalInfo() {
+    return this.p.evaluate(()=>{const d=document.querySelector('#modal');return d?.open?{title:document.querySelector('#mTitle')?.textContent??'',body:(document.querySelector('#mBody')?.textContent??'').slice(0,600)}:null;});
+  }
+  /** “加入轮次”：把轮次文本（分享链接或导出的轮次数据）填进广场页的输入框并加入，页面会自动进入这一轮。 */
+  async joinText(text) {
+    await this.p.getByRole('button', {name: '广场', exact: true}).first().click().catch(() => {});
+    await this.p.waitForTimeout(600);
+    await this.p.locator('#joinText').fill(text);
+    await this.p.waitForTimeout(300);
+    await this.p.locator('[data-act=join]').click();
+    await this.p.waitForTimeout(2500);
+  }
 
+  async shot(dir, name) {
+    fs.mkdirSync(dir, {recursive: true});
+    await this.p.screenshot({path: path.join(dir, `${name}.png`), fullPage: true});
+  }
 
-export async function st(cid){
-  const r=await fetch(IDX+'/v1/rounds/'+cid).then(x=>x.json()).catch(()=>null);
-  const i=r?.item;
-  return i ? {phase:i.phase,terminal:i.terminal,value:i.value,indexStatus:i.indexStatus,
-    sold:i.state?.sold,pc:i.state?.purchaseCount,cursor:i.state?.cursor,latest:i.latestTxid,accepting:i.accepting} : null;
+  async close_() { await this.ctx?.close().catch(() => {}); await this.browser?.close().catch(() => {}); }
 }
-export async function waitState(cid,pred,tries=25){
-  let last=null;
-  for(let i=0;i<tries;i++){
-    last=await st(cid).catch(()=>null);
-    if(last&&pred(last))return last;
-    await new Promise(r=>setTimeout(r,1200));
-  }
-  return last;
-}
-/** Poll until `pred` holds. Each round is one bounded step (<= STEP_MS); `budgetMs` bounds the whole wait. */
-export async function waitTerminal(cid,pred,{budgetMs=180_000,onWait=()=>{}}={}){
-  const t0=Date.now(); let last=null;
-  for(;;){
-    last=await waitState(cid,pred,Math.floor(STEP_MS/1200));
-    if(last&&pred(last))return last;
-    if(Date.now()-t0>=budgetMs)return last;
-    onWait(last);
-  }
-}
-export const txOf=r=>typeof r==='string'?r:r?.tx;

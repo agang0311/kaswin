@@ -1,7 +1,7 @@
 /** Kaspa CashAddr-style address codec, ported from rusty-kaspa cfafeb4 crypto/addresses/src/bech32.rs.
  * Supports mainnet/testnet P2PK Schnorr (version 0) and P2SH (version 8), with explicit output prefix.
  */
-import {ensure} from '../core.mjs';
+import {ensure} from '../errors.mjs';
 
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const REV = new Map([...CHARSET].map((c, i) => [c, i]));

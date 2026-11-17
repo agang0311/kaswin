@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {S, profile, fixture, fund, quote, findDraw, PRICE, KAS, FEE} from '../../experiments/rolling/fixtures.mjs';
+import {S, profile, fixture, fund, quote, findDraw, PRICE, KAS, FEE} from '../contracts/fixtures.mjs';
 import {schnorrSighash} from '../../scripts/wallet/sighash.mjs';
 import {schnorrSign, xonlyPubkey} from '../../scripts/wallet/schnorr.mjs';
 

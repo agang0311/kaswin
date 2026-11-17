@@ -482,5 +482,5 @@ const ok = conn.node===true && conn.service===true, bad = conn.node===false || c
 
 历史边界偏差单独留档：初期漏算两个旧sales造成4活动轮超过3；旧同钱包诊断B页配置2TKAS，诊断没有BUY。两旧轮已真实收尾，当前票价均1；原始证据保留。最终已知40CID的实际UTXO检查活跃/预留0，三专用钱包sending/receiving池条目0。
 
-完整txid、节点身份、mass/fee、原失败及恢复路径见 [TN10-EVIDENCE.md §16](../../experiments/rolling/TN10-EVIDENCE.md)、[覆盖矩阵](../../experiments/rolling/REMAINING-COVERAGE-20261115.md) 与 `tests/output/rolling-campaign/completion.json`。当前HTTP回读hash匹配；主网dist/index.html仍为0ee7ec5d...，没有改动。100DAA是观测策略，候选不因此提升为已验证。
+完整txid、节点身份、mass/fee、原失败及恢复路径见 [TN10-EVIDENCE.md §16](../../docs/rolling/TN10-EVIDENCE.md)、[覆盖矩阵](../../docs/rolling/REMAINING-COVERAGE-20261115.md) 与 `tests/output/rolling-campaign/completion.json`。当前HTTP回读hash匹配；主网dist/index.html仍为0ee7ec5d...，没有改动。100DAA是观测策略，候选不因此提升为已验证。
 

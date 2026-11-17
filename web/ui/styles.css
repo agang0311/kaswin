@@ -96,6 +96,8 @@ main{max-width:1320px;width:100%;margin:0 auto;padding:22px 24px 90px;box-sizing
 
 /* Toolbar + cards */
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.round-tools-actions{display:grid;gap:10px}
+.round-tools-actions .btn{justify-content:flex-start;min-height:48px;text-align:left;white-space:normal}
 .other-rounds-details{display:inline-block}
 .other-rounds-details[open]{flex-basis:100%;width:100%}
 .other-rounds-details summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
@@ -265,3 +267,65 @@ main{max-width:1240px;padding-top:34px}.hero{grid-template-columns:1.45fr 1fr;al
 .tier[disabled]{opacity:.55;cursor:not-allowed}
 .tier-h{display:flex;gap:8px;align-items:center}.tier-fee{font:700 16px var(--mono);font-variant-numeric:tabular-nums}
 @media(max-width:520px){.tiers{grid-template-columns:1fr}}
+
+/* ---- Rolling TN10 additions (the base above is the main page stylesheet; only experiment-specific pieces below) ---- */
+.exp-bar{display:flex;gap:6px 12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:7px 16px;font-size:12px;text-align:center;background:var(--amber-soft);border-bottom:1px solid color-mix(in srgb,var(--amber) 35%,transparent);color:var(--text)}
+.exp-bar b{color:var(--amber);font-weight:800}
+.tag.amber{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,transparent);background:var(--amber-soft)}
+.panel[class*=" t-"]{border-top:3px solid var(--tone,var(--line))}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.btnrow .btn{margin:0}
+.join{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:16px;align-items:center;margin:0 0 26px}
+.join h3{display:flex;gap:8px;align-items:center;margin:0 0 4px}.join .sub{margin:0}
+.joinrow{display:flex;gap:8px;min-width:0}
+.joinrow input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;outline:0;font-weight:600}
+.joinrow input:focus{border-color:var(--kas);box-shadow:0 0 0 3px var(--kas-soft)}
+.qtyrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.qtyrow .field{width:120px}
+.field textarea{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;color:var(--text);font:600 12px var(--mono);outline:0;width:100%;resize:vertical}
+.field textarea:focus{border-color:var(--kas);box-shadow:0 0 0 3px var(--kas-soft)}
+.card[data-open],.card[data-indexed]{cursor:pointer}
+.card-cta{margin-top:auto}
+.act .btn.block{margin-top:4px}
+.log div{padding:1px 0;overflow-wrap:anywhere}.log .warn{color:var(--amber)}.log .error{color:var(--rose)}
+.panel .btn.pri[disabled]{filter:grayscale(.4)}
+button.out{font:inherit;color:inherit;width:100%}
+details>summary{cursor:pointer}
+footer{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between;align-items:flex-start}
+@media(max-width:900px){.join{grid-template-columns:1fr}}
+@media(max-width:720px){.exp-bar{justify-content:flex-start;text-align:left}.joinrow{flex-direction:column}.joinrow .btn{width:100%}main{padding-bottom:110px}}
+
+/* ---- Red-team fixes (tests/redteam/ROLLING-WEB-TEST.md §11, §13) ---- */
+/* Toasts raised while a modal <dialog> is open live inside it (top layer); same look as the page-level container. */
+dialog.modal>.toasts{position:fixed;right:18px;bottom:18px;z-index:300}
+/* Light theme: small secondary text was 2.96-3.4:1 (WCAG AA wants 4.5:1). Text-only inks; fills (buttons, soft backgrounds) keep the brand colours. */
+:root{--kas-ink:var(--kas);--gold-ink:var(--gold);--amber-ink:var(--amber)}
+:root[data-theme=light]{--dim:#566877;--kas-ink:#0a7a66;--gold-ink:#8a6407;--amber-ink:#9a4507}
+.link,.hash-link,.eyebrow,.tag.kas,.badge.t-mint,.t-mint .badge,.flow .n,.pills button[aria-pressed=true]{color:var(--kas-ink)}
+.badge.t-gold,.t-gold .badge{color:var(--gold-ink)}
+.badge.t-amber,.t-amber .badge,.tag.amber,.why,.exp-bar b,.btn.warn{color:var(--amber-ink)}
+/* The footer holds a 64-hex Profile id: let it wrap instead of pushing the page wider than a phone screen. */
+footer>*{min-width:0;max-width:100%}footer .mono{overflow-wrap:anywhere;word-break:break-all}
+.err:empty{display:none}.err{margin:8px 0}
+/* Touch targets: >=44px on touch screens / narrow viewports. */
+@media (pointer:coarse),(max-width:720px){
+  .icon-btn,.top-in .icon-btn{width:44px;height:44px}
+  .wbtn{min-height:44px;padding:8px 12px}
+  .btn,.btn.sm{min-height:44px}
+  .pills button{min-height:44px;padding:8px 14px}
+  .seg button{min-height:40px}
+  .copy{min-width:32px;min-height:32px}
+}
+/* The fixed bottom nav (<=720px) must never cover a control: keep scrolled-into-view / focused elements clear of it, and lift toasts above it. */
+@media(max-width:720px){html{scroll-padding-bottom:104px}main{padding-bottom:120px}.toasts{bottom:calc(86px + env(safe-area-inset-bottom))}dialog.modal>.toasts{bottom:18px}}
+
+/* ---- Shard & purchase dot-map drill-down (16 columns: 16x16 = 256) ---- */
+.matrix,.matrix.shards{grid-template-columns:repeat(16,minmax(0,1fr));gap:4px}
+.matrix .cell{min-width:0;padding:0;line-height:1;letter-spacing:-.04em}
+.matrix .cell.done{background:var(--panel3);color:var(--muted);border:1px solid var(--line2)}
+.matrix .cell.refunded{opacity:.58}
+.matrix .cell.me{box-shadow:inset 0 0 0 2px rgba(255,255,255,.85)}
+:root[data-theme=light] .matrix .cell.me{box-shadow:inset 0 0 0 2px #0d1b26}
+.shard-detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line2)}
+.shard-head{display:flex;gap:8px 10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.shard-head h4{margin:0;font-size:14px}
+@media(max-width:720px){.matrix,.matrix.shards{grid-template-columns:repeat(16,minmax(0,1fr));gap:3px}.matrix .cell{border-radius:4px;font-size:clamp(7px,2vw,10px)}}

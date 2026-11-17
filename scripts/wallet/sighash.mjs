@@ -2,7 +2,9 @@
  * Hasher: BLAKE2b-256 keyed with "TransactionSigningHash" (crypto/hashes/src/hashers.rs).
  * v1 does NOT commit compute budgets or storage mass — the page therefore re-checks those fields itself.
  */
-import {blake2b256, cat, le, unhex, ascii, ensure} from '../core.mjs';
+import {blake2b256} from '../core/lib/hashes.js';
+import {cat,le,unhex,ascii} from '../core/lib/bytes.js';
+import {ensure} from '../errors.mjs';
 
 const KEY = ascii('TransactionSigningHash');
 const H = (...parts) => blake2b256(cat(...parts), KEY);

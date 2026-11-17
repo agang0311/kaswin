@@ -1,6 +1,6 @@
-// KW21 target-confirmation helpers for V2.0.2. Client policy, NOT consensus finality or acceptance.
+// PASS-A target-confirmation helpers for Rolling. Client policy, NOT consensus finality or acceptance.
 // cfafeb4: selected-chain blue score increases along selected parents. A retained C >= T+100 bounds depth.
-import {decodeSpend, targetSeqOf} from '../core/lib/accepted.js';
+import {targetSeqOf} from '../core/lib/script.js';
 import {fromLe, hex} from '../core/lib/bytes.js';
 import {uint} from '../chain/json.mjs';
 import {LIMITS, failure, pause, queryContext, sameConnectionContext, withDeadline, scopedLink} from '../chain/operation.mjs';
@@ -20,18 +20,6 @@ export function drawTargetFromOpening(opening) {
   const blueScore = fromLe(opening.slice(112, 120));
   need(blueScore < 1n << 63n, 'PASS_A_INTEGER');
   return {hash: hex(opening.slice(0, 32)), sequenceCommitment: targetSeqOf(opening), blueScore};
-}
-export function drawTargetFromRecord(record, profile) {
-  if (!record.snapshot) {
-    need(!record.draft.inputUtxos[0]?.covenantId && record.draft.action !== 'DRAW_AND_PAY', 'SEALED_SNAPSHOT_REQUIRED');
-    return null;
-  }
-  const tx = record.signed ?? record.draft.transaction;
-  const w = decodeSpend(tx.inputs[0].signatureScript, profile, record.snapshot.origin);
-  need(w.action === record.draft.action, 'DRAFT_ACTION_MISMATCH');
-  if (w.action !== 'DRAW_AND_PAY') return null;
-  need(w.data.length === 244, 'DRAW_PROOF_MISSING');
-  return drawTargetFromOpening(w.data.slice(0, 240));
 }
 function track(context, hash) {
   const node = context.node;
@@ -128,11 +116,6 @@ function confirmationsCache(node) {
   if (cache.size >= 64) cache.delete(cache.keys().next().value);
   return cache;
 }
-export async function requireConfirmedDrawRecord(link, record, profile, options) {
-  const target = drawTargetFromRecord(record, profile);
-  return target ? requireConfirmedDrawTarget(link, target, options) : null;
-}
-
 /** Synchronous transport fence. No retries or sends here; only a current verifier-owned observation authorizes. */
 export function assertFreshDrawConfirmation(observation, target, now = Date.now(), link = null) {
   if (link) {

@@ -1,102 +1,103 @@
+/** Kaswin Rolling browser build: source -> dist/index.html and build-manifest.json.
+ * Usage: node build/build.mjs [--mode=tn10] [--out-dir=<dir>]
+ * Compiles the unified TypeScript core, checks the pinned contracts and browser graph,
+ * and embeds the application. Does not test, deploy, connect, sign or broadcast. */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 import * as esbuild from 'esbuild';
+import ts from 'typescript';
 import {buildCore} from './core.mjs';
-import {TN10} from '../scripts/chain/tn10.mjs';
-import {MAINNET} from '../scripts/chain/mainnet.mjs';
-import {webEndpoints} from '../scripts/chain/endpoints.mjs';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
-const args = process.argv.slice(2);
-const modes = new Set(['readonly', 'tn10', 'mainnet']);
-const mode = args.length === 0 ? 'readonly' : args[0].startsWith('--mode=') ? args[0].slice(7) : null;
-if (args.length > 1 || !modes.has(mode)) throw Error('Usage: node build/build.mjs [--mode=readonly|tn10|mainnet]');
-assert.equal(esbuild.version, '0.28.2', 'esbuild 0.28.2 is required');
-const sha256 = data => createHash('sha256').update(data).digest('hex');
-const capabilities = {tn10Trading: mode !== 'readonly', mainnetTrading: mode === 'mainnet', memoryWallet: mode !== 'readonly'};
+const root=fileURLToPath(new URL('../',import.meta.url));
+const sha256=data=>createHash('sha256').update(data).digest('hex');
+const ALLOWED=[/^web\/(app|ui)\/[a-z0-9-]+\.(mjs|ts)$/,
+  /^scripts\/(chain|wallet|round|store|tracking|contract)\/[a-z0-9-]+\.mjs$/,
+  /^scripts\/core\/lib\/[a-z0-9-]+\.js$/,/^scripts\/(core|errors|release-safety)\.mjs$/,
+  /^rolling-profile:/,/^node_modules\//];
+const FORBIDDEN=[/^tests\//,/^experiments\//,/^scripts\/indexer\//,/^scripts\/contract\/bundle\.mjs$/,
+  /(^|\/)(fixtures|test-signer|engine-gate|tn10-run|tn10-service|tn10-replay|service-client|fake-node)\.mjs$/,
+  /\.test\.(mjs|ts)$/,/^scripts\/wallet\/(kasware|kastle|browser-test)\.mjs$/];
 
-// Generate the core before importing modules that consume it. Build inputs never include test results.
-const coreSources = await buildCore();
-const {loadBundle} = await import('../scripts/contract/bundle.mjs');
-const {CONTRACT_VERSION} = await import('../scripts/contract/runtime.mjs');
-const {pins, frames: loadedFrames, profile} = await loadBundle(path.join(root, 'contracts'));
-assert.equal(pins.contractVersion, CONTRACT_VERSION, 'Contract/runtime version mismatch');
-const frames = Object.fromEntries(Object.entries(loadedFrames).map(([name, frame]) => [name, {...frame, tail: Buffer.from(frame.tail).toString('hex')}]));
-
-const result = await esbuild.build({
-  absWorkingDir: root,
-  entryPoints: ['web/app/app.mjs'],
-  bundle: true, metafile: true, write: false,
-  platform: 'browser', format: 'iife', target: ['es2022'], minify: true, legalComments: 'none', charset: 'utf8',
-  define: {
-    __KASWIN_RELEASE_TRADING__: JSON.stringify(capabilities.tn10Trading),
-    __KASWIN_MAINNET_TRADING__: JSON.stringify(capabilities.mainnetTrading),
-    __KASWIN_BROWSER_TEST_WALLET__: JSON.stringify(capabilities.memoryWallet),
-  },
-  plugins: [{name: 'contract-data', setup(build) {
-    build.onResolve({filter: /^@kaswin\/data$/}, () => ({path: 'data', namespace: 'contract-data'}));
-    build.onLoad({filter: /.*/, namespace: 'contract-data'}, () => ({loader: 'js', contents: `export const frames=${JSON.stringify(frames)};`}));
-  }}],
-});
-
-const visualImports = new Set(['scripts/core.mjs', 'scripts/chain/rest.mjs']);
-for (const [file, {imports}] of Object.entries(result.metafile.inputs)) {
-  assert.ok(file.startsWith('web/') || file.startsWith('scripts/') || file.startsWith('contracts/') || file.startsWith('contract-data:'), `Unexpected browser dependency: ${file}`);
-  if (file.startsWith('web/ui/')) {
-    for (const {path: dependency} of imports) assert.ok(dependency.startsWith('web/ui/') || visualImports.has(dependency), `Visual layer imports application logic: ${file} -> ${dependency}`);
+export function checkGraph(metafile) {
+  const files=Object.keys(metafile.inputs);
+  assert.ok(files.length>20,'GRAPH_EMPTY');
+  for(const [file,{imports}] of Object.entries(metafile.inputs)) {
+    assert.ok(!file.startsWith('node:')&&!/^\/|\.\.\//.test(file),`GRAPH_ESCAPE: ${file}`);
+    assert.ok(ALLOWED.some(r=>r.test(file)),`GRAPH_NOT_ALLOWED: ${file}`);
+    assert.ok(!FORBIDDEN.some(r=>r.test(file)),`GRAPH_FORBIDDEN: ${file}`);
+    for(const i of imports) {
+      assert.ok(!i.path.startsWith('node:')&&!i.external,`GRAPH_NODE_IMPORT: ${file} -> ${i.path}`);
+      assert.ok(!FORBIDDEN.some(r=>r.test(i.path)),`GRAPH_FORBIDDEN_IMPORT: ${file} -> ${i.path}`);
+    }
   }
+  return files;
 }
 
-const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const css = await fs.readFile(path.join(root, 'web/ui/styles.css'), 'utf8');
-const template = await fs.readFile(path.join(root, 'web/ui/index.template.html'), 'utf8');
-for (const marker of ['__APPLICATION_HASH__', '/* APPLICATION */', '/* STYLES */', '<!-- RELEASE_STATUS -->']) {
-  assert.equal(template.split(marker).length, 2, `Missing or duplicate template marker: ${marker}`);
-}
-assert.equal(template.split('__CONTRACT_VERSION__').length, 5, 'Contract version placeholders differ');
-const scriptHash = createHash('sha256').update(js).digest('base64');
-let notice = '';
-if (mode === 'readonly') {
-  notice = '<aside class="notice" role="status" data-no-i18n><b>只读模式 / READ-ONLY</b><br>可以浏览与核验，交易计划、签名和提交已禁用。Browsing and verification are available; transaction planning, signing and submission are disabled.</aside>';
-} else if (mode === 'tn10') {
-  notice = '<aside class="notice" role="status" data-no-i18n><b>TN10 交易模式 / TN10 TRADING</b><br>TN10 可交易，主网仅浏览与核验。Trading is enabled on TN10; mainnet is read-only.</aside>';
-}
-const html = template.replaceAll('__CONTRACT_VERSION__', CONTRACT_VERSION)
-  .replace('__APPLICATION_HASH__', `sha256-${scriptHash}`)
-  .replace('<!-- RELEASE_STATUS -->', () => notice)
-  .replace('/* STYLES */', () => css)
-  .replace('/* APPLICATION */', () => js);
-for (const network of [TN10, MAINNET]) {
-  const endpoints = webEndpoints(network);
-  for (const url of endpoints.nodes) assert.ok(html.includes(url), `Missing configured ${network.key} node: ${url}`);
-  if (endpoints.indexer) assert.ok(html.includes(endpoints.indexer), `Missing configured ${network.key} indexer`);
+export function typeCheckPage() {
+  assert.equal(ts.version,'5.8.3','TypeScript 5.8.3 is required');
+  const cfgPath=path.join(root,'web/app/tsconfig.json'),host={getCanonicalFileName:x=>x,getCurrentDirectory:()=>root,getNewLine:()=> '\n'};
+  const fail=list=>{if(list.length)throw Error('TYPECHECK_FAILED\n'+ts.formatDiagnostics(list,host));};
+  const {config,error}=ts.readConfigFile(cfgPath,ts.sys.readFile);fail(error?[error]:[]);
+  const parsed=ts.parseJsonConfigFileContent(config,ts.sys,path.dirname(cfgPath));fail(parsed.errors);
+  assert.ok(parsed.fileNames.some(f=>f.endsWith('/app.ts')),'TYPECHECK_NO_APP');
+  fail(ts.getPreEmitDiagnostics(ts.createProgram(parsed.fileNames,parsed.options)));
 }
 
-const sourceFiles = [...new Set([
-  ...Object.keys(result.metafile.inputs).filter(file => !file.startsWith('contract-data:')),
-  ...coreSources,
-  'package.json', 'package-lock.json', 'build/build.mjs', 'build/core.mjs',
-  'web/ui/styles.css', 'web/ui/index.template.html', 'scripts/core/tsconfig.json', 'scripts/core/package.json',
-  'scripts/contract/bundle.mjs', 'scripts/contract/sync-layout.mjs',
-  'contracts/ledger-layout.json', 'contracts/pins.json', 'contracts/profile.json', 'contracts/artifacts/build-report.json',
-  ...['open', 'sealed', 'refunding'].flatMap(name => [`contracts/${name}.sil`, ...['json', 'sil', 'args.json'].map(ext => `contracts/artifacts/${name}-linked.${ext}`)]),
-])].sort();
-const inputs = Object.fromEntries(await Promise.all(sourceFiles.map(async file => [file, sha256(await fs.readFile(path.join(root, file)))])));
-const manifest = {
-  formatVersion: 1,
-  mode,
-  artifact: {file: 'index.html', bytes: Buffer.byteLength(html), sha256: sha256(html)},
-  capabilities,
-  contract: {version: CONTRACT_VERSION, profileId: profile.id},
-  networks: {tn10: TN10.genesis, mainnet: MAINNET.genesis},
-  toolchain: {esbuild: esbuild.version, typescript: '5.8.3'},
-  inputs,
-};
-const out = path.join(root, 'dist');
-await fs.mkdir(out, {recursive: true});
-await fs.writeFile(path.join(out, 'index.html'), html);
-await fs.writeFile(path.join(out, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-console.log(`Built dist/index.html (${manifest.artifact.bytes} bytes, mode=${mode}, sha256=${manifest.artifact.sha256})`);
+export async function buildKaswin({outDir=path.join(root,'dist'),mode='tn10'}={}) {
+  assert.equal(mode,'tn10','Rolling currently supports --mode=tn10 only');
+  assert.equal(esbuild.version,'0.28.2','esbuild 0.28.2 is required');
+  const coreSources=await buildCore();
+  const {TN10}=await import('../scripts/chain/tn10.mjs');
+  const {loadDeploymentProfile,TN10_PROFILE_ID}=await import('../scripts/contract/bundle.mjs');
+  const {profileToData}=await import('../scripts/contract/profile-data.mjs');
+  const {TN10_PROFILE_ID:CLIENT_PROFILE_ID,TN10_GENESIS}=await import('../scripts/contract/protocol.mjs');
+  typeCheckPage();
+  assert.equal(CLIENT_PROFILE_ID,TN10_PROFILE_ID,'client/deployment Profile constants differ');
+  assert.equal(TN10_GENESIS,TN10.genesis,'client TN10 genesis differs from the network table');
+  const profile=await loadDeploymentProfile(),data=profileToData(profile);
+  assert.equal(data.id,TN10_PROFILE_ID);assert.equal(data.status,'UNVALIDATED');
+  const result=await esbuild.build({
+    absWorkingDir:root,entryPoints:['web/app/app.ts'],bundle:true,metafile:true,write:false,
+    platform:'browser',format:'iife',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
+    define:{__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:'false',__KASWIN_BROWSER_TEST_WALLET__:'false'},
+    plugins:[{name:'rolling-profile',setup(build){
+      build.onResolve({filter:/^@kaswin\/rolling-profile$/},()=>({path:'data',namespace:'rolling-profile'}));
+      build.onLoad({filter:/.*/,namespace:'rolling-profile'},()=>({loader:'js',contents:`export const profileData=${JSON.stringify(data)};`}));
+    }}],
+  });
+  const sources=checkGraph(result.metafile);
+  const js=result.outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
+  assert.ok(!/require\(["']node:|from["']node:/.test(js),'OUTPUT_NODE_IMPORT');
+  const css=await fs.readFile(path.join(root,'web/ui/styles.css'),'utf8');
+  const template=await fs.readFile(path.join(root,'web/ui/index.template.html'),'utf8');
+  for(const m of ['__APPLICATION_HASH__','/* APPLICATION */','/* STYLES */','__PROFILE_ID__'])assert.equal(template.split(m).length,2,`Template marker: ${m}`);
+  const scriptHash=createHash('sha256').update(js).digest('base64');
+  const html=template.replace('__APPLICATION_HASH__',`sha256-${scriptHash}`).replace('__PROFILE_ID__',TN10_PROFILE_ID)
+    .replace('/* STYLES */',()=>css).replace('/* APPLICATION */',()=>js);
+  assert.ok(sources.includes('scripts/core.mjs')&&sources.includes('scripts/core/lib/transactions.js'),'ROLLING_TS_CORE_NOT_WIRED');
+  const inputPaths=[...new Set([...sources.filter(f=>!f.startsWith('rolling-profile:')),...coreSources,
+    'build/core.mjs','build/build.mjs','scripts/core/tsconfig.json','scripts/core/package.json',
+    'web/ui/index.template.html','web/ui/styles.css','web/app/tsconfig.json','web/app/globals.d.ts','web/app/types.ts',
+    'package.json','package-lock.json','contracts/pins.json','contracts/toolchain.json',
+    ...Object.keys(profile.frames).flatMap(m=>[`contracts/artifacts/${m}.json`,`contracts/${m}.sil`])])].sort();
+  const inputs=Object.fromEntries(await Promise.all(inputPaths.map(async f=>[f,sha256(await fs.readFile(path.join(root,f)))])));
+  const manifest={formatVersion:1,mode,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
+    capabilities:{tn10Trading:true,mainnetTrading:false,memoryWallet:true},
+    contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:TN10.networkId,genesis:TN10.genesis,
+    profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},
+    graph:{files:sources.length,nodeImports:0,forbiddenModules:0},inputs};
+  await fs.mkdir(outDir,{recursive:true});
+  await fs.writeFile(path.join(outDir,'index.html'),html);
+  await fs.writeFile(path.join(outDir,'build-manifest.json'),JSON.stringify(manifest,null,2)+'\n');
+  return {html,manifest,outDir};
+}
+
+if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
+  const args=process.argv.slice(2),out=args.find(a=>a.startsWith('--out-dir=')),mode=args.find(a=>a.startsWith('--mode='));
+  assert.ok(args.every(a=>a.startsWith('--out-dir=')||a==='--mode=tn10'),'Usage: node build/build.mjs [--mode=tn10] [--out-dir=<dir>]');
+  const {manifest,outDir}=await buildKaswin({outDir:out?path.resolve(out.slice(10)):undefined,mode:mode?mode.slice(7):'tn10'});
+  console.log(`Built ${path.join(outDir,'index.html')} (${manifest.artifact.bytes} bytes, sha256=${manifest.artifact.sha256}, profile=${manifest.profileId}, ${manifest.graph.files} source files)`);
+}

@@ -2,22 +2,20 @@
 
 English | [中文](README.zh-CN.md)
 
-A lottery protocol and single-page application on Kaspa L1, built with SilverScript contracts and a JavaScript/TypeScript client. The web app supports Testnet 10 and mainnet, the KasWare and Kastle wallets, and covers creating rounds, buying tickets, drawing, refunds, and verifying transaction status.
+Kaswin is a lottery protocol and single-page application on Kaspa L1, built with SilverScript contracts and a JavaScript/TypeScript client. Rolling is now the main source implementation, using one active shard and frozen shards for ticket history. The application is scoped to **Testnet 10 only**; mainnet is not supported.
 
-## Download
-
-[Releases](https://github.com/agang0311/kaswin/releases) provide the prebuilt mainnet trading build `kaswin.html`, together with `build-manifest.json` and `SHA256SUMS`. Live version: https://win.kaspay.top/ .
+The candidate Profile is `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`, with status **UNVALIDATED**. Post-reorganization unified core compilation/check (`16` sources / `48` outputs), isolated candidate HTML build, contract/VM/differential tests (`58/58`), unit tests (`105/105`), and offline Playwright/evidence tests (`14/14`) have been verified by `tester`; existing `dist/` pages and live deployment remain untouched (`NOT_RUN` for new live chain runs or deployment switches).
 
 ## Getting started
 
-Requires Node.js 22 or newer.
+Requires Node.js 22 or newer. For a subsequent, explicitly authorized build, run from the repository root:
 
 ```sh
 npm ci
 npm run build
 ```
 
-The build first compiles the TypeScript core library, then produces a self-contained HTML file. Output:
+`npm run build` defaults to TN10; `npm run build:tn10` is an alias for the same target. There is no supported mainnet build mode. The main entry, `build/build.mjs`, exports `buildKaswin` and produces:
 
 ```text
 dist/
@@ -25,42 +23,29 @@ dist/
   build-manifest.json
 ```
 
-`index.html` can be deployed to any HTTPS static site. The manifest records the build mode, contract identity, toolchain versions, and source and artifact hashes; it contains no test results. The build does not access the network, use a wallet, or deploy the page.
-
-## Build modes
-
-| Command | TN10 | Mainnet |
-|---|---|---|
-| `npm run build` | read-only | read-only |
-| `npm run build:tn10` | trading | read-only |
-| `npm run build:mainnet` | trading | trading |
-
-All modes write to the same `dist/`; each build replaces the previous output. The mode can also be passed explicitly, e.g. `npm run build -- --mode=mainnet`; supported modes are `readonly`, `tn10`, and `mainnet`.
-
-Trading capability is fixed at build time; switching networks in the page does not change it. Mainnet uses real KAS, and every signature still requires the user's confirmation. Both networks also allow importing a private key into page memory for signing (mainnet requires a risk acknowledgement; use only a dedicated small-balance wallet). A successful build only means the artifact was produced; business tests, real wallet flows, and on-chain verification are separate steps after the build. The project currently has no automated test entry point.
+The build compiles the unified TypeScript core, bundles the app and embeds the pinned contract artifacts into a self-contained HTML file. It does not recompile SilverScript. The manifest describes the resulting artifact and its inputs; it does not certify tests, node compatibility or production approval. A future build replaces these output files; the files already present are not evidence that the reorganized source has been built.
 
 ## Project layout
 
 ```text
-build/       core library compilation and HTML bundling
-contracts/   SilverScript sources, ledger layout, and pinned compiled artifacts
-scripts/     protocol core, chain access, wallets, rounds, storage, and tracking
-web/         app interaction, HTML templates, styles, and i18n
-docs/        architecture and development notes
+build/       unified core compilation, HTML bundling, explicit contract tools
+contracts/   five SilverScript sources, templates, pinned artifacts and pins
+scripts/     protocol core, chain access, rounds, storage, tracking and wallets
+web/         app orchestration in app/; templates, styles and views in ui/
+tests/       contracts/ and VM; web/ integration; unit/; helpers/
+docs/        architecture, development, reorganization and Rolling history
 ```
 
-Core library sources live in `scripts/core/src/`; generated files are in `scripts/core/lib/`. `npm run build:core` compiles the core library alone; `npm run check:core` independently compares the generated files against the sources and is not a substitute for business tests.
+The main runtime entry is `scripts/core.mjs`. Rolling protocol code and shared primitives live together in `scripts/core/src/`; `build/core.mjs` generates `scripts/core/lib/`. There is no second Rolling core build. The read-only indexer lives in `scripts/indexer/`, while the browser's index client lives in `scripts/round/`.
 
-## Contract and transactions
+The web entry is `web/app/app.ts`. Shared translations are in `web/ui/messages-common-en.mjs`; Rolling translations are in `web/ui/messages-en.mjs`. See the [runtime directory](scripts/README.md), [web directory](web/README.md) and [contracts](contracts/README.md).
 
-The current contract is V2.0.2, Profile `ed0387c9e77bb4e0a8f1f4654a326c316d83663f455283ec6a046a095c94856d`. The HTML build loads the pinned contract artifacts and checks that the source, templates, and Profile are consistent; it does not recompile SilverScript.
+## Contracts, network and transaction status
 
-A Kaspa transaction being included in a block does not mean it is accepted. Indexer/REST data is used only for discovery; actual state is verified against the node's acceptance data and the protocol rules. Amounts are handled as bigint or decimal strings.
+Rolling uses the `sales`, `sealed`, `win`, `refund` and `frozen` templates. Fixed `.sil` sources and `artifacts/*.json` are under `contracts/`, template inputs under `contracts/templates/`, and identity pins in `contracts/pins.json`. `build/compile-contracts.mjs` and `build/prepare-sources.mjs` are explicit contract regeneration tools, separate from normal HTML bundling.
 
-See the [architecture notes](docs/ARCHITECTURE.md) and [development notes](docs/DEVELOPMENT.md) (currently in Chinese).
+Default nodes follow the former V2.0.2 `TN10.web.nodes` configuration in `scripts/chain/tn10.mjs`; the default indexer is `https://indexer.kaspay.top/tn10`. These are configuration defaults, with no availability or Rolling API compatibility check performed in this migration. Wallet modules cover memory signing and extension integrations, including KasWare, Kastle and Kaspire; migrated integrations have not been retested.
 
-## Rolling Testnet 10
+Block inclusion is not transaction acceptance. Indexer/REST data supports discovery; clients must verify accepted transactions and state against their node and protocol rules. Amounts are handled as bigint or decimal strings. Source migration does not convert V2.0.2 rounds or approve the Rolling Profile.
 
-The independent Rolling client uses Profile `b56bcd9c…c4e5`, its own TypeScript core, KasWare/Kastle or a dedicated memory wallet, and an optional read-only index service for discovery and synchronization. It remains separate from the V2.0.2 main page and is scoped to Testnet 10.
-
-`npm run build:rolling` generates `dist/rolling-tn10.html` and its manifest without replacing `dist/index.html`. Build the core before starting the separate index service with `npm run start:rolling-indexer`; the service defaults to a private listener and an independent data directory. See the [Rolling runtime](scripts/rolling/README.md), [index service](scripts/rolling/indexer/README.md) and [integration handoff/status](docs/ROLLING-INTEGRATION-HANDOFF.md). Testing and verification are performed by the tester session; source availability does not imply that the new integration has passed or been deployed.
+See the [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md) and [reorganization record](docs/REORGANIZATION.md). [Rolling historical records](docs/rolling/README.md) and the [earlier integration handoff](docs/ROLLING-INTEGRATION-HANDOFF.md) retain their original evidence boundaries; their results do not apply automatically to this layout.

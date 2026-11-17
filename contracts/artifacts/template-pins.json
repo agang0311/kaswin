@@ -1,0 +1,17 @@
+{
+ "win": {
+  "templateHash": "4e73a0131e02b915989869658aa82251fb89a34deb42193fdd44b991123a20bb"
+ },
+ "refund": {
+  "templateHash": "78f5e8c4d8d4aadbbbb742a80915853870ac4a24074377b73a9dd9de05e26a9c"
+ },
+ "sealed": {
+  "templateHash": "fc5689e61aed907632340a3f5ab325ccc6b0edb7a25e98baee9b73d0b6663893"
+ },
+ "frozen": {
+  "templateHash": "20f739acf2dfffe438e00f6859c0cba1f4ed4f38c0cc363cd9fd891a93765a5a"
+ },
+ "sales": {
+  "templateHash": "2363c5aab477a8669c0476c371e8b765313c132c29bf82eccafb5215e62e758e"
+ }
+}

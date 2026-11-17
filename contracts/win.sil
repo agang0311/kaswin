@@ -1,0 +1,223 @@
+pragma silverscript ^0.1.0;
+// SOURCE CANDIDATE. Leaf: no foreign-template dependencies.
+contract KaswinRollingWin(byte[] initialLedger) {
+    byte[] ledger = initialLedger;
+    int constant HEADER = 93;
+    int constant TARGET_INPUTS = 17;
+    int constant FEE_INPUTS = 17;
+    int constant FEE_OUTPUTS = 3;
+    // Shared explicit validation for heterogeneous ledgers. No declaration macro.
+    // SilverScript inlines every function and keeps its parameters/locals on the stack until the enclosing block ends
+    // (consensus limit: 244 items). Entries therefore decode the header once, pass values explicitly, and call helpers
+    // inside `{ }` blocks. U16/U32/U63 are source macros expanded by prepare-sources.mjs into stack-neutral expressions.
+    byte[32] constant ZERO = byte[32](0x0000000000000000000000000000000000000000000000000000000000000000);
+    int constant DEPOSIT = 400000000;
+    int constant PRICE_MIN = 100000000;
+    int constant REWARD = 100000000;
+    int constant REFUND_FEE = 2000000;
+    int constant TAIL_POOL_MIN = 300000000;
+    int constant MAX_LEDGER_BYTES = 18453;
+    int constant MAX_OUTPUTS = 36;
+    int constant VALUE_LIMIT = 9000000000000000;
+    int constant DAA_LIMIT = 500000000000;
+    int constant TIMEOUT = 432000;
+
+    function set2(byte[] b, int at, int n): byte[] {
+        require(at >= 0 && at + 2 <= length(b) && n >= 0 && n <= 256);
+        return b.slice(0, at) + byte[](n as byte[2]) + b.slice(at + 2, length(b));
+    }
+    // Header decoded by the entry: cnt old shards, dir directory offset, lc local records, base/ltk ticket counters.
+    function checkManager(int cnt, int dir, int lc, int cap, int minT, int pr, int base, int ltk) {
+        require(length(ledger) >= HEADER && length(ledger) <= MAX_LEDGER_BYTES);
+        require(ledger.slice(0, 1) == byte[](0x01));
+        require(cnt <= 256 && length(ledger) >= dir);
+        require((length(ledger) - dir) % 36 == 0 && lc <= 255);
+        require(cnt < 256 || lc == 0);
+        require(cap >= 3 && cap <= 10000000);
+        require(minT >= 3 && minT <= cap);
+        require(pr >= PRICE_MIN && pr <= (VALUE_LIMIT - DEPOSIT) / cap);
+        require(OpBin2Num(ledger.slice(49, (49) + 8)) > 0 && OpBin2Num(ledger.slice(49, (49) + 8)) < DAA_LIMIT - TIMEOUT);
+        require(base >= 256 * cnt && ltk >= lc);
+        require(base + ltk <= cap);
+    }
+    function pushLedger(byte[] b): byte[] {
+        int n = length(b);
+        require(n > 0 && n <= MAX_LEDGER_BYTES);
+        byte[] prefix = byte[](0x4d) + byte[](n as byte[2]);
+        if (n <= 75) { prefix = byte[](n as byte[1]); }
+        else if (n <= 255) { prefix = byte[](0x4c) + byte[](n as byte[4]).slice(0, 1); }
+        return prefix + b;
+    }
+    function scriptFor(byte[] b, byte[] tail): byte[] {
+        require(length(tail) > 0 && tail.slice(0, 1) == byte[](0x6c));
+        return byte[](0x6b) + pushLedger(b) + tail;
+    }
+    function selfTail(int n): byte[] {
+        int len = OpTxInputScriptSigLen(0);
+        require(n > 0 && n < len && n <= 250000);
+        byte[] tail = OpTxInputScriptSigSubstr(0, len - n, len);
+        require(tx.inputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(ledger, tail))));
+        return tail;
+    }
+    // A frozen shard always carries a 9217-byte ledger, so its redeem script has one fixed shape:
+    // 0x6b, PUSHDATA2 0x4d with LE16(9217) = 01 24, the ledger, then the template tail starting with 0x6c.
+    function frozenBody(byte[] raw): byte[] {
+        require(length(raw) > 9221 && raw.slice(0, 4) == byte[](0x6b4d0124) && raw.slice(9221, 9222) == byte[](0x6c));
+        byte[] b = raw.slice(4, 9221);
+        require(b.slice(0, 1) == byte[](0x00));
+        return b;
+    }
+    // Authenticate input i as old shard j of this manager and return its 9217-byte frozen ledger.
+    function frozenLedger(int i, int j, int n, int cnt): byte[] {
+        // Out-of-range i or n makes OpTxInputScriptSigSubstr / slice fail, and the P2SH + directory-hash checks below bind raw.
+        require(j >= 0 && j < cnt);
+        int len = OpTxInputScriptSigLen(i);
+        byte[] raw = OpTxInputScriptSigSubstr(i, len - n, len);
+        require(tx.inputs[i].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(raw)));
+        require(byte[](blake2b(raw)) == ledger.slice(HEADER + 36 * j, HEADER + 36 * j + 32));
+        byte[] b = frozenBody(raw);
+        int start = 0;
+        if (j > 0) { start = OpBin2Num(ledger.slice(HEADER + 36 * j - 4, (HEADER + 36 * j - 4) + 4) + byte[](0x00)); }
+        int end = OpBin2Num(ledger.slice(HEADER + 36 * j + 32, (HEADER + 36 * j + 32) + 4) + byte[](0x00));
+        require(end > start && OpBin2Num(b.slice(9181, (9181) + 4) + byte[](0x00)) == end - start);
+        return b;
+    }
+    // Input 0 is the only covenant input; 1..8 ordinary funding inputs (at least minFunding). Sales, sealed, refund-self.
+    function checkSolo(int minFunding) {
+        require(this.activeInputIndex == 0 && tx.version == 1);
+        require(minFunding >= 0 && minFunding <= 8 && tx.inputs.length >= 1 + minFunding && tx.inputs.length <= 9);
+        byte[32] cid = OpInputCovenantId(0);
+        require(cid != ZERO && OpCovInputCount(cid) == 1 && OpCovInputIdx(cid, 0) == 0);
+        byte[32] zero = ZERO; // a local is referenced in 2 bytes; the 32-byte constant would be pushed again in every iteration
+        for (ii, 1, tx.inputs.length, 8) { require(OpInputCovenantId(ii) == zero); }
+    }
+    // Exactly 1 + targets inputs, all of this covenant, no ordinary funding. Win and refund-old.
+    // The template defines TARGET_INPUTS = the largest possible input count.
+    function checkTargets(int targets) {
+        require(this.activeInputIndex == 0 && tx.version == 1);
+        require(targets >= 0 && targets <= 16 && tx.inputs.length == 1 + targets);
+        byte[32] cid = OpInputCovenantId(0);
+        require(cid != ZERO && OpCovInputCount(cid) == 1 + targets);
+        for (ii, 0, tx.inputs.length, TARGET_INPUTS) {
+            require(OpInputCovenantId(ii) == cid && OpCovInputIdx(cid, ii) == ii);
+            if (ii > 0) { require(OpAuthOutputCount(ii) == 0); }
+        }
+    }
+    // Every output index is pinned by the caller's output-count check and range-checked by its role function
+    // (ordinary / chosenPayment / stateOutput), and `for` rejects counts above FEE_INPUTS / FEE_OUTPUTS, so only the sums are taken here.
+    // The template defines FEE_INPUTS / FEE_OUTPUTS = the largest input/output counts its entry accepts.
+    function fee(int cap): int {
+        require(tx.outputs.length >= 1);
+        int vi = 0;
+        int vo = 0;
+        for (fi, 0, tx.inputs.length, FEE_INPUTS) { vi = vi + tx.inputs[fi].value; }
+        for (fo, 0, tx.outputs.length, FEE_OUTPUTS) { vo = vo + tx.outputs[fo].value; }
+        require(vi > vo && vi - vo <= cap);
+        return vi - vo;
+    }
+    function externalValue(int start): int {
+        require(start >= 1 && start <= tx.inputs.length);
+        int sum = 0;
+        for (ei, start, tx.inputs.length, 8) { sum = sum + tx.inputs[ei].value; }
+        return sum;
+    }
+    function ordinary(int i, int value, pubkey key) {
+        require(value > 0 && value <= VALUE_LIMIT && tx.outputs[i].value == value);
+        require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2PK(key)) && OpOutputCovenantId(i) == ZERO);
+    }
+    // Refund payout inside an unrolled loop. The caller has already proven 0 < value <= VALUE_LIMIT
+    // (end > previous, price >= PRICE_MIN > REFUND_FEE, tickets * price <= VALUE_LIMIT - DEPOSIT by checkManager),
+    // so only the exact value, the P2PK script and the absence of a covenant are checked. zero is the caller's local ZERO.
+    function pay(int i, int value, pubkey key, byte[32] zero) {
+        require(tx.outputs[i].value == value);
+        require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2PK(key)) && OpOutputCovenantId(i) == zero);
+    }
+    function chosenPayment(int i, int value) {
+        require(value > 0 && value <= VALUE_LIMIT && tx.outputs[i].value == value);
+        byte[] spk = tx.outputs[i].scriptPubKey;
+        require(length(spk) == 36 && spk.slice(0, 3) == byte[](0x000020) && spk.slice(35, 36) == byte[](0xac));
+        require(OpOutputCovenantId(i) == ZERO);
+    }
+    function stateCount(int n) {
+        require(n >= 0 && n <= 2);
+        byte[32] cid = OpInputCovenantId(0);
+        require(OpAuthOutputCount(0) == n && OpCovOutputCount(cid) == n);
+        for (oi, 0, n, 2) {
+            require(OpAuthOutputIdx(0, oi) == oi && OpCovOutputIdx(cid, oi) == oi);
+            require(OpOutputCovenantId(oi) == cid);
+        }
+    }
+    function stateOutput(int i, byte[] b, byte[] tail, int value) {
+        require(value > 0 && value <= VALUE_LIMIT && tx.outputs[i].value == value);
+        require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(b, tail))));
+        require(OpOutputCovenantId(i) == OpInputCovenantId(0));
+    }
+    // ext = externalValue(1), computed once by the entry.
+    function change(int first, int cost, int ext) {
+        int amount = ext - cost;
+        require(amount >= 0 && tx.outputs.length == first + (amount > 0 ? 1 : 0));
+        if (amount > 0) { chosenPayment(first, amount); }
+    }
+
+    entry spend(int action, int ownTailBytes, byte[] targetSizes) {
+        int cnt = OpBin2Num(ledger.slice(57, (57) + 2) + byte[](0x00));
+        int dir = HEADER + 36 * cnt;
+        int lc = (length(ledger) - dir) / 36;
+        int base = 0;
+        if (cnt > 0) { base = OpBin2Num(ledger.slice(dir - 4, (dir - 4) + 4) + byte[](0x00)); }
+        int ltk = 0;
+        if (lc > 0) { ltk = OpBin2Num(ledger.slice(dir + (lc - 1) * 36, (dir + (lc - 1) * 36) + 4) + byte[](0x00)); }
+        int pr = OpBin2Num(ledger.slice(33, (33) + 8));
+        int cap = OpBin2Num(ledger.slice(41, (41) + 4) + byte[](0x00));
+        int minT = OpBin2Num(ledger.slice(45, (45) + 4) + byte[](0x00));
+        { checkManager(cnt, dir, lc, cap, minT, pr, base, ltk); }
+        byte[] tail = byte[](0x00);
+        { tail = selfTail(ownTailBytes); }
+        int p = OpBin2Num(ledger.slice(91, (91) + 2) + byte[](0x00));
+        bool merge = cnt > 0 && ltk * pr < TAIL_POOL_MIN;
+        require(base + ltk >= minT);
+        // A merge-tail round terminates in its last PAY_OLD, never persisting p=N.
+        require(p <= cnt - (merge ? 1 : 0));
+        require(tx.inputs[0].value == DEPOSIT + ltk * pr);
+        if (action == 20) {
+            int k = tx.inputs.length - 1;
+            require(k >= 1 && k <= 16 && length(targetSizes) == 4 * k);
+            { checkTargets(k); }
+            require(p + k <= cnt);
+            int gross = 0;
+            for (j, 0, k, 16) {
+                byte[] b = byte[](0x00);
+                b = frozenLedger(j + 1, p + j, OpBin2Num(targetSizes.slice(4 * j, (4 * j) + 4) + byte[](0x00)), cnt);
+                require(tx.inputs[j + 1].value == OpBin2Num(b.slice(9181, (9181) + 4) + byte[](0x00)) * pr);
+                gross = gross + tx.inputs[j + 1].value;
+            }
+            bool finalBatch = merge && p + k == cnt;
+            if (finalBatch) { gross = gross + ltk * pr; }
+            int paidFee = 0;
+            { paidFee = fee(100000000); }
+            int prize = gross - k * REWARD - paidFee;
+            require(prize >= PRICE_MIN && tx.outputs.length == 3);
+            if (finalBatch) {
+                { stateCount(0); }
+                { ordinary(0, prize, pubkey(ledger.slice(59, 91))); }
+                { ordinary(1, DEPOSIT, pubkey(ledger.slice(1, 33))); }
+            } else {
+                { stateCount(1); }
+                { stateOutput(0, set2(ledger, 91, p + k), tail, tx.inputs[0].value); }
+                { ordinary(1, prize, pubkey(ledger.slice(59, 91))); }
+            }
+            { chosenPayment(2, k * REWARD); }
+        } else if (action == 21) {
+            { checkTargets(0); }
+            require(length(targetSizes) == 0 && p == cnt && ltk > 0 && !merge);
+            int paidFee = 0;
+            { paidFee = fee(100000000); }
+            int prize = ltk * pr - REWARD - paidFee;
+            require(prize >= PRICE_MIN && tx.outputs.length == 3);
+            { stateCount(0); }
+            { ordinary(0, prize, pubkey(ledger.slice(59, 91))); }
+            { ordinary(1, DEPOSIT, pubkey(ledger.slice(1, 33))); }
+            { chosenPayment(2, REWARD); }
+        } else { require(false); } // Retired actions 22/23 are not accepted.
+    }
+}

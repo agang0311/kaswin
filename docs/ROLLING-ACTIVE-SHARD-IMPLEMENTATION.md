@@ -6,7 +6,7 @@
 
 五类模板为 sales、sealed、win、refund、frozen；没有独立 C 或退款片。沿用设计稿的金额、容量、游标与费帽。最后一片奖池低于3 KAS（含空片）时，随最后一个旧片的末笔派奖／退款一起结清，不再设单独的空管理片退出；WIN不保存中奖票号。标准客户端出资与持票同公钥；协议不额外绑定二者。资金金额、费用、DAA 使用 bigint，传输为十进制字符串。
 
-编译器固定为官方发布包 SilverScript 1.0.1，对应源码提交 `a17db2c7c95cf9f12f8e1264b21f32a8552af8df`，依赖Kaspa 2.1.0。来源与本地安装身份见[toolchain.json](../experiments/rolling/toolchain.json)。该包内部仍声明语言／artifact编译器版本0.1.0，因此现有`pragma silverscript ^0.1.0`与artifact版本检查保持；不能把发行包版本直接写成语言pragma。原生规则推导仍保留原有rusty-kaspa `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`的出处，升级到2.1.0后的实际编译、预算与目标节点兼容尚未验证。异构账本使用显式P2SH/template/auth/cov检查，不使用同质State声明宏代替。
+编译器固定为官方发布包 SilverScript 1.0.1，对应源码提交 `a17db2c7c95cf9f12f8e1264b21f32a8552af8df`，依赖Kaspa 2.1.0。来源与本地安装身份见[toolchain.json](../contracts/toolchain.json)。该包内部仍声明语言／artifact编译器版本0.1.0，因此现有`pragma silverscript ^0.1.0`与artifact版本检查保持；不能把发行包版本直接写成语言pragma。原生规则推导仍保留原有rusty-kaspa `cfafeb4c093fa37a303f1b9f19c58f986b870ce3`的出处，升级到2.1.0后的实际编译、预算与目标节点兼容尚未验证。异构账本使用显式P2SH/template/auth/cov检查，不使用同质State声明宏代替。
 
 ## 2. 账本布局与 ABI
 

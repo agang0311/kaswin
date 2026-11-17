@@ -90,5 +90,5 @@ node build/rolling-tn10.mjs --out-dir=tests/output/rolling-integration/candidate
 - **晋级 `VALIDATED` 的剩余阻断项**：
   1. `TIMEOUT` 路径仍保留由用户手测，尚未经过实链验收；
   2. 真实 `KasWare` / `Kastle` 浏览器扩展插件对新版候选页的**实链签名**尚未在真实带扩展浏览器中人工实测（当前自动化实链冒烟使用专用测试内存私钥，扩展签名仅在 Playwright mock 注入与离线单测中验证）；
-  3. 代码层面 [profile.ts](../scripts/rolling/core/src/profile.ts)、[profile.mjs](../experiments/rolling/profile.mjs)、[profile-data.mjs](../web/rolling-tn10/profile-data.mjs) 等仍显式锁定并展示 `UNVALIDATED`，须在补齐上述真实证据且由用户明确批准晋级后再行改版。
+  3. 代码层面 [profile.ts](../scripts/core/src/profile.ts)、[profile.mjs](../tests/contracts/profile.mjs)、[profile-data.mjs](../scripts/contract/profile-data.mjs) 等仍显式锁定并展示 `UNVALIDATED`，须在补齐上述真实证据且由用户明确批准晋级后再行改版。
 - **线上产物与服务**：本次已将 [rolling-tn10.html](../dist/rolling-tn10.html)（`81796507…`，已归档 [0b0b85c2](../dist/archive/rolling-tn10-0b0b85c2.html)）改为无预算后端依赖的纯静态单网页 SPA，通过 Caddy `file_server` 直接托管（已停用并禁用原 `:8792` `kaswin-rolling-tn10.service` 及原 `:18212` `kaswin-rolling-indexer.service`）；`/www/rolling-tn10/indexer/*` 由独立 Rust KCI 服务 `kci-rolling-lab.service`（`127.0.0.1:8790`，独立目录 `/var/lib/kci-rolling-lab`）承载；未修改 `dist/index.html`（维持 `0ee7ec5d…`）或 V2.0.2 KCI 服务 `kci-rust-lab.service`（`127.0.0.1:8788`），sealed TIMEOUT 轮次 `3fa890dd…` 仍保持待用户手测。

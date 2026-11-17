@@ -1,20 +1,18 @@
-# 合约
+# 合约目录
 
-当前合约 V2.0.2，Profile `ed0387c9e77bb4e0a8f1f4654a326c316d83663f455283ec6a046a095c94856d`。
+本目录存放 Kaswin Rolling 协议的五份 SilverScript 合约源码、模板输入、固定编译产物与身份固定文件。当前候选 Profile 为 `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`，状态仍为 **UNVALIDATED**，仅面向 Testnet 10。
 
-| 文件 | 用途 |
-|---|---|
-| `open.sil` | 售票、封盘与空轮退出 |
-| `sealed.sil` | 开奖付款与超时转退款 |
-| `refunding.sil` | 分批退款与最终退出 |
-| `ledger-layout.json` | KW21账本布局单一来源 |
-| `artifacts/*-linked.sil/json/args.json` | 链接源码、固定编译结果与构造参数 |
-| `pins.json`、`profile.json`、`artifacts/build-report.json` | 编译来源、模板哈希和合约身份 |
+## 文件组成
 
-HTML构建通过 `scripts/contract/bundle.mjs` 加载这些文件，核对布局、模板、源码及Profile的一致性。它不重新编译SilverScript，也不读取测试报告。
+- `{sales,sealed,win,refund,frozen}.sil`：五份展开后的固定 SilverScript 合约源码。
+- `templates/`：模板输入 `{sales,sealed,win,refund,frozen}.sil.in` 与共用片段 `common.sil.inc`。
+- `artifacts/{sales,sealed,win,refund,frozen}.json`：由固定 `silverc` 编译出的五份合约产物。
+- `artifacts/template-pins.json`：按依赖顺序（`win -> refund -> sealed -> frozen -> sales`）固定的 `templateHash`。
+- `pins.json`：候选 Profile ID、编译器版本与五模板源码/产物/模板哈希固定表。
+- `toolchain.json`：SilverScript 1.0.1（提交 `a17db2c7c95cf9f12f8e1264b21f32a8552af8df`）工具链身份记录。
 
-固定编译器来源为SilverScript提交 `3ed973335b59269293564805cc2c58a14595ec03`。链接依赖顺序为REFUNDING→SEALED→OPEN。源码、链接产物与编译元数据共同确定身份，不能只修改其中某份文件或注释后继续沿用原Profile。
+## 构建与重编
 
-编译元数据只描述对应编译阶段，不代表后续测试或生产批准。更改合约须完成设计、重新编译与独立验证流程；网页构建只接受当前固定Profile。
+普通应用构建（`npm run build`）直接通过 `scripts/contract/bundle.mjs` 读取并校验本目录中的固定产物与 `pins.json`，不调用 `silverc`。
 
-状态、资金与授权规则见[架构说明](../docs/ARCHITECTURE.md)。
+如需显式重新展开或重新编译合约，使用 `build/prepare-sources.mjs` 与 `build/compile-contracts.mjs`。说明见[开发说明](../docs/DEVELOPMENT.md)。

@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import ts from 'typescript';
-import {syncLayout} from '../scripts/contract/sync-layout.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const base = path.join(root, 'scripts/core');
@@ -14,7 +13,6 @@ function diagnostics(list) {
 
 export async function buildCore({check = false} = {}) {
   if (ts.version !== '5.8.3') throw Error('TypeScript 5.8.3 is required');
-  await syncLayout();
   const {config, error} = ts.readConfigFile(path.join(base, 'tsconfig.json'), ts.sys.readFile);
   diagnostics(error ? [error] : []);
   const parsed = ts.parseJsonConfigFileContent(config, ts.sys, base);

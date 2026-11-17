@@ -1,45 +1,44 @@
 {
-  "contractVersion": "V2.0.2",
-  "protocolVersion": 2,
-  "profileId": "ed0387c9e77bb4e0a8f1f4654a326c316d83663f455283ec6a046a095c94856d",
-  "networkGenesis": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
-  "compilerCommit": "3ed973335b59269293564805cc2c58a14595ec03",
-  "compilerBinarySha256": "81de9aa4157dbde3633ebab629e86c5975770fc13ee2d2093e52d7f725616a00",
-  "layoutSha256": "f040ae34f15d120c6c5253f33cb5c9f8127b85e08d5dad397f2036b3f35c028e",
-  "approvalStatus": "APPROVED",
-  "budgetProfileId": null,
-  "frames": {
-    "refunding": {
-      "templateSourceSha256": "10f04bd99ec265557e4c146ce104fc9caa2dda649fd14b45a74897f842acae88",
-      "sourceSha256": "10f04bd99ec265557e4c146ce104fc9caa2dda649fd14b45a74897f842acae88",
-      "artifactSha256": "c92e383dd7f1c440123f1534a31ae7852eb1ed74bd4144051a46a269e8a73d8a",
-      "constructorArgsSha256": "bcb5fbfc1b35e743c3985bb687dc02eed3a099014090b9f348b64279c507913b",
-      "templateHash": "0f3649d95a57cec4005c34d33cc3e1ea48b427a709e2398d7360327d20f60ce6",
-      "tailBytes": 9888,
-      "dependencies": {}
+  "version": "Rolling v1",
+  "profileId": "b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5",
+  "status": "UNVALIDATED",
+  "compilerCommit": "a17db2c7c95cf9f12f8e1264b21f32a8552af8df",
+  "compilerPackageVersion": "1.0.1",
+  "modules": {
+    "sales": {
+      "source": "contracts/sales.sil",
+      "sourceSha256": "587d3b754b7beacbd8f5a8e6e63cdb533c1d6325e2553c81523c1a6fd8019011",
+      "artifact": "contracts/artifacts/sales.json",
+      "artifactSha256": "fe9469795cf15b3a52550a7b86237ce9ac5de915bc5c34d7431664bb66295fe8",
+      "templateHash": "2363c5aab477a8669c0476c371e8b765313c132c29bf82eccafb5215e62e758e"
     },
     "sealed": {
-      "templateSourceSha256": "857039a300e8230d7c28d8c6bd178c73e43b65788e197e4e1fa683d64fe1c59d",
-      "sourceSha256": "8419af74831b685e9384613c749f0eec2ae0cfee376875c5b1cc743edfbf1d65",
-      "artifactSha256": "62d9781ed46c85582caed6ea8006f504066ffd13eafec179047df2571385fcec",
-      "constructorArgsSha256": "c3cbff21a3243d99958fb2ecc45606cf95a2c00ae279449bd3af26b00a90296c",
-      "templateHash": "41029ed969cb65ab421ea39e02d8a42b3b1f78557c79f754b6d5d8ae1aa5f847",
-      "tailBytes": 3830,
-      "dependencies": {
-        "refunding": "0f3649d95a57cec4005c34d33cc3e1ea48b427a709e2398d7360327d20f60ce6"
-      }
+      "source": "contracts/sealed.sil",
+      "sourceSha256": "62ae51daf8660158e56f8f284daee2637a851529f8f1a2ad7e660d177c7192e3",
+      "artifact": "contracts/artifacts/sealed.json",
+      "artifactSha256": "4da7ece5d5248a5ef59130e176b7f05fd3561d0bc5b0631c1be612231dac8ab8",
+      "templateHash": "fc5689e61aed907632340a3f5ab325ccc6b0edb7a25e98baee9b73d0b6663893"
     },
-    "open": {
-      "templateSourceSha256": "732bf3e56d477b7e5e27da0ab10f084fbf5bb3c0ae0bb4c9a0c5e232d2743f70",
-      "sourceSha256": "8a0e79ef1541a166405bdc2d95c76746bd58996a94aa7586adaa6d58426088dc",
-      "artifactSha256": "1fff29753c3189b032a0742a0fb56852b3529ae376d441bfe2cf4b0806285cf8",
-      "constructorArgsSha256": "9eefd48453338cad382b421a7fdcada93210dbaa9163ed899d25a627ad79534c",
-      "templateHash": "9f6792fce38a56d17ae99a5907f9ea6f004dc60ab6aa2e4eb108c1d17529c7f1",
-      "tailBytes": 3701,
-      "dependencies": {
-        "sealed": "41029ed969cb65ab421ea39e02d8a42b3b1f78557c79f754b6d5d8ae1aa5f847",
-        "refunding": "0f3649d95a57cec4005c34d33cc3e1ea48b427a709e2398d7360327d20f60ce6"
-      }
+    "win": {
+      "source": "contracts/win.sil",
+      "sourceSha256": "5204ca57fcfc204857c552a7f1603d0cc1c7d4a9f2ff4867908df336af5931b6",
+      "artifact": "contracts/artifacts/win.json",
+      "artifactSha256": "d4ce23f8f0b3b764e5c4f0d3d8ea4e2a93739b0c30dff05c41c7b97ee86126d9",
+      "templateHash": "4e73a0131e02b915989869658aa82251fb89a34deb42193fdd44b991123a20bb"
+    },
+    "refund": {
+      "source": "contracts/refund.sil",
+      "sourceSha256": "212d295a2ca4e802f6415641ea526eb51ff84c171f5c72fd333a7cd54593c363",
+      "artifact": "contracts/artifacts/refund.json",
+      "artifactSha256": "f692e7afd1f69a0f25c1e75886f0417833e1a65f90939a8288933b45ed1c1e37",
+      "templateHash": "78f5e8c4d8d4aadbbbb742a80915853870ac4a24074377b73a9dd9de05e26a9c"
+    },
+    "frozen": {
+      "source": "contracts/frozen.sil",
+      "sourceSha256": "4a2642aebdacfa2e1efed0714535f44bfebcf8d490754b30c8f3d6933995ccce",
+      "artifact": "contracts/artifacts/frozen.json",
+      "artifactSha256": "becb53dc804549b915361c3bdcbd710cc32008c2363536416786586ed414e451",
+      "templateHash": "20f739acf2dfffe438e00f6859c0cba1f4ed4f38c0cc363cd9fd891a93765a5a"
     }
   }
 }

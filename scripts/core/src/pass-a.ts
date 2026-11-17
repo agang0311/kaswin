@@ -5,7 +5,6 @@
  */
 import {ascii,cat,check,hex,le,same,unhex} from './bytes.js';
 import {domainHash} from './blake3.js';
-import * as S from './state.js';
 
 const Z=new Uint8Array(32);
 export const COINBASE_LANE_KEY='8aa78027db66a16cb69692ee0af5cb76738ef80ad14c9d13920d7fa3cc40b9e4';
@@ -171,72 +170,4 @@ export function assemblePassA(input:{boundaryDaa:bigint;parent:BlockData;target:
  eq(hex(openSeq(opening,152,opening.slice(120,152))),parent.header.seqCommit,'P_OPENING_COMMITMENT');
  eq(hex(openSeq(opening,32,openSeq(opening,152,opening.slice(120,152)))),target.header.seqCommit,'T_OPENING_COMMITMENT');
  return {opening,openingHex:hex(opening),boundaryDaa:boundaryDaa.toString(),parent:{hash:parent.header.hash,daa:parent.header.daa.toString(),seqCommit:parent.header.seqCommit},target:{hash:target.header.hash,daa:target.header.daa.toString(),seqCommit:target.header.seqCommit},activityRoots:{parent:hex(pProof.activityRoot),target:hex(tProof.activityRoot)},payloadRoots:{parent:hex(pRoot),target:hex(tRoot)}};
-}
-/** Locate T/P on the selected chain, collect RPC data and independently rebuild both roots. */
-export async function acquirePassA(snapshot:S.Snapshot,profile:S.Profile,provider:PassAProvider):Promise<PassAResult> {
- const state=S.verifySnapshot(snapshot,profile);check(state.phase===S.Phase.SEALED&&snapshot.tip.index===0,'SEALED_SNAPSHOT_REQUIRED');
- const accepted=await provider.getAcceptedClose(snapshot.tip.transactionId);
- check(accepted.isAccepted===true,'CLOSE_NOT_ACCEPTED');h32(accepted.acceptingBlockHash);
- check(accepted.output0.amount===snapshot.value&&accepted.output0.scriptPublicKey===snapshot.scriptPublicKey.script&&accepted.output0.covenantId===snapshot.covenantId,'CLOSE_OUTPUT_MISMATCH');
- const anchor=readBlock(await provider.getBlock({hash:accepted.acceptingBlockHash,includeTransactions:false}),false);
- eq(anchor.header.hash,accepted.acceptingBlockHash,'ACCEPTING_BLOCK_HASH');check(anchor.header.daa===snapshot.utxoDaa,'SEALED_DAA_MISMATCH');
- const boundaryDaa=snapshot.utxoDaa+S.DRAW_DELAY;
- let parent:BlockData|undefined,target:BlockData|undefined;
- const candidate=await provider.getSelectedChainCandidateAtOrAfterDaa?.(boundaryDaa);
- if(candidate!==null&&candidate!==undefined){
-  h32(candidate);
-  target=readBlock(await provider.getBlock({hash:candidate,includeTransactions:false}),false);
-  eq(target.header.hash,candidate,'CANDIDATE_HASH_MISMATCH');
-  parent=readBlock(await provider.getBlock({hash:target.header.selectedParent,includeTransactions:false}),false);
-  eq(parent.header.hash,target.header.selectedParent,'CANDIDATE_PARENT_HASH_MISMATCH');
-  check(anchor.header.daa<=parent.header.daa&&parent.header.daa<boundaryDaa&&target.header.daa>=boundaryDaa,'CANDIDATE_NOT_FIRST_CROSSING');
- }else{
-  // The accepted CLOSE tx (regardless of who signed it) identifies the anchor.
-  // Low verbosity returns aligned chainBlockHeader.daaScore entries; scan the
-  // whole returned batch locally rather than getBlock(hash) once per chain block.
-  // minConfirmationCount trims the response HEAD only; it is not a DAA index
-  // or a policy for finality. Keep an explicit resource bound on pagination.
-  const sink=uint63((await provider.getSinkBlueScore()).blueScore,'SINK_BLUE_SCORE');
-  check(sink>=anchor.header.blue,'SINK_BEFORE_ANCHOR');const distance=sink-anchor.header.blue;
-  const minConfirmationCount=Number(distance>256n?distance-256n:0n);
-  let previousHash=anchor.header.hash,previousDaa=anchor.header.daa;
-  for(let page=0;page<8&&target===undefined;page++){
-   const chain=await provider.getVirtualChainFromBlockV2({startHash:previousHash,minConfirmationCount});
-   check(Array.isArray(chain.removedChainBlockHashes)&&chain.removedChainBlockHashes.length===0&&
-      Array.isArray(chain.addedChainBlockHashes)&&chain.addedChainBlockHashes.length>0&&chain.addedChainBlockHashes.length<=512&&
-      Array.isArray(chain.chainBlockAcceptedTransactions)&&chain.chainBlockAcceptedTransactions.length===chain.addedChainBlockHashes.length,
-      'SELECTED_CHAIN_BATCH_UNAVAILABLE');
-   for(let i=0;i<chain.addedChainBlockHashes.length;i++){
-    const hash=chain.addedChainBlockHashes[i]!;h32(hash);
-    const row=object(chain.chainBlockAcceptedTransactions[i],'CHAIN_BLOCK_ROW');
-    const head=object(row.chainBlockHeader,'CHAIN_BLOCK_LOW_HEADER');
-    eq(string(head.hash,'CHAIN_BLOCK_HEADER_HASH'),hash,'CHAIN_HEADER_HASH_MISMATCH');
-    const daa=uint63(head.daaScore,'CHAIN_BLOCK_DAA');
-    check(daa>previousDaa,'SELECTED_CHAIN_DAA_NOT_INCREASING');
-    if(daa>=boundaryDaa){
-     // Only P and T require full headers/bodies; full getBlock also rechecks
-     // isChainBlock and T's exact selected parent against the preceding hash.
-     parent=readBlock(await provider.getBlock({hash:previousHash,includeTransactions:false}),false);
-     target=readBlock(await provider.getBlock({hash,includeTransactions:false}),false);
-     eq(parent.header.hash,previousHash,'P_HASH_MISMATCH');eq(target.header.hash,hash,'T_HASH_MISMATCH');
-     check(parent.header.daa===previousDaa&&target.header.daa===daa,'CHAIN_LOW_FULL_DAA_MISMATCH');
-     eq(target.header.selectedParent,parent.header.hash,'SELECTED_PARENT_DISCONTINUITY');
-     break;
-    }
-    previousHash=hash;previousDaa=daa;
-   }
-  }
- }
- check(parent&&target&&parent.header.daa<boundaryDaa&&target.header.daa>=boundaryDaa&&target.header.selectedParent===parent.header.hash,'FIRST_CROSSING_UNAVAILABLE');
- const pFull=readBlock(await provider.getBlock({hash:parent.header.hash,includeTransactions:true}),true);
- const tFull=readBlock(await provider.getBlock({hash:target.header.hash,includeTransactions:true}),true);
- sameHeader(pFull.header,parent.header,'P_HEADER_CHANGED');sameHeader(tFull.header,target.header,'T_HEADER_CHANGED');
- const blocks=new Map<string,PayloadBlock>([[pFull.header.hash,pFull],[tFull.header.hash,tFull]]);
- const load=async(hash:string)=>{if(!blocks.has(hash)){const b=readPayloadBlock(await provider.getBlock({hash,includeTransactions:true}));eq(b.header.hash,hash,'MERGESET_BLOCK_HASH');blocks.set(hash,b);}return blocks.get(hash)!;};
- for(const hash of [...pFull.blues,...pFull.reds,...tFull.blues,...tFull.reds,pFull.header.selectedParent,tFull.header.selectedParent])await load(hash);
- // Membership is rechecked just before returning. Native accessor rechecks at spend.
- const pCheck=readBlock(await provider.getBlock({hash:pFull.header.hash,includeTransactions:false}),false),tCheck=readBlock(await provider.getBlock({hash:tFull.header.hash,includeTransactions:false}),false);
- sameHeader(pCheck.header,pFull.header,'P_REORG');sameHeader(tCheck.header,tFull.header,'T_REORG');eq(tCheck.header.selectedParent,pCheck.header.hash,'PARENT_REORG');
- const [pLane,tLane]=await Promise.all([provider.getSeqCommitLaneProof(pFull.header.hash,COINBASE_LANE_KEY),provider.getSeqCommitLaneProof(tFull.header.hash,COINBASE_LANE_KEY)]);
- return assemblePassA({boundaryDaa,parent:pFull,target:tFull,parentLane:{...object(pLane,'P_LANE'),laneKey:COINBASE_LANE_KEY},targetLane:{...object(tLane,'T_LANE'),laneKey:COINBASE_LANE_KEY},blocks});
 }
