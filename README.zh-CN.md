@@ -58,3 +58,9 @@ docs/        架构与开发说明
 Kaspa 交易被区块包含不等于被接受。Indexer/REST 用于发现数据，实际状态由节点接受数据与协议规则核验；金额使用 bigint 或十进制字符串。
 
 详见[架构说明](docs/ARCHITECTURE.md)和[开发说明](docs/DEVELOPMENT.md)。
+
+## Rolling Testnet 10
+
+独立Rolling页面采用Profile `b56bcd9c…c4e5`，接入自己的TypeScript核心、KasWare/Kastle或专用内存钱包，以及可选的只读索引发现/同步服务，与V2.0.2主网页分离，当前仅Testnet 10。
+
+`npm run build:rolling`生成`dist/rolling-tn10.html`及清单，不替换主网页`dist/index.html`。先生成核心，再通过`npm run start:rolling-indexer`启动独立索引服务；默认监听回环地址并使用独立数据目录。见[Rolling运行时](scripts/rolling/README.zh-CN.md)、[索引说明](scripts/rolling/indexer/README.md)、[集成交接与状态](docs/ROLLING-INTEGRATION-HANDOFF.md)。测试及验证由tester执行，源码完成不自动代表新集成已通过或部署。

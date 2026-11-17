@@ -8,27 +8,42 @@ import {ascii,same,stable} from '../../scripts/core/lib/bytes.js';
 import {blake2b256} from '../../scripts/core/lib/hashes.js';
 import {referenceTxId,outpointKey,validateTransaction} from '../../scripts/core/lib/transaction.js';
 import {p2sh} from '../../scripts/core/lib/covenant-id.js';
-import {identify,redeem,rootId,verifyManager,assertProfile} from './profile.mjs';
-import {interpretAccepted} from './accepted.mjs';
-import * as S from './state.mjs';
+import {identify,redeem,rootId,verifyManager,assertProfile} from '../../scripts/rolling/core.mjs';
+import {interpretAccepted} from '../../scripts/rolling/core.mjs';
+import * as S from '../../scripts/rolling/core.mjs';
 const {check,hex,unhex}=S;
 const sha=text=>createHash('sha256').update(text).digest('hex');
 const decimal=n=>{check(typeof n==='bigint'&&n>=0n,'WIRE_BIGINT');return n.toString();};
 export class RollingIndexer {
+  #verified=new Map();
   constructor({archive,profile,networkGenesis,nodeAdapter}) {
     assertProfile(profile);unhex(networkGenesis,32);check(archive&&nodeAdapter,'INDEXER_DEPENDENCIES');
     this.store=archive;this.profile=profile;this.network=networkGenesis;this.node=nodeAdapter;
   }
+  #cachePreimage(hash,redeemHex,state) {
+    if(state.module!=='frozen')return;
+    this.#verified.delete(hash);
+    this.#verified.set(hash,{redeemScript:redeemHex,module:state.module,records:state.records});
+    if(this.#verified.size>512)this.#verified.delete(this.#verified.keys().next().value);
+  }
   async putPreimage(hash,redeemHex) {
-    unhex(hash,32);const raw=unhex(redeemHex);check(raw.length<=250000&&hex(blake2b256(raw))===hash,'PREIMAGE_HASH');
-    const state=identify(raw,this.profile);
+    unhex(hash,32);const cached=this.#verified.get(hash);
+    if(cached&&cached.redeemScript===redeemHex){
+      await this.store.putPreimage(this.network,this.profile.id,hash,redeemHex);
+      return {scriptHash:hash,module:cached.module,status:'CANDIDATE'};
+    }
+    const raw=unhex(redeemHex);check(raw.length<=250000&&hex(blake2b256(raw))===hash,'PREIMAGE_HASH');
+    const state=identify(raw,this.profile);this.#cachePreimage(hash,redeemHex,state);
     await this.store.putPreimage(this.network,this.profile.id,hash,redeemHex);
     return {scriptHash:hash,module:state.module,status:'CANDIDATE'};
   }
   async getPreimage(hash) {
     const raw=await this.store.getPreimage(this.network,this.profile.id,hash);if(raw===null)return null;
-    const state=identify(unhex(raw),this.profile);check(hex(blake2b256(unhex(raw)))===hash,'ARCHIVE_CORRUPTION');
-    return {scriptHash:hash,redeemScript:raw,module:state.module};
+    const cached=this.#verified.get(hash);
+    if(cached&&cached.redeemScript===raw)return {scriptHash:hash,redeemScript:raw,module:cached.module,records:cached.records};
+    const bytes=unhex(raw),state=identify(bytes,this.profile);check(hex(blake2b256(bytes))===hash,'ARCHIVE_CORRUPTION');
+    this.#cachePreimage(hash,raw,state);
+    return {scriptHash:hash,redeemScript:raw,module:state.module,records:state.records};
   }
   async #descriptor(output,outpoint,daa,state) {
     const raw=redeem(state,this.profile),hash=hex(blake2b256(raw));
@@ -40,7 +55,7 @@ export class RollingIndexer {
     const raw=await this.getPreimage(d.scriptHash);check(raw,'MISSING_PREIMAGE');
     check(raw.module===d.module,'DESCRIPTOR_MODULE');
     return {outpoint:d.outpoint,redeemScript:unhex(raw.redeemScript),spk:p2sh(d.scriptHash),cid,origin,
-      value:BigInt(d.value),utxoDaa:BigInt(d.utxoDaa),currentDaa};
+      value:BigInt(d.value),utxoDaa:BigInt(d.utxoDaa),currentDaa,module:raw.module,records:raw.records};
   }
   async verifyView(view,currentDaa) {
     check(view.networkGenesis===this.network&&view.profileId===this.profile.id,'VIEW_DOMAIN');unhex(view.cid,32);
@@ -51,17 +66,23 @@ export class RollingIndexer {
     check(!view.terminal,'LIVE_TERMINAL');
     const start=s.module==='win'?s.p:s.module==='refund'?s.r:0;
     check(view.frozen.length===s.indices.length-start,'FROZEN_SET_COUNT');
-    const remaining=new Map();const seen=new Set([outpointKey(view.manager.outpoint)]);
+    const remaining=new Map(),seen=new Set([outpointKey(view.manager.outpoint)]),byHash=new Map();
     for(const d of view.frozen) {
       const id=outpointKey(d.outpoint);check(!seen.has(id),'DUPLICATE_OUTPOINT');seen.add(id);
-      const f=await this.#material(d,view.cid,view.origin,currentDaa),state=identify(f.redeemScript,this.profile);
+      const f=await this.#material(d,view.cid,view.origin,currentDaa);
+      const state=f.records?{module:f.module,records:f.records}:identify(f.redeemScript,this.profile);
       check(state.module==='frozen','FROZEN_ROLE');
+      byHash.set(d.scriptHash,state.records);
       const key=d.scriptHash+':'+d.value;remaining.set(key,(remaining.get(key)??0)+1);
     }
     for(let j=start;j<s.indices.length;j++) {
-      const preimage=await this.getPreimage(s.indices[j].hash);check(preimage,'MISSING_FROZEN_PREIMAGE');
-      const f=identify(unhex(preimage.redeemScript),this.profile);check(f.module==='frozen','FROZEN_ROLE');
-      const value=S.frozenValue(s,j,f.records),key=s.indices[j].hash+':'+value.toString();
+      let recs=byHash.get(s.indices[j].hash);
+      if(!recs){
+        const preimage=await this.getPreimage(s.indices[j].hash);check(preimage,'MISSING_FROZEN_PREIMAGE');
+        const state=preimage.records?{module:preimage.module,records:preimage.records}:identify(unhex(preimage.redeemScript),this.profile);
+        check(state.module==='frozen','FROZEN_ROLE');recs=state.records;
+      }
+      const value=S.frozenValue(s,j,recs),key=s.indices[j].hash+':'+value.toString();
       check((remaining.get(key)??0)>0,'FROZEN_MULTISET');remaining.set(key,remaining.get(key)-1);
     }
     check([...remaining.values()].every(n=>n===0),'EXTRA_FROZEN');
@@ -111,7 +132,7 @@ export class RollingIndexer {
         // Actual consumed outpoints retain logical order, including equal-hash interchangeable shards.
         consumedTargets:(facts.targets??[]).map(f=>f.outpoint)};
       const next={networkGenesis:this.network,profileId:this.profile.id,cid,origin,manager,frozen,terminal:effects.terminal,
-        acceptance:{instance,txid,position:facts.position},event};
+        acceptance:{instance,txid,position:facts.position,acceptingDaa:facts.utxoDaa.toString(),observedVirtualDaa:facts.observedVirtualDaa?.toString()??null},event};
       await this.verifyView(next,facts.currentDaa);beforePublish();return next;
     });
     } finally {facts?.release?.();}

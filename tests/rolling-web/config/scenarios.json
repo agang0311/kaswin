@@ -1,0 +1,13 @@
+{
+  "$comment": "Rolling TN10 场景定义。参照 tests/web/config/scenarios.json 的 V2.0.2 结构；分片边界用 buys=256 触发一次冻结。",
+  "scenarios": {
+    "1": {"name": "empty", "title": "空轮退盘", "cap": 5, "min": 3, "minutes": 1, "buys": 0, "expect": {"terminal": "EMPTY"}},
+    "2": {"name": "refund-small", "title": "不足额退款", "cap": 5, "min": 3, "minutes": 1, "buys": 2, "expect": {"terminal": "REFUNDED", "note": "2 < 门槛 3，封盘转退款"}},
+    "3": {"name": "payout", "title": "标准开奖派奖", "cap": 5, "min": 3, "minutes": 1, "buys": 3, "expect": {"terminal": "PAID", "note": "等到最早封盘时间再封盘"}},
+    "4": {"name": "sellout", "title": "卖满立即封盘派奖", "cap": 3, "min": 3, "minutes": 1, "buys": 3, "expect": {"terminal": "PAID", "note": "票卖满可提前封盘，不必等时间锁"}},
+    "5": {"name": "shard-payout", "title": "满 256 笔冻结分片后派奖", "cap": 300, "min": 3, "minutes": 1, "buys": 256, "expect": {"terminal": "PAID", "note": "第 256 笔冻结第一个分片；无本地尾单，PAY_OLD k=1 合并尾池后直接 PAID"}},
+    "6": {"name": "shard-refund", "title": "满 256 笔冻结分片后退款", "cap": 300, "min": 300, "minutes": 1, "buys": 256, "expect": {"terminal": "REFUNDED", "note": "8 批 REFUND_OLD（每批 32 条）；无本地尾单，最后一批合并尾池后直接 REFUNDED"}},
+    "7": {"name": "timeout-refund", "title": "超时转退款", "enabled": false, "reason": "TIMEOUT 留给用户手测，所有自动化运行器均排除"},
+    "8": {"name": "concurrent", "title": "双买家同时抢购", "enabled": false, "reason": "并发由 contention.mjs 与 round-double-spend.mjs 单独驱动，此顺序场景入口不执行"}
+  }
+}

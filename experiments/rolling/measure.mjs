@@ -5,7 +5,7 @@
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {S,here,texts,trust,profile,OWNER,PRICE,KAS,FEE,fixture,fund,quote,findDraw,buildAction,massOf} from './fixtures.mjs';
-import {buildGenesis} from './transactions.mjs';
+import {buildGenesis} from '../../scripts/rolling/core.mjs';
 const rows=[];
 function add(module,name,r) {
   const {d,q}=r,sig=d.transaction.inputs.map(i=>i.signatureScript.length/2);

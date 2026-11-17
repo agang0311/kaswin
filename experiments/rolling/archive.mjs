@@ -6,7 +6,7 @@
 import {mkdir,readFile,open,rename,unlink} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {check,unhex} from './state.mjs';
+import {check,unhex} from '../../scripts/rolling/core.mjs';
 export class FileArchive {
   #root; #tail=Promise.resolve();
   constructor(root) {check(typeof root==='string'&&root.length>0,'ARCHIVE_ROOT');this.#root=root;}

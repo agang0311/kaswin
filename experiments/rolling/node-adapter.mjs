@@ -1,12 +1,13 @@
-/** Read-only bridge to existing selected-chain acceptance. NOT_RUN.
+/** Read-only bridge to existing selected-chain acceptance, with a fresh 100-DAA observation.
+ * This depth is client policy, not irreversible finality.
  * Host supplies an identity-checked link; importing performs no RPC or node launch.
  */
 import {AcceptanceEvidence} from '../../scripts/chain/acceptance-evidence.mjs';
 import {parseSpk} from '../../scripts/chain/nodes.mjs';
 import {linkNet} from '../../scripts/chain/network-schema.mjs';
 import {observeAcceptanceRead} from '../../scripts/chain/acceptance-read.mjs';
-import {decodeSpend} from './accepted.mjs';
-import {check,hex,unhex,ZERO} from './state.mjs';
+import {decodeSpend} from '../../scripts/rolling/core.mjs';
+import {check,hex,unhex,ZERO} from '../../scripts/rolling/core.mjs';
 export class RollingNodeAdapter {
   constructor({link,profile,archive}) {
     this.link=link;this.profile=profile;this.archive=archive;this.network=linkNet(link).genesis;
@@ -16,6 +17,7 @@ export class RollingNodeAdapter {
     const accepting=position?.acceptingBlockHash;unhex(txid,32);unhex(accepting,32);
     const proof=await this.evidence.read(txid,accepting,{fresh:true}),ev=proof.ev;
     try {
+      check(proof.virtualDaa>=ev.acceptingDaa+100n,'ACCEPTANCE_DEPTH_PENDING');
       check(ev.inputs.length===ev.tx.inputs.length&&ev.inputs.every(Boolean),'MISSING_ACCEPTED_INPUT_CONTEXT');
       const inputs=ev.inputs.map((u,i)=>({outpoint:ev.tx.inputs[i].previousOutpoint,value:u.value,
         spk:typeof u.spk==='string'?parseSpk(u.spk):u.spk,utxoDaa:u.daa,cid:u.covenantId??null}));

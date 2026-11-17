@@ -1,7 +1,7 @@
 /** Generate the VM cases, run them through the real kaspa-txscript engine (vm/) and summarise.
  * Usage: node experiments/rolling/vm-run.mjs [--only=<substring of a base case name>]
  * Runner binary: $KASWIN_VM_BIN, else vm/target/release/kaswin-rolling-vm (build: cargo build --release in vm/).
- * Writes artifacts/vm/{cases.ndjson,results.ndjson,report.json} (git-ignored). Offline: no node, network, key or signature.
+ * Writes artifacts/vm/{cases.ndjson,results.ndjson,report.json} (git-ignored). Offline: no node, network or real key (funding inputs are signed with a public throwaway key).
  * Scope: the script engine with a covenants context. NOT consensus: no maturity, mass, double-spend or acceptance checks. */
 import {mkdirSync,openSync,writeSync,closeSync,readFileSync,writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
@@ -31,7 +31,7 @@ for(const r of results) {
   const m=meta.get(r.name);
   if(m.kind==='base') {
     summary.bases.total++;if(r.matches) summary.bases.passed++;
-    summary.positives.push({name:r.name,module:m.module,action:m.action,matches:r.matches,
+    summary.positives.push({name:r.name,module:m.module,action:m.action,nT:m.nT,matches:r.matches,
       inputs:r.inputs.map(i=>({input:i.input,usedScriptUnits:i.usedScriptUnits,minBudget:i.minBudget,error:i.error}))});
   } else {
     summary.mutations.total++;if(r.matches) summary.mutations.matchedExpectation++;
@@ -49,10 +49,10 @@ for(const r of results) {
 // Budget table: the largest measured consumption per module/action over the passing base cases.
 const budget={};
 for(const p of summary.positives) if(p.matches) {
-  const k=`${p.module}:${p.action}`,b=budget[k]??={cases:0,maxManagerUnits:0,maxManagerBudget:0,maxFrozenUnits:0,maxFrozenBudget:0};
+  const k=`${p.module}:${p.action}`,b=budget[k]??={cases:0,maxManagerUnits:0,maxManagerBudget:0,maxFrozenUnits:0,maxFrozenBudget:0,maxFundingUnits:0,maxFundingBudget:0};
   b.cases++;
   for(const i of p.inputs) {
-    const f=i.input===0?['maxManagerUnits','maxManagerBudget']:['maxFrozenUnits','maxFrozenBudget'];
+    const f=i.input===0?['maxManagerUnits','maxManagerBudget']:i.input<=p.nT?['maxFrozenUnits','maxFrozenBudget']:['maxFundingUnits','maxFundingBudget'];
     b[f[0]]=Math.max(b[f[0]],i.usedScriptUnits);b[f[1]]=Math.max(b[f[1]],i.minBudget);
   }
 }

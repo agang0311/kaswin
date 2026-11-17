@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "binarySha256": "e773577d46c755c291726ebe80d3b1f94615a20f604d8f681636559f3ba2d5b8",
+  "sourceFiles": {
+    "vm/Cargo.lock": "f1ec3bcb08c2b7d5f0f7b22c8244d99b0cfdd67c797bb5acae71d6c5a91315f6",
+    "vm/Cargo.toml": "d47c144f08488b83371be871d834645d716806bb91faa5652e7691046e598c19",
+    "vm/src/main.rs": "c4f8385da6e2bc56a9e289fe79194849fa55724e49fa483e37b73620332cf096"
+  },
+  "scope": "Identity pin of the existing kaspa-txscript 2.1.0 runner used for recorded offline execution; not a reproducible-build attestation."
+}

@@ -46,3 +46,19 @@ done
 - **执行者赞助的 REFUND**（页面在执行费池不足或存储质量超限时附加一笔执行者 P2PK 输入）：工具导入时把 P2PK 资金币换成攻击者的币，
   并把付回该地址的输出也改给攻击者，而这正是合约钉死的 `actorPk` 输出，原样检查必然失败。交易本身用 txscript 2.1.0 原样重放是通过的。
 - **refunding 不列 `keys`**：工具会把付给已列钥匙的输出改写为攻击者地址，退款输出是合约钉死的买家与执行者，列了就无法导入。
+
+## Rolling 分片版（256×256）
+
+`rolling-baseline.mjs` 为 `experiments/rolling` 原型（Profile `b56bcd9c…`）生成 44 笔诚实交易的 baseline：
+用真实编译产物 + 真实 JS 构造器，资金输入用公开一次性密钥签名，覆盖 0/255/256 分片、k=1/16 批次、终局合并与空尾巴。
+
+```bash
+node tests/redteam/rolling-baseline.mjs
+cd experiments/rolling
+for m in sales sealed win refund; do
+  $RT generated/$m.sil --baseline <out>/rolling/$m.baseline.json -v --no-color --out <out>/rolling/findings-$m
+done
+```
+
+结果与判定见 [ROLLING-RESULTS.md](ROLLING-RESULTS.md)：6 项 OUT-01 全部落在执行者奖励输出（`chosenPayment` 不钉公钥），
+属免签执行者的设计性质，但 `actorKey` witness 未被绑定是一处应修的弱点。

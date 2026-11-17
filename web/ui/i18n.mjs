@@ -1,4 +1,4 @@
-/** V2 display-only localization. Never visits values, URLs, data attributes, or engine objects. */
+/** Display-only localization shared by V2 and Rolling. Never visits values, URLs, data attributes, or engine objects. */
 import {EN} from './messages-en.mjs';
 export const normalize = s => String(s).replace(/\s+/g, ' ').trim();
 export function chooseLanguage(saved, languages = []) {
@@ -9,26 +9,30 @@ let language = 'zh-CN';
 export const getLanguage = () => language;
 export function setLanguage(value) { language = value === 'en' ? 'en' : 'zh-CN'; }
 const literal = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const exact = new Map(), patterns = [];
-for (const [source, english] of EN) {
-  const key = normalize(source);
-  if (!/\{\d+\}/.test(key)) { exact.set(key, english); continue; }
-  const ids = [], pieces = key.split(/(\{\d+\})/);
-  const regex = new RegExp('^' + pieces.map(p => /^\{\d+\}$/.test(p) ? (ids.push(p), '(.*?)') : literal(p)).join('') + '$', 'u');
-  patterns.push({regex, ids, english, weight: key.replace(/\{\d+\}/g, '').length});
-}
-patterns.sort((a, b) => b.weight - a.weight);
-export function englishText(value, depth = 0) {
-  const s = normalize(value);
-  if (exact.has(s)) return exact.get(s);
-  if (depth < 5) for (const p of patterns) {
-    const m = p.regex.exec(s); if (!m) continue;
-    const vars = Object.fromEntries(p.ids.map((id, i) => [id, englishText(m[i + 1], depth + 1)]));
-    return p.english.replace(/\{\d+\}/g, id => vars[id] ?? id);
+function createTranslator(messages = EN) {
+  const exact = new Map(), patterns = [];
+  for (const [source, english] of messages) {
+    const key = normalize(source);
+    if (!/\{\d+\}/.test(key)) { exact.set(key, english); continue; }
+    const ids = [], pieces = key.split(/(\{\d+\})/);
+    const regex = new RegExp('^' + pieces.map(p => /^\{\d+\}$/.test(p) ? (ids.push(p), '(.*?)') : literal(p)).join('') + '$', 'u');
+    patterns.push({regex, ids, english, weight: key.replace(/\{\d+\}/g, '').length});
   }
-  // Unmapped external diagnostics are retained verbatim, never reclassified as success.
-  return s;
+  patterns.sort((a, b) => b.weight - a.weight);
+  function translate(value, depth = 0) {
+    const s = normalize(value);
+    if (exact.has(s)) return exact.get(s);
+    if (depth < 5) for (const p of patterns) {
+      const m = p.regex.exec(s); if (!m) continue;
+      const vars = Object.fromEntries(p.ids.map((id, i) => [id, translate(m[i + 1], depth + 1)]));
+      return p.english.replace(/\{\d+\}/g, id => vars[id] ?? id);
+    }
+    // Unmapped external diagnostics are retained verbatim, never reclassified as success.
+    return s;
+  }
+  return translate;
 }
+export const englishText = createTranslator();
 export const text = s => language === 'en' ? englishText(s) : s;
 export function localTimeZone() { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
 export function formatLocalTime(timestamp, lang = language) {
@@ -39,7 +43,12 @@ export function formatLocalTime(timestamp, lang = language) {
     hourCycle: 'h23', timeZoneName: 'shortOffset',
   }).format(timestamp);
 }
-export function installLocalization(doc = document) {
+export function installLocalization(doc = document, {
+  messages = EN,
+  titles = {en: 'Kaswin V2.0.2 · Clarity at every step', 'zh-CN': 'Kaswin V2.0.2 · 每一步，都看得清'},
+  descriptions = {en: 'Kaswin V2.0.2: review tickets, fees, purchase records and data sources before approving a Kaspa transaction.', 'zh-CN': 'Kaswin V2.0.2：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa 交易。'},
+} = {}) {
+  const translate = messages === EN ? englishText : createTranslator([...EN, ...messages]);
   const sources = new WeakMap();
   const excluded = node => node.parentElement?.closest('script,style,textarea,input,[data-no-i18n]');
   function apply(node, key, read, write) {
@@ -47,7 +56,7 @@ export function installLocalization(doc = document) {
     let entries = sources.get(node); if (!entries) sources.set(node, entries = new Map());
     let entry = entries.get(key);
     if (!entry || current !== entry.last) entry = {source: current, last: current};
-    const translated = text(entry.source);
+    const translated = language === 'en' ? translate(entry.source) : entry.source;
     const leading = entry.source.match(/^\s*/)[0], trailing = entry.source.match(/\s*$/)[0];
     const next = language === 'en' && translated !== normalize(entry.source) ? leading + translated + trailing : entry.source;
     if (current !== next) write(next);
@@ -83,8 +92,8 @@ export function installLocalization(doc = document) {
   const refresh = () => {
     observer.disconnect(); doc.documentElement.lang = language;
     walk(doc.documentElement);
-    doc.title = language === 'en' ? 'Kaswin V2.0.2 · Clarity at every step' : 'Kaswin V2.0.2 · 每一步，都看得清';
-    doc.querySelector('meta[name="description"]')?.setAttribute('content', language === 'en' ? 'Kaswin V2.0.2: review tickets, fees, purchase records and data sources before approving a Kaspa transaction.' : 'Kaswin V2.0.2：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa 交易。');
+    doc.title = titles[language];
+    doc.querySelector('meta[name="description"]')?.setAttribute('content', descriptions[language]);
     observe();
   };
   refresh(); return refresh;

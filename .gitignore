@@ -1,6 +1,8 @@
 node_modules/
 dist/
 scripts/core/lib/
+scripts/rolling/core/lib/
+/var/rolling-indexer/
 
 .env
 .env.*

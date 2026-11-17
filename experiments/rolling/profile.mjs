@@ -1,5 +1,5 @@
 /** Candidate artifact authentication, not production approval. No network or compiler invocation. */
-import {createHash} from 'node:crypto';
+import {sha256} from '../../scripts/wallet/sha256.mjs';
 import {ascii, same} from '../../scripts/core/lib/bytes.js';
 import {blake2b256} from '../../scripts/core/lib/hashes.js';
 import {templateHash, scriptFor} from '../../scripts/core/lib/state.js';
@@ -17,7 +17,7 @@ export const ABI={
   frozen:[['managerRedeemBytes','int'],['managerTailBytes','int']],
 };
 const contractName=m=>'KaswinRolling'+m[0].toUpperCase()+m.slice(1);
-const sha=text=>createHash('sha256').update(text).digest('hex');
+const sha=text=>hex(sha256(new TextEncoder().encode(text)));
 function bytes(v) {
   if(typeof v==='string') return unhex(v.replace(/^0x/,''));
   check(Array.isArray(v)&&v.every(n=>Number.isInteger(n)&&n>=0&&n<=255),'ARTIFACT_BYTES'); return Uint8Array.from(v);

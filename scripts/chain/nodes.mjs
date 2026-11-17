@@ -25,8 +25,8 @@ export function nodeUrl(v) {
 }
 
 export class JsonRpc {
-  constructor(url, {timeoutMs = 30_000, maxTimeoutMs = Infinity, WebSocketImpl = globalThis.WebSocket, net = null} = {}) {
-    this.url = nodeUrl(url); this.timeoutMs = timeoutMs; this.maxTimeoutMs = maxTimeoutMs; this.WS = WebSocketImpl; this.net = net;
+  constructor(url, {timeoutMs = 30_000, maxTimeoutMs = Infinity, maxFrameBytes = MAX_FRAME, WebSocketImpl = globalThis.WebSocket, net = null} = {}) {
+    this.url = nodeUrl(url); this.timeoutMs = timeoutMs; this.maxTimeoutMs = maxTimeoutMs; this.maxFrameBytes = maxFrameBytes; this.WS = WebSocketImpl; this.net = net;
     this.ws = null; this.next = 0; this.pending = new Map(); this.info = null; this.closed = false;
     this.epoch = 0; this.chainRevision = 0; this.events = new Map();
     this.chainBlocks = new Map(); this.chainBlocksRevision = 0;
@@ -133,7 +133,7 @@ export class JsonRpc {
       ws.onclose = () => { clearTimeout(timer); reject(new Error(`连接已关闭：${host(this.url)}`)); this.close(new Error('NODE_DISCONNECTED')); };
       ws.onmessage = ev => {
         try {
-          if (typeof ev.data !== 'string' || ev.data.length > MAX_FRAME) throw new Error('RPC_FRAME');
+          if (typeof ev.data !== 'string' || ev.data.length > this.maxFrameBytes) throw new Error('RPC_FRAME');
           const m = parseJson(ev.data);
           const id = typeof m?.id === 'number' ? m.id : null;
           const p = id === null ? null : this.pending.get(id);

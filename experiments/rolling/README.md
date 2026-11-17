@@ -1,6 +1,6 @@
 # Rolling active-shard prototype
 
-Source candidate for the rolling Kaswin design. **The five templates have been compiled with the pinned SilverScript 1.0.1 compiler, quoted offline for size and mass, and executed offline in the real `kaspa-txscript` 2.1.0 script engine with a covenants context (`vm/`, `vm-*.mjs`; see "VM execution" below). That is not consensus: acceptance, maturity checks, funding-input signatures and any network submission remain NOT_RUN. The JavaScript unit tests have been run (23/23). The record is [VALIDATION.md](VALIDATION.md).** It is separate from the current V2.0.2 application and its pinned Profile.
+Source candidate for the rolling Kaswin design. **The five templates have been compiled with the pinned SilverScript 1.0.1 compiler, quoted offline for size and mass, and executed offline in the real `kaspa-txscript` 2.1.0 script engine with a covenants context (`vm/`, `vm-*.mjs`; see "VM execution" below). That is not consensus: acceptance, maturity checks and any network submission remain NOT_RUN; funding inputs are signed with a public throwaway key and executed in the engine. The JavaScript unit tests have been run (23/23). The record is [VALIDATION.md](VALIDATION.md).** It is separate from the current V2.0.2 application and its pinned Profile.
 
 The complete specification is [ROLLING-ACTIVE-SHARD-IMPLEMENTATION.md](../../docs/ROLLING-ACTIVE-SHARD-IMPLEMENTATION.md); business rules remain in the [design](../../docs/ROLLING-ACTIVE-SHARD-DRAFT.md). The source now follows the updated rules: a final shard with an original pool under 3 KAS (including an empty one) settles with the last frozen-shard payout batch or final refund batch. WIN stores only the winner key and cursor. Actions 22/23 are retired; merged terminal batches leave no manager successor. Source synchronization is not execution validation.
 
@@ -16,6 +16,9 @@ The complete specification is [ROLLING-ACTIVE-SHARD-IMPLEMENTATION.md](../../doc
 | `fixtures.mjs` | Synthetic ledgers/targets/DRAW proofs built from the real artifacts; shared by `measure.mjs` and the VM cases |
 | `vm/` | Standalone Rust crate (`kaspa-txscript` 2.1.0 pinned, Cargo.lock from the SilverScript 1.0.1 checkout): runs covenant inputs through the real engine, unlimited and under the committed budget |
 | `vm-cases.mjs`, `vm-run.mjs`, `vm-budgets.mjs` | Case generator (positive bases + single-fault mutations), runner/summary, and the measured-budget pass with mass quotation |
+| `vm-shapes.mjs`, `vm-sweep.mjs`, `vm-model.mjs` | Parametric ledger shapes and empirical budget analysis; sampled envelopes are not whole-domain guarantees |
+| `tn10-run.mjs`, `tn10-proof.mjs`, `engine-gate.mjs` | Explicit TN10 experiment runner, real-chain PASS-A acquisition, and transaction-specific engine gate |
+| `deployment-profile.mjs`, `test-signer.mjs` | Pinned candidate loader and closure signer restricted to the existing dedicated TN10 test wallets |
 | `state.mjs` | Canonical 59/93/63-byte manager headers, 9217-byte frozen ledger, counts and balances |
 | `profile.mjs` | Trusted artifact parsing, canonical frames, candidate Profile derivation and exact Profile routing |
 | `transactions.mjs` | Genesis and every action, ABI witnesses, immutable effects, unsigned transaction drafts |
@@ -65,24 +68,39 @@ The HTTP export streams NDJSON at a fixed revision; an `end` record carries the 
 
 ## VM execution
 
-Build and run (nothing here needs a node, network, key or signature):
+Build and run (nothing here needs a node, network or real key; funding inputs are signed with a public, never-funded throwaway key):
 
 ```
 cargo build --release --manifest-path experiments/rolling/vm/Cargo.toml   # set CARGO_TARGET_DIR to keep the build out of the tree
 KASWIN_VM_BIN=<path to kaswin-rolling-vm> node experiments/rolling/vm-run.mjs       # bases + mutations, unlimited budget; writes artifacts/vm/report.json
 KASWIN_VM_BIN=<path to kaswin-rolling-vm> node experiments/rolling/vm-budgets.mjs   # rebuild with measured budgets, run under the committed limit, quote mass
+KASWIN_VM_BIN=<path to kaswin-rolling-vm> node experiments/rolling/vm-sweep.mjs                # grid of ledger shapes, real units per action (about 17 min)
+KASWIN_VM_BIN=<path to kaswin-rolling-vm> node experiments/rolling/vm-sweep.mjs --random=700 --seed=20261113   # hold-out shapes
+node experiments/rolling/vm-model.mjs                                                          # fit on the grid, check on the hold-out, write artifacts/vm/budget-model.json
 ```
 
-Run on 2026-11-13 against candidate Profile `b56bcd9c…c4e5`: all 48 base transactions (every action, smallest/largest ledgers, final-merge variants) pass; 3,268 single-fault mutations (output values/scripts/covenant bindings/counts, every signature-script argument, target substitution, timing, fee boundaries, DRAW proof bytes and chain accessor, manager header rules) match their expectations; under the measured budgets all bases pass and every `budget-1` variant fails with `ExceededCommittedScriptUnits`. No quoted transaction exceeds the compute, transient or storage mass limits.
+Run on 2026-11-13 against candidate Profile `b56bcd9c…c4e5`: all 48 base transactions (every action, smallest/largest ledgers, final-merge variants) pass; 3,268 single-fault mutations (output values/scripts/covenant bindings/counts, every signature-script argument, target substitution, timing, fee boundaries, DRAW proof bytes and chain accessor, manager header rules) match their expectations; under the measured budgets all bases pass and every `budget-1` variant (152, including every funding input) fails with `ExceededCommittedScriptUnits`. No quoted transaction exceeds the compute, transient or storage mass limits. A sweep of 2,073 grid shapes and 684 random hold-out shapes (counts of old shards/records/targets/funding inputs, refund cursors, DRAW winner position, narrow/wide ticket counts, small/maximal price) ran in the engine with no failure; an empirical model gives per-action budget upper bounds (see VALIDATION.md §5).
 
 What this does and does not establish:
 
 - It is the script engine plus `CovenantsContext`, the same engine call consensus makes per input. It does not check lock/sequence maturity against a DAA score, mass limits, double spends or acceptance; mass is quoted offline by `mass.mjs`.
-- The DRAW chain accessor is a map built by the harness, not a node's selected chain. Funding (P2PK) inputs are never executed, so no signature is checked; their budget (11) is the analytic Schnorr cost plus one unit of margin, not a measurement.
-- Measured consumption depends strongly on ledger size (for example BUY: 0.11 M units with an empty ledger, 1.1 M near full). A builder must dry-run each transaction in the engine to choose budgets; the per-case figures are not worst-case bounds.
+- The DRAW chain accessor is a map built by the harness, not a node's selected chain. Funding (P2PK) inputs are signed by the page's JS Schnorr signer and sighash with a public throwaway key and executed: each uses exactly 100,001 script units (budget 10), and a flipped signature byte or a transaction tampered after signing fails on that input.
+- Measured consumption depends strongly on ledger size (for example BUY: 0.11 M units with an empty ledger, 1.1 M near full). The per-case figures are not bounds. VALIDATION.md §5 gives an empirical envelope respected by the sampled grid and hold-out shapes; it does not guarantee unseen points, N=256, or a mathematical maximum at its chosen corners. The TN10 runner instead measures every concrete transaction in the real engine and checks all inputs again under the committed budgets after signing.
 - Executor and change outputs are checked for value, Schnorr P2PK form and no covenant binding, never for the key: the key is the executor's or funder's own choice. Winner, buyer, creator and manager outputs are pinned.
 - Mutation coverage is sampled (first/middle/last outputs, selected bytes), not exhaustive, and the expectations were written from the contract source; one expectation (change key) was corrected before the final run.
 
+## Testnet 10 experiment runner
+
+The execution scope and wallet allowlist are in [TN10-DEPLOYMENT.md](TN10-DEPLOYMENT.md). Importing modules does not open wallets or connect to a node. Preflight reads public node identity and wallet balances only:
+
+```sh
+node experiments/rolling/tn10-run.mjs --preflight
+KASWIN_VM_BIN=<runner> node experiments/rolling/tn10-run.mjs --execute --scenario=empty
+KASWIN_VM_BIN=<runner> node experiments/rolling/tn10-run.mjs --execute --resume=<run-directory>
+```
+
+Other scenarios are `refund`, `payout`, `shard-payout`, and `shard-refund`. Execution is restricted to TN10 and requires the three existing test-wallet files, explicit invocation and a real engine binary. Durable signed intents and receipts live in ignored `artifacts/tn10/`. Unknown submission is retained and must be reconciled before another operation; resume does not silently replace it. A directory lock prevents concurrent experiment writers. The runner records selected-chain acceptance after a fresh 100-DAA depth recheck, not just submission or block inclusion. The current mainnet application is unchanged.
+
 ## Remaining execution work
 
-Persistence recovery checks beyond the four archive unit cases, node integration and any network experiment are still required. The compiled artifacts, hashes, tags and Profile ID are real, but the Profile stays `UNVALIDATED`. `measure.mjs` still uses a budget of 0 for every input (a size lower bound); `vm-budgets.mjs` is the budgeted quotation. Its draws use synthetic proofs. The live application, wallets, public Indexer and current Profile have not been switched. There is no private-key, signing, broadcast, automatic deployment or approval entry point here.
+Persistence recovery checks beyond the four archive unit cases, node integration and any network experiment are still required. The compiled artifacts, hashes, tags and Profile ID are real, but the Profile stays `UNVALIDATED`. `measure.mjs` still uses a budget of 0 for every input (a size lower bound); `vm-budgets.mjs` is the budgeted quotation. Its draws use synthetic proofs. The live application, wallets, public Indexer and current Profile have not been switched. Signing and submission exist only in the explicitly invoked, TN10-restricted experiment runner above; there is no automatic deployment or production approval entry point.

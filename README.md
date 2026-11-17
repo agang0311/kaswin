@@ -58,3 +58,9 @@ The current contract is V2.0.2, Profile `ed0387c9e77bb4e0a8f1f4654a326c316d83663
 A Kaspa transaction being included in a block does not mean it is accepted. Indexer/REST data is used only for discovery; actual state is verified against the node's acceptance data and the protocol rules. Amounts are handled as bigint or decimal strings.
 
 See the [architecture notes](docs/ARCHITECTURE.md) and [development notes](docs/DEVELOPMENT.md) (currently in Chinese).
+
+## Rolling Testnet 10
+
+The independent Rolling client uses Profile `b56bcd9c…c4e5`, its own TypeScript core, KasWare/Kastle or a dedicated memory wallet, and an optional read-only index service for discovery and synchronization. It remains separate from the V2.0.2 main page and is scoped to Testnet 10.
+
+`npm run build:rolling` generates `dist/rolling-tn10.html` and its manifest without replacing `dist/index.html`. Build the core before starting the separate index service with `npm run start:rolling-indexer`; the service defaults to a private listener and an independent data directory. See the [Rolling runtime](scripts/rolling/README.md), [index service](scripts/rolling/indexer/README.md) and [integration handoff/status](docs/ROLLING-INTEGRATION-HANDOFF.md). Testing and verification are performed by the tester session; source availability does not imply that the new integration has passed or been deployed.

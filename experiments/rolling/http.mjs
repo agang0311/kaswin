@@ -1,7 +1,7 @@
 /** Optional HTTP host adapter. Importing creates no listener. NOT_RUN.
  * Host supplies authentication/rate limiting for uploads and chooses the bind address.
  */
-import {check} from './state.mjs';
+import {check} from '../../scripts/rolling/core.mjs';
 const LIMIT=510000;
 function reply(res,status,body) {
   const bytes=Buffer.from(JSON.stringify(body));res.writeHead(status,{'content-type':'application/json; charset=utf-8',

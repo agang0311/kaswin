@@ -9,7 +9,11 @@
     "build:tn10": "node build/build.mjs --mode=tn10",
     "build:mainnet": "node build/build.mjs --mode=mainnet",
     "build:core": "node build/core.mjs",
-    "check:core": "node build/core.mjs --check"
+    "check:core": "node build/core.mjs --check",
+    "build:rolling-core": "node build/rolling-core.mjs",
+    "check:rolling-core": "node build/rolling-core.mjs --check",
+    "build:rolling": "node build/rolling-tn10.mjs",
+    "start:rolling-indexer": "node scripts/rolling/indexer/server.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -18,5 +22,9 @@
     "esbuild": "0.28.2",
     "playwright": "^1.63.0",
     "typescript": "5.8.3"
+  },
+  "dependencies": {
+    "@walletconnect/sign-client": "^2.26.0",
+    "qrcode": "^1.5.4"
   }
 }

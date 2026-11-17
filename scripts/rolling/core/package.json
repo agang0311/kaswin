@@ -1,0 +1,7 @@
+{
+  "name": "kaswin-rolling-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kaswin rolling active-shard protocol core, TypeScript source candidate (NOT_RUN); lib is generated and ignored"
+}

@@ -19,7 +19,8 @@ function openSeq(proof,base,parent) {
   const branch=(a,b)=>domainHash('SeqCommitmentMerkleBranchHash',cat(a,b));
   return branch(parent,branch(proof.slice(base,base+32),branch(domainHash('SeqCommitMergesetContext',proof.slice(base+64,base+88)),proof.slice(base+32,base+64))));
 }
-export function draw(x,s,p,op) {
+/** The proof-bound ticket only (no shard preimage needed): sampling, maturity and PASS-A structure checks. */
+export function drawSample(x,s,op) {
   const proof=op.proof; check(proof instanceof Uint8Array&&proof.length===240&&op.accessor,'DRAW_PROOF');
   check(x.utxoDaa>=0n&&x.utxoDaa<S.DAA_LIMIT-S.TIMEOUT_DELAY&&x.currentDaa>=x.utxoDaa+S.DRAW_DELAY,'DRAW_MATURITY');
   const boundary=x.utxoDaa+S.DRAW_DELAY,td=openingInt(proof,104);
@@ -30,7 +31,11 @@ export function draw(x,s,p,op) {
   const seed=blake2b256(cat(ascii('KASWIN_ROLLING_DRAW_V1'),unhex(x.cid,32),unhex(x.outpoint.transactionId,32),
     le(BigInt(x.outpoint.index),4),le(boundary,8),proof.slice(0,32),seq));
   const digest=blake2b256(cat(ascii('KASWIN_V2_SAMPLE'),seed,new Uint8Array(8))),sample=fromLe(digest.slice(0,7)),T=BigInt(S.totalTickets(s)),space=1n<<56n;
-  check(sample<space-space%T,'SAMPLE_REJECTED');const ticket=Number(sample%T);
+  check(sample<space-space%T,'SAMPLE_REJECTED');
+  return {ticket:Number(sample%T),seed,proof};
+}
+export function draw(x,s,p,op) {
+  const {ticket,seed,proof}=drawSample(x,s,op);
   const j=op.j??[...s.indices.map(i=>i.end),S.totalTickets(s)].findIndex(end=>ticket<end);integer(j,0,s.indices.length);
   const start=j===0?0:s.indices[j-1].end,end=j<s.indices.length?s.indices[j].end:S.totalTickets(s);
   check(start<=ticket&&ticket<end,'SHARD_HINT');let records=s.records,raw=empty();

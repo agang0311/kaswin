@@ -1,7 +1,7 @@
 /** Positive bases and single-fault mutations for the rolling templates, as cases for the Rust script-engine runner (vm/).
  * Offline. Every base is built by the real JS builder from the real compiled artifacts; every mutation changes ONE thing
  * (some outputs are coupled by value conservation, noted in the label). A "fail" case is evidence only when its base passes.
- * Funding (P2PK) inputs are never executed: no signature is produced or checked. */
+ * Funding (P2PK) inputs are signed with a public throwaway key (see FUNDER_SK below) and executed too, so the page's JS Schnorr signer and sighash are checked by the engine. */
 import {S,profile,fixture,fund,quote,findDraw,shard,p2pk,p2sh,PRICE,KAS,FEE,ACTOR,id} from './fixtures.mjs';
 import {ABI} from './profile.mjs';
 import {ACTION} from './transactions.mjs';
@@ -9,8 +9,16 @@ import {scriptPushes,scriptNumber} from '../../scripts/core/lib/accepted.js';
 import {pushInt} from '../../scripts/core/lib/builders.js';
 import {pushBytes,scriptFor} from '../../scripts/core/lib/state.js';
 import {blake2b256} from '../../scripts/core/lib/hashes.js';
+import {schnorrSign,xonlyPubkey} from '../../scripts/wallet/schnorr.mjs';
+import {schnorrSighash} from '../../scripts/wallet/sighash.mjs';
+import {createHash} from 'node:crypto';
 const {cat,hex,unhex,le}=S;
 const KAS10=10n*KAS,OTHER='ee'.repeat(32);
+// Deterministic PUBLIC throwaway key, same convention as tests/redteam/baseline.mjs: derived from a label, never funded, never a wallet.
+// It signs the funding (P2PK) inputs of the base transactions so the real engine can check the page's JS Schnorr signer and sighash.
+const FUNDER_SK=new Uint8Array(createHash('sha256').update('kaswin-rolling-vm-throwaway-key:funder').digest()),FUNDER=hex(xonlyPubkey(FUNDER_SK));
+export const FUNDER_KEY=FUNDER;
+const F=(n,v)=>fund(n,v,FUNDER);
 const SINK={BUY:'CHANGE',CLOSE:'CHANGE',DRAW:'CHANGE',TIMEOUT:'CHANGE',PAY_OLD:'WINNER',PAY_SELF:'WINNER',REFUND_OLD:'EXECUTOR',REFUND_SELF:'EXECUTOR'};
 const CAP=a=>a.startsWith('PAY')?S.PAY_FEE_CAP:S.FEE_CAP;
 const flip=(h,b,bit=1)=>{const i=b*2,v=(parseInt(h.slice(i,i+2),16)^bit).toString(16).padStart(2,'0');return h.slice(0,i)+v+h.slice(i+2);};
@@ -46,24 +54,27 @@ const names=new Set();
 let budgetFor=null;
 /** Pass 2: fn(caseName, inputCount) -> committed compute budget per input. Default: 65535 everywhere (budget never limits the run). */
 export const useBudgets=fn=>{budgetFor=fn;};
-function base(name,f,op,{targets=[],funds=[],fee=FEE,full=false,header=false}={}) {
+export {base as makeBase};
+function base(name,f,op,{targets=[],funds=[],fee=FEE,full=false,header=false,sign=true,extra={}}={}) {
   if(names.has(name)) throw new Error('duplicate case name '+name);names.add(name);
   const nIn=1+targets.length+funds.length,budgets=budgetFor?budgetFor(name,nIn):Array(nIn).fill(65535);
-  const {d,q}=quote(f,op,{targets,funds,fee,budgets});
+  const {d,q}=quote(f,{...op,actorKey:FUNDER},{targets,funds,fee,budgets});
+  if(sign) {const tx=d.transaction,utxos=d.inputUtxos.map(u=>({value:u.value,spk:u.spk}));
+    for(const i of d.authorizedInputIndices) tx.inputs[i].signatureScript='41'+hex(schnorrSign(FUNDER_SK,schnorrSighash(tx,utxos,i)))+'01';}
   const sinkIdx=d.roles.indexOf(SINK[op.action]);if(sinkIdx<0) throw new Error('no fee sink output in '+name);
-  const c=toCase(name,d,{execute:[...Array(1+targets.length).keys()],
+  const c=toCase(name,d,{execute:[...Array(sign?nIn:1+targets.length).keys()],
     seq:op.accessor?[{blockHash:op.accessor.blockHash,commitment:op.accessor.sequenceCommitment}]:[],
     meta:{kind:'base',module:f.s.module,action:op.action,roles:d.roles,fee:String(fee),cap:String(CAP(op.action)),sinkIdx,nT:targets.length,nF:funds.length,
       cid:f.manager.cid,lockTime:String(d.transaction.lockTime),full,header,heavy:targets.length>=8,local:S.recordTotal(f.s.records),total:S.totalTickets(f.s),
-      terminal:d.transition.terminal!==null,budgets,
+      terminal:d.transition.terminal!==null,budgets,ledgerBytes:f.manager.redeemScript.length,cnt:f.s.indices.length,records:f.s.records.length,...extra,
       mass:Object.fromEntries(['size','computeMass','transientMass','storageMass','feeMass','orderingMass','relayFloor'].map(k=>[k,String(q[k])]))}});
-  for(const i of c.execute) {const m=i===0?f.s.module:'frozen',s=d.transaction.inputs[i].signatureScript;
+  for(const i of [...Array(1+targets.length).keys()]) {const m=i===0?f.s.module:'frozen',s=d.transaction.inputs[i].signatureScript;
     if(enc(decode(s,m))!==s) throw new Error('sigscript round trip failed: '+name+' input '+i);}
   return c;
 }
 const clone=c=>({...c,tx:{...c.tx,inputs:c.tx.inputs.map(i=>({...i})),outputs:c.tx.outputs.map(o=>({...o}))},utxos:c.utxos.map(u=>({...u}))});
 function V(c,family,label,expect,fn) {
-  const x=clone(c);if(fn(x)===false) return null;
+  const x=clone(c);x.execute=c.execute.filter(i=>i<=c.meta.nT);if(fn(x)===false) return null;
   x.name=`${c.name} | ${label}`;x.expect=expect;x.meta={...c.meta,kind:'mutation',base:c.name,family};
   if(names.has(x.name)) throw new Error('duplicate case name '+x.name);names.add(x.name);return x;
 }
@@ -208,7 +219,7 @@ function mutate(c) {
   return acc;
 }
 function* bases() {
-  const buy=(name,o,q,{funds,full=false}={})=>base(name,fixture({module:'sales',...o}),{action:'BUY',quantity:q},{funds:funds??[fund(1,BigInt(q)*PRICE+KAS10)],full});
+  const buy=(name,o,q,{funds,full=false}={})=>base(name,fixture({module:'sales',...o}),{action:'BUY',quantity:q},{funds:funds??[F(1,BigInt(q)*PRICE+KAS10)],full});
   yield buy('BUY first (cnt=0, local=0)',{},1,{full:true});
   yield buy('BUY q=1000',{},1000);
   yield buy('BUY fills the cap exactly (cap=1000, local=10, q=990)',{ticketCap:1000,local:10},990);
@@ -216,8 +227,8 @@ function* bases() {
   yield buy('BUY freeze (cnt=0, local=255)',{local:255},1);
   yield buy('BUY freeze (cnt=254, local=255)',{cnt:254,local:255},1);
   yield buy('BUY freeze (cnt=255, local=255) creating shard 256',{cnt:255,local:255},1);
-  yield buy('BUY with 8 funding inputs',{},1,{funds:Array.from({length:8},(_,i)=>fund(10+i,137500000n))});
-  const close=(name,o)=>base(name,fixture({module:'sales',...o}),{action:'CLOSE'},{funds:[fund(2,KAS10)]});
+  yield buy('BUY with 8 funding inputs',{},1,{funds:Array.from({length:8},(_,i)=>F(10+i,137500000n))});
+  const close=(name,o)=>base(name,fixture({module:'sales',...o}),{action:'CLOSE'},{funds:[F(2,KAS10)]});
   yield close('CLOSE empty (cnt=0, local=0)',{});
   yield close('CLOSE -> SEALED (cnt=0, local=5)',{local:5});
   yield close('CLOSE -> SEALED (cnt=255, local=255) largest',{cnt:255,local:255});
@@ -229,10 +240,10 @@ function* bases() {
   for(const [name,o,old,full] of [['DRAW old shard (cnt=1, local=0)',{cnt:1},true,true],['DRAW old shard (cnt=255, local=255) largest',{cnt:255,local:255},true,false],
     ['DRAW local winner (cnt=0, local=3)',{local:3},false,true],['DRAW local winner (cnt=3, local=100)',{cnt:3,local:100},false,false],
     ['DRAW local winner (cnt=255, local=255)',{cnt:255,local:255},false,false]]) {
-    const f=sf(o);yield base(name,f,findDraw(f,old),{funds:[fund(3,KAS10)],full});
+    const f=sf(o);yield base(name,f,findDraw(f,old),{funds:[F(3,KAS10)],full});
   }
   for(const [name,o] of [['TIMEOUT (cnt=255, local=255) largest',{cnt:255,local:255}],['TIMEOUT (cnt=0, local=5)',{local:5}]]) {
-    const f=fixture({module:'sealed',...o,currentDaa:2000n+S.TIMEOUT_DELAY});yield base(name,f,{action:'TIMEOUT'},{funds:[fund(4,KAS10)]});
+    const f=fixture({module:'sealed',...o,currentDaa:2000n+S.TIMEOUT_DELAY});yield base(name,f,{action:'TIMEOUT'},{funds:[F(4,KAS10)]});
   }
   const win=(name,o,k)=>{const f=fixture({module:'win',...o}),p=o.p??0;return base(name,f,{action:'PAY_OLD'},{targets:f.targets.slice(p,p+k),fee:50000000n});};
   yield win('PAY_OLD k=1 nonfinal (cnt=255, local=255, p=0)',{cnt:255,local:255},1);
@@ -258,12 +269,12 @@ function* bases() {
   yield rold('REFUND_OLD final merge, empty tail (cnt=2, local=0, r=1, c=224)',{cnt:2,local:0,r:1,c:224});
   yield rold('REFUND_OLD mid (cnt=100, local=50, r=57, c=96)',{cnt:100,local:50,r:57,c:96});
   const rself=(name,o,funds,extra={})=>base(name,fixture({module:'refund',...o}),{action:'REFUND_SELF'},{funds,fee:5000000n,...extra});
-  yield rself('REFUND_SELF nonlast (cnt=0, local=255, c=0)',{local:255,r:0,c:0},[fund(5,KAS)]);
-  yield rself('REFUND_SELF nonlast (cnt=255, local=255, r=255, c=0)',{cnt:255,local:255,r:255,c:0},[fund(5,KAS)]);
-  yield rself('REFUND_SELF last batch (cnt=0, local=255, c=224)',{local:255,r:0,c:224},[fund(5,KAS)]);
-  yield rself('REFUND_SELF last batch, one record (cnt=0, local=33, c=32)',{local:33,r:0,c:32},[fund(5,KAS)],{header:true});
+  yield rself('REFUND_SELF nonlast (cnt=0, local=255, c=0)',{local:255,r:0,c:0},[F(5,KAS)]);
+  yield rself('REFUND_SELF nonlast (cnt=255, local=255, r=255, c=0)',{cnt:255,local:255,r:255,c:0},[F(5,KAS)]);
+  yield rself('REFUND_SELF last batch (cnt=0, local=255, c=224)',{local:255,r:0,c:224},[F(5,KAS)]);
+  yield rself('REFUND_SELF last batch, one record (cnt=0, local=33, c=32)',{local:33,r:0,c:32},[F(5,KAS)],{header:true});
   yield rself('REFUND_SELF without funding inputs (cnt=0, local=255, c=32)',{local:255,r:0,c:32},[]);
-  yield rself('REFUND_SELF with 8 funding inputs (cnt=3, local=40, r=3, c=32)',{cnt:3,local:40,r:3,c:32},Array.from({length:8},(_,i)=>fund(20+i,125000000n)));
+  yield rself('REFUND_SELF with 8 funding inputs (cnt=3, local=40, r=3, c=32)',{cnt:3,local:40,r:3,c:32},Array.from({length:8},(_,i)=>F(20+i,125000000n)));
 }
 export function* generate({only,basesOnly=false}={}) {
   for(const c of bases()) {
