@@ -1,4 +1,4 @@
-# Pushing a tag vX.Y.Z builds the mainnet trading HTML from that exact tag and publishes a release with it.
+# Pushing a tag vX.Y.Z builds the TN10 HTML from that exact tag and publishes a release with it.
 # A manual run (workflow_dispatch) only builds and reports the hashes; it never publishes.
 name: release
 
@@ -28,17 +28,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build:mainnet
+      - run: npm run build
       - name: Collect release files
         run: |
           set -euo pipefail
-          node -e "const m=require('./dist/build-manifest.json'); if (m.mode!=='mainnet' || !m.capabilities.mainnetTrading) process.exit(1)"
+          node -e "const m=require('./dist/build-manifest.json'); if (m.mode!=='tn10' || !m.capabilities?.tn10Trading) process.exit(1)"
           mkdir release
           cp dist/index.html release/kaswin.html
           cp dist/build-manifest.json release/build-manifest.json
           (cd release && sha256sum kaswin.html build-manifest.json > SHA256SUMS)
           {
-            echo '### Kaswin mainnet trading build'
+            echo '### Kaswin TN10 build'
             echo '```text'
             cat release/SHA256SUMS
             echo '```'
@@ -59,11 +59,11 @@ jobs:
 
           - 源码提交：\`$GITHUB_SHA\`
           - 合约 Profile ID：\`$profile\`
-          - 本 release 的附件由 GitHub Actions 从上述提交构建（\`npm ci && npm run build:mainnet\`）。
+          - 本 release 的附件由 GitHub Actions 从上述提交构建（\`npm ci && npm run build\`）。
 
           | 文件 | 说明 |
           |---|---|
-          | \`kaswin.html\` | 主网交易构建：主网与 Testnet 10 均可交易；TN10 下另可导入专用测试私钥 |
+          | \`kaswin.html\` | Testnet 10 构建（Rolling 单活动片实现，不支持主网） |
           | \`build-manifest.json\` | 构建模式、合约 Profile、工具版本、源码与产物哈希 |
           | \`SHA256SUMS\` | 以上文件的 SHA256 |
 
