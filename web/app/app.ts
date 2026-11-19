@@ -275,10 +275,6 @@ function chrome() {
   (chip.lastChild as ChildNode).textContent=`${activeNet.label} · ${label}`;
   const netBtn=document.getElementById('netBtn');
   if(netBtn)netBtn.textContent=`${activeNet.key==='mainnet'?'Mainnet':'Testnet 10'} ⇄`;
-  const expBar=document.getElementById('expBar');
-  if(expBar)put(expBar,activeNet.key==='mainnet'
-    ?html`<b>Kaspa 主网 · Rolling</b><span>合约 Profile 证据状态 <b>UNVALIDATED</b>，请谨慎控制单轮金额</span>`
-    :html`<b>Testnet 10 实验版</b><span>TKAS 是测试币，没有真实价值 · 合约 Profile 证据状态 <b>UNVALIDATED</b>，尚未完成全面验证</span>`);
   const footerNet=document.getElementById('footerNet');
   if(footerNet)put(footerNet,html`${activeNet.label} · ${UNIT}<br>节点核对共识 · 钱包逐笔批准 · 扩展私钥不进入本页<br>候选 Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);
   const w=ctl?.state.wallet,b=$('walletBtn');
