@@ -391,15 +391,16 @@ export async function findSpenderViaRest(rpc,round,{net=TN10,maxPages=3,fetcher=
 
 /** Authenticate an Indexer export document against the node WITHOUT failing when its head UTXO was already spent on-chain. */
 async function authenticateIndexerSeed(document,rpc,profile,{net=TN10}={}) {
-  const r=roundFromText(document.roundText,profile,{network:net.networkId}),head=document.head;
-  check(r.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock),'INDEXER_RESPONSE_INVALID');
-  check(!r.intent&&!r.pending?.length&&!r.halted,'INDEXER_PENDING_STATE');
   try{
     return {round:await verifyIndexedSnapshot(document,rpc,profile,{networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id}),nodeVerified:true};
   }catch(e){
     const code=e?.code??e?.safeCode??e?.message;
+    if(e?.headVerifiedRound&&(code==='INDEXER_HEAD_NOT_FINAL'||code==='STALE_INPUT'))return {round:e.headVerifiedRound,nodeVerified:false};
     // If head was already spent (STALE_INPUT) or <100 DAA deep, check head acceptance on node without failing the whole catch-up.
     if(code==='INDEXER_HEAD_NOT_FINAL'||code==='STALE_INPUT'||code==='ROUND_HAS_NO_MANAGER'){
+      const r=roundFromText(document.roundText,profile,{network:net.networkId}),head=document.head;
+      check(r.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock),'INDEXER_RESPONSE_INVALID');
+      check(!r.intent&&!r.pending?.length&&!r.halted,'INDEXER_PENDING_STATE');
       const ev=await acceptedAt(rpc,head.txid,head.acceptingBlock);
       const tx=ev.tx,contexts=ev.inputs.map((u,i)=>({outpoint:tx.inputs[i].previousOutpoint,value:u.value,
         spk:typeof u.spk==='string'?parseSpk(u.spk):u.spk,utxoDaa:u.daa,cid:u.covenantId??null,covenantId:u.covenantId??null}));
@@ -467,6 +468,7 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
     if(!r?.manager)return [];
     try{const mod=identify(r.manager.redeemScript,profile).module;return mod==='win'||mod==='refund'?r.frozen:[];}catch{return [];}
   };
+  let initialLiveFailed=false;
   if(cur&&!cur.terminal&&cur.manager){
     try{
       const targets=pollTargets(cur);
@@ -475,9 +477,11 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
       return {round:cur,source:'node',caughtUp:false,steps:0};
     }catch(e){
       if((e?.code??e?.safeCode)!=='STALE_INPUT')throw e;
+      initialLiveFailed=true;
     }
   }
   // Tier 1: Indexer (only when local round is absent or actually behind the live chain)
+  let indexerErr=null,indexerHeadStale=false;
   if(indexer&&!skipIndexer){
     try{
       let doc;
@@ -488,9 +492,10 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
       if(!cur||seeded.round.step>cur.step||seeded.round.terminal&&!cur.terminal){
         cur=seeded.round;source='indexer';
         if(seeded.nodeVerified&&!cur.terminal)return {round:cur,source:'indexer',caughtUp:false,steps:0};
+        indexerHeadStale=!seeded.nodeVerified;
         await emitProgress(0,true);
       }
-    }catch{}
+    }catch(e){indexerErr=e;}
   }
 
   // Tier 3a: Neither local nor Indexer had the round -> locate GENESIS via REST
@@ -526,6 +531,7 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
       cur=loaded;
     }
   }
+  if(!cur&&indexerErr&&(indexerErr?.code??indexerErr?.safeCode??indexerErr?.message)!=='INDEXER_NOT_FOUND')throw indexerErr;
   check(cur,'ROUND_NOT_FOUND');
   if(cur.terminal)return {round:cur,source:source??'local',caughtUp:source==='indexer'||usedRest,steps:0};
 
@@ -533,6 +539,7 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
   const preimages=seedPreimages(cur,profile);
   const startedAt=Date.now();
   let steps=0,pageCache=null;
+  let skipNextLiveCheck=(source==='local'&&initialLiveFailed)||(source==='indexer'&&indexerHeadStale);
   for(let iter=0;iter<maxSteps;iter++){
     if(timeBudgetMs!=null&&(steps>0||source==='indexer'||usedRest)&&Date.now()-startedAt>=timeBudgetMs){
       return {round:cur,source:steps>0?(usedRest?'rest+node':'node'):(source??'node'),caughtUp:steps>0||source==='indexer',steps,partial:true};
@@ -547,14 +554,17 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
       continue;
     }
     pageCache=null;
-    try{
-      const targets=pollTargets(cur);
-      const live=await liveRound(rpc,cur,profile,{targets});
-      cur={...cur,manager:live.manager,frozen:targets.length?live.targets:cur.frozen};
-      return {round:cur,source:steps>0?(usedRest?'rest+node':'node'):(source??'node'),caughtUp:steps>0||source==='indexer',steps};
-    }catch(e){
-      if((e?.code??e?.safeCode)!=='STALE_INPUT')throw e;
+    if(!skipNextLiveCheck){
+      try{
+        const targets=pollTargets(cur);
+        const live=await liveRound(rpc,cur,profile,{targets});
+        cur={...cur,manager:live.manager,frozen:targets.length?live.targets:cur.frozen};
+        return {round:cur,source:steps>0?(usedRest?'rest+node':'node'):(source??'node'),caughtUp:steps>0||source==='indexer',steps};
+      }catch(e){
+        if((e?.code??e?.safeCode)!=='STALE_INPUT')throw e;
+      }
     }
+    skipNextLiveCheck=false;
     if(preferRest){
       try{
         const foundRest=await findSpenderViaRest(rpc,cur,{net,fetcher});

@@ -338,7 +338,8 @@ function verifyPanel(v: VerifyState|null): Raw|'' {
   if(v.state==='checking')return html`<div class="notice">正在向节点核对这一轮的链上状态…</div>`;
   if(v.state==='partial')return html`<div class="notice warn">已同步部分进度，链上还有更新状态，后台正在继续追赶…（可点「刷新状态」继续）</div>`;
   if(v.state==='ok')return html`<div class="notice ok">已向节点核对（${new Date(v.at??0).toLocaleTimeString()}）：本机记录与链上状态一致。</div>`;
-  return html`<div class="notice bad"><b>与链上状态不一致</b>：${errText(v.code??'')}</div>`;
+  const transient=['INDEXER_TIMEOUT','INDEXER_UNAVAILABLE','RPC_TIMEOUT','NODE_REQUIRED','NODE_CLOSED'].includes(v.code??'');
+  return html`<div class="notice ${transient?'warn':'bad'}"><b>${transient?'同步未完成':'与链上状态不一致'}</b>：${errText(v.code??'')}</div>`;
 }
 function txTable(D: Detail,x: Ctx): Raw {
   const r=D.r,hasShards=!!(D.shards&&D.shards.length);
@@ -672,7 +673,9 @@ function calcBudget(action: string,pc: number,minTickets=3): number {
   const funds=action==='REFUND_SELF'?[]:[{value:1n}];
   return unitsToBudget(managerBoundUnits(action,{state:st,targets:[],funds}));
 }
+let cachedBudgetChart: Raw|null=null;
 function budgetChart(): Raw {
+  if(cachedBudgetChart)return cachedBudgetChart;
   const W=520,H=210,P=30;
   const fam:[string,string,string,number][]=[
     ['BUY','购买','#49eacb',3],['CLOSE','封盘','#60a5fa',3],['DRAW','开奖','#f5c451',3],
@@ -680,10 +683,11 @@ function budgetChart(): Raw {
   ];
   const x=(n: number)=>P+(W-2*P)*n/256,y=(b: number)=>H-P-(H-2*P)*Math.min(b,160)/160;
   const path=(a: string,minT: number)=>Array.from({length:256},(_,i)=>i+1).map((n,i)=>`${i?'L':'M'}${x(n).toFixed(1)},${y(calcBudget(a,n===256&&a==='BUY'?255:n,minT)).toFixed(1)}`).join('');
-  return html`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rolling 预算曲线">
+  cachedBudgetChart=html`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rolling 预算曲线">
     <g class="grid">${[0,40,80,120,160].map(b=>html`<line x1="${P}" x2="${W-P}" y1="${y(b)}" y2="${y(b)}"/><text x="2" y="${y(b)+3}">${b}</text>`)}${[0,64,128,192,256].map(n=>html`<text x="${x(n)-6}" y="${H-10}">${n}</text>`)}</g>
     ${fam.map(([a,_l,c,m])=>html`<path class="l" d="${path(a,m)}" stroke="${c}"/>`)}
   </svg><div class="legend">${fam.map(([_a,l,c])=>html`<span><i style="--c:${c}"></i>${l}</span>`)}</div>`;
+  return cachedBudgetChart;
 }
 function budgetPanel(pc: number,unit='KAS'): Raw {
   const safePc=Math.max(1,Math.min(256,Math.trunc(pc)||32));

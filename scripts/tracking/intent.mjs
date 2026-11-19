@@ -98,7 +98,8 @@ export async function checkAcceptance(rpc,intent,profile,{recover=false,checkpoi
     // identical live UTXO: an accepted transaction spends ALL of its inputs, so one unspent input proves it was never accepted (and, if another input is gone, never can be).
     if(code(e)==='SEARCH_RANGE'&&await someInputLive(rpc,intent))found={accepting:null,complete:true,cursor:intent.cursor};else throw e;
   }
-  intent.cursor=found.cursor;await checkpoint(intent);
+  const prevCursor=intent.cursor;
+  intent.cursor=found.cursor;if(found.cursor!==prevCursor)await checkpoint(intent);
   let resubmitted=false,conflict=false;
   if(recover&&!found.accepting&&found.complete) {
     check(intent.status!=='REJECTED','RECORDED_REJECTION_REQUIRES_REVIEW');
@@ -108,7 +109,7 @@ export async function checkAcceptance(rpc,intent,profile,{recover=false,checkpoi
     }
   }
   if(!found.accepting)return {accepted:false,complete:found.complete,resubmitted,inputsGone:conflict};
-  const virtualDaa=await rpc.currentDaa(),ev=await acceptedAt(rpc,intent.txid,found.accepting);
+  const [virtualDaa,ev]=await Promise.all([rpc.currentDaa(),acceptedAt(rpc,intent.txid,found.accepting)]);
   const firstFee=matchesDraft(ev,intent.draft),depth=virtualDaa>ev.acceptingDaa?virtualDaa-ev.acceptingDaa:0n;
   // Not deep enough: a CANDIDATE carrying everything the round needs to continue (effects are read from the node-served transaction).
   if(virtualDaa<ev.acceptingDaa+REORG_RECHECK_DAA)return {accepted:false,candidate:true,depth,txid:intent.txid,acceptingBlock:ev.accepting,acceptingDaa:ev.acceptingDaa,observedVirtualDaa:virtualDaa,

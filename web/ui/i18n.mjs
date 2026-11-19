@@ -19,29 +19,45 @@ function createTranslator(messages = EN) {
     patterns.push({regex, ids, english, weight: key.replace(/\{\d+\}/g, '').length});
   }
   patterns.sort((a, b) => b.weight - a.weight);
+  const cache = new Map();
   function translate(value, depth = 0) {
     const s = normalize(value);
+    if (!s) return s;
     if (exact.has(s)) return exact.get(s);
+    if (depth === 0 && cache.has(s)) return cache.get(s);
+    let out = s;
     if (depth < 5) for (const p of patterns) {
       const m = p.regex.exec(s); if (!m) continue;
       const vars = Object.fromEntries(p.ids.map((id, i) => [id, translate(m[i + 1], depth + 1)]));
-      return p.english.replace(/\{\d+\}/g, id => vars[id] ?? id);
+      out = p.english.replace(/\{\d+\}/g, id => vars[id] ?? id);
+      break;
+    }
+    if (depth === 0) {
+      if (cache.size >= 2048) cache.delete(cache.keys().next().value);
+      cache.set(s, out);
     }
     // Unmapped external diagnostics are retained verbatim, never reclassified as success.
-    return s;
+    return out;
   }
   return translate;
 }
 export const englishText = createTranslator();
 export const text = s => language === 'en' ? englishText(s) : s;
 export function localTimeZone() { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+const timeFormatters = new Map();
 export function formatLocalTime(timestamp, lang = language) {
   if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || !Number.isFinite(new Date(timestamp).getTime())) return '—';
   // No hard-coded timezone: the browser/OS supplies it, including DST for this instant.
-  return new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hourCycle: 'h23', timeZoneName: 'shortOffset',
-  }).format(timestamp);
+  const locale = lang === 'en' ? 'en-US' : 'zh-CN';
+  let fmt = timeFormatters.get(locale);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(locale, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23', timeZoneName: 'shortOffset',
+    });
+    timeFormatters.set(locale, fmt);
+  }
+  return fmt.format(timestamp);
 }
 export function installLocalization(doc = document, {
   messages = EN,
@@ -52,6 +68,7 @@ export function installLocalization(doc = document, {
   const sources = new WeakMap();
   const excluded = node => node.parentElement?.closest('script,style,textarea,input,[data-no-i18n]');
   function apply(node, key, read, write) {
+    if (language !== 'en' && !sources.has(node)) return;
     const current = read();
     let entries = sources.get(node); if (!entries) sources.set(node, entries = new Map());
     let entry = entries.get(key);

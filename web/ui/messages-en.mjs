@@ -247,6 +247,7 @@ export const EN = [
   ['完成节点核对后可分享或导出', 'Available after node verification completes'],
   ['已向节点核对（{0}）：本机记录与链上状态一致。', 'Checked against the node ({0}): the local record matches the on-chain state.'],
   ['与链上状态不一致', 'Does not match the on-chain state'],
+  ['同步未完成', 'Sync incomplete'],
   ['正在通过索引、节点与 REST API 同步轮次最新状态…', 'Synchronizing the latest round state through the index, node and REST API…'],
   ['没有找到这一轮。', 'This round was not found.'],
   ['返回轮次列表', 'Back to round list'],

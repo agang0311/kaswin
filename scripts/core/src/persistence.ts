@@ -78,7 +78,8 @@ export class IndexedStore implements Store {
             const tx = this.db.transaction('records', 'readwrite'), store = tx.objectStore('records');
             const rows: StoreRow[] = [], result: Stored<T> = {revision: 0, value};
             let cause: unknown;
-            const req = store.openCursor();
+            const range = typeof IDBKeyRange !== 'undefined' && prefix ? IDBKeyRange.bound(prefix, prefix + '\uffff', false, true) : undefined;
+            const req = store.openCursor(range);
             req.onsuccess = () => {
                 try {
                     const c = req.result;
@@ -121,7 +122,8 @@ export class IndexedStore implements Store {
         record: Stored<T>;
     }>> {
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('records', 'readonly'), r = tx.objectStore('records').openCursor(), out: Array<{
+            const range = typeof IDBKeyRange !== 'undefined' && prefix ? IDBKeyRange.bound(prefix, prefix + '\uffff', false, true) : undefined;
+            const tx = this.db.transaction('records', 'readonly'), r = tx.objectStore('records').openCursor(range), out: Array<{
                 key: string;
                 record: Stored<T>;
             }> = [];

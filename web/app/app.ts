@@ -102,7 +102,8 @@ const recordMyTx=(walletKey: string,txid: string)=>{
   if(!list.includes(txid)){list.push(txid);if(list.length>500)list.splice(0,list.length-500);map[walletKey]=list;LS.set('myTxs',map);}
 };
 function buildItem(r: Round,d: bigint|null,t: Record<string,number>,own: Record<string,string>): Item {
-  const fp=[r.step,r.terminal??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.frozen.length,r.intent?.status??'',r.halted??'',r.pending?.length??0,d??'',t[r.cid]??0,own[r.cid]??''].join('|');
+  const daaKey=r.terminal?'':(d??'');
+  const fp=[r.step,r.terminal??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.frozen.length,r.intent?.status??'',r.halted??'',r.pending?.length??0,daaKey,t[r.cid]??0,own[r.cid]??''].join('|');
   const cached=itemCache.get(r.cid);
   if(cached&&cached.fp===fp&&cached.item.r===r)return cached.item;
   let f: Partial<Facts>,a: Item['a'];
@@ -139,6 +140,8 @@ function holdings(it: Item,shards: ShardView[]|null=null): Holdings|null {
  * can no longer delay (or, by finishing late, overwrite) the newest stored state, and DAA is refreshed separately (pollDaa). */
 function rebuild() {
   const t=touched(),own=LS.get<Record<string,string>>('owners',{});let dirty=false;
+  const activeCids=new Set(lastRounds.map(r=>r.cid));
+  for(const k of itemCache.keys())if(!activeCids.has(k))itemCache.delete(k);
   items=lastRounds.map(r=>buildItem(r,daa,t,own));
   for(const i of items)if(i.f.owner&&own[i.r.cid]!==i.f.owner){own[i.r.cid]=i.f.owner;dirty=true;}
   if(dirty)LS.set('owners',own);
@@ -268,6 +271,7 @@ const ctxt=(): Ctx=>{conn.discoveredSource=ctl.state.discoveredSource??null;retu
 interface Focus {id: string;s: number|null;e: number|null}
 function captureFocus(): Focus|null {const a=document.activeElement as HTMLInputElement|null;return a&&a.id&&$('view').contains(a)?{id:a.id,s:a.selectionStart,e:a.selectionEnd}:null;}
 function restoreFocus(f: Focus|null) {if(!f)return;const el=$<HTMLInputElement>(f.id);if(!el)return;el.focus({preventScroll:true});try{el.setSelectionRange(f.s,f.e);}catch{}}
+let lastFooterKey='',lastThemeIcon='';
 function chrome() {
   const ok=conn.node===true,bad=conn.node===false,chip=$('nodeChip');
   const label=ok?'已连接':bad?'节点连接失败，点此处理':'连接中…';
@@ -275,15 +279,15 @@ function chrome() {
   (chip.lastChild as ChildNode).textContent=`${activeNet.label} · ${label}`;
   const netBtn=document.getElementById('netBtn');
   if(netBtn)netBtn.textContent=`${activeNet.key==='mainnet'?'Mainnet':'Testnet 10'} ⇄`;
-  const footerNet=document.getElementById('footerNet');
-  if(footerNet)put(footerNet,html`${activeNet.label} · ${UNIT}<br>节点核对共识 · 钱包逐笔批准 · 扩展私钥不进入本页<br>候选 Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);
+  const footerNet=document.getElementById('footerNet'),fk=`${activeNet.key}|${profile?.id??TN10_PROFILE_ID}`;
+  if(footerNet&&fk!==lastFooterKey){lastFooterKey=fk;put(footerNet,html`${activeNet.label} · ${UNIT}<br>节点核对共识 · 钱包逐笔批准 · 扩展私钥不进入本页<br>候选 Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);}
   const w=ctl?.state.wallet,b=$('walletBtn');
   b.className='wbtn'+(w?' on':'');
   b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?' · 仅收款':''}`:'连接钱包';
   document.querySelectorAll<HTMLElement>('.nav [data-go]').forEach(n=>{if(n.dataset.go===(S.view==='round'?'explore':S.view))n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
   document.documentElement.dataset.theme=S.theme;
   const themeLabel=S.theme==='dark'?'切换为浅色模式':'切换为深色模式';
-  $('themeBtn').innerHTML=ic(S.theme==='dark'?'sun':'moon').s;
+  if(lastThemeIcon!==S.theme){lastThemeIcon=S.theme;$('themeBtn').innerHTML=ic(S.theme==='dark'?'sun':'moon').s;}
   $('themeBtn').setAttribute('aria-label',themeLabel);$('themeBtn').title=themeLabel;
   $('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';
 }
@@ -369,6 +373,7 @@ async function autoVerify(cid: string) {
   const it=items.find(i=>i.r.cid===cid);
   if(it&&(it.r.terminal||it.r.intent))return;
   if(!it&&!/^[0-9a-f]{64}$/.test(cid))return;
+  if(!it&&S.indexer.trim()&&conn.indexer===null&&!conn.indexerStale)return;
   await doVerify(cid);
 }
 async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
@@ -537,13 +542,18 @@ async function onImportFile(file: File|undefined) {
   } catch(e) {toast(errText(e),'bad');}
   await refresh();
 }
+let balanceInflight: Promise<void>|null=null;
 async function refreshBalance(force=false) {
   const w=ctl.state.wallet,rpc=ctl.state.rpc;
   if(!w||!canSign(w)||!rpc){balance=null;return;}
   if(!force&&Date.now()-balanceAt<30000)return;
+  if(balanceInflight)return balanceInflight;
   balanceAt=Date.now();
-  try {balance=(await commonUtxos(rpc,w.address)).filter(u=>!u.isCoinbase&&!u.covenantId).reduce((n,u)=>n+u.value,0n);}catch{balance=null;}
-  chrome();if(modalOpen()&&$('mTitle').dataset.sourceTitle==='钱包')openWallet();else render();
+  balanceInflight=(async()=>{
+    try {balance=(await commonUtxos(rpc,w.address)).filter(u=>!u.isCoinbase&&!u.covenantId).reduce((n,u)=>n+u.value,0n);}catch{balance=null;}
+    chrome();if(modalOpen()&&$('mTitle').dataset.sourceTitle==='钱包')openWallet();else render();
+  })().finally(()=>{balanceInflight=null;});
+  return balanceInflight;
 }
 /* ------------------------------------------------------------------ connection / wallet dialogs */
 /** Node and service are connected independently, so one failing never reports the other as down. Both return the error (or null). */
@@ -569,6 +579,7 @@ async function connectAuto() {
     if(S.indexer.trim())idxErr=await connectIndexerPart(S.indexer.trim());
     if(!S.indexer.trim()||idxErr){try{await ctl.refreshIndex();}catch{}}
     conn.discoveredSource=ctl.state.discoveredSource??null;
+    if(S.cid&&verify.get(S.cid)?.fp==='loading'&&verify.get(S.cid)?.state==='bad')verify.delete(S.cid);
     if(S.view==='round'&&S.cid&&!items.some(i=>i.r.cid===S.cid))void hydrateRoundPreview(S.cid);
     chrome();await refresh();
   })();
@@ -875,8 +886,11 @@ async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=fa
       }else if(rewatch){
         void ctl.watchRound(targetCid);
       }
-    }else if(!previewRound||previewRound.cid!==targetCid||!previewRound.terminal){
-      await hydrateRoundPreview(targetCid);
+    }else{
+      if(!previewRound||previewRound.cid!==targetCid)await hydrateRoundPreview(targetCid);
+      if(ctl.state.rpc&&!ctl.isSyncing?.(targetCid)&&verify.get(targetCid)?.state!=='checking'){
+        setTimeout(()=>{if(S.view==='round'&&S.cid===targetCid)void autoVerify(targetCid);},0);
+      }
       if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(targetCid);
     }
   }catch{if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(targetCid);}
@@ -901,10 +915,10 @@ async function main() {
     if(polling||ctl.state.busy||modalOpen())return;
     polling=true;
     try {
-      const rounds=items.map(i=>i.r),waiting=rounds.find(r=>['SUBMITTED','UNKNOWN','PREPARED'].includes(r.intent?.status??'')),slow=Date.now()-lastSlow>=8000;
+      const rounds=items.map(i=>i.r),waiting=rounds.find(r=>['SUBMITTED','UNKNOWN','PREPARED'].includes(r.intent?.status??'')),slow=!document.hidden&&Date.now()-lastSlow>=8000;
       if(!waiting&&!slow)return;
       if(slow)lastSlow=Date.now();
-      const target=waiting??rounds.find(r=>r.pending.length>0);
+      const target=waiting??(document.hidden?undefined:rounds.find(r=>r.pending.length>0));
       if(target&&ctl.state.rpc){try{await ctl.track(target.cid);}catch{}await refresh();}
       else if(slow)void pollDaa();
       if(slow)void refreshBalance();

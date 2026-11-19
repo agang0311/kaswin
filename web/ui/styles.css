@@ -276,8 +276,6 @@ main{max-width:1240px;padding-top:34px}.hero{grid-template-columns:1.45fr 1fr;al
 @media(max-width:520px){.tiers{grid-template-columns:1fr}}
 
 /* ---- Rolling TN10 additions (the base above is the main page stylesheet; only experiment-specific pieces below) ---- */
-.exp-bar{display:flex;gap:6px 12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:7px 16px;font-size:12px;text-align:center;background:var(--amber-soft);border-bottom:1px solid color-mix(in srgb,var(--amber) 35%,transparent);color:var(--text)}
-.exp-bar b{color:var(--amber);font-weight:800}
 .tag.amber{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,transparent);background:var(--amber-soft)}
 .panel[class*=" t-"]{border-top:3px solid var(--tone,var(--line))}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
@@ -299,7 +297,7 @@ button.out{font:inherit;color:inherit;width:100%}
 details>summary{cursor:pointer}
 footer{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between;align-items:flex-start}
 @media(max-width:900px){.join{grid-template-columns:1fr}}
-@media(max-width:720px){.exp-bar{justify-content:flex-start;text-align:left}.joinrow{flex-direction:column}.joinrow .btn{width:100%}main{padding-bottom:110px}}
+@media(max-width:720px){.joinrow{flex-direction:column}.joinrow .btn{width:100%}main{padding-bottom:110px}}
 
 /* ---- Red-team fixes (tests/redteam/ROLLING-WEB-TEST.md §11, §13) ---- */
 /* Toasts raised while a modal <dialog> is open live inside it (top layer); same look as the page-level container. */
@@ -309,7 +307,7 @@ dialog.modal>.toasts{position:fixed;right:18px;bottom:18px;z-index:300}
 :root[data-theme=light]{--dim:#566877;--kas-ink:#0a7a66;--gold-ink:#8a6407;--amber-ink:#9a4507}
 .link,.hash-link,.eyebrow,.tag.kas,.badge.t-mint,.t-mint .badge,.flow .n,.pills button[aria-pressed=true]{color:var(--kas-ink)}
 .badge.t-gold,.t-gold .badge{color:var(--gold-ink)}
-.badge.t-amber,.t-amber .badge,.tag.amber,.why,.exp-bar b,.btn.warn{color:var(--amber-ink)}
+.badge.t-amber,.t-amber .badge,.tag.amber,.why,.btn.warn{color:var(--amber-ink)}
 /* The footer holds a 64-hex Profile id: let it wrap instead of pushing the page wider than a phone screen. */
 footer>*{min-width:0;max-width:100%}footer .mono{overflow-wrap:anywhere;word-break:break-all}
 .err:empty{display:none}.err{margin:8px 0}

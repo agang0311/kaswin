@@ -163,8 +163,9 @@ export class RoundStore {
     if(this.store.compareAndSetWithCheck)return this.store.compareAndSetWithCheck(this.key(round.cid),expectedRevision,round,this.prefix,inspect);
     check(this.store.db,'ATOMIC_STORE_REQUIRED');
     return new Promise((resolve,reject)=>{
+      const range=typeof IDBKeyRange!=='undefined'&&this.prefix?IDBKeyRange.bound(this.prefix,this.prefix+'\uffff',false,true):undefined;
       const tx=this.store.db.transaction('records','readwrite'),object=tx.objectStore('records'),rows=[];let cause,result,previous=null;
-      const req=object.openCursor();
+      const req=object.openCursor(range);
       req.onsuccess=()=>{try{const c=req.result;if(c){if(c.key===this.key(round.cid))previous=c.value;
         if(typeof c.key==='string'&&c.key.startsWith(this.prefix))rows.push({key:c.key,record:c.value});c.continue();}
         else {check((previous?.revision??null)===expectedRevision,'STALE_CACHE_REVISION');inspect(rows);

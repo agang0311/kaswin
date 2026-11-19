@@ -119,15 +119,21 @@ export function shardCatalog(round,profile,walletKey=null) {
   const daa=round.manager.currentDaa??round.manager.utxoDaa;
   const s=verifyManager({...round.manager,currentDaa:daa>round.manager.utxoDaa?daa:round.manager.utxoDaa},profile);
   const indices=s.indices??[],N=indices.length,settledStart=s.module==='win'?s.p:s.module==='refund'?s.r:0;
-  const avail=[...(round.frozen??[])];
+  const byHash=new Map();
+  for(const f of round.frozen??[]){
+    if(!(f?.redeemScript instanceof Uint8Array))continue;
+    const h=hex(blake2b256(f.redeemScript));
+    let decoded=null;try{decoded=identify(f.redeemScript,profile);}catch{}
+    const bucket=byHash.get(h);if(bucket)bucket.push({f,decoded});else byHash.set(h,[{f,decoded}]);
+  }
   const takeFrozen=j=>{
-    const target=indices[j];
-    const byVal=avail.findIndex(f=>{
-      if(!(f?.redeemScript instanceof Uint8Array)||hex(blake2b256(f.redeemScript))!==target.hash)return false;
-      try{return f.value===S.frozenValue(s,j,identify(f.redeemScript,profile).records);}catch{return false;}
+    const bucket=byHash.get(indices[j].hash);
+    if(!bucket||!bucket.length)return null;
+    const byVal=bucket.findIndex(x=>{
+      if(!x.decoded)return false;
+      try{return x.f.value===S.frozenValue(s,j,x.decoded.records);}catch{return false;}
     });
-    const at=byVal>=0?byVal:avail.findIndex(f=>f?.redeemScript instanceof Uint8Array&&hex(blake2b256(f.redeemScript))===target.hash);
-    return at>=0?avail.splice(at,1)[0]:null;
+    return bucket.splice(byVal>=0?byVal:0,1)[0];
   };
   const shards=[];let prevEnd=0;
   for(let j=0;j<N;j++) {
@@ -136,9 +142,9 @@ export function shardCatalog(round,profile,walletKey=null) {
     if(s.module==='win')status=j<s.p?'settled':'frozen';
     else if(s.module==='refund')status=j<s.r?'refunded':j===s.r?'refunding':'frozen';
     if(j>=settledStart) {
-      const f=takeFrozen(j);
-      if(f) {
-        const d=identify(f.redeemScript,profile);
+      const hit=takeFrozen(j);
+      if(hit) {
+        const d=hit.decoded??identify(hit.f.redeemScript,profile);
         if(d.module==='frozen') {
           refundedRecords=status==='refunding'?s.c:0;
           const built=buildRecs(d.records,prevEnd,refundedRecords);

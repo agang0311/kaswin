@@ -37,10 +37,14 @@ export const sameInput = (u, f, {allowDaaDrift = false} = {}) => !!u && u.value 
 /** Accepted transaction data at a known accepting chain block, on one node. */
 export async function acceptedAt(rpc, txid, accepting) {
   hash32(txid); hash32(accepting);
-  const b = (await rpc.call('getBlock', {hash: accepting, includeTransactions: false})).block;
+  const [blockRes, sinkRes] = await Promise.all([
+    rpc.call('getBlock', {hash: accepting, includeTransactions: false}),
+    rpc.call('getSinkBlueScore'),
+  ]);
+  const b = blockRes.block;
   ensure(b?.header?.hash === accepting && b.verboseData?.isChainBlock === true, '接受块当前不在选中链上', 'NOT_CHAIN');
   const parent = hash32(b.verboseData.selectedParentHash);
-  const sink = uint((await rpc.call('getSinkBlueScore')).blueScore), score = uint(b.header.blueScore);
+  const sink = uint(sinkRes.blueScore), score = uint(b.header.blueScore);
   ensure(sink >= score, 'SINK_BEHIND');
   // minConfirmationCount trims the head so only `parent -> accepting` is returned (bounded payload).
   const v = await rpc.call('getVirtualChainFromBlockV2', {startHash: parent, dataVerbosityLevel: 'Full', minConfirmationCount: Number(sink - score > 0n ? sink - score - 1n : 0n)});
@@ -87,9 +91,13 @@ export async function searchAccepted(rpc, txid, cursor, {pages = 40, sinkLagLimi
   // Each page returns <= 10 x mergeset_size_limit = 2,480 chain blocks on TN10 (rpc/service get_virtual_chain_from_block),
   // so 40 pages cover ~99k chain blocks (~2.7 h). Later calls resume from the saved cursor.
   hash32(txid); hash32(cursor);
-  const start = (await rpc.call('getBlock', {hash: cursor, includeTransactions: false})).block;
+  const [startRes, sinkRes] = await Promise.all([
+    rpc.call('getBlock', {hash: cursor, includeTransactions: false}),
+    rpc.call('getSinkBlueScore'),
+  ]);
+  const start = startRes.block;
   ensure(start?.verboseData?.isChainBlock === true, '对账游标已不在选中链上（可能发生重组），需从更早位置重新查询', 'CURSOR_REORG');
-  const sink = uint((await rpc.call('getSinkBlueScore')).blueScore);
+  const sink = uint(sinkRes.blueScore);
   ensure(sink - uint(start.header.blueScore) <= sinkLagLimit, '距离提交时间过久，超出有界查询范围；请使用浏览器或其他索引手动核对', 'SEARCH_RANGE');
   let at = cursor;
   for (let page = 0; page < pages; page++) {
@@ -152,6 +160,16 @@ export async function inputsState(pair, utxos, {addressOf = addressOfLink(pair),
   const byAddr = new Map();
   for (const f of utxos) { const a = addressOf(f.spk); ensure(a, '输入脚本无法转换为地址'); (byAddr.get(a) ?? byAddr.set(a, []).get(a)).push(f); }
   const found = new Map();
+  if (readUtxos === commonUtxos && byAddr.size > 1) {
+    const addrs = [...byAddr.keys()], allLive = new Map();
+    for (let i = 0; i < addrs.length; i += 64) {
+      const r = await pair.call('getUtxosByAddresses', {addresses: addrs.slice(i, i + 64)});
+      ensure(Array.isArray(r?.entries) && r.entries.length <= 5000, '地址 UTXO 过多（>5000），超出本页有界读取范围');
+      for (const e of r.entries) { const u = utxoFromRpc(e); allLive.set(`${u.outpoint.transactionId}:${u.outpoint.index}`, u); }
+    }
+    for (const f of utxos) found.set(f, allLive.get(`${f.outpoint.transactionId}:${f.outpoint.index}`) ?? null);
+    return utxos.map(f => { const u = found.get(f); return {live: !!u, utxo: u}; });
+  }
   for (const [a, list] of byAddr) {
     const live = await readUtxos(pair, a);
     for (const f of list) found.set(f, live.find(x => x.outpoint.transactionId === f.outpoint.transactionId && x.outpoint.index === f.outpoint.index) ?? null);

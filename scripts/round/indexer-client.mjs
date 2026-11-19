@@ -22,24 +22,24 @@ function scope(value,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profile
 }
 export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutMs=12000,networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}) {
   const base=indexerBase(baseUrl);
-  async function get(path) {
-    const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),timeoutMs);
+  async function get(path,{maxBytes=16_000_000,reqTimeoutMs=timeoutMs}={}) {
+    const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),reqTimeoutMs);
     try {
       const response=await fetchImpl(base+path,{method:'GET',credentials:'omit',cache:'no-store',redirect:'error',signal:abort.signal});
       if(response.status===404)throw new Error('INDEXER_NOT_FOUND');
       check(response.ok,'INDEXER_UNAVAILABLE');
-      const length=response.headers?.get('content-length');check(!length||(/^[0-9]+$/.test(length)&&BigInt(length)<=16_000_000n),'INDEXER_RESPONSE_SIZE');
+      const length=response.headers?.get('content-length');check(!length||(/^[0-9]+$/.test(length)&&BigInt(length)<=BigInt(maxBytes)),'INDEXER_RESPONSE_SIZE');
       const reader=response.body?.getReader();let text;
       if(reader){let size=0;const chunks=[],decoder=new TextDecoder();
-        try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;check(size<=16_000_000,'INDEXER_RESPONSE_SIZE');chunks.push(decoder.decode(value,{stream:true}));}text=chunks.join('')+decoder.decode();}
+        try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;check(size<=maxBytes,'INDEXER_RESPONSE_SIZE');chunks.push(decoder.decode(value,{stream:true}));}text=chunks.join('')+decoder.decode();}
         finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
-      }else{text=await response.text();check(new TextEncoder().encode(text).length<=16_000_000,'INDEXER_RESPONSE_SIZE');}
+      }else{text=await response.text();check(new TextEncoder().encode(text).length<=maxBytes,'INDEXER_RESPONSE_SIZE');}
       let value;try{value=parseJson(text);}catch{throw new Error('INDEXER_RESPONSE_INVALID');}
       return scope(value,{networkId,genesisHash,profileId});
     }catch(e){if(abort.signal.aborted)throw new Error('INDEXER_TIMEOUT');if(e?.message?.startsWith('INDEXER_'))throw e;throw new Error('INDEXER_UNAVAILABLE');}
     finally{clearTimeout(timer);}
   }
-  const inflightExports=new Map();
+  const inflightExports=new Map(),recentExports=new Map();
   return Object.freeze({base,
     async info(){const value=await get('/info');check(value.readOnly===true,'INDEXER_SCOPE');return value;},
     async rounds({cursor=null,limit=30}={}){
@@ -53,8 +53,12 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
     exportRound(cid){
       check(HASH.test(cid),'INDEXER_CID');
       const hit=inflightExports.get(cid);if(hit)return hit;
-      const p=get(`/rounds/${cid}/export`).then(value=>{
+      const cached=recentExports.get(cid);
+      if(cached&&Date.now()-cached.at<4000)return Promise.resolve(cached.value);
+      const p=get(`/rounds/${cid}/export`,{maxBytes:64_000_000,reqTimeoutMs:Math.max(timeoutMs,45000)}).then(value=>{
         check(value.cid===cid&&typeof value.roundText==='string'&&HASH.test(value.head?.txid)&&HASH.test(value.head?.acceptingBlock),'INDEXER_RESPONSE_INVALID');
+        if(recentExports.size>=8)recentExports.delete(recentExports.keys().next().value);
+        recentExports.set(cid,{at:Date.now(),value});
         return value;
       }).finally(()=>{inflightExports.delete(cid);});
       inflightExports.set(cid,p);return p;
@@ -83,8 +87,7 @@ export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10
   scope(document,{networkId,genesisHash,profileId});const round=roundFromText(document.roundText,profile,{network:networkId}),head=document.head;
   check(round.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock)&&/^(0|[1-9][0-9]{0,24})$/.test(String(document.revision)),'INDEXER_RESPONSE_INVALID');
   check(!round.intent&&!round.pending.length&&!round.halted,'INDEXER_PENDING_STATE');
-  const evidence=await acceptedAt(rpc,head.txid,head.acceptingBlock),daa=await rpc.currentDaa();
-  check(daa>=evidence.acceptingDaa+100n,'INDEXER_HEAD_NOT_FINAL');
+  const [evidence,daa]=await Promise.all([acceptedAt(rpc,head.txid,head.acceptingBlock),rpc.currentDaa()]);
   const tx=evidence.tx;check(evidence.inputs.length===tx.inputs.length&&evidence.inputs.every(Boolean),'MISSING_ACCEPTED_INPUT_CONTEXT');
   const contexts=evidence.inputs.map((u,i)=>({outpoint:tx.inputs[i].previousOutpoint,value:u.value,spk:typeof u.spk==='string'?parseSpk(u.spk):u.spk,
     utxoDaa:u.daa,cid:u.covenantId??null,covenantId:u.covenantId??null}));
@@ -111,10 +114,17 @@ export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10
   for(const key of ['ticketPrice','ticketCap','minTickets','closeEligibleDaa'])check(round.settings[key]===state[key],'INDEXER_SETTINGS');
   const receipt=round.receipts.at(-1),headFee=contexts.reduce((n,u)=>n+u.value,0n)-tx.outputs.reduce((n,o)=>n+o.value,0n);
   check(round.accepting===head.acceptingBlock&&receipt?.txid===head.txid&&receipt.action===(result.action??'GENESIS')&&BigInt(receipt.feeSompi)===headFee,'INDEXER_HEAD_BINDING');
+  if(daa<evidence.acceptingDaa+100n){
+    const err=Object.assign(new Error('INDEXER_HEAD_NOT_FINAL'),{code:'INDEXER_HEAD_NOT_FINAL',safeCode:'INDEXER_HEAD_NOT_FINAL',headVerifiedRound:round});
+    throw err;
+  }
   if(result.next){
     const manager=round.manager,out=tx.outputs[0];
     check(manager&&manager.outpoint.transactionId===head.txid&&manager.outpoint.index===0&&manager.value===out.value&&same(manager.redeemScript,redeem(result.next,profile)),'INDEXER_HEAD_EFFECTS');
-    const live=await liveRound(rpc,round,profile,{targets:round.frozen});round.manager=live.manager;round.frozen=live.targets;
+    let live;
+    try{live=await liveRound(rpc,round,profile,{targets:round.frozen});}
+    catch(e){if((e?.code??e?.safeCode)==='STALE_INPUT')e.headVerifiedRound=round;throw e;}
+    round.manager=live.manager;round.frozen=live.targets;
   }else{
     check(round.manager===null&&round.frozen.length===0&&['EMPTY','PAID','REFUNDED'].includes(result.terminal),'INDEXER_TERMINAL');
     round.bought=totalTickets(state);
