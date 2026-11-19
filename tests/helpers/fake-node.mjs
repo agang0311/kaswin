@@ -9,11 +9,15 @@ import {spkToAddress} from '../../scripts/wallet/address.mjs';
 const hash=n=>createHash('sha256').update('fake-block-'+n).digest('hex');
 export class FakeNode {
   net=TN10;url='wss://fake-tn10.invalid/wrpc';utxos=new Map();mempool=new Map();chain=[];calls=[];dead=new Map();
+  events=new Map();subscriptions=new Set();
   failSubmit=null;       // 'timeout' (sent, reply lost) | 'reject' (node error) | 'lost' (reply lost AND the tx never reached the pool)
   noMempoolQuery=false;  // true: getMempoolEntriesByAddresses fails (a node that does not serve it): selection must fall back to the node's own rejection
   beforeSubmit=null;     // hook(txid) invoked when the frame is handed to the transport
   constructor({blocks=60,daa=5000}={}) {for(let i=0;i<blocks;i++)this.#block(daa+10*i);}
   seq=0; // block hashes never repeat, even after a block was dropped
+  on(kind,fn){if(!this.events.has(kind))this.events.set(kind,new Set());this.events.get(kind).add(fn);return()=>this.events.get(kind)?.delete(fn);}
+  #emit(kind,data){for(const fn of this.events.get(kind)??[]){try{fn(data);}catch{}}}
+  async subscribe(addresses,enabled=true){return this.call(enabled?'subscribe':'unsubscribe',{UtxosChanged:{addresses}});}
   #block(daa,accepted=[]) {const n=this.seq++;this.chain.push({hash:hash(n),blueScore:1000+this.chain.length,daa,accepted});return this.chain.at(-1);}
   get sinkDaa(){return BigInt(this.chain.at(-1).daa);}
   async currentDaa(){return this.sinkDaa;}
@@ -22,16 +26,26 @@ export class FakeNode {
   /** Mine `n` chain blocks; the first one accepts everything in the mempool. */
   mine(n=1) {
     for(let i=0;i<n;i++) {
-      const daa=this.chain.at(-1).daa+10,accepted=[];
+      const daa=this.chain.at(-1).daa+10,accepted=[],removed=[],added=[];
+      const prefix=this.net?.addressPrefix??'kaspatest';
       if(i===0)for(const [txid,tx] of this.mempool) {
         if(!tx.inputs.every(x=>this.utxos.has(`${x.previousOutpoint.transactionId}:${x.previousOutpoint.index}`)))continue;
         const snaps=tx.inputs.map(x=>({...this.utxos.get(`${x.previousOutpoint.transactionId}:${x.previousOutpoint.index}`)}));
-        for(const x of tx.inputs)this.utxos.delete(`${x.previousOutpoint.transactionId}:${x.previousOutpoint.index}`);
-        tx.outputs.forEach((o,index)=>this.addUtxo({txid,index,value:o.value,spk:o.scriptPublicKey,daa,covenantId:o.covenant?.covenantId??null}));
+        for(const s of snaps){
+          this.utxos.delete(`${s.outpoint.transactionId}:${s.outpoint.index}`);
+          const addr=spkToAddress(s.spk,prefix);
+          if(addr&&this.subscriptions.has(addr))removed.push({address:addr,outpoint:s.outpoint,utxoEntry:{amount:String(s.value),scriptPublicKey:'0000'+s.spk.script,blockDaaScore:String(s.daa),isCoinbase:false,covenantId:s.covenantId}});
+        }
+        tx.outputs.forEach((o,index)=>{
+          this.addUtxo({txid,index,value:o.value,spk:o.scriptPublicKey,daa,covenantId:o.covenant?.covenantId??null});
+          const addr=spkToAddress(o.scriptPublicKey,prefix);
+          if(addr&&this.subscriptions.has(addr))added.push({address:addr,outpoint:{transactionId:txid,index},utxoEntry:{amount:String(o.value),scriptPublicKey:'0000'+o.scriptPublicKey.script,blockDaaScore:String(daa),isCoinbase:false,covenantId:o.covenant?.covenantId??null}});
+        });
         accepted.push({txid,tx,snaps});
       }
       if(i===0)this.mempool.clear();
       this.#block(daa,accepted);
+      if(removed.length||added.length)this.#emit('utxos',{added,removed});
     }
   }
   /** Shallow selected-chain reorg: the tip block (with the transactions it accepted) is replaced by a sibling at a slightly different DAA
@@ -111,8 +125,16 @@ export class FakeNode {
         if(this.failSubmit==='timeout'||this.failSubmit==='lost')throw Object.assign(new Error('RPC_TIMEOUT'),{safeCode:'RPC_TIMEOUT'});
         return {transactionId:txid};
       }
+      case 'subscribe': {
+        for(const a of params.UtxosChanged?.addresses??[])this.subscriptions.add(a);
+        return {};
+      }
+      case 'unsubscribe': {
+        for(const a of params.UtxosChanged?.addresses??[])this.subscriptions.delete(a);
+        return {};
+      }
       default: throw new Error('FAKE_NODE_UNSUPPORTED '+method);
     }
   }
-  close(){}
+  close(){this.subscriptions.clear();this.#emit('disconnect',new Error('NODE_CLOSED'));}
 }

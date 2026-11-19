@@ -16,11 +16,11 @@ export function indexerBase(text) {
   check(['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash,'INDEXER_URL');
   return u.href.replace(/\/+$/,'');
 }
-function scope(value) {
-  check(value&&value.schema===1&&value.network===TN10_NETWORK_ID&&value.genesisHash===TN10_GENESIS&&value.profileId===TN10_PROFILE_ID,'INDEXER_SCOPE');
+function scope(value,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}={}) {
+  check(value&&value.schema===1&&value.network===networkId&&value.genesisHash===genesisHash&&value.profileId===profileId,'INDEXER_SCOPE');
   check(value.stale!==true,'INDEXER_STALE');return value;
 }
-export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutMs=12000}) {
+export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutMs=12000,networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}) {
   const base=indexerBase(baseUrl);
   async function get(path) {
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),timeoutMs);
@@ -35,10 +35,11 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
         finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
       }else{text=await response.text();check(new TextEncoder().encode(text).length<=16_000_000,'INDEXER_RESPONSE_SIZE');}
       let value;try{value=parseJson(text);}catch{throw new Error('INDEXER_RESPONSE_INVALID');}
-      return scope(value);
+      return scope(value,{networkId,genesisHash,profileId});
     }catch(e){if(abort.signal.aborted)throw new Error('INDEXER_TIMEOUT');if(e?.message?.startsWith('INDEXER_'))throw e;throw new Error('INDEXER_UNAVAILABLE');}
     finally{clearTimeout(timer);}
   }
+  const inflightExports=new Map();
   return Object.freeze({base,
     async info(){const value=await get('/info');check(value.readOnly===true,'INDEXER_SCOPE');return value;},
     async rounds({cursor=null,limit=30}={}){
@@ -49,7 +50,15 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
       check(value.nextCursor==null||(typeof value.nextCursor==='string'&&value.nextCursor.length<=2048),'INDEXER_RESPONSE_INVALID');
       return {...value,nextCursor:value.nextCursor??null};
     },
-    async exportRound(cid){check(HASH.test(cid),'INDEXER_CID');const value=await get(`/rounds/${cid}/export`);check(value.cid===cid&&typeof value.roundText==='string'&&HASH.test(value.head?.txid)&&HASH.test(value.head?.acceptingBlock),'INDEXER_RESPONSE_INVALID');return value;},
+    exportRound(cid){
+      check(HASH.test(cid),'INDEXER_CID');
+      const hit=inflightExports.get(cid);if(hit)return hit;
+      const p=get(`/rounds/${cid}/export`).then(value=>{
+        check(value.cid===cid&&typeof value.roundText==='string'&&HASH.test(value.head?.txid)&&HASH.test(value.head?.acceptingBlock),'INDEXER_RESPONSE_INVALID');
+        return value;
+      }).finally(()=>{inflightExports.delete(cid);});
+      inflightExports.set(cid,p);return p;
+    },
     async resolveTxid(txid){check(HASH.test(txid),'INDEXER_TXID');const value=await get(`/txid/${txid}`);check(HASH.test(value.cid),'INDEXER_RESPONSE_INVALID');return value.cid;},
   });
 }
@@ -70,8 +79,8 @@ export async function verifyDrawReceipt(round,rpc,profile) {
 }
 
 /** Reconstruct contexts from NODE-served spent inputs and witnesses, never REST input amounts/scripts. */
-export async function verifyIndexedSnapshot(document,rpc,profile) {
-  scope(document);const round=roundFromText(document.roundText,profile),head=document.head;
+export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}={}) {
+  scope(document,{networkId,genesisHash,profileId});const round=roundFromText(document.roundText,profile,{network:networkId}),head=document.head;
   check(round.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock)&&/^(0|[1-9][0-9]{0,24})$/.test(String(document.revision)),'INDEXER_RESPONSE_INVALID');
   check(!round.intent&&!round.pending.length&&!round.halted,'INDEXER_PENDING_STATE');
   const evidence=await acceptedAt(rpc,head.txid,head.acceptingBlock),daa=await rpc.currentDaa();

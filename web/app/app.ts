@@ -1,9 +1,11 @@
 /** Browser entry for the rolling TN10 page (user-facing). Wiring only: all protocol behaviour lives in controller.mjs, all markup in views.mjs.
  * No console output; interpolated text is escaped by html``; the private key lives in the wallet closure, its input is emptied as soon as it is
  * read, and everything is wiped on disconnect / pagehide. localStorage holds only non-sensitive preferences. */
+import {DRAW_DELAY,TIMEOUT_DELAY} from '../../scripts/core.mjs';
 import {profileData} from '@kaswin/rolling-profile';
+import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {TN10} from '../../scripts/chain/tn10.mjs';
-import {loadProfile,openStore,makeController,describeRound,availableActions,shardCatalog,verifyDrawReceipt,identify,commonUtxos,pubkeyToAddress,connectTN10,createIndexerClient} from './bridge.ts';
+import {loadProfile,openStore,makeController,describeRound,availableActions,shardCatalog,verifyDrawReceipt,identify,commonUtxos,pubkeyToAddress,connectNetwork,createIndexerClient,readDrawProgress} from './bridge.ts';
 import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
 import {chooseLanguage,getLanguage,setLanguage,installLocalization} from '../ui/i18n.mjs';
 import {EN} from '../ui/messages-en.mjs';
@@ -13,27 +15,58 @@ import {availableExtensionWallets} from '../../scripts/wallet/extension-wallet.m
 import {isMobileBrowser,KASPIRE_WAKE_LINK,renderPairingQrDataUrl,triggerAppLink,warmKaspireClient} from '../../scripts/wallet/kaspire-wallet.mjs';
 import {indexerBase} from '../../scripts/round/indexer-client.mjs';
 import {formatTkas,shortHash} from '../ui/format.mjs';
-import {TN10_PROFILE_ID,TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
+import {TN10_PROFILE_ID} from '../../scripts/contract/protocol.mjs';
 import {$,put,html,ic,toast,copyText,download,modal,closeModal,lockModal,initModal,modalOpen} from '../ui/ui.ts';
-import {ACTION_INFO,errText,errCode,phaseOf,UNIT} from '../ui/messages.ts';
-import {exploreView,createView,roundView,roundToolsBody,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost} from '../ui/views.ts';
+import {ACTION_INFO,errText,errCode,phaseOf} from '../ui/messages.ts';
+import {exploreView,createView,roundView,roundToolsBody,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,qtyError} from '../ui/views.ts';
+import {drawReadiness} from '../ui/draw-readiness.ts';
 import type {Raw} from '../ui/ui.ts';
 import {makeShare,parseShare} from './share.ts';
-import type {Ctx,ConfirmCtx,Conn,Controller,Detail,DrawResult,Explorer,Facts,Gate,Hex,Holdings,Item,MineData,Prepared,Profile,Receipt,Round,RoundStoreLike,ShardView,UiState,VerifyState,WalletView} from './types.ts';
+import type {Ctx,ConfirmCtx,Conn,Controller,Detail,DiscoveryCacheLike,DiscoveryCacheSnapshot,DrawProgress,DrawResult,Explorer,Facts,Gate,Hex,Holdings,Item,MineData,NetInfo,Prepared,Profile,Receipt,Round,RoundStoreLike,RpcLike,ShardView,SubmissionProgress,UiState,VerifyState,WalletView} from './types.ts';
 
-const PREFIX='kaswin-rolling-tn10:',ADDR_PREFIX='kaspatest',EX=TN10.explorer;
+const NET_KEY_STORAGE='kaswin-rolling:net';
+const resolveInitialNet=(): NetInfo=>{
+  const fallback=typeof __KASWIN_DEFAULT_NET__==='string'&&__KASWIN_DEFAULT_NET__==='tn10'?'tn10':'mainnet';
+  let key=fallback;
+  try{
+    const q=new URLSearchParams(location.search).get('net');
+    if(q==='mainnet'||q==='tn10'){key=q;localStorage.setItem(NET_KEY_STORAGE,q);}
+    else{const saved=localStorage.getItem(NET_KEY_STORAGE);if(saved==='mainnet'||saved==='tn10')key=saved;}
+  }catch{}
+  return (key==='tn10'?TN10:MAINNET) as unknown as NetInfo;
+};
+const activeNet=resolveInitialNet();
+const switchNetwork=()=>{
+  const next=activeNet.key==='mainnet'?'tn10':'mainnet';
+  try{localStorage.setItem(NET_KEY_STORAGE,next);}catch{}
+  ctl?.disconnectWallet({keepSession:true});
+  const url=new URL(location.href);url.searchParams.delete('net');
+  if(url.href!==location.href)location.href=url.href;else location.reload();
+};
+
+const PREFIX=`kaswin-rolling-${activeNet.key}:`,ADDR_PREFIX=activeNet.addressPrefix,EX=activeNet.explorer,UNIT=activeNet.unit;
 const LS={get<T>(k: string,d: T): T{try{const v=localStorage.getItem(PREFIX+k);return v==null?d:JSON.parse(v) as T;}catch{return d;}},set(k: string,v: unknown): void{try{localStorage.setItem(PREFIX+k,JSON.stringify(v));}catch{}}};
+const DISCOVERY_LS_KEY=`discovered:${TN10_PROFILE_ID}`;
+const discoveryCache: DiscoveryCacheLike={
+  read:()=>LS.get<DiscoveryCacheSnapshot|null>(DISCOVERY_LS_KEY,null),
+  write:(snap: DiscoveryCacheSnapshot)=>LS.set(DISCOVERY_LS_KEY,snap),
+};
 setLanguage(chooseLanguage(LS.get('language',null),[...navigator.languages]));
 const refreshLanguage=installLocalization(document,{
   messages:EN,
-  titles:{en:'Kaswin Rolling · Testnet 10 experiment','zh-CN':'Kaswin Rolling · Testnet 10 实验版'},
-  descriptions:{en:'Kaswin Rolling (Testnet 10 experiment): lottery rounds with rolling purchase shards. Review tickets, fees and each step before approving a Kaspa testnet transaction.','zh-CN':'Kaswin Rolling（Testnet 10 实验版）：不限购买笔数的抽奖轮次。查看票款、费用和每一步，再确认你的 Kaspa 测试网交易。'},
+  titles:activeNet.key==='mainnet'
+    ?{en:'Kaswin Rolling · Kaspa Mainnet','zh-CN':'Kaswin Rolling · Kaspa 主网'}
+    :{en:'Kaswin Rolling · Testnet 10 experiment','zh-CN':'Kaswin Rolling · Testnet 10 实验版'},
+  descriptions:activeNet.key==='mainnet'
+    ?{en:'Kaswin Rolling: lottery rounds with rolling purchase shards on Kaspa mainnet. Review tickets, fees and each step before approving a transaction.','zh-CN':'Kaswin Rolling：Kaspa 主网不限购买笔数的抽奖轮次。查看票款、费用和每一步，再确认你的交易。'}
+    :{en:'Kaswin Rolling (Testnet 10 experiment): lottery rounds with rolling purchase shards. Review tickets, fees and each step before approving a Kaspa testnet transaction.','zh-CN':'Kaswin Rolling（Testnet 10 实验版）：不限购买笔数的抽奖轮次。查看票款、费用和每一步，再确认你的 Kaspa 测试网交易。'},
 });
-const defaultNode=TN10.web.nodes.join('\n');
-const defaultIndexer=TN10.web.indexer;
+const defaultNode=activeNet.web.nodes.join('\n');
+const defaultIndexer=activeNet.web.indexer;
 const initialIndexer=((): string=>{
   const saved=LS.get<string|null>('indexer',null);
   if(saved===null)return defaultIndexer;
+  if(activeNet.key==='mainnet'&&saved.replace(/\/+$/,'')==='https://indexer.kaspay.top/mainnet')return defaultIndexer;
   // Migrate the previous Profile-qualified API on the same host; preserve explicitly configured hosts and empty opt-out.
   return saved.replace(/\/+$/,'').replace(`/rolling/v1/${TN10_PROFILE_ID}`,'');
 })();
@@ -47,12 +80,17 @@ const S: UiState={view:'explore',cid:null,filter:'all',sort:'new',query:'',qty:'
 const conn: Conn={node:null,nodeUrl:null,indexer:null,indexerUrl:null,indexerStale:false,discoveredSource:null};
 const verify=new Map<string,VerifyState>();
 let savedCids=new Set<string>(LS.get<string[]>('saved',[]));
-let checkProgress: string|null=null,sealedTimer: ReturnType<typeof setInterval>|null=null;
+let checkProgress: string|null=null,roundTimer: ReturnType<typeof setInterval>|null=null,daaObservedAt=0;
+let drawObservation: {rpc: RpcLike; key: string; value: DrawProgress}|null=null,drawReading=false,drawReadAt=0;
 let profile: Profile,store: RoundStoreLike,ctl: Controller,items: Item[]=[],daa: bigint|null=null,balance: bigint|null=null,balanceAt=0,renderQueued=false,lastBusy=false,lastHtml='',refreshSeq=0,daaPolling=false,lastRounds: Round[]=[],settingsOpened={nodes:'',indexer:''};
 let shardCache: {key: string;shards: ShardView[]|null}={key:'',shards:null};
+const itemCache=new Map<string,{fp: string;item: Item}>();
 const drawCache=new Map<string,DrawResult>(),drawTried=new Set<string>();
 const canSign=(wallet: WalletView|null): boolean=>!!wallet&&(wallet.kind==='key'||wallet.kind==='extension');
+let submission: SubmissionProgress|null=null;
 let lastWallet: WalletView|null=null;
+let previewRound: Round|null=null,previewSeq=0;
+let detailSyncAt=0,detailPolling=false,lastDetailOkAt=0;
 
 /* ------------------------------------------------------------------ derived data */
 let deferViewWrite=(): boolean=>false;
@@ -64,6 +102,9 @@ const recordMyTx=(walletKey: string,txid: string)=>{
   if(!list.includes(txid)){list.push(txid);if(list.length>500)list.splice(0,list.length-500);map[walletKey]=list;LS.set('myTxs',map);}
 };
 function buildItem(r: Round,d: bigint|null,t: Record<string,number>,own: Record<string,string>): Item {
+  const fp=[r.step,r.terminal??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.frozen.length,r.intent?.status??'',r.halted??'',r.pending?.length??0,d??'',t[r.cid]??0,own[r.cid]??''].join('|');
+  const cached=itemCache.get(r.cid);
+  if(cached&&cached.fp===fp&&cached.item.r===r)return cached.item;
   let f: Partial<Facts>,a: Item['a'];
   try {f=describeRound(r,profile,d);a=availableActions(r,profile,d??0n);}
   catch {f={module:null};a=Object.fromEntries(Object.keys(ACTION_INFO).map(k=>[k,{ok:false,reason:'本机记录无法按固定 Profile 解析'}]));}
@@ -73,12 +114,19 @@ function buildItem(r: Round,d: bigint|null,t: Record<string,number>,own: Record<
     tickets:f.tickets??(r.terminal?r.bought:0)};
   if(!facts.owner)facts.owner=own[r.cid]??null;   // the owner is only readable while the round has a manager UTXO; later it comes from the cache below
   const value=r.manager?r.manager.value+r.frozen.reduce((n: bigint,x)=>n+x.value,0n):0n;
-  return {r,f: facts,a,ph:phaseOf(r,facts),value,at:t[r.cid]??0};
+  const item: Item={r,f: facts,a,ph:phaseOf(r,facts),value,at:t[r.cid]??0};
+  itemCache.set(r.cid,{fp,item});
+  return item;
 }
 /** Tickets the connected wallet holds in the open shards (sales / sealed only; finished shards no longer exist as UTXOs). */
-function holdings(it: Item): Holdings|null {
+function holdings(it: Item,shards: ShardView[]|null=null): Holdings|null {
   const key=ctl.state.wallet?.key,{r,f}=it;
   if(!key||!r.manager||!['sales','sealed'].includes(f.module??''))return null;
+  if(shards){
+    let mine=0,total=0;
+    for(const s of shards){mine+=s.mineCount;total+=s.tickets;}
+    return {tickets:mine,total};
+  }
   try {
     let mine=0,total=0;
     const add=(recs: {end: number;key: string}[])=>{let prev=0;for(const x of recs){const c=x.end-prev;prev=x.end;total+=c;if(x.key===key)mine+=c;}};
@@ -98,18 +146,46 @@ function rebuild() {
 async function refresh() {
   const seq=++refreshSeq,rs=await ctl.rounds();
   if(seq!==refreshSeq)return;                       // a newer refresh already read newer data; never render an older snapshot over it
-  lastRounds=rs;rebuild();render();
+  lastRounds=rs;rebuild();
+  if(previewRound&&items.some(i=>i.r.cid===previewRound!.cid))previewRound=null;
+  const ls=ctl.state.lastSynced;
+  if(ls&&S.cid===ls.cid&&Date.now()-ls.at<10000){
+    const it=items.find(i=>i.r.cid===ls.cid);
+    if(it&&!it.r.intent){
+      const syncedFp=[ls.nodeUrl,ls.managerOutpoint,ls.step,ls.frozen,''].join('|');
+      if(fpOf(it.r)===syncedFp)verify.set(ls.cid,{state:'ok',at:ls.at,fp:syncedFp});
+    }
+  }
+  render();
   void pollDaa();
-  if(S.view==='round'&&S.cid){void autoVerify(S.cid);void resolveDrawHint(S.cid);}
+  if(S.view==='round'&&S.cid){void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
 }
-async function pollDaa() {
-  const rpc=ctl.state.rpc;if(!rpc||daaPolling)return;daaPolling=true;
-  try {const d=await rpc.currentDaa();if(d!==daa){daa=d;rebuild();render();}}catch{}finally{daaPolling=false;}
+async function pollDaa(force=false) {
+  const rpc=ctl.state.rpc;
+  const activeItem=S.view==='round'&&S.cid?items.find(i=>i.r.cid===S.cid):null;
+  const minIntervalMs=activeItem?.f.module==='sealed'?3000:10000;
+  if(!rpc||daaPolling||(!force&&Date.now()-daaObservedAt<minIntervalMs))return;daaPolling=true;
+  try {const d=await rpc.currentDaa();if(rpc!==ctl.state.rpc)return;daaObservedAt=Date.now();if(d!==daa){daa=d;rebuild();render();void pollDrawProgress();}}catch{}finally{daaPolling=false;}
+}
+const drawKey=(r: Round): string=>`${r.cid}/${r.manager?.outpoint.transactionId}/${r.manager?.outpoint.index}/${r.manager?.utxoDaa}/${r.accepting}`;
+async function pollDrawProgress() {
+  const D=detail(),rpc=ctl.state.rpc;
+  if(drawReading||document.hidden||S.view!=='round'||!rpc||ctl.state.busy||D?.preview||!D?.r.manager||D.f.module!=='sealed'||D.r.intent||D.r.halted||daa===null||daa<D.r.manager.utxoDaa+DRAW_DELAY||daa>=D.r.manager.utxoDaa+TIMEOUT_DELAY-1000n)return;
+  const key=drawKey(D.r);
+  if(drawObservation?.rpc===rpc&&drawObservation.key===key&&Date.now()-drawReadAt<5000)return;
+  drawReading=true;drawReadAt=Date.now();
+  try {
+    let value: DrawProgress;
+    try {value=await readDrawProgress(rpc,D.r);}
+    catch {value={phase:'UNAVAILABLE',requiredConfirmations:100n,observedAt:Date.now()};}
+    if(rpc===ctl.state.rpc&&S.view==='round'&&S.cid===D.r.cid&&drawKey(detail()?.r??D.r)===key){drawObservation={rpc,key,value};render();}
+  } finally {drawReading=false;}
 }
 function gate(a: string): Gate {
   const c=ctl.state,free=!!ACTION_INFO[a]?.free;
   if(!store.persistent)return {ok:false,reason:'这个浏览器没有可用的本地存储，无法安全发送。请换用普通（非隐私）窗口。'};
   if(!c.rpc)return {ok:false,reason:'节点未连接。',fix:'settings'};
+  if(S.view==='round'&&S.cid&&!items.some(i=>i.r.cid===S.cid))return {ok:false,reason:'正在向节点核对链上状态，核对完成后即可操作。'};
   if(!c.wallet)return {ok:false,reason:free?'需要一个收款地址来领取奖励。':'需要先连接钱包。',fix:'wallet'};
   if(!free&&!canSign(c.wallet))return {ok:false,reason:'这一步需要能签名的钱包支付手续费。',fix:'wallet'};
   if(c.busy)return {ok:false,reason:`正在${c.busyLabel??'处理上一步'}，请稍候。`};
@@ -124,11 +200,28 @@ const shardsFor=(it: Item): ShardView[]|null=>{
   return shards;
 };
 const detail=(): Detail|null=>{
-  const it=items.find(i=>i.r.cid===S.cid);if(!it)return null;
+  let it=items.find(i=>i.r.cid===S.cid)??null,isPreview=false;
+  if(!it&&previewRound&&previewRound.cid===S.cid){
+    it=buildItem(previewRound,daa,touched(),LS.get<Record<string,string>>('owners',{}));
+    isPreview=true;
+  }
+  if(!it)return null;
   const cachedDraw=it.r.draw??drawCache.get(it.r.cid)??null;
   const r=cachedDraw&&!it.r.draw?{...it.r,draw:cachedDraw}:it.r;
-  return {...it,r,mine:holdings(it),isWinner:!!it.f.winnerKey&&it.f.winnerKey===ctl.state.wallet?.key,shards:shardsFor(it)};
+  const shards=shardsFor(it);
+  return {...it,r,preview:isPreview,mine:holdings(it,shards),isWinner:!!it.f.winnerKey&&it.f.winnerKey===ctl.state.wallet?.key,shards};
 };
+async function hydrateRoundPreview(cid: string) {
+  if(items.some(i=>i.r.cid===cid))return;
+  const seq=++previewSeq;
+  const cached=await ctl.cachedPreview(cid);
+  if(seq!==previewSeq||S.view!=='round'||S.cid!==cid||items.some(i=>i.r.cid===cid))return;
+  if(cached&&(!previewRound||previewRound.cid!==cid||cached.step>previewRound.step)){previewRound=cached;render();}
+  if(ctl.state.rpc&&verify.get(cid)?.state==='checking')return;
+  const fresh=await ctl.loadPreview(cid);
+  if(seq!==previewSeq||S.view!=='round'||S.cid!==cid||items.some(i=>i.r.cid===cid))return;
+  if(fresh&&(!previewRound||previewRound.cid!==cid||fresh.step>=previewRound.step||!!fresh.terminal)){previewRound=fresh;render();}
+}
 function mineData(): MineData|null {
   const w=ctl.state.wallet;if(!w)return null;
   const myTxSet=new Set(LS.get<Record<string,string[]>>('myTxs',{})[w.key]??[]);
@@ -164,8 +257,12 @@ async function resolveDrawHint(cid: string) {
   drawTried.add(cid);
   try{const d=await verifyDrawReceipt(it.r,rpc,profile);if(d){drawCache.set(cid,d);if(S.view==='round'&&S.cid===cid)render();}}catch{}
 }
-const ctxt=(): Ctx=>{conn.discoveredSource=ctl.state.discoveredSource??null;return {items,S,wallet:ctl.state.wallet,balance,daa,conn,busy:ctl.state.busy,ex,logs:ctl.state.logs,gate,detail:S.view==='round'?detail():null,
-  mine:S.view==='mine'?mineData():null,verify:verifyFor(S.cid),discovered:ctl.state.discovered,indexerMore:ctl.state.indexerCursor!==null,walletOptions:availableExtensionWallets(),saved:savedCids,checkProgress};};
+const observedDrawProgress=(): DrawProgress|null=>{
+  const r=items.find(i=>i.r.cid===S.cid)?.r;
+  return r&&drawObservation?.rpc===ctl.state.rpc&&drawObservation.key===drawKey(r)?drawObservation.value:null;
+};
+const ctxt=(): Ctx=>{conn.discoveredSource=ctl.state.discoveredSource??null;return {net:activeNet,items,S,wallet:ctl.state.wallet,balance,daa,conn,busy:ctl.state.busy,ex,logs:ctl.state.logs,gate,detail:S.view==='round'?detail():null,
+  mine:S.view==='mine'?mineData():null,verify:verifyFor(S.cid),discovered:ctl.state.discovered,indexerMore:ctl.state.indexerCursor!==null,walletOptions:availableExtensionWallets(),saved:savedCids,checkProgress,submission,daaObservedAt,drawProgress:observedDrawProgress()};};
 
 /* ------------------------------------------------------------------ render */
 interface Focus {id: string;s: number|null;e: number|null}
@@ -175,7 +272,15 @@ function chrome() {
   const ok=conn.node===true,bad=conn.node===false,chip=$('nodeChip');
   const label=ok?'已连接':bad?'节点连接失败，点此处理':'连接中…';
   (chip.querySelector('.dot') as HTMLElement).className='dot '+(ok?'ok':bad?'bad':'warn');
-  (chip.lastChild as ChildNode).textContent=`Testnet 10 · ${label}`;
+  (chip.lastChild as ChildNode).textContent=`${activeNet.label} · ${label}`;
+  const netBtn=document.getElementById('netBtn');
+  if(netBtn)netBtn.textContent=`${activeNet.key==='mainnet'?'Mainnet':'Testnet 10'} ⇄`;
+  const expBar=document.getElementById('expBar');
+  if(expBar)put(expBar,activeNet.key==='mainnet'
+    ?html`<b>Kaspa 主网 · Rolling</b><span>合约 Profile 证据状态 <b>UNVALIDATED</b>，请谨慎控制单轮金额</span>`
+    :html`<b>Testnet 10 实验版</b><span>TKAS 是测试币，没有真实价值 · 合约 Profile 证据状态 <b>UNVALIDATED</b>，尚未完成全面验证</span>`);
+  const footerNet=document.getElementById('footerNet');
+  if(footerNet)put(footerNet,html`${activeNet.label} · ${UNIT}<br>节点核对共识 · 钱包逐笔批准 · 扩展私钥不进入本页<br>候选 Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);
   const w=ctl?.state.wallet,b=$('walletBtn');
   b.className='wbtn'+(w?' on':'');
   b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?' · 仅收款':''}`:'连接钱包';
@@ -186,17 +291,18 @@ function chrome() {
   $('themeBtn').setAttribute('aria-label',themeLabel);$('themeBtn').title=themeLabel;
   $('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';
 }
-function syncSealedTimer(x: Ctx) {
-  const need=S.view==='round'&&!document.hidden&&x.detail?.f.module==='sealed'&&!x.detail.a.DRAW?.ok&&!!ctl.state.rpc;
-  if(need&&!sealedTimer)sealedTimer=setInterval(()=>{if(!document.hidden)void pollDaa();},1000);
-  else if(!need&&sealedTimer){clearInterval(sealedTimer);sealedTimer=null;}
+function syncRoundTimer(x: Ctx) {
+  const mod=x.detail?.f.module;
+  const need=S.view==='round'&&!document.hidden&&!!ctl.state.rpc&&(mod==='sealed'||(mod==='sales'&&!x.detail?.a.CLOSE?.ok));
+  if(need&&!roundTimer)roundTimer=setInterval(()=>{if(!document.hidden){void pollDaa();if(S.view==='round'&&detail()?.f.module==='sealed'){void pollDrawProgress();render();}}},1000);
+  else if(!need&&roundTimer){clearInterval(roundTimer);roundTimer=null;}
 }
 function render() {
   const focus=captureFocus();
   let body: Raw;
   try {
     const x=ctxt();
-    syncSealedTimer(x);
+    syncRoundTimer(x);
     body=S.view==='create'?createView(x):S.view==='round'?roundView(x):S.view==='mine'?mineView(x):S.view==='protocol'?rulesView(x):exploreView(x);
   } catch(e) {
     // One malformed record must not blank the whole page: say so, keep navigation alive.
@@ -221,12 +327,14 @@ const schedule=()=>{
 /* ------------------------------------------------------------------ navigation */
 const VIEWS=['explore','create','mine','protocol','round'];
 function route() {
-  if(location.hash.startsWith('#join=')){const code=location.href;history.replaceState(null,'',location.pathname+'#/explore');S.view='explore';S.cid=null;S.shard=null;S.purchase=null;S.txLimit=20;render();void onJoin(code);return;}
+  if(location.hash.startsWith('#join=')){const code=location.href;history.replaceState(null,'',location.pathname+'#/explore');S.view='explore';S.cid=null;S.shard=null;S.purchase=null;S.txLimit=20;previewRound=null;void ctl.watchRound(null);render();void onJoin(code);return;}
   const m=/^#\/(\w+)(?:\/([0-9a-f]{64}))?$/.exec(location.hash);
   const nextView=m&&VIEWS.includes(m[1])?m[1]:'explore',nextCid=m?.[2]??null;
-  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.txLimit=20;if(nextView==='round'&&nextCid)verify.delete(nextCid);}
+  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.txLimit=20;if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid)verify.delete(nextCid);}
   S.view=nextView;S.cid=nextCid;if(S.view==='round'&&!S.cid)S.view='explore';
-  if(S.view==='round'&&S.cid){touch(S.cid);void autoVerify(S.cid);void resolveDrawHint(S.cid);}
+  if(S.view!=='round')previewRound=null;
+  void ctl.watchRound(S.view==='round'?S.cid:null);
+  if(S.view==='round'&&S.cid){touch(S.cid);void hydrateRoundPreview(S.cid);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
   render();
 }
 function go(view: string,cid: string|null=null) {
@@ -255,11 +363,13 @@ function failure(e: unknown,action='') {
 const fpOf=(r: Round): string=>[conn.nodeUrl??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.step,r.frozen.length,r.intent?.status??''].join('|');
 function verifyFor(cid: string|null): VerifyState|null {
   const v=cid?verify.get(cid):undefined,it=cid?items.find(i=>i.r.cid===cid):undefined;
-  if(v?.state==='checking'&&(!it||v.fp===fpOf(it.r)))return v;
-  return v&&it&&v.fp===fpOf(it.r)?v:null;
+  if(!it)return v?.fp==='loading'?v:null;
+  if(v&&(v.state==='partial'||((detailPolling||ctl.isSyncing?.(cid??''))&&v.state!=='bad'))&&!it.r.terminal&&!it.r.intent&&(!v.fp||v.fp.startsWith(`${conn.nodeUrl??''}|`)))return v;
+  if(v?.state==='checking'&&v.fp===fpOf(it.r))return v;
+  return v&&v.fp===fpOf(it.r)?v:null;
 }
 async function autoVerify(cid: string) {
-  if(verify.get(cid)?.state==='checking'||verifyFor(cid)||!ctl.state.rpc||ctl.state.busy)return;
+  if(detailPolling||ctl.isSyncing?.(cid)||verify.get(cid)?.state==='checking'||verify.get(cid)?.state==='partial'||verifyFor(cid)||!ctl.state.rpc||ctl.state.busy)return;
   const it=items.find(i=>i.r.cid===cid);
   if(it&&(it.r.terminal||it.r.intent))return;
   if(!it&&!/^[0-9a-f]{64}$/.test(cid))return;
@@ -268,13 +378,24 @@ async function autoVerify(cid: string) {
 async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
   const it=items.find(i=>i.r.cid===cid);
   const fp=it?fpOf(it.r):'loading';
-  verify.set(cid,{state:'checking',fp});render();
+  const prev=verify.get(cid);
+  if(!quiet||!prev||prev.state==='bad'){verify.set(cid,{state:'checking',fp});render();}
   try {
-    const res=await ctl.syncRound(cid,{allowHalted:true,force:true});
+    const res=await ctl.syncRound(cid,{lookup:!it,allowHalted:true,force:true,timeBudgetMs:6000});
     await refresh();
-    const after=items.find(i=>i.r.cid===cid);
-    verify.set(cid,{state:'ok',at:Date.now(),fp:after?fpOf(after.r):fp});
-    if(!quiet)toast(res.steps&&res.steps>0?`已向节点核对并追赶 ${res.steps} 步最新状态`:'已向节点核对：状态与链上一致');
+    const after=items.find(i=>i.r.cid===res.cid);
+    if(res.skipped){
+      verify.delete(cid);
+    }else if(res.partial||res.source==='rest'){
+      verify.set(res.cid,{state:'partial',at:Date.now(),fp:after?fpOf(after.r):fp});
+      if(res.partial){detailSyncAt=0;setTimeout(()=>{void runDetailSync({immediate:true,skipIndexer:true});},120);}
+      if(!quiet)toast(`已先同步 ${res.steps??0} 步最新状态，后台将继续追赶`);
+    }else{
+      lastDetailOkAt=Date.now();
+      verify.set(res.cid,{state:'ok',at:Date.now(),fp:after?fpOf(after.r):fp});
+      if(res.cid!==cid&&S.view==='round'&&S.cid===cid){touch(res.cid);go('round',res.cid);return;}
+      if(!quiet)toast(res.steps&&res.steps>0?`已向节点核对并追赶 ${res.steps} 步最新状态`:'已向节点核对：状态与链上一致');
+    }
   } catch(e) {
     if(errCode(e)==='BUSY'){verify.delete(cid);if(!quiet)toast(errText(e),'warn');}   // another operation is running: not a verdict
     else {verify.set(cid,{state:'bad',code:errCode(e),fp});if(!quiet)failure(e);}
@@ -283,7 +404,7 @@ async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
 }
 function saveCreateForm() {
   const f=S.form,raw=(f.registryAddr??'').trim().toLowerCase();
-  const customAddr=raw&&raw!==TN10_ROLLING_REGISTRY.address?f.registryAddr:undefined;
+  const customAddr=raw&&raw!==activeNet.registry.address?f.registryAddr:undefined;
   LS.set('form',{price:f.price,cap:f.cap,min:f.min,dur:f.dur,custom:f.custom,registry:f.registry!==false,registryAddr:customAddr});
 }
 function planText(p: Prepared): string {
@@ -322,8 +443,16 @@ async function onSend() {
   const isKaspire=ctl.state.wallet?.id==='kaspire',needsSig=p.review.inputs.some(i=>i.kind.includes('需签名'));
   put($('mBody'),html`<ul class="progress"><li class="run">${ctl.state.wallet?.kind==='extension'&&needsSig?`请在 ${ctl.state.wallet.name??'扩展钱包'} 中确认签名；页面随后验签、检查、保存并提交…`:'正在核对签名、检查已签名交易、保存记录并提交…'}</li></ul>${isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">打开 Kaspire 确认签名</a></div>`:''}<p class="small muted">请不要关闭页面。</p>`);
   let status: string;
-  try {status=await ctl.signAndSend();}
-  catch(e) {lockModal(false);closeModal();toast(errText(e),'bad');await refresh();return;}
+  try {
+    status=await ctl.signAndSend({onSigned:()=>{
+      submission={cid,action:p.op.action,txid};
+      lockModal(false);closeModal();go('round',cid);
+    }});
+  }
+  catch(e) {
+    if(submission?.cid===cid)submission={...submission,error:errText(e)};
+    lockModal(false);closeModal();toast(errText(e),'bad');await refresh();return;
+  }
   lockModal(false);closeModal();
   if(status==='SUBMITTED')toast('已提交，等待节点确认。确认前页面会自动更新。');
   else if(status==='REJECTED'){
@@ -336,8 +465,8 @@ async function onSend() {
   if(signerKey&&txid&&status!=='UNSENT'&&status!=='REJECTED')recordMyTx(signerKey,txid);
   if(creatorKey&&status!=='UNSENT'){const own=LS.get<Record<string,string>>('owners',{});own[cid]=creatorKey;LS.set('owners',own);}   // readable from the manager only while the round is live
   await refresh();
+  submission=null;render();
   if(status==='REJECTED'&&!genesis&&classifyRejection(items.find(i=>i.r.cid===cid)?.r.intent).kind==='ROUND_INPUT')void doVerify(cid,{quiet:true});
-  if(genesis&&status!=='UNSENT')go('round',cid);
   void refreshBalance(true);
   if(status!=='UNSENT'&&status!=='REJECTED')void ctl.track(cid).then(refresh,()=>{});
 }
@@ -346,38 +475,45 @@ async function onAction(a: string) {
   if(ctl.state.busy){toast(`正在${ctl.state.busyLabel??'处理上一步'}，请稍候。`,'warn');return;}
   const choice: Record<string,unknown>={action:a};
   if(a==='BUY'){
-    const q=S.qty.trim();if(!/^[1-9][0-9]{0,6}$/.test(q)){toast('请输入要购买的张数','warn');return;}
-    choice.quantity=q;
+    const D=detail();if(!D){toast('没有找到这一轮。','warn');return;}
+    const error=qtyError(S.qty,D.f,D.a.BUY);if(error){toast(error,'warn');return;}
+    choice.quantity=S.qty.trim();
+  }
+  if(a==='DRAW'){
+    const D=detail();if(!D)return;
+    const readiness=drawReadiness(D,ctxt());if(!readiness.ready){toast(readiness.detail,'warn');void pollDrawProgress();return;}
   }
   await prepareAndConfirm(choice,S.cid);
 }
 async function onCreate() {
-  const p=parseCreate(S.form);if(!p.ok){toast(p.errors[0],'warn');return;}
+  const p=parseCreate(S.form,activeNet);if(!p.ok){toast(p.errors[0],'warn');return;}
   const w=ctl.state.wallet;
   if(!canSign(w)){if(w)toast('当前是「仅收款地址」，创建轮次需要能签名的钱包。','warn');openWallet();return;}
   await prepareAndConfirm({action:'GENESIS',registry:p.registry,settings:{ticketPrice:S.form.price.trim(),ticketCap:S.form.cap.trim(),minTickets:S.form.min.trim(),closeMinutes:String(p.mins)}},null);
 }
 async function onJoin(input: unknown) {
-  if(typeof input==='string'&&/^[0-9a-f]{64}$/.test(input.trim()))return onOpenIndexed(input.trim());
+  if(typeof input==='string'&&/^[0-9a-f]{64}$/i.test(input.trim())){
+    const id=input.trim().toLowerCase();
+    S.join='';touch(id);verify.delete(id);go('round',id);return;
+  }
   try {
     const text=await parseShare(input),cid=await ctl.importText(text);
     touch(cid);verify.delete(cid);S.join='';toast('已加入这一轮，正在向节点核对…');await refresh();go('round',cid);
   } catch(e) {toast(errText(e),'bad');}
 }
-async function onOpenIndexed(input: string) {
-  lockModal(true);modal('同步轮次',html`<p>正在按「索引 → 节点确认/追赶 → REST API」顺序同步最新状态…</p>`);
-  try{
-    const result=await ctl.syncRound(input,{lookup:true,allowHalted:true,force:true});
-    touch(result.cid);verify.delete(result.cid);S.join='';lockModal(false);closeModal();await refresh();
-    const after=items.find(i=>i.r.cid===result.cid);if(after)verify.set(result.cid,{state:'ok',at:Date.now(),fp:fpOf(after.r)});
-    go('round',result.cid);
-    toast(result.skipped?'本机有未完成交易或报价，已保留原记录，请先处理。':result.steps&&result.steps>0?`已核对并自动追赶 ${result.steps} 步最新状态。`:'轮次已由当前节点核对并同步。');
-  }
-  catch(e){lockModal(false);closeModal();toast(errText(e),'bad');}
-}
 async function onRefreshIndex(){
-  try{const res=await ctl.refreshIndex() as {fallbackFrom?: unknown}|undefined;conn.indexerStale=!!ctl.state.indexerInfo?.stale||!!res?.fallbackFrom;conn.discoveredSource=ctl.state.discoveredSource??null;await refresh();}
-  catch(e){conn.indexerStale=!!ctl.state.indexer;conn.discoveredSource=ctl.state.discoveredSource??null;toast(errText(e),'warn');render();}
+  try{
+    if(!ctl.state.indexer&&S.indexer.trim()){
+      const err=await connectIndexerPart(S.indexer.trim());
+      if(!err){await refresh();toast('已从索引刷新列表');return;}
+    }
+    const res=await ctl.refreshIndex() as {fallbackFrom?: unknown;skipped?: string}|undefined;
+    conn.indexerStale=!!ctl.state.indexerInfo?.stale||!!res?.fallbackFrom;
+    conn.discoveredSource=ctl.state.discoveredSource??null;
+    await refresh();
+    if(!res?.skipped)toast(conn.discoveredSource==='rest'?'已从 REST 备选刷新列表':'已从索引刷新列表');
+  }
+  catch(e){conn.indexerStale=!!ctl.state.indexer||!!S.indexer.trim();conn.discoveredSource=ctl.state.discoveredSource??null;toast(errText(e),'warn');render();}
 }
 async function onMoreIndex(){try{await ctl.moreIndex();await refresh();}catch(e){toast(errText(e),'warn');}}
 function openRoundTools(cid: string) {
@@ -427,13 +563,21 @@ const nodesOrEmpty=(text: string): string[]=>{try{return parseNodeList(text,defa
 async function connectAuto() {
   conn.node=null;chrome();
   const nodes=nodesOrEmpty(S.nodes);
-  if(nodes.length)await connectNodePart(nodes);else conn.node=false;   // a stored value that no longer validates counts as a failed node, not a crash
-  let idxErr: unknown=null;
-  if(S.indexer.trim())idxErr=await connectIndexerPart(S.indexer.trim());
-  if(!S.indexer.trim()||idxErr){try{await ctl.refreshIndex();}catch{}}
-  conn.discoveredSource=ctl.state.discoveredSource??null;
-  chrome();await refresh();void refreshBalance(true);
-  if(S.view==='round'&&S.cid)void autoVerify(S.cid);   // an imported or deep-linked round opened before the node was ready
+  const nodeTask=(async()=>{
+    if(nodes.length)await connectNodePart(nodes);else conn.node=false;   // a stored value that no longer validates counts as a failed node, not a crash
+    chrome();await refresh();void refreshBalance(true);
+    if(S.view==='round'&&S.cid&&items.some(i=>i.r.cid===S.cid))void autoVerify(S.cid);
+  })();
+  const indexTask=(async()=>{
+    let idxErr: unknown=null;
+    if(S.indexer.trim())idxErr=await connectIndexerPart(S.indexer.trim());
+    if(!S.indexer.trim()||idxErr){try{await ctl.refreshIndex();}catch{}}
+    conn.discoveredSource=ctl.state.discoveredSource??null;
+    if(S.view==='round'&&S.cid&&!items.some(i=>i.r.cid===S.cid))void hydrateRoundPreview(S.cid);
+    chrome();await refresh();
+  })();
+  await Promise.all([nodeTask,indexTask]);
+  if(S.view==='round'&&S.cid)void autoVerify(S.cid);   // an imported or deep-linked round opened before the node/indexer was ready
 }
 function openSettings() {
   settingsOpened={nodes:S.nodes,indexer:S.indexer};   // what this dialog was opened with: only fields the user actually edits are saved
@@ -454,7 +598,10 @@ function inlineError(id: string,text: string) {
 async function onConnectWallet() {
   if(ctl.state.busy){inlineError('wErr','正在处理上一步，请稍候。');return;}
   try {
-    if(S.wtab==='key'){const el=$<HTMLInputElement>('wKey'),v=el.value;el.value='';ctl.openWallet(v);}
+    if(S.wtab==='key'){
+      if(activeNet.key==='mainnet')throw Object.assign(new Error('MAINNET_MEMORY_KEY_DISABLED'),{code:'MAINNET_MEMORY_KEY_DISABLED'});
+      const el=$<HTMLInputElement>('wKey'),v=el.value;el.value='';ctl.openWallet(v);
+    }
     else if(S.wtab==='extension'){
       const id=$<HTMLSelectElement>('wProvider').value;
       if(id==='kaspire'){
@@ -467,20 +614,20 @@ async function onConnectWallet() {
         try {
           await ctl.connectExternalWallet('kaspire',{
             signal:abort.signal,
-            onPairingUri:async({schemeUri,appLink}:{schemeUri: string;appLink: string})=>{
+            onPairingUri:async({wcUri,schemeUri,appLink}:{wcUri: string;schemeUri: string;appLink: string})=>{
               if(abort.signal.aborted)return;
-              if(isMobileBrowser())triggerAppLink(schemeUri);
               let qr='';
               try{qr=await renderPairingQrDataUrl(appLink);}catch{}
               if(abort.signal.aborted)return;
               put($('mBody'),html`
-                <p class="sub" style="margin-top:0">请使用手机 <b>Kaspire</b> 钱包授权连接（请在 Kaspire 中切换到 <b>Testnet 10</b>）：</p>
+                <p class="sub" style="margin-top:0">请使用手机 <b>Kaspire</b> 钱包授权连接（请在 Kaspire 中切换到 <b>${activeNet.label}</b>）：</p>
                 ${qr?html`<div style="display:flex;justify-content:center;margin:12px 0"><img src="${qr}" alt="Kaspire 配对二维码" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:8px"></div>`:''}
                 <div class="btnrow" style="justify-content:center;margin-top:10px">
                   <a class="btn pri" href="${schemeUri}">打开 Kaspire 授权连接</a>
-                  <button class="btn" type="button" data-copy="${appLink}">复制配对链接</button>
+                  <button class="btn" type="button" data-copy="${wcUri}">复制配对链接</button>
                 </div>
                 <p class="small muted" style="text-align:center;margin-top:10px">等待 Kaspire 确认中…（最长 2 分钟）</p>`);
+              if(isMobileBrowser())setTimeout(()=>{if(!abort.signal.aborted)triggerAppLink(schemeUri);},350);
             },
           });
         } catch(e) {
@@ -516,10 +663,10 @@ async function onTestConn() {
   try {
     const urls=parseNodeList($<HTMLTextAreaElement>('sNodes').value,defaultNode);
     const t0=Date.now();
-    const rpc=await connectTN10(urls);
+    const rpc=await connectNetwork(urls,activeNet);
     try {
       const d=await rpc.currentDaa();
-      parts.push(html`<div class="notice ok">节点可用：<b>${rpc.url??urls[0]}</b>（Testnet 10 已同步，含 UTXO 索引 · DAA ${String(d)} · ${Date.now()-t0} ms）</div>`);
+      parts.push(html`<div class="notice ok">节点可用：<b>${rpc.url??urls[0]}</b>（${activeNet.label} 已同步，含 UTXO 索引 · DAA ${String(d)} · ${Date.now()-t0} ms）</div>`);
     } finally {rpc.close?.();}
   } catch(e) {
     parts.push(html`<div class="notice warn">节点：${errText(e)}</div>`);
@@ -528,7 +675,7 @@ async function onTestConn() {
     const raw=$<HTMLInputElement>('sIndexer').value.trim();
     if(!raw)parts.push(html`<div class="notice">索引：未配置，将使用 REST API 备用查询。</div>`);
     else {
-      const baseUrl=indexerBase(raw),client=createIndexerClient({baseUrl}),info=await client.info();
+      const baseUrl=indexerBase(raw),client=createIndexerClient({baseUrl,networkId:activeNet.networkId,genesisHash:activeNet.genesis,profileId:profile.id}),info=await client.info();
       const cnt=info.roundsCount??(await client.rounds({limit:100})).rounds.length;
       parts.push(html`<div class="notice ok">索引可用：共 ${cnt} 个轮次${info.stale?'（索引正在追赶）':''}。</div>`);
     }
@@ -549,7 +696,11 @@ async function onApplyConn() {
     if(!err){S.nodes=newNodes.join('\n');LS.set('nodes',S.nodes);}
     else{problems.push(`节点没有保存：${errText(err)}已保留原配置。`);if(previous.length)await connectNodePart(previous);}
   }
-  if(newIndex!==null){const err=await connectIndexerPart(newIndex);if(!err){S.indexer=newIndex;LS.set('indexer',newIndex);}else problems.push(`索引地址没有保存：${errText(err)}已保留原配置。`);}
+  if(newIndex!==null){
+    const err=await connectIndexerPart(newIndex);
+    if(!err){S.indexer=newIndex;LS.set('indexer',newIndex);if(!newIndex){try{await ctl.refreshIndex();}catch{}}conn.discoveredSource=ctl.state.discoveredSource??null;}
+    else problems.push(`索引地址没有保存：${errText(err)}已保留原配置。`);
+  }
   if(!nodesChanged&&!indexChanged)await connectAuto();   // nothing edited: just re-check the current configuration
   chrome();await refresh();void refreshBalance(true);
   if(modalOpen()&&$('mTitle').dataset.sourceTitle==='高级设置'){
@@ -602,7 +753,7 @@ async function onCheckPending() {
 }
 const ACT: Record<string,()=>unknown>={
   closeModal:()=>closeModal(),create:onCreate,join:()=>onJoin(S.join),send:onSend,connectWallet:onConnectWallet,disconnect:onDisconnect,
-  applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
+  applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,switchNet:switchNetwork,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
   syncNow:()=>{closeModal();void doVerify(CID(),{quiet:false});},toggleStar:()=>toggleStar(CID()),checkPending:onCheckPending,
   moreRound:()=>openRoundTools(CID()),verify:()=>doVerify(CID(),{quiet:false}),
   track:()=>run(()=>ctl.track(CID())),recover:()=>run(()=>ctl.track(CID(),{recover:true}),{ok:'已核对输入并重发原签名'}),
@@ -614,7 +765,7 @@ function onClick(ev: Event) {
   if(!t)return;const d=t.dataset;
   if(d.go2)return go(d.go2);
   if(d.open)return go('round',d.open);
-  if(d.indexed)return void onOpenIndexed(d.indexed);
+  if(d.indexed)return go('round',d.indexed);
   if(d.filter){S.filter=d.filter;return render();}
   if(d.sort){S.sort=d.sort;return render();}
   if(d.dur){S.form.dur=d.dur;saveCreateForm();return render();}
@@ -641,13 +792,19 @@ function onInput(ev: Event) {
   if(id==='cRegAddr'){S.form.registryAddr=v;saveCreateForm();return render();}
   const key=({cPrice:'price',cCap:'cap',cMin:'min',cCustom:'custom'} as Record<string,keyof UiState['form']|undefined>)[id];
   if(key&&key!=='registry'){S.form[key]=v;saveCreateForm();return render();}
-  if(id==='qty'){S.qty=v;const D=detail();if(D)$('qtyCost').textContent=qtyCost(v,D.f,D.a.BUY);}
+  if(id==='qty'){
+    S.qty=v;const D=detail();if(!D)return;
+    const error=qtyError(v,D.f,D.a.BUY),hint=$('qtyCost'),button=$<HTMLButtonElement>('buySubmit'),g=gate('BUY');
+    hint.textContent=qtyCost(v,D.f,D.a.BUY,UNIT);hint.className=`small ${error?'err':'muted'}`;
+    el.setAttribute('aria-invalid',error?'true':'false');
+    button.disabled=!!error||ctl.state.busy||!D.a.BUY?.ok||(!g.ok&&!g.fix);
+  }
 }
 function bind() {
   deferViewWrite=deferPointerRender($('view'),render);
   initModal();
   $('view').addEventListener('click',onClick);$('view').addEventListener('input',onInput);
-  $('view').addEventListener('keydown',ev=>{const el=(ev.target as HTMLElement).closest?.<HTMLElement>('[data-open],[data-indexed]');if((ev.key==='Enter'||ev.key===' ')&&el){ev.preventDefault();if(el.dataset.open)go('round',el.dataset.open);else if(el.dataset.indexed)void onOpenIndexed(el.dataset.indexed);}});
+  $('view').addEventListener('keydown',ev=>{const el=(ev.target as HTMLElement).closest?.<HTMLElement>('[data-open],[data-indexed]');if((ev.key==='Enter'||ev.key===' ')&&el){ev.preventDefault();if(el.dataset.open)go('round',el.dataset.open);else if(el.dataset.indexed)go('round',el.dataset.indexed);}});
   $('modal').addEventListener('click',onClick);
   document.querySelectorAll<HTMLElement>('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go??'explore')));
   document.addEventListener('click',ev=>{
@@ -656,6 +813,7 @@ function bind() {
     if(c){ev.stopPropagation();copyText(c.dataset.copy??'').then(()=>toast('已复制'),()=>toast('复制失败','warn'));}
   });
   $('walletBtn').onclick=openWallet;$('settingsBtn').onclick=openSettings;$('nodeChip').onclick=openSettings;
+  const netBtn=document.getElementById('netBtn');if(netBtn)netBtn.onclick=switchNetwork;
   $('githubBtn').innerHTML=ic('github').s;
   $('settingsBtn').innerHTML=ic('settings').s;
   $('themeBtn').onclick=()=>{S.theme=S.theme==='dark'?'light':'dark';LS.set('theme',S.theme);chrome();};
@@ -664,6 +822,18 @@ function bind() {
     refreshLanguage();$('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';
   };
   window.addEventListener('hashchange',route);
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden){
+      if(S.view==='round'&&S.cid){
+        detailSyncAt=0;
+        void runDetailSync({allowIndexer:true,preferRest:true,immediate:true,rewatch:true});
+      }else if(S.view==='explore'){
+        void ctl.refreshIndex().then(()=>refresh()).catch(()=>{});
+      }
+      void pollDaa();void pollDrawProgress();
+    }
+    render();
+  });
   window.addEventListener('pagehide',()=>ctl.disconnectWallet({keepSession:true}));
   // Same-origin tabs share localStorage: follow language / theme / node / service preferences (the live connection is NOT switched silently).
   window.addEventListener('storage',ev=>{
@@ -676,27 +846,60 @@ function bind() {
   });
 }
 
+async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=false,immediate=false,rewatch=false}: {allowIndexer?: boolean;preferRest?: boolean;skipIndexer?: boolean;immediate?: boolean;rewatch?: boolean}={}) {
+  if(detailPolling||document.hidden||ctl.state.busy||modalOpen()||S.view!=='round'||!S.cid)return;
+  const nowMs=Date.now(),targetCid=S.cid;
+  const pollIntervalMs=ctl.state.watchedAddress?15000:3500;
+  if(!immediate&&nowMs-detailSyncAt<pollIntervalMs)return;
+  detailPolling=true;detailSyncAt=nowMs;
+  try{
+    const cur=items.find(i=>i.r.cid===targetCid);
+    if(cur){
+      if(!cur.r.terminal&&!cur.r.halted&&!cur.r.intent&&ctl.state.rpc&&!ctl.state.prepared&&verify.get(targetCid)?.state!=='checking'){
+        const catchingUp=verify.get(targetCid)?.state==='partial';
+        const staleGap=!catchingUp&&lastDetailOkAt>0&&nowMs-lastDetailOkAt>30000;
+        const useRemote=!skipIndexer&&(allowIndexer||staleGap);
+        const result=await ctl.syncRound(targetCid,{force:true,timeBudgetMs:catchingUp?8000:5000,skipIndexer:!useRemote,preferRest:preferRest||staleGap});
+        if(!result.partial&&!result.skipped)lastDetailOkAt=Date.now();
+        if(!result.unchanged&&!result.skipped){
+          const prevVerify=verify.get(targetCid);
+          if(result.partial||result.source==='rest')verify.set(targetCid,{state:'partial',at:Date.now(),fp:`${conn.nodeUrl??''}|`});
+          await refresh();
+          const after=items.find(i=>i.r.cid===targetCid);
+          if(after)verify.set(targetCid,{state:result.partial||result.source==='rest'?'partial':'ok',at:Date.now(),fp:fpOf(after.r)});
+          else if(prevVerify)verify.delete(targetCid);
+          render();
+        }
+        if(result.partial&&S.view==='round'&&S.cid===targetCid&&!document.hidden){
+          detailSyncAt=0;
+          setTimeout(()=>{void runDetailSync({preferRest,skipIndexer:true,immediate:true,rewatch});},120);
+        }else if(rewatch&&S.view==='round'&&S.cid===targetCid){
+          void ctl.watchRound(targetCid);
+        }
+      }else if(rewatch){
+        void ctl.watchRound(targetCid);
+      }
+    }else if(!previewRound||previewRound.cid!==targetCid||!previewRound.terminal){
+      await hydrateRoundPreview(targetCid);
+      if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(targetCid);
+    }
+  }catch{if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(targetCid);}
+  finally{detailPolling=false;}
+}
+
 async function main() {
   profile=loadProfile(profileData);                 // the browser re-derives the Profile id (assertProfile)
   if(profile.id!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
-  store=await openStore();
-  ctl=makeController(profile,store);
+  store=await openStore({genesis:activeNet.genesis,profileId:profile.id});
+  ctl=makeController(profile,store,activeNet,discoveryCache);
+  await ctl.restoreDiscovery();
+  conn.discoveredSource=ctl.state.discoveredSource??null;
   ctl.onChange(schedule);bind();
   await refresh();route();void connectAuto();
   // Reconcile pending submissions and re-verify candidates in the background (query only; resend is always an explicit click).
-  // A submitted-but-unresolved transaction is looked up every tick (2.5 s) so its acceptance shows up quickly; candidates, balances and
+  // A submitted-but-unresolved transaction is looked up every tick (2.5 s) so its acceptance shows up quickly; balances and
   // time-based buttons are refreshed every 8 s.
-  let indexPolling=false;
-  setInterval(async()=>{
-    if(indexPolling||ctl.state.busy||modalOpen()||(!ctl.state.indexer&&!ctl.state.rpc))return;indexPolling=true;
-    try{
-      if(ctl.state.discovered.length<=30){const res=await ctl.refreshIndex() as {fallbackFrom?: unknown}|undefined;conn.indexerStale=!!ctl.state.indexerInfo?.stale||!!res?.fallbackFrom;conn.discoveredSource=ctl.state.discoveredSource??null;}
-      if(S.view==='round'&&S.cid&&ctl.state.rpc&&!ctl.state.prepared){const result=await ctl.syncRound(S.cid,{force:false});if(!result.unchanged&&!result.skipped)verify.delete(S.cid);}
-      await refresh();
-    }
-    catch(e){if(ctl.state.indexer)conn.indexerStale=true;conn.discoveredSource=ctl.state.discoveredSource??null;ctl.log('warn',`列表/轮次同步暂未完成：${errCode(e)}；保留本机记录，稍后重试`);render();}
-    finally{indexPolling=false;}
-  },15000);
+  setInterval(()=>{void runDetailSync();},1500);
   let lastSlow=0,polling=false;
   setInterval(async()=>{
     if(polling||ctl.state.busy||modalOpen())return;
@@ -706,8 +909,9 @@ async function main() {
       if(!waiting&&!slow)return;
       if(slow)lastSlow=Date.now();
       const target=waiting??rounds.find(r=>r.pending.length>0);
-      if(target&&ctl.state.rpc){try{await ctl.track(target.cid);}catch{}}
-      await refresh();if(slow)void refreshBalance();
+      if(target&&ctl.state.rpc){try{await ctl.track(target.cid);}catch{}await refresh();}
+      else if(slow)void pollDaa();
+      if(slow)void refreshBalance();
     } catch(e){ctl.log('warn',`后台刷新未完成：${errCode(e)}；稍后重试`);}
     finally{polling=false;}
   },2500);

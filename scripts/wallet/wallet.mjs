@@ -17,10 +17,10 @@ function parseKey(text) {
   check(/^[0-9a-fA-F]{64}$/.test(t),'KEY_FORMAT');
   return unhex(t.toLowerCase(),32);
 }
-export function openMemoryWallet(privateKeyText) {
+export function openMemoryWallet(privateKeyText,{prefix=PREFIX}={}) {
   const secret=parseKey(privateKeyText);
   let key,address;
-  try {key=hex(xonlyPubkey(secret));address=pubkeyToAddress(key,PREFIX);}
+  try {key=hex(xonlyPubkey(secret));address=pubkeyToAddress(key,prefix);}
   catch {secret.fill(0);throw Object.assign(new Error('KEY_INVALID'),{code:'KEY_INVALID'});}
   let closed=false;const spk=p2pk(key);
   return Object.freeze({
@@ -46,11 +46,11 @@ export function openMemoryWallet(privateKeyText) {
   });
 }
 /** Public-address-only identity for permissionless actions (executor reward recipient). No key, cannot sign. */
-export function publicRecipient(address) {
-  const {version,payload}=decodeAddress(String(address).trim(),PREFIX);
+export function publicRecipient(address,{prefix=PREFIX}={}) {
+  const {version,payload}=decodeAddress(String(address).trim(),prefix);
   check(version===0,'RECIPIENT_P2PK_REQUIRED');
   const key=hex(payload);
-  return Object.freeze({kind:'public',canSign:false,address:pubkeyToAddress(key,PREFIX),key,spk:p2pk(key),closed:false,close(){},
+  return Object.freeze({kind:'public',canSign:false,address:pubkeyToAddress(key,prefix),key,spk:p2pk(key),closed:false,close(){},
     async sign(draft){check(draft.authorizedInputIndices.length===0,'PERMISSIONLESS_SIGNATURE_SCOPE');}});
 }
 /** Verify EVERY ordinary-input signature of a signed draft (SIGHASH_ALL, owner key read from the spent P2PK script). */

@@ -1,5 +1,5 @@
 /** Kaswin Rolling browser build: source -> dist/index.html and build-manifest.json.
- * Usage: node build/build.mjs [--mode=tn10] [--out-dir=<dir>]
+ * Usage: node build/build.mjs [--mode=mainnet|tn10] [--out-dir=<dir>]
  * Compiles the unified TypeScript core, checks the pinned contracts and browser graph,
  * and embeds the application. Does not test, deploy, connect, sign or broadcast. */
 import fs from 'node:fs/promises';
@@ -46,11 +46,13 @@ export function typeCheckPage() {
   fail(ts.getPreEmitDiagnostics(ts.createProgram(parsed.fileNames,parsed.options)));
 }
 
-export async function buildKaswin({outDir=path.join(root,'dist'),mode='tn10'}={}) {
-  assert.equal(mode,'tn10','Rolling currently supports --mode=tn10 only');
+export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}={}) {
+  assert.ok(mode==='mainnet'||mode==='tn10','Rolling supports --mode=mainnet or --mode=tn10');
   assert.equal(esbuild.version,'0.28.2','esbuild 0.28.2 is required');
   const coreSources=await buildCore();
+  const {MAINNET}=await import('../scripts/chain/mainnet.mjs');
   const {TN10}=await import('../scripts/chain/tn10.mjs');
+  const defaultNet=mode==='mainnet'?MAINNET:TN10;
   const {loadDeploymentProfile,TN10_PROFILE_ID}=await import('../scripts/contract/bundle.mjs');
   const {profileToData}=await import('../scripts/contract/profile-data.mjs');
   const {TN10_PROFILE_ID:CLIENT_PROFILE_ID,TN10_GENESIS}=await import('../scripts/contract/protocol.mjs');
@@ -62,7 +64,7 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='tn10'}={}
   const result=await esbuild.build({
     absWorkingDir:root,entryPoints:['web/app/app.ts'],bundle:true,metafile:true,write:false,
     platform:'browser',format:'iife',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
-    define:{__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:'false',__KASWIN_BROWSER_TEST_WALLET__:'false'},
+    define:{__KASWIN_DEFAULT_NET__:JSON.stringify(mode),__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:JSON.stringify(mode==='mainnet'),__KASWIN_BROWSER_TEST_WALLET__:'false'},
     plugins:[{name:'rolling-profile',setup(build){
       build.onResolve({filter:/^@kaswin\/rolling-profile$/},()=>({path:'data',namespace:'rolling-profile'}));
       build.onLoad({filter:/.*/,namespace:'rolling-profile'},()=>({loader:'js',contents:`export const profileData=${JSON.stringify(data)};`}));
@@ -85,9 +87,9 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='tn10'}={}
     ...Object.keys(profile.frames).flatMap(m=>[`contracts/artifacts/${m}.json`,`contracts/${m}.sil`])])].sort();
   const inputs=Object.fromEntries(await Promise.all(inputPaths.map(async f=>[f,sha256(await fs.readFile(path.join(root,f)))])));
   const manifest={formatVersion:1,mode,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
-    capabilities:{tn10Trading:true,mainnetTrading:false,memoryWallet:true},
-    contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:TN10.networkId,genesis:TN10.genesis,
-    profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},
+    capabilities:{tn10Trading:true,mainnetTrading:mode==='mainnet',memoryWallet:mode!=='mainnet',networkSwitch:true},
+    contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:defaultNet.networkId,genesis:defaultNet.genesis,
+    networks:['mainnet','tn10'],profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},
     graph:{files:sources.length,nodeImports:0,forbiddenModules:0},inputs};
   await fs.mkdir(outDir,{recursive:true});
   await fs.writeFile(path.join(outDir,'index.html'),html);
@@ -97,7 +99,7 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='tn10'}={}
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
   const args=process.argv.slice(2),out=args.find(a=>a.startsWith('--out-dir=')),mode=args.find(a=>a.startsWith('--mode='));
-  assert.ok(args.every(a=>a.startsWith('--out-dir=')||a==='--mode=tn10'),'Usage: node build/build.mjs [--mode=tn10] [--out-dir=<dir>]');
-  const {manifest,outDir}=await buildKaswin({outDir:out?path.resolve(out.slice(10)):undefined,mode:mode?mode.slice(7):'tn10'});
+  assert.ok(args.every(a=>a.startsWith('--out-dir=')||a==='--mode=mainnet'||a==='--mode=tn10'),'Usage: node build/build.mjs [--mode=mainnet|tn10] [--out-dir=<dir>]');
+  const {manifest,outDir}=await buildKaswin({outDir:out?path.resolve(out.slice(10)):undefined,mode:mode?mode.slice(7):'mainnet'});
   console.log(`Built ${path.join(outDir,'index.html')} (${manifest.artifact.bytes} bytes, sha256=${manifest.artifact.sha256}, profile=${manifest.profileId}, ${manifest.graph.files} source files)`);
 }

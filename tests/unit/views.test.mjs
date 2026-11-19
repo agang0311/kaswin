@@ -4,8 +4,11 @@ import {html} from '../../web/ui/ui.ts';
 import {errText,errCode,phaseOf,ACTION_INFO} from '../../web/ui/messages.ts';
 import {makeShare,parseShare,MAX_SHARE_TEXT} from '../../web/app/share.ts';
 import {ACTIONS} from '../../scripts/round/round.mjs';
+import {drawReadiness} from '../../web/ui/draw-readiness.ts';
 import {exploreView,createView,roundView,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,MAX_TICKET_CAP,VERIFIED_TICKET_CAP} from '../../web/ui/views.ts';
 import {TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
+import {MAINNET} from '../../scripts/chain/mainnet.mjs';
+import {TN10} from '../../scripts/chain/tn10.mjs';
 import {parseNodeList} from '../../web/app/settings.ts';
 
 /* The views are pure (data in, HTML string out): no DOM, controller, node or wallet is needed. */
@@ -18,7 +21,7 @@ const roundFixture=(over={})=>({cid:hex('a'),source:'local',terminal:null,halted
 const facts=(over={})=>({module:'sales',ticketPrice:price,ticketCap:100,minTickets:3,closeEligibleDaa:1000n,tickets:5,shards:0,localRecords:5,owner:hex('d'),winnerKey:null,payCursor:null,refundShard:null,...over});
 const item=(r,f,a)=>({r,f,a,ph:phaseOf(r,f),value:r.manager?.value??0n,at:1});
 const BASE_S={view:'explore',cid:null,filter:'all',sort:'new',query:'',qty:'1',join:'',wtab:'key',form:{price:'1',cap:'100',min:'3',dur:'60',custom:''},nodes:'wss://n.test',svc:'https://s.test'};
-const ctx=(over={})=>({items:[],S:BASE_S,wallet:null,balance:null,daa:0n,conn:{},busy:false,ex:EX,logs:[],gate:()=>({ok:true}),detail:null,verify:null,...over});
+const ctx=(over={})=>({net:TN10,items:[],S:BASE_S,wallet:null,balance:null,daa:0n,conn:{},busy:false,ex:EX,logs:[],gate:()=>({ok:true}),detail:null,verify:null,...over});
 
 test('html`` escapes values; fragments and arrays of fragments are inserted as-is',()=>{
   const evil='<img src=x onerror=alert(1)>"\'&';
@@ -66,6 +69,19 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
   assert.match(restOut,/REST API 备用查询/);
   assert.match(restOut,/REST 发现/);
   assert.match(restOut,/REST 备用 1 · 本机 0/);
+  // Local storage cached Plaza renders immediately on reload before live indexer responds, and when indexer is offline
+  const cacheOut=exploreView(ctx({conn:{discoveredSource:'cache'},discovered:[
+    {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
+  ]})).s;
+  assert.ok(!cacheOut.includes('已从本地存储恢复广场列表'));
+  assert.match(cacheOut,/本地缓存 1 · 本机 0/);
+  assert.match(cacheOut,/本地缓存/);
+  assert.match(cacheOut,/data-act="refreshIndex"/);
+  assert.ok(cacheOut.includes(`data-indexed="${hex('d')}"`));
+  const offlineCacheOut=exploreView(ctx({conn:{discoveredSource:'cache',indexerStale:true},discovered:[
+    {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
+  ]})).s;
+  assert.match(offlineCacheOut,/索引暂不可用，当前显示本地缓存列表/);
   // Starred filter & collapsed incompatible rounds
   const savedOut=exploreView(ctx({S:{...BASE_S,filter:'saved'},saved:new Set([r.cid]),items:[item(r,facts(),actions()),item({...r,cid:hex('9')},{module:null},actions())]})).s;
   assert.match(savedOut,/★ 关注/);
@@ -75,20 +91,20 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
 
 test('create form: bounds are enforced, bad input never throws, and values are escaped in the page',()=>{
   const base={price:'1',cap:'100',min:'3',dur:'60',custom:''};
-  assert.equal(parseCreate(base).ok,true);assert.equal(MAX_TICKET_CAP,65536);assert.equal(parseCreate({...base,cap:'65536'}).ok,true);assert.equal(parseCreate({...base,cap:String(VERIFIED_TICKET_CAP)}).ok,true);
-  for(const bad of [{cap:String(MAX_TICKET_CAP+1)},{cap:'2'},{min:'2'},{min:'101'},{price:'0.99999999'},{price:'abc'},{price:'1.123456789'},{price:''},
+  assert.equal(parseCreate(base).ok,true);assert.equal(parseCreate({...base,price:'2'}).ok,true);assert.equal(MAX_TICKET_CAP,10000000);assert.equal(parseCreate({...base,cap:'10000000'}).ok,true);assert.equal(parseCreate({...base,cap:String(VERIFIED_TICKET_CAP)}).ok,true);
+  for(const bad of [{cap:String(MAX_TICKET_CAP+1)},{cap:'2'},{min:'2'},{min:'101'},{price:'0'},{price:'1.5'},{price:'1.'},{price:'0.99999999'},{price:'abc'},{price:'1.123456789'},{price:''},
     {dur:'custom',custom:'0'},{dur:'custom',custom:'99999'},{dur:'custom',custom:'-1'},{dur:'custom',custom:''}])
     assert.equal(parseCreate({...base,...bad}).ok,false,JSON.stringify(bad));
   const KEYED={kind:'key',address:'kaspatest:qabc',key:hex('1'),spk:{script:'x'}};
   const out=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,price:'<x>'}}})).s;
   assert.ok(!out.includes('<x>'));assert.match(out,/data-act="create"/);assert.match(out,/disabled/);   // invalid form: the send button is disabled
-  // inside the verified range: plain note; above it: allowed, but flagged as unverified
+  // large ticket caps are allowed without a scary ticket-count warning (shards depend on purchase count, capped at 256)
   assert.doesNotMatch(createView(ctx({wallet:KEYED})).s,/超出已验证范围/);
-  const big=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,cap:'65536',min:'3'}}})).s;
-  assert.match(big,/超出已验证范围/);assert.match(big,/约 256 个封存分片/);assert.doesNotMatch(big,/disabled/);
-  // an illegal cap (65537) shows the error only: no preview that pretends 257 shards / 257 TKAS exist
-  const over=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,cap:'65537'}}})).s;
-  assert.match(over,/票数上限需在 3 – 65,536 之间/);assert.doesNotMatch(over,/257/);
+  const big=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,cap:'10000000',min:'3'}}})).s;
+  assert.doesNotMatch(big,/超出已验证范围|notice warn/);assert.match(big,/封存分片<\/dt><dd>最多约 256 个/);assert.match(big,/购买笔数/);assert.doesNotMatch(big,/39063|39,063/);assert.doesNotMatch(big,/disabled/);
+  // an illegal cap (10000001) shows the error only: no preview that pretends 256 shards / 39063 shards exist
+  const over=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,cap:'10000001'}}})).s;
+  assert.match(over,/票数上限需在 3 – 10,000,000 之间/);assert.doesNotMatch(over,/最多约/);
   // the button says what will really happen for each wallet type
   assert.match(createView(ctx()).s,/连接钱包后创建/);assert.ok(!createView(ctx()).s.includes('data-act="create"'));
   const ro=createView(ctx({wallet:{...KEYED,kind:'public'}})).s;
@@ -112,6 +128,7 @@ test('buy quantity text',()=>{
   const f=facts();
   assert.match(qtyCost('3',f,{maxQuantity:95}),/3 张 ×/);assert.match(qtyCost('0',f,{maxQuantity:95}),/请输入/);
   assert.match(qtyCost('96',f,{maxQuantity:95}),/最多还能买 95/);assert.match(qtyCost('1e3',f,{maxQuantity:95}),/请输入/);
+  assert.match(qtyCost('10000000',facts({ticketCap:10000000,tickets:0}),{maxQuantity:10000000}),/10000000 张 ×/);
 });
 
 test('round view: offered actions follow the phase; blocked ones carry their (escaped) reason; finished rounds offer nothing',()=>{
@@ -138,6 +155,26 @@ test('round view: verification and pending-intent notices',()=>{
   out=roundView(ctx({detail:{...D,r:{...r,intent:{status:'UNKNOWN',action:'BUY'}}},verify:{state:'ok',at:Date.now()}})).s;
   assert.match(out,/已向节点核对/);assert.match(out,/data-act="recover"/);assert.match(out,/data-act="discard"/);
   assert.match(roundView(ctx({detail:null,verify:{state:'checking'}})).s,/同步轮次最新状态/);
+  // Local-first detail rendering: cached Plaza summary renders immediately without blanking, and preview mode disables share/export until verified
+  const discSummary=roundView(ctx({
+    S:{...BASE_S,view:'round',cid:hex('7')},
+    detail:null,
+    discovered:[{cid:hex('7'),module:'win',tickets:10,buys:1,managerValue:'1400000000'}],
+  })).s;
+  assert.match(discSummary,/本地缓存摘要/);
+  assert.match(discSummary,/派奖中/);
+  assert.match(discSummary,/10 张/);
+  assert.match(discSummary,/14 TKAS/);
+  assert.doesNotMatch(discSummary,/没有找到这一轮/);
+  const previewOut=roundView(ctx({
+    S:{...BASE_S,view:'round',cid:r.cid},
+    detail:{...item({...r,intent:null},facts(),actions({BUY:{ok:true,maxQuantity:95}})),mine:null,isWinner:false,preview:true},
+    gate:()=>({ok:false,reason:'正在向节点核对链上状态，核对完成后即可操作。'}),
+  })).s;
+  assert.match(previewOut,/本地预览 · 后台核对中/);
+  assert.match(previewOut,/已加载本地\/索引明细快照/);
+  assert.match(previewOut,/正在向节点核对链上状态，核对完成后即可操作/);
+  assert.match(previewOut,/data-act="moreRound"[^>]*disabled/);
 });
 
 test('mine / rules / dialogs render, never claim full validation, and show no key input once a wallet is connected',()=>{
@@ -260,13 +297,15 @@ test('round view: renders shard dot-map first without listing 65536 records, the
   assert.equal((out.match(/data-shard="/g)??[]).length,256);
   assert.ok(!out.includes('data-purchase="'));
   assert.match(out,/点击任意分片点图/);
-  // Selecting shard #1 (index=1): displays that shard's 256 purchases dot-map and details without rendering 65536 rows.
+  // Selecting shard #1 (index=1): displays that shard's 256 purchases dot-map and details without rendering 65536 rows or address ticket-count stats.
   out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:1,purchase:0},detail:baseD})).s;
   assert.match(out,/封存分片 #2/);
   assert.match(out,/data-shard="close"/);
   assert.equal((out.match(/data-purchase="/g)??[]).length,256);
   assert.match(out,/票号 #257/);
   assert.match(out,/第 1 笔购买/);
+  const shardDetail=out.slice(out.indexOf('<div class="shard-detail">'));
+  assert.doesNotMatch(shardDetail,/位买家|<div class="legend">/);
   // Untrusted key / HTML inside key must be escaped.
   const evilShards=[{index:0,kind:'active',status:'active',startTicket:1,endTicket:1,tickets:1,recordCount:1,hash:null,refundedRecords:0,mineCount:0,
     records:[{index:0,startTicket:1,endTicket:1,count:1,key:'<script>x</script>',mine:false,refunded:false}]}];
@@ -307,10 +346,12 @@ test('round view: renders shard dot-map first without listing 65536 records, the
   assert.doesNotMatch(out,/中奖记录/);
   assert.ok(out.includes(`data-copy="${buyTx0}"`)&&!out.includes(`data-copy="${buyTx1}"`));
   assert.equal((out.match(/data-purchase="\d+"[^>]*>🏆/g)??[]).length,1); // only purchase 1 cell has the trophy, not purchase 0
-  // Purchase 1 is the exact winner
+  // Purchase 1 is the exact winner; shard detail keeps winning-ticket legend without per-address ticket counts
   out=roundView(ctx({S:{...BASE_S,view:'round',cid:winR.cid,shard:0,purchase:1},detail:winD})).s;
   assert.match(out,/🏆 中奖记录（中奖票 #2）/);
   assert.ok(out.includes(`data-copy="${buyTx1}"`));
+  const winDetail=out.slice(out.indexOf('<div class="shard-detail">'));
+  assert.match(winDetail,/<div class="legend"><span><i style="--c:var\(--gold\)"><\/i>中奖票 #2（第 2 笔）<\/span><\/div>/);
 });
 
 test('round view: folds confirmed refund receipts into purchaseTip / shard panel and omits them from txTable',()=>{
@@ -367,4 +408,60 @@ test('round view: folds confirmed refund receipts into purchaseTip / shard panel
   assert.match(out,/退款交易（8 批）/);
   assert.ok(out.includes(`data-copy="${refOldTxs[0].txid}"`));
   assert.match(out,/<td>退款：已封存的分片<\/td>/);
+});
+
+test('mainnet views: disable memory private key tab, use KAS unit and mainnet registry/prefix',()=>{
+  const w=walletBody(ctx({net:MAINNET,S:{...BASE_S,wtab:'key'}})).s;
+  assert.doesNotMatch(w,/data-wtab="key"|测试私钥/);
+  assert.match(w,/Kaspa mainnet/);
+  const wAddr=walletBody(ctx({net:MAINNET,S:{...BASE_S,wtab:'addr'}})).s;
+  assert.match(wAddr,/kaspa:q/);
+  const c=createView(ctx({net:MAINNET})).s;
+  assert.match(c,/每张票价格（KAS）/);
+  assert.ok(c.includes(MAINNET.registry.address));
+  const s=settingsBody(ctx({net:MAINNET})).s;
+  assert.match(s,/切换到 Testnet 10/);
+  assert.match(s,/data-act="switchNet"/);
+});
+
+test('round countdown: sales close countdown and two-stage sealed draw readiness never unlock DRAW from wall-clock elapsed time alone',()=>{
+  const r=roundFixture({manager:{value:400000000n,outpoint:{transactionId:hex('b'),index:0},utxoDaa:1000n}});
+  // Sales countdown
+  const salesD={...item(r,facts({module:'sales',closeEligibleDaa:1600n}),actions({BUY:{ok:true,maxQuantity:95},CLOSE:NO('尚未到可关闭 DAA')})),mine:null,isWinner:false};
+  const salesHtml=roundView(ctx({daa:1000n,detail:salesD})).s;
+  assert.match(salesHtml,/最早封盘倒计时/);
+  assert.match(salesHtml,/距最早封盘还有约 1 分 0 秒/);
+
+  // Sealed Stage 1: DAA wait (even after wall-clock elapsed > 20s, never becomes ready without node DAA >= 1100n)
+  const sealedD={...item(r,facts({module:'sealed'}),actions({DRAW:{ok:true},TIMEOUT:NO('wait')})),mine:null,isWinner:false};
+  const stage1=drawReadiness(sealedD,ctx({daa:1040n,daaObservedAt:1000}),30000);
+  assert.equal(stage1.ready,false);
+  assert.equal(stage1.percent,40);
+  assert.match(stage1.detail,/正在等待节点确认封存满 100 DAA/);
+  const stage1Html=roundView(ctx({daa:1040n,daaObservedAt:1000,detail:sealedD})).s;
+  assert.match(stage1Html,/开奖倒计时 · 封存等待/);
+  assert.match(stage1Html,/<progress max="100" value="40"/);
+  assert.ok(!stage1Html.includes('data-act="DRAW"'));
+
+  // Sealed Stage 2: Target block confirmations wait (daa >= 1100n, confirmations 35/100)
+  const now=Date.now();
+  const stage2Ctx=ctx({daa:1120n,daaObservedAt:now,drawProgress:{phase:'TARGET_WAIT',confirmations:35n,requiredConfirmations:100n,observedAt:now},detail:sealedD});
+  const stage2=drawReadiness(sealedD,stage2Ctx,now+2000);
+  assert.equal(stage2.ready,false);
+  assert.equal(stage2.percent,35);
+  assert.match(stage2.detail,/第二阶段：目标块确认 35\/100 blue score/);
+  const stage2Html=roundView(stage2Ctx).s;
+  assert.match(stage2Html,/开奖倒计时 · 目标块确认/);
+  assert.match(stage2Html,/等待目标块确认/);
+  assert.ok(!stage2Html.includes('data-act="DRAW"'));
+
+  // Sealed Ready: both 100 DAA and 100 blue-score confirmations met
+  const readyCtx=ctx({daa:1220n,daaObservedAt:now,drawProgress:{phase:'READY',confirmations:105n,requiredConfirmations:100n,observedAt:now},detail:sealedD});
+  const ready=drawReadiness(sealedD,readyCtx,now+1000);
+  assert.equal(ready.ready,true);
+  assert.equal(ready.percent,100);
+  const readyHtml=roundView(readyCtx).s;
+  assert.match(readyHtml,/开奖条件已就绪/);
+  assert.match(readyHtml,/data-act="DRAW"/);
+  assert.match(readyHtml,/核验并开奖/);
 });

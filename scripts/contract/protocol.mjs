@@ -19,6 +19,8 @@ export const TN10_ROLLING_REGISTRY=Object.freeze({
   spk:Object.freeze({version:0,script:'2096390521e27482c9ded675d215e5156379b42ca6fa0b5b23d7075ccc5efffa38ac'}),
   valueSompi:20_000_000n,
 });
+export const ROLLING_REGISTRY_VALUE=20_000_000n;
+export const registryFor=net=>Object.freeze({address:net.registry.address,spk:net.registry.spk,valueSompi:ROLLING_REGISTRY_VALUE});
 export const MODES=Object.freeze(['measure','verify']);
 export const LIMITS=Object.freeze({
   bodyBytes:1_500_000,maxInputs:17,maxOutputs:MAX_OUTPUTS,sigScriptBytes:80_000,totalSigScriptBytes:400_000,
@@ -42,10 +44,10 @@ function spkOf(o,code) {
 }
 
 /** Client side: draft -> canonical wire request. Only fields the engine needs; funds' ownership is NOT conveyed. */
-export function toWire(mode,draft,{accessor=null}={}) {
+export function toWire(mode,draft,{accessor=null,network=TN10_NETWORK_ID}={}) {
   check(MODES.includes(mode),'WIRE_MODE');
   const t=draft.transaction,auth=[...draft.authorizedInputIndices].sort((a,b)=>a-b);
-  return {schema:SCHEMA,mode,network:TN10_NETWORK_ID,profileId:TN10_PROFILE_ID,
+  return {schema:SCHEMA,mode,network,profileId:TN10_PROFILE_ID,
     transaction:{version:t.version,lockTime:t.lockTime.toString(),subnetworkId:t.subnetworkId,gas:t.gas.toString(),payload:t.payload,
       storageMass:(t.storageMass??0n).toString(),
       inputs:t.inputs.map(i=>({txid:i.previousOutpoint.transactionId,index:i.previousOutpoint.index,signatureScript:i.signatureScript,
@@ -60,10 +62,10 @@ export function toWire(mode,draft,{accessor=null}={}) {
 
 /** Strict decoder used by the service (and by tests). Unknown/missing fields, oversized or non-canonical values are rejected.
  * Returns the canonical wire object (re-serialised from the decoded values) and an engine-ready draft. */
-export function parseWire(raw) {
+export function parseWire(raw,{network=TN10_NETWORK_ID}={}) {
   exact(raw,['schema','mode','network','profileId','transaction','inputUtxos','authorizedInputIndices','accessor'],'WIRE_SHAPE');
   check(raw.schema===SCHEMA,'WIRE_SCHEMA');check(MODES.includes(raw.mode),'WIRE_MODE');
-  check(raw.network===TN10_NETWORK_ID,'WIRE_NETWORK');check(raw.profileId===TN10_PROFILE_ID,'WIRE_PROFILE');
+  check(raw.network===network,'WIRE_NETWORK');check(raw.profileId===TN10_PROFILE_ID,'WIRE_PROFILE');
   const t=exact(raw.transaction,['version','lockTime','subnetworkId','gas','payload','storageMass','inputs','outputs'],'WIRE_TX');
   check(t.version===1,'WIRE_TX_VERSION');
   check(t.subnetworkId==='00'.repeat(20)&&t.gas==='0','WIRE_NATIVE_ONLY');
@@ -118,9 +120,9 @@ export const draftTxid=draft=>referenceTxId(draft.transaction);
 
 /** Client-side acceptance of a service reply. Throws unless the reply is for EXACTLY this request.
  * Returns per-input measurements. Nothing here makes the reply a safety proof. */
-export function checkServiceReply(wire,reply,{enginePin=null}={}) {
+export function checkServiceReply(wire,reply,{enginePin=null,network=TN10_NETWORK_ID}={}) {
   check(reply&&typeof reply==='object'&&reply.schema===SCHEMA&&reply.ok===true,'REPLY_NOT_OK');
-  check(reply.mode===wire.mode&&reply.network===TN10_NETWORK_ID&&reply.profileId===TN10_PROFILE_ID,'REPLY_SCOPE');
+  check(reply.mode===wire.mode&&reply.network===network&&reply.profileId===TN10_PROFILE_ID,'REPLY_SCOPE');
   check(reply.requestDigest===requestDigest(wire),'REPLY_DIGEST_MISMATCH');
   const parsed=parseWire(wire);
   check(reply.txid===draftTxid(parsed.draft),'REPLY_TXID_MISMATCH');

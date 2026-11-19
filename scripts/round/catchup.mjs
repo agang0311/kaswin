@@ -18,7 +18,7 @@ import {spkToAddress} from '../wallet/address.mjs';
 import {GENESIS_MAGIC,emptyRound,interpretGenesis,roundFromText} from './round.mjs';
 import {liveRound} from './prepare.mjs';
 import {verifyIndexedSnapshot} from './indexer-client.mjs';
-import {TN10_PROFILE_ID,TN10_ROLLING_REGISTRY} from '../contract/protocol.mjs';
+import {TN10_PROFILE_ID,TN10_ROLLING_REGISTRY,registryFor} from '../contract/protocol.mjs';
 
 const {check,fromLe,hex,unhex,ZERO}=S;
 const HASH=/^[0-9a-f]{64}$/;
@@ -78,7 +78,7 @@ export function restRollingGenesisCandidate(raw,profile,{registry=TN10_ROLLING_R
 }
 
 /** Discover Rolling rounds directly from REST when the Indexer is unavailable or unconfigured. */
-export async function discoverRestRollingRounds({net=TN10,cursor=0,limit=50,fetcher=globalThis.fetch,profile,registry=TN10_ROLLING_REGISTRY}={}) {
+export async function discoverRestRollingRounds({net=TN10,cursor=0,limit=50,fetcher=globalThis.fetch,profile,registry=registryFor(net)}={}) {
   const offset=Number.isSafeInteger(cursor)&&cursor>=0?cursor:0;
   const page=await restAddressTransactions(registry.address,{offset,limit,net,fetcher});
   const rounds=[];let rejected=0;
@@ -96,7 +96,7 @@ export async function discoverRestRollingRounds({net=TN10,cursor=0,limit=50,fetc
 }
 
 /** Locate a single round's GENESIS transaction by CID via REST pages on the registry address. */
-export async function locateRestRollingGenesis(cid,{net=TN10,maxPages=6,fetcher=globalThis.fetch,profile,registry=TN10_ROLLING_REGISTRY}={}) {
+export async function locateRestRollingGenesis(cid,{net=TN10,maxPages=6,fetcher=globalThis.fetch,profile,registry=registryFor(net)}={}) {
   check(HASH.test(cid),'ROUND_CID');
   let offset=0;
   for(let p=0;p<maxPages;p++){
@@ -115,11 +115,11 @@ export async function locateRestRollingGenesis(cid,{net=TN10,maxPages=6,fetcher=
 }
 
 /** Build a verified Round record from a GENESIS node acceptance evidence. */
-export function roundFromGenesisEvidence(ev,profile,{source='imported'}={}) {
+export function roundFromGenesisEvidence(ev,profile,{source='imported',network=TN10.networkId}={}) {
   const g=interpretGenesis(ev.tx,profile);
   const feeSompi=ev.inputs.reduce((n,u)=>n+BigInt(u.value),0n)-ev.tx.outputs.reduce((n,o)=>n+o.value,0n);
   const s=g.next,out=ev.tx.outputs[0];
-  const r=emptyRound({cid:g.cid,origin:g.origin,settings:{ticketPrice:s.ticketPrice,ticketCap:s.ticketCap,minTickets:s.minTickets,closeEligibleDaa:s.closeEligibleDaa},source});
+  const r=emptyRound({cid:g.cid,origin:g.origin,settings:{ticketPrice:s.ticketPrice,ticketCap:s.ticketCap,minTickets:s.minTickets,closeEligibleDaa:s.closeEligibleDaa},source,network});
   r.manager={outpoint:{transactionId:ev.txid,index:0},origin:g.origin,cid:g.cid,value:out.value,spk:out.scriptPublicKey,
     redeemScript:redeem(s,profile),utxoDaa:ev.acceptingDaa,currentDaa:ev.acceptingDaa,daa:ev.acceptingDaa,covenantId:g.cid};
   r.accepting=ev.accepting;r.step=1;r.fees=feeSompi;
@@ -128,9 +128,9 @@ export function roundFromGenesisEvidence(ev,profile,{source='imported'}={}) {
 }
 
 /** Advance a verified round one step using node acceptance evidence (acceptedAt / getVirtualChainFromBlockV2 Full). */
-export async function applyAcceptedStep(round,ev,rpc,profile,{virtualDaa=null,preimages=seedPreimages(round,profile)}={}) {
+export async function applyAcceptedStep(round,ev,rpc,profile,{virtualDaa=null,preimages=seedPreimages(round,profile),mutate=false}={}) {
   if(round.receipts.some(rc=>rc.txid===ev.txid))return round;
-  if(!round.manager&&round.step===0){return roundFromGenesisEvidence(ev,profile,{source:round.source});}
+  if(!round.manager&&round.step===0){return roundFromGenesisEvidence(ev,profile,{source:round.source,network:round.network??TN10.networkId});}
   check(round.manager,'ROUND_HAS_NO_MANAGER');
   check(Array.isArray(ev.inputs)&&ev.inputs.length===ev.tx.inputs.length&&ev.inputs.every(Boolean),'MISSING_ACCEPTED_INPUT_CONTEXT');
   const contexts=ev.inputs.map((u,i)=>({
@@ -161,7 +161,7 @@ export async function applyAcceptedStep(round,ev,rpc,profile,{virtualDaa=null,pr
   }
   const t=interpretAccepted({manager,targets,funds,transaction:ev.tx,accessor},profile);
   check(t.cid===round.cid,'ADVANCE_CID_MISMATCH');
-  const r=structuredClone(round),spent=new Set(ev.tx.inputs.map(i=>outpointKey(i.previousOutpoint)));
+  const r=mutate?round:structuredClone(round),spent=new Set(ev.tx.inputs.map(i=>outpointKey(i.previousOutpoint)));
   r.frozen=r.frozen.filter(f=>!spent.has(outpointKey(f.outpoint)));
   const outs=ev.tx.outputs,obsDaa=virtualDaa&&virtualDaa>ev.acceptingDaa?virtualDaa:ev.acceptingDaa;
   if(t.next){
@@ -199,7 +199,7 @@ export async function applyAcceptedStep(round,ev,rpc,profile,{virtualDaa=null,pr
 
 /** Advance a round one step from a REST transaction hint when the node pruned that historical block.
  * Non-terminal results remain untrusted until the caller reaches and verifies a live UTXO on the node. */
-export async function applyRestHintStep(round,raw,profile,{rpc=null,preimages=seedPreimages(round,profile)}={}) {
+export async function applyRestHintStep(round,raw,profile,{rpc=null,preimages=seedPreimages(round,profile),mutate=false}={}) {
   const txid=String(raw?.transaction_id??'').toLowerCase();
   check(HASH.test(txid)&&raw.is_accepted===true&&HASH.test(raw.accepting_block_hash??''),'REST_TX_INVALID');
   if(round.receipts.some(rc=>rc.txid===txid))return round;
@@ -212,7 +212,7 @@ export async function applyRestHintStep(round,raw,profile,{rpc=null,preimages=se
   const outs=(raw.outputs??[]).slice().sort((a,b)=>Number(uint(a.index)-uint(b.index)));
   check(outs.length>=1,'REST_OUTPUTS_EMPTY');
   const outSpk=o=>({version:0,script:String(o.script_public_key).toLowerCase()});
-  const r=structuredClone(round);
+  const r=mutate?round:structuredClone(round);
   const spentKeys=new Set((raw.inputs??[]).map(i=>`${i.previous_outpoint_hash}:${Number(uint(i.previous_outpoint_index))}`));
   r.frozen=r.frozen.filter(f=>!spentKeys.has(outpointKey(f.outpoint)));
 
@@ -320,7 +320,7 @@ export async function applyRestHintStep(round,raw,profile,{rpc=null,preimages=se
 }
 
 /** Walk forward on the connected node from `round.accepting` using getVirtualChainFromBlockV2(Full) to find the spender of `round.manager.outpoint`. */
-export async function findSpenderOnNode(rpc,round,{maxPages=6}={}) {
+export async function findSpenderOnNode(rpc,round,{maxPages=9}={}) {
   if(!round?.manager||!HASH.test(round.accepting??''))return {kind:'NOT_AVAILABLE',reason:'NO_ACCEPTING'};
   const tip=round.manager.outpoint;
   let b;
@@ -329,16 +329,18 @@ export async function findSpenderOnNode(rpc,round,{maxPages=6}={}) {
   if(!b||b.header?.hash!==round.accepting||b.verboseData?.isChainBlock!==true)return {kind:'NOT_AVAILABLE',reason:'NOT_CHAIN'};
   let from=b.verboseData?.selectedParentHash;
   if(!HASH.test(from??''))return {kind:'NOT_AVAILABLE',reason:'NO_PARENT'};
-  let blue=uint(b.header.blueScore);
+  let blue=uint(b.header.blueScore),firstSink=null;
   try{
-    const p=(await rpc.call('getBlock',{hash:from,includeTransactions:false}))?.block;
+    const [pRes,sinkRes]=await Promise.all([rpc.call('getBlock',{hash:from,includeTransactions:false}),rpc.call('getSinkBlueScore')]);
+    const p=pRes?.block;
     if(p?.verboseData?.isChainBlock===true)blue=uint(p.header.blueScore);
     else return {kind:'NOT_AVAILABLE',reason:'PARENT_NOT_CHAIN'};
+    firstSink=uint(sinkRes.blueScore);
   }catch{return {kind:'NOT_AVAILABLE',reason:'PARENT_PRUNED'};}
 
-  let win=200n;
+  let win=60n;
   for(let page=0;page<maxPages;page++){
-    const sink=uint((await rpc.call('getSinkBlueScore')).blueScore);
+    const sink=page===0&&firstSink!==null?firstSink:uint((await rpc.call('getSinkBlueScore')).blueScore);
     if(sink<blue)return {kind:'NOT_AVAILABLE',reason:'SINK_BEHIND'};
     const target=blue+win,min=sink>target?sink-target:0n;
     if(min>BigInt(Number.MAX_SAFE_INTEGER))return {kind:'NOT_AVAILABLE',reason:'RANGE'};
@@ -353,10 +355,10 @@ export async function findSpenderOnNode(rpc,round,{maxPages=6}={}) {
       if(hit){
         const ev=acceptanceFromPage(full,hit.verboseData.transactionId,blockHash,sink);
         const virtualDaa=await rpc.currentDaa();
-        return {kind:'FOUND',evidence:ev,virtualDaa};
+        return {kind:'FOUND',evidence:ev,virtualDaa,page:{full,sink,virtualDaa,startIndex:i}};
       }
     }
-    if(added.length)from=added.at(-1),win=200n;
+    if(added.length)from=added.at(-1),win=60n;
     else if(min===0n)return {kind:'AT_TIP'};
     else win*=2n;
   }
@@ -388,12 +390,12 @@ export async function findSpenderViaRest(rpc,round,{net=TN10,maxPages=3,fetcher=
 }
 
 /** Authenticate an Indexer export document against the node WITHOUT failing when its head UTXO was already spent on-chain. */
-async function authenticateIndexerSeed(document,rpc,profile) {
-  const r=roundFromText(document.roundText,profile),head=document.head;
+async function authenticateIndexerSeed(document,rpc,profile,{net=TN10}={}) {
+  const r=roundFromText(document.roundText,profile,{network:net.networkId}),head=document.head;
   check(r.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock),'INDEXER_RESPONSE_INVALID');
   check(!r.intent&&!r.pending?.length&&!r.halted,'INDEXER_PENDING_STATE');
   try{
-    return {round:await verifyIndexedSnapshot(document,rpc,profile),nodeVerified:true};
+    return {round:await verifyIndexedSnapshot(document,rpc,profile,{networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id}),nodeVerified:true};
   }catch(e){
     const code=e?.code??e?.safeCode??e?.message;
     // If head was already spent (STALE_INPUT) or <100 DAA deep, check head acceptance on node without failing the whole catch-up.
@@ -424,24 +426,69 @@ async function authenticateIndexerSeed(document,rpc,profile) {
   }
 }
 
+function findSpenderInPage(cache,tip) {
+  if(!cache)return null;
+  const added=cache.full?.addedChainBlockHashes??[],rows=cache.full?.chainBlockAcceptedTransactions??[];
+  for(let i=cache.startIndex;i<rows.length;i++){
+    const row=rows[i],blockHash=added[i];
+    if(!HASH.test(blockHash)||row?.chainBlockHeader?.hash!==blockHash)continue;
+    const hit=row.acceptedTransactions?.find(t=>t.inputs?.some(inp=>inp.previousOutpoint?.transactionId===tip.transactionId&&Number(inp.previousOutpoint.index)===tip.index));
+    if(hit){
+      cache.startIndex=i;
+      return {evidence:acceptanceFromPage(cache.full,hit.verboseData.transactionId,blockHash,cache.sink),virtualDaa:cache.virtualDaa};
+    }
+  }
+  return null;
+}
+
 /** Three-tier round synchronization:
  * 1) Indexer export (if configured & available);
  * 2) Node UTXO verify & forward virtual-chain catch-up if someone else advanced the round;
  * 3) REST API fallback when neither Indexer nor node history covers a step or genesis. */
-export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,indexer=null,profile,net=TN10,fetcher=globalThis.fetch,maxSteps=200}={}) {
+export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,indexer=null,profile,net=TN10,fetcher=globalThis.fetch,maxSteps=200,timeBudgetMs=null,skipIndexer=false,preferRest=false,onProgress=null}={}) {
   check(rpc,'NODE_REQUIRED');
   let cur=round?structuredClone(round):null,source=cur?'local':null,usedRest=false;
-  // Tier 1: Indexer
-  if(indexer){
+  let lastProgressAt=Date.now(),lastYieldAt=Date.now();
+  const yieldTick=async(force=false)=>{
+    const nowMs=Date.now();
+    if(force||nowMs-lastYieldAt>=16){lastYieldAt=nowMs;await new Promise(r=>setTimeout(r,0));}
+  };
+  const emitProgress=async(steps,force=false)=>{
+    if(typeof onProgress!=='function'||!cur)return;
+    const nowMs=Date.now();
+    if(!force&&nowMs-lastProgressAt<1500)return;
+    lastProgressAt=nowMs;
+    const snap={...cur,receipts:cur.receipts.slice(),frozen:cur.frozen.slice()};
+    await onProgress(snap,{steps,source:steps>0?(usedRest?'rest+node':'node'):(source??'node')});
+    await yieldTick(true);
+  };
+  // Fast live check before downloading multi-MB Indexer /export when a local round already exists.
+  const pollTargets=r=>{
+    if(!r?.manager)return [];
+    try{const mod=identify(r.manager.redeemScript,profile).module;return mod==='win'||mod==='refund'?r.frozen:[];}catch{return [];}
+  };
+  if(cur&&!cur.terminal&&cur.manager){
+    try{
+      const targets=pollTargets(cur);
+      const live=await liveRound(rpc,cur,profile,{targets});
+      cur={...cur,manager:live.manager,frozen:targets.length?live.targets:cur.frozen};
+      return {round:cur,source:'node',caughtUp:false,steps:0};
+    }catch(e){
+      if((e?.code??e?.safeCode)!=='STALE_INPUT')throw e;
+    }
+  }
+  // Tier 1: Indexer (only when local round is absent or actually behind the live chain)
+  if(indexer&&!skipIndexer){
     try{
       let doc;
       try{doc=await indexer.exportRound(lookupInput??cid);}
       catch(e){if(!lookupInput||(e?.message!=='INDEXER_NOT_FOUND'))throw e;doc=await indexer.exportRound(await indexer.resolveTxid(lookupInput));}
-      const seeded=await authenticateIndexerSeed(doc,rpc,profile);
+      const seeded=await authenticateIndexerSeed(doc,rpc,profile,{net});
       seeded.round.indexer={...seeded.round.indexer,base:indexer.base,revision:String(doc.revision),headTxid:doc.head.txid,acceptingBlock:doc.head.acceptingBlock,checkedAt:Date.now()};
       if(!cur||seeded.round.step>cur.step||seeded.round.terminal&&!cur.terminal){
         cur=seeded.round;source='indexer';
         if(seeded.nodeVerified&&!cur.terminal)return {round:cur,source:'indexer',caughtUp:false,steps:0};
+        await emitProgress(0,true);
       }
     }catch{}
   }
@@ -450,11 +497,11 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
   const queryId=HASH.test(cid??'')?cid:(HASH.test(lookupInput??'')?lookupInput:null);
   if(!cur&&queryId){
     let g=null;
-    try{g=await locateRestRollingGenesis(queryId,{net,fetcher,profile});}catch{}
+    try{g=await locateRestRollingGenesis(queryId,{net,fetcher,profile,registry:registryFor(net)});}catch{}
     if(!g&&HASH.test(lookupInput??'')){
       try{
         const tx=await restTransaction(lookupInput,{net,fetcher});
-        if(tx?.is_accepted===true){g={...restRollingGenesisCandidate(tx,profile),raw:tx};}
+        if(tx?.is_accepted===true){g={...restRollingGenesisCandidate(tx,profile,{registry:registryFor(net)}),raw:tx};}
       }catch{}
     }
     if(g){
@@ -463,13 +510,13 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
       if(HASH.test(g.acceptingBlock??'')){
         try{
           const ev=await acceptedAt(rpc,g.txid,g.acceptingBlock);
-          loaded=roundFromGenesisEvidence(ev,profile,{source:'imported'});
+          loaded=roundFromGenesisEvidence(ev,profile,{source:'imported',network:net.networkId});
           source='node';
         }catch{}
       }
       if(!loaded&&g.raw){
         const expectedPrefix=GENESIS_PREFIX_HEX+profile.id,s=S.decode('sales',unhex(g.raw.payload.slice(expectedPrefix.length)));
-        const r=emptyRound({cid:g.cid,origin:g.origin,settings:g.settings,source:'imported'});
+        const r=emptyRound({cid:g.cid,origin:g.origin,settings:g.settings,source:'imported',network:net.networkId});
         r.manager={outpoint:{transactionId:g.txid,index:0},origin:g.origin,cid:g.cid,value:S.DEPOSIT,spk:p2sh(scriptHash(s,profile)),
           redeemScript:redeem(s,profile),utxoDaa:0n,currentDaa:0n,daa:0n,covenantId:g.cid};
         r.accepting=g.acceptingBlock;r.step=1;
@@ -484,34 +531,79 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
 
   // Tier 2 + Tier 3b: Verify live on node, else chase forward on node, else chase via REST
   const preimages=seedPreimages(cur,profile);
-  let steps=0;
+  const startedAt=Date.now();
+  let steps=0,pageCache=null;
   for(let iter=0;iter<maxSteps;iter++){
+    if(timeBudgetMs!=null&&(steps>0||source==='indexer'||usedRest)&&Date.now()-startedAt>=timeBudgetMs){
+      return {round:cur,source:steps>0?(usedRest?'rest+node':'node'):(source??'node'),caughtUp:steps>0||source==='indexer',steps,partial:true};
+    }
+    const cachedHit=findSpenderInPage(pageCache,cur.manager?.outpoint);
+    if(cachedHit){
+      cur=await applyAcceptedStep(cur,cachedHit.evidence,rpc,profile,{virtualDaa:cachedHit.virtualDaa,preimages,mutate:true});
+      steps++;
+      if(cur.terminal)return {round:cur,source:'node',caughtUp:true,steps};
+      await emitProgress(steps);
+      await yieldTick();
+      continue;
+    }
+    pageCache=null;
     try{
-      const live=await liveRound(rpc,cur,profile,{targets:cur.frozen});
-      cur={...cur,manager:live.manager,frozen:live.targets};
+      const targets=pollTargets(cur);
+      const live=await liveRound(rpc,cur,profile,{targets});
+      cur={...cur,manager:live.manager,frozen:targets.length?live.targets:cur.frozen};
       return {round:cur,source:steps>0?(usedRest?'rest+node':'node'):(source??'node'),caughtUp:steps>0||source==='indexer',steps};
     }catch(e){
       if((e?.code??e?.safeCode)!=='STALE_INPUT')throw e;
     }
+    if(preferRest){
+      try{
+        const foundRest=await findSpenderViaRest(rpc,cur,{net,fetcher});
+        if(foundRest.kind==='FOUND_NODE'){
+          cur=await applyAcceptedStep(cur,foundRest.evidence,rpc,profile,{virtualDaa:foundRest.virtualDaa,preimages,mutate:true});
+          steps++;usedRest=true;
+          if(cur.terminal)return {round:cur,source:'rest+node',caughtUp:true,steps};
+          await emitProgress(steps);
+          await yieldTick();
+          continue;
+        }
+        if(foundRest.kind==='FOUND_REST'){
+          cur=await applyRestHintStep(cur,foundRest.raw,profile,{rpc,preimages,mutate:true});
+          steps++;usedRest=true;
+          if(cur.terminal)return {round:cur,source:'rest',caughtUp:true,steps};
+          await emitProgress(steps);
+          await yieldTick();
+          continue;
+        }
+      }catch{}
+    }
     const foundNode=await findSpenderOnNode(rpc,cur);
     if(foundNode.kind==='FOUND'){
-      cur=await applyAcceptedStep(cur,foundNode.evidence,rpc,profile,{virtualDaa:foundNode.virtualDaa,preimages});
+      cur=await applyAcceptedStep(cur,foundNode.evidence,rpc,profile,{virtualDaa:foundNode.virtualDaa,preimages,mutate:true});
+      pageCache=foundNode.page??null;
       steps++;
       if(cur.terminal)return {round:cur,source:'node',caughtUp:true,steps};
+      await emitProgress(steps);
+      await yieldTick();
       continue;
     }
-    const foundRest=await findSpenderViaRest(rpc,cur,{net,fetcher});
-    if(foundRest.kind==='FOUND_NODE'){
-      cur=await applyAcceptedStep(cur,foundRest.evidence,rpc,profile,{virtualDaa:foundRest.virtualDaa,preimages});
-      steps++;usedRest=true;
-      if(cur.terminal)return {round:cur,source:'rest+node',caughtUp:true,steps};
-      continue;
-    }
-    if(foundRest.kind==='FOUND_REST'){
-      cur=await applyRestHintStep(cur,foundRest.raw,profile,{rpc,preimages});
-      steps++;usedRest=true;
-      if(cur.terminal)return {round:cur,source:'rest',caughtUp:true,steps};
-      continue;
+    if(!preferRest){
+      const foundRest=await findSpenderViaRest(rpc,cur,{net,fetcher});
+      if(foundRest.kind==='FOUND_NODE'){
+        cur=await applyAcceptedStep(cur,foundRest.evidence,rpc,profile,{virtualDaa:foundRest.virtualDaa,preimages,mutate:true});
+        steps++;usedRest=true;
+        if(cur.terminal)return {round:cur,source:'rest+node',caughtUp:true,steps};
+        await emitProgress(steps);
+        await yieldTick();
+        continue;
+      }
+      if(foundRest.kind==='FOUND_REST'){
+        cur=await applyRestHintStep(cur,foundRest.raw,profile,{rpc,preimages,mutate:true});
+        steps++;usedRest=true;
+        if(cur.terminal)return {round:cur,source:'rest',caughtUp:true,steps};
+        await emitProgress(steps);
+        await yieldTick();
+        continue;
+      }
     }
     throw Object.assign(new Error('STALE_INPUT'),{code:'STALE_INPUT',safeCode:'STALE_INPUT'});
   }

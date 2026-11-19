@@ -170,6 +170,31 @@ test('explore discovery uses TN10 REST fallback without Indexer and falls back c
   assert.equal(fell.source,'rest');assert.equal(ctlFailover.state.discoveredSource,'rest');
   assert.equal(ctlFailover.state.indexerInfo.stale,true);
   assert.equal(ctlFailover.state.discovered.length,2);
+
+  // Page reload simulation: a new controller restores Plaza discovery from local RoundStore / discoveryCache before any network call,
+  // preserves rich indexer cache across temporary failover or total network outage, and upgrades to 'indexer' when live returns.
+  let lsSnap=null;
+  const lsCache={read:()=>lsSnap,write:s=>{lsSnap=s;}};
+  const sharedRoundStore=new RoundStore(ms2);
+  const ctlReload1=createController({profile,roundStore:sharedRoundStore,connect:async()=>node,sleep:async()=>{},fetcher,discoveryCache:lsCache});
+  idxDown=false;
+  await ctlReload1.checkIndexer(base);
+  assert.equal(ctlReload1.state.discoveredSource,'indexer');
+  assert.equal(lsSnap?.rounds?.length,1);
+
+  const offlineFetcher=async()=>jsonResp({error:'offline'},503);
+  const ctlReload2=createController({profile,roundStore:sharedRoundStore,connect:async()=>node,sleep:async()=>{},fetcher:offlineFetcher,discoveryCache:lsCache});
+  // Synchronous localStorage seed already populated on construction
+  assert.equal(ctlReload2.state.discoveredSource,'cache');
+  assert.deepEqual(ctlReload2.state.discovered.map(x=>x.cid),[r1.cid]);
+  await ctlReload2.restoreDiscovery();
+  assert.equal(ctlReload2.state.discoveredSource,'cache');
+  assert.deepEqual(ctlReload2.state.discovered.map(x=>x.cid),[r1.cid]);
+  // Even if both Indexer and REST fail on refresh, cached Plaza rounds are retained instead of blanking
+  await assert.rejects(()=>ctlReload2.checkIndexer(base));
+  await assert.rejects(()=>ctlReload2.refreshIndex());
+  assert.equal(ctlReload2.state.discoveredSource,'cache');
+  assert.deepEqual(ctlReload2.state.discovered.map(x=>x.cid),[r1.cid]);
 });
 
 test('syncRound fetches Indexer seed once, detects STALE_INPUT on node, and chases virtual-chain forward through BUY -> CLOSE -> REFUND_SELF',async()=>{
@@ -299,4 +324,126 @@ test('syncRound never overwrites a round with an unresolved local intent or pend
 test('restRollingGenesisCandidate rejects forged genesis without registration or with extra covenant',()=>{
   const basePayload=`${hex(new TextEncoder().encode('KW_ROLL1'))}${profile.id}`;
   assert.throws(()=>restRollingGenesisCandidate({payload:basePayload,inputs:[]},profile),/STATE|SHORT|NOT_GENESIS|ORIGIN/);
+});
+
+test('watchRound subscribes manager P2SH UtxosChanged, relays to next manager address on spend, catches pre-subscribe gaps, and unsubscribes on terminal/leave',async()=>{
+  const {node,ctlA,ctlB,storeA}=await setupNode();
+  const {spkToAddress}=await import('../../scripts/wallet/address.mjs');
+  const waitUntil=async(pred,timeoutMs=3000)=>{
+    const deadline=Date.now()+timeoutMs;
+    while(Date.now()<deadline){if(await pred())return;await new Promise(r=>setTimeout(r,20));}
+    assert.fail('timed out waiting for watchRound catch-up');
+  };
+
+  const g=await runStep(ctlA,node,{action:'GENESIS',settings:settings({minTickets:'5',ticketCap:'10'})});
+  const cid=g.cid;
+  const addr1=spkToAddress(g.manager.spk,'kaspatest');
+
+  // User A opens detail page -> watchRound subscribes Addr_1
+  await ctlA.watchRound(cid);
+  assert.equal(ctlA.state.watchedAddress,addr1);
+  assert.equal(node.subscriptions.has(addr1),true);
+
+  // User B imports and buys 3 tickets on-chain -> UtxosChanged wakes ctlA automatically without manual syncRound!
+  await ctlB.importText(roundToText(g));
+  const step2B=await runStep(ctlB,node,{action:'BUY',quantity:'3'},cid);
+  const addr2=spkToAddress(step2B.manager.spk,'kaspatest');
+  await waitUntil(async()=>(await storeA.get(cid))?.round.step===2);
+  // Relay subscription: Addr_2 subscribed, Addr_1 unsubscribed!
+  await waitUntil(()=>ctlA.state.watchedAddress===addr2&&!node.subscriptions.has(addr1));
+  assert.equal(node.subscriptions.has(addr2),true);
+
+  // User B executes CLOSE then REFUND_SELF -> ctlA follows all the way to REFUNDED and unsubscribes on terminal!
+  await runStep(ctlB,node,{action:'CLOSE'},cid);
+  await waitUntil(async()=>(await storeA.get(cid))?.round.step===3);
+  await runStep(ctlB,node,{action:'REFUND_SELF'},cid);
+  await waitUntil(async()=>(await storeA.get(cid))?.round.terminal==='REFUNDED');
+  await waitUntil(()=>ctlA.state.watchedAddress===null&&node.subscriptions.size===0);
+
+  // Pre-subscribe gap check: User C starts with stale step-1 snapshot AFTER round already moved on-chain;
+  // watchRound subscribes Addr_1, sees STALE_INPUT on post-subscribe liveRound check, and catches up immediately!
+  const g2=await runStep(ctlA,node,{action:'GENESIS',settings:settings()});
+  await ctlB.importText(roundToText(g2));
+  const msC=new MemoryStore();msC.persistent=true;
+  const storeC=new RoundStore(msC);
+  const ctlC=createController({profile,roundStore:storeC,connect:async()=>node,sleep:async()=>{}});
+  await ctlC.connectNode(['wss://fake-tn10.invalid/wrpc']);
+  await ctlC.importText(roundToText(g2));
+  await runStep(ctlB,node,{action:'BUY',quantity:'2'},g2.cid); // spent BEFORE ctlC watches!
+  await ctlC.watchRound(g2.cid);
+  await waitUntil(async()=>(await storeC.get(g2.cid))?.round.step===2);
+  assert.equal(node.subscriptions.size,1);
+  // Leaving detail page unsubscribes cleanly
+  await ctlC.watchRound(null);
+  assert.equal(ctlC.state.watchedAddress,null);
+  assert.equal(node.subscriptions.size,0);
+});
+
+test('syncRound persists incremental catch-up progress to roundStore and emits onChange while chasing multiple steps',async()=>{
+  const {node,ctlA,ctlB,storeB}=await setupNode();
+  const g=await runStep(ctlA,node,{action:'GENESIS',settings:settings({minTickets:'3',ticketCap:'20'})});
+  const cid=g.cid;
+  await ctlB.importText(roundToText(g));
+  for(let i=0;i<10;i++)await runStep(ctlA,node,{action:'BUY',quantity:'1'},cid);
+  const seenSteps=[];
+  const off=ctlB.onChange(()=>{void storeB.get(cid).then(rec=>{if(rec&&!seenSteps.includes(rec.round.step))seenSteps.push(rec.round.step);});});
+  try{
+    const res=await ctlB.syncRound(cid,{force:true,skipIndexer:true});
+    assert.equal(res.steps,10);
+    const finalRec=await storeB.get(cid);
+    assert.equal(finalRec.round.step,11);
+    assert.ok(seenSteps.some(s=>s>1&&s<11),`expected intermediate step in storeB before final step 11, got ${JSON.stringify(seenSteps)}`);
+  }finally{off();}
+});
+
+test('syncRound with preferRest=true checks REST before calling node getVirtualChainFromBlockV2',async()=>{
+  const {node,ctlA}=await setupNode();
+  const g=await runStep(ctlA,node,{action:'GENESIS',settings:settings({minTickets:'3',ticketCap:'20'})});
+  const cid=g.cid;
+  const s2=await runStep(ctlA,node,{action:'BUY',quantity:'2'},cid);
+  const {spkToAddress}=await import('../../scripts/wallet/address.mjs');
+  const dto2=txToRestDto(node,s2.receipts[1].txid);
+  const addrTxs=new Map([[spkToAddress(g.manager.spk,'kaspatest'),[dto2]]]);
+  const txById=new Map([[dto2.transaction_id,dto2]]);
+  let fullScanCalls=0;
+  const countingRpc={
+    net:node.net,
+    url:node.url,
+    currentDaa:()=>node.currentDaa(),
+    async call(method,params,timeoutMs,opts){
+      if(method==='getVirtualChainFromBlockV2'){fullScanCalls++;throw Object.assign(new Error('block pruned'),{code:'RPC_ERROR'});}
+      if(method==='getBlock')throw Object.assign(new Error('block pruned'),{code:'RPC_ERROR'});
+      return node.call(method,params,timeoutMs,opts);
+    },
+    close:()=>{},
+  };
+  const ms=new MemoryStore();ms.persistent=true;
+  const ctl=createController({profile,roundStore:new RoundStore(ms),connect:async()=>countingRpc,sleep:async()=>{},fetcher:makeRestFetcher({registryTxs:[],addrTxs,txById,pageSize:10})});
+  await ctl.connectNode(['wss://node.invalid/wrpc']);
+  await ctl.importText(roundToText(g));
+  const res=await ctl.syncRound(cid,{force:true,skipIndexer:true,preferRest:true});
+  assert.equal(res.steps,1);
+  assert.equal(fullScanCalls,0,'preferRest=true must not start by scanning full blocks via getVirtualChainFromBlockV2');
+  assert.match(res.source,/rest/);
+});
+
+test('syncRound skips Indexer /export when local round is already live on node',async()=>{
+  const {node,ctlA}=await setupNode();
+  const g=await runStep(ctlA,node,{action:'GENESIS',settings:settings({minTickets:'3',ticketCap:'20'})});
+  const cid=g.cid;
+  let exportCalls=0;
+  const base='https://idx.test/tn10';
+  const doc1={cid,revision:'1',head:{txid:g.receipts[0].txid,acceptingBlock:g.accepting},roundText:roundToText(g),terminal:null,module:'sales',tickets:0,bought:0,buys:0};
+  const fetcher=async(url,init)=>{
+    if(String(url).includes('/export'))exportCalls++;
+    return makeIndexerFetcher(base,{documents:new Map([[cid,doc1]])})(url,init);
+  };
+  const ms=new MemoryStore();ms.persistent=true;
+  const ctl=createController({profile,roundStore:new RoundStore(ms),connect:async()=>node,sleep:async()=>{},fetcher});
+  await ctl.connectNode(['wss://fake-tn10.invalid/wrpc']);
+  await ctl.checkIndexer(base);
+  await ctl.importText(roundToText(g));
+  const res=await ctl.syncRound(cid,{force:true,skipIndexer:false});
+  assert.equal(res.unchanged,true);
+  assert.equal(exportCalls,0,'must not download /export when local manager UTXO is already live');
 });

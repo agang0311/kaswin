@@ -1,19 +1,22 @@
 /** Pure views for the rolling page: data in, HTML out. No controller, node, wallet or storage access; every action is a data-* hook
  * that app.mjs binds. Interpolated values are escaped by html``; whether an action is allowed is decided elsewhere (x.gate). */
+import {drawReadiness} from './draw-readiness.ts';
 import {html,raw,ic} from './ui.ts';
 import type {Raw} from './ui.ts';
-import {ACTION_INFO,ROLE_LABEL,TERMINAL_LABEL,CLOSE_PRESETS,UNIT,errText} from './messages.ts';
+import {ACTION_INFO,ROLE_LABEL,TERMINAL_LABEL,CLOSE_PRESETS,errText} from './messages.ts';
 import {formatTkas,parseTkas,shortHash,daaDuration} from './format.mjs';
 import {TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
-import {addressToSpk,managerBoundUnits,unitsToBudget} from '../app/bridge.ts';
+import {MAX_TICKETS,addressToSpk,managerBoundUnits,unitsToBudget} from '../app/bridge.ts';
 import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
-import type {Ctx,ConfirmCtx,CreateForm,Detail,DiscoveredRound,Facts,ActionState,Intent,Item,Phase,Receipt,Round,ShardRecordView,ShardStatus,ShardView,VerifyState} from '../app/types.ts';
+import type {Ctx,ConfirmCtx,CreateForm,Detail,DiscoveredRound,Facts,ActionState,Intent,Item,NetInfo,Phase,Receipt,Round,ShardRecordView,ShardStatus,ShardView,VerifyState} from '../app/types.ts';
 
-/** Protocol ceiling for one round: 256 sealed shards x 256 purchases = 65,536 (state.mjs MAX_TICKETS is 10,000,000; the shard limit is what binds). */
-export const MAX_TICKET_CAP=65536;
+/** Protocol ceiling for one round's total tickets (state.ts MAX_TICKETS = 10,000,000); purchase count is separately capped at 256 sealed shards x 256 records = 65,536. */
+export const MAX_TICKET_CAP=MAX_TICKETS;
+export const MAX_SHARDS=256;
 /** Largest round exercised on Testnet 10 so far (4,355 tickets / 17 sealed shards PAID; 771 tickets / 3 sealed shards REFUNDED). */
 export const VERIFIED_TICKET_CAP=4355;
 export const DEPOSIT_TKAS='4';
+const unitOf=(x?: {net?: {unit?: string}}|null): string=>x?.net?.unit??'KAS';
 const kas=(v: bigint): string=>formatTkas(v);
 const signing=(w: Ctx['wallet']): boolean=>!!w&&(w.kind==='key'||w.kind==='extension');
 /** Receipt fees come from stored / imported data: a malformed value shows a dash instead of aborting the render. */
@@ -55,35 +58,46 @@ function indexedStep(d: DiscoveredRound,ph: Phase): string {
   if(ph.key==='refund')return '退款中 · 打开查看分片退款进度';
   return '点击由当前节点核对最新状态';
 }
-function card(i: Item,x: Ctx): Raw {
-  const {r,f,ph}=i,price=f.ticketPrice,have=f.tickets!=null,pct=have&&f.ticketCap?Math.min(100,f.tickets/f.ticketCap*100):r.terminal?100:0;
-  const cta=CARD_CTA[ph.key]??'查看轮次详情';
+function isDiscFresher(i: Item,d: DiscoveredRound|undefined): d is DiscoveredRound {
+  if(!d||i.r.terminal||i.r.intent||i.r.halted)return false;
+  if(d.terminal)return true;
+  if(d.tickets!=null&&i.f.tickets!=null&&d.tickets>i.f.tickets)return true;
+  if(d.buys!=null&&d.buys>i.r.receipts.filter(t=>t.action==='BUY').length)return true;
+  return !!(d.module&&i.f.module&&d.module!==i.f.module&&!(i.f.module==='sealed'&&d.module==='sales'));
+}
+function card(i: Item,x: Ctx,freshDisc?: DiscoveredRound): Raw {
+  const {r,f}=i,ph=freshDisc?indexedPhase(freshDisc):i.ph,price=f.ticketPrice;
+  const tickets=freshDisc?(freshDisc.terminal?(freshDisc.bought??freshDisc.tickets??f.tickets):(freshDisc.tickets??f.tickets)):f.tickets;
+  const shards=freshDisc?(freshDisc.shards||(freshDisc.terminal&&(freshDisc.buys??0)>=256?Math.floor((freshDisc.buys??0)/256):f.shards)):f.shards;
+  const isTerminal=!!(r.terminal||freshDisc?.terminal);
+  const have=tickets!=null,pct=have&&f.ticketCap?Math.min(100,tickets/f.ticketCap*100):isTerminal?100:0;
+  const cta=CARD_CTA[ph.key]??'查看轮次详情',u=unitOf(x);
   return html`<article class="card t-${ph.tone}" data-open="${r.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(r.cid)}">
-    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="tag">${r.source==='imported'?'已同步':'我创建的'}</span></div>
+    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="tag">${freshDisc?'索引已更新':r.source==='imported'?'已同步':'我创建的'}</span></div>
     <div class="mono dim small">CID ${shortHash(r.cid,12,8)}</div>
-    <div class="small muted">${r.terminal?'历史票款总额 · 非实际奖金':'票款奖池 · 不含押金'}</div>
-    <div class="big">${have?kas(BigInt(f.tickets)*price):'—'}<small>${UNIT}</small></div>
-    ${have?html`<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()} 张 · ${kas(price)} ${UNIT}/张</span><span>${f.shards>0?`${f.shards} 个封存分片`:''}</span></div>`:html`<div class="small muted">打开查看详情</div>`}
-    <div class="card-next">${stepText(i,x)}</div>
-    <div class="src">${r.source==='imported'?'本机已同步 · 操作前会向节点核对':'本机记录'}</div>
+    <div class="small muted">${isTerminal?'历史票款总额 · 非实际奖金':'票款奖池 · 不含押金'}</div>
+    <div class="big">${have?kas(BigInt(tickets)*price):'—'}<small>${u}</small></div>
+    ${have?html`<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()} 张 · ${kas(price)} ${u}/张</span><span>${shards>0?`${shards} 个封存分片`:''}</span></div>`:html`<div class="small muted">打开查看详情</div>`}
+    <div class="card-next">${freshDisc?indexedStep(freshDisc,ph):stepText(i,x)}</div>
+    <div class="src">${freshDisc?'索引有新进度 · 点击后由节点核对':r.source==='imported'?'本机已同步 · 操作前会向节点核对':'本机记录'}</div>
     <div class="card-cta">${cta} ${ic('arrow')}</div>
   </article>`;
 }
-function indexedCard(d: DiscoveredRound): Raw {
-  const ph=indexedPhase(d),tkt=d.terminal?(d.bought??d.tickets??0):(d.tickets??0),isRest=d.source==='rest';
+function indexedCard(d: DiscoveredRound,x?: Ctx): Raw {
+  const ph=indexedPhase(d),tkt=d.terminal?(d.bought??d.tickets??0):(d.tickets??0),isRest=d.source==='rest',isCache=x?.conn.discoveredSource==='cache',u=unitOf(x);
   const sc=d.shards||(d.terminal&&(d.buys??0)>=256?Math.floor((d.buys??0)/256):0);
   const mval=!d.terminal?safeBig(d.managerValue):0n,cta=CARD_CTA[ph.key]??'查看轮次详情';
   const subParts=[sc>0?`${sc} 个封存分片`:'未满 1 个分片'];
   if(d.buys!=null)subParts.push(`${d.buys.toLocaleString()} 笔购买`);
   return html`<article class="card t-${ph.tone}" data-indexed="${d.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(d.cid)}">
-    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="tag">${isRest?'REST 发现':'索引发现'}</span></div>
+    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="tag">${isCache?'本地缓存':isRest?'REST 发现':'索引发现'}</span></div>
     <div class="mono dim small">CID ${shortHash(d.cid,12,8)}</div>
     <div class="small muted">${d.terminal?'历史售出票数 · 点击查看详情':isRest?'创世登记摘要 · 点击向节点追赶':'索引摘要 · 点击向节点核对'}</div>
     <div class="big">${tkt.toLocaleString()}<small>张</small></div>
     ${d.terminal?html`<div class="bar"><i style="width:100%"></i></div>`:''}
-    <div class="row small muted"><span>${subParts.join(' · ')}</span><span>${mval>0n?`状态锁定 ${kas(mval)} ${UNIT}`:''}</span></div>
+    <div class="row small muted"><span>${subParts.join(' · ')}</span><span>${mval>0n?`状态锁定 ${kas(mval)} ${u}`:''}</span></div>
     <div class="card-next">${isRest?'点击后由节点 / REST 自动追赶最新进度':indexedStep(d,ph)}</div>
-    <div class="src">${isRest?'REST API 发现 · 点击后由节点核对':'索引数据 · 点击后由节点核对'}</div>
+    <div class="src">${isCache?'本地缓存 · 点击后由节点核对':isRest?'REST API 发现 · 点击后由节点核对':'索引数据 · 点击后由节点核对'}</div>
     <div class="card-cta">${cta} ${ic('arrow')}</div>
   </article>`;
 }
@@ -92,7 +106,13 @@ export function exploreView(x: Ctx): Raw {
   const all=x.items,disc=x.discovered??[],q=x.S.query.trim().toLowerCase();
   const discByCid=new Map(disc.map(d=>[d.cid,d])),localCids=new Set(all.map(i=>i.r.cid));
   const allEntries: ExploreEntry[]=[
-    ...all.map(i=>({cid:i.r.cid,ph:i.ph,value:i.value,at:Math.max(i.at,discByCid.get(i.r.cid)?.updatedAt??0),item:i})),
+    ...all.map(i=>{
+      const d=discByCid.get(i.r.cid),fresh=isDiscFresher(i,d)?d:undefined;
+      const value=fresh
+        ?(fresh.terminal?0n:(fresh.module==='sales'||fresh.module==='sealed')&&fresh.tickets!=null?BigInt(fresh.tickets)*i.f.ticketPrice+400_000_000n:(safeBig(fresh.managerValue)>i.value?safeBig(fresh.managerValue):i.value))
+        :i.value;
+      return {cid:i.r.cid,ph:fresh?indexedPhase(fresh):i.ph,value,at:Math.max(i.at,d?.updatedAt??0),item:i,disc:fresh};
+    }),
     ...disc.filter(d=>!localCids.has(d.cid)).map(d=>{const ph=indexedPhase(d);return {cid:d.cid,ph,value:d.terminal?0n:safeBig(d.managerValue),at:d.updatedAt??0,disc:d};}),
   ];
   const isOther=(e: ExploreEntry)=>e.item?(!e.item.f.module&&!e.item.r.terminal):(!!e.disc?.module&&!['sales','sealed','win','refund'].includes(String(e.disc.module)));
@@ -112,19 +132,20 @@ export function exploreView(x: Ctx): Raw {
   }).sort((a,b)=>x.S.sort==='value'?(b.value>a.value?1:b.value<a.value?-1:b.at-a.at):b.at-a.at);
   const filteredOther=otherEntries.filter(e=>!q||e.cid.includes(q));
   const seg: [string,string][]=[['all','全部'],['open','售票中'],['sealed','待开奖'],['settle','派奖/退款'],['done','已结束'],['saved','★ 关注']];
-  const isRest=x.conn.discoveredSource==='rest';
-  const sourceNotice=isRest
+  const isRest=x.conn.discoveredSource==='rest',isCache=x.conn.discoveredSource==='cache';
+  const sourceNotice=isCache&&x.conn.indexerStale
+    ?html`<div class="source-strip"><span class="dot"></span><span>索引暂不可用，当前显示本地缓存列表（共 ${disc.length} 轮，本机已核对 ${all.length} 轮）· <b>点击任意轮次会再由节点核对并追赶最新进度</b></span></div>`
+    :isRest
     ?html`<div class="source-strip"><span class="dot"></span><span>${x.conn.indexerStale?'索引暂不可用，已切换为 REST API 备用查询':'未连接索引，已使用 REST API 备用查询'}（共 ${disc.length} 轮，本机已核对 ${all.length} 轮）· <b>点进轮次后会自动向节点 / REST 追赶最新状态</b></span></div>`
     :x.conn.indexerStale
       ?html`<div class="notice warn">索引正在追赶最新链状态，列表可能暂未包含刚确认的轮次；点击任意轮次仍会向当前节点核对。</div>`
-      :x.conn.indexer
-        ?html`<div class="source-strip"><span class="dot ok"></span><span>已连接只读索引（共 ${disc.length} 轮，其中本机已核对 ${all.length} 轮）· <b>点击任意轮次会再由节点核对并追赶最新进度</b></span></div>`
-        :'';
+      :'';
+  const u=unitOf(x);
   return html`
   <section class="hero">
     <div>
       <h1>参与一轮，<em>看清每一步。</em></h1>
-      <p>选择轮次、核对票款与费用，再确认交易。售票、开奖、派奖与退款由固定合约约束，购买笔数不受 256 笔限制。使用 ${UNIT} 测试币。</p>
+      <p>选择轮次、核对票款与费用，再确认交易。售票、开奖、派奖与退款由固定合约约束，购买笔数不受 256 笔限制。当前网络为 ${x.net.label}（${u}）。</p>
       <div class="hero-actions"><button class="btn pri" data-go2="create">${ic('create')}创建轮次</button><button class="btn ghost" data-go2="protocol">${ic('shield')}规则说明</button></div>
     </div>
     <div class="flow"><span class="eyebrow">HOW IT WORKS</span><h3>从买票到结算，去向清楚</h3><ol>
@@ -135,28 +156,28 @@ export function exploreView(x: Ctx): Raw {
   </section>
   <div class="section-title"><h2>轮次广场</h2><span class="muted small">当前数据源中的已知轮次 · 非全网统计</span></div>
   <section class="kpis">
-    ${kpi('已知轮次',entries.length,isRest?`REST 备用 ${disc.length} · 本机 ${all.length}`:x.conn.indexer?`索引 ${disc.length} · 本机 ${all.length}`:`本机创建 ${all.filter(i=>i.r.source!=='imported').length} · 导入 ${all.filter(i=>i.r.source==='imported').length}`)}
+    ${kpi('已知轮次',entries.length,isCache?`本地缓存 ${disc.length} · 本机 ${all.length}`:isRest?`REST 备用 ${disc.length} · 本机 ${all.length}`:x.conn.indexer?`索引 ${disc.length} · 本机 ${all.length}`:`本机创建 ${all.filter(i=>i.r.source!=='imported').length} · 导入 ${all.filter(i=>i.r.source==='imported').length}`)}
     ${kpi('售票中',g.open,'可购买 / 可封盘')}
     ${kpi('待开奖 / 结算中',`${g.sealed} / ${g.settle}`,'任何人可推进')}
     ${kpi('已派奖轮次',paid,`共 ${g.done} 轮已结束`)}
-    ${kpi('锁定价值',kas(locked),`${UNIT} · 进行中的轮次`)}
+    ${kpi('锁定价值',kas(locked),`${u} · 进行中的轮次`)}
   </section>
   <div class="toolbar">
     <div class="seg" role="group" aria-label="筛选">${seg.map(([k,l])=>html`<button data-filter="${k}" aria-pressed="${x.S.filter===k}">${l}<span class="c">${g[k]}</span></button>`)}</div>
     <label class="search">${ic('search')}<input id="q" placeholder="搜索 CID" value="${x.S.query}" autocomplete="off" spellcheck="false"></label>
     <div class="seg"><button data-sort="new" aria-pressed="${x.S.sort==='new'}">最近</button><button data-sort="value" aria-pressed="${x.S.sort==='value'}">锁定价值</button></div>
-    ${x.conn.indexer||isRest||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="刷新列表" title="刷新轮次列表（索引 / REST 备用）">${ic('refresh')}</button>`:''}
+    ${x.conn.indexer||isRest||isCache||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="刷新列表" title="刷新轮次列表（索引 / REST 备用）">${ic('refresh')}</button>`:''}
     ${x.indexerMore?html`<button class="btn sm" data-act="moreIndex">加载更多</button>`:''}
     ${otherEntries.length?html`<details class="other-rounds-details">
       <summary class="btn ghost sm" title="查看无法按当前固定 Profile 解析的轮次">${ic('archive')}<span>不适用轮次 (${otherEntries.length})</span></summary>
       <div class="panel" style="margin-top:12px;background:var(--panel2);border:1px dashed var(--line2)">
         <p class="small muted" style="margin-top:0">以下轮次无法按当前固定 Profile 解析，页面不提供操作。</p>
-        <div class="grid">${filteredOther.map(e=>e.item?card(e.item,x):indexedCard(e.disc!))}</div>
+        <div class="grid">${filteredOther.map(e=>e.item?card(e.item,x):indexedCard(e.disc!,x))}</div>
       </div>
     </details>`:''}
   </div>
   ${sourceNotice}
-  <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x):indexedCard(e.disc!)):html`<div class="empty">${ic('ticket')}<p>${entries.length?'当前筛选下没有轮次。':'还没有轮次。'}你可以<button class="link" data-go2="create">创建一个新轮次</button>，或在下方粘贴分享链接 / CID 加入。</p></div>`}</div>
+  <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x,e.disc):indexedCard(e.disc!,x)):html`<div class="empty">${ic('ticket')}<p>${entries.length?'当前筛选下没有轮次。':'还没有轮次。'}你可以<button class="link" data-go2="create">创建一个新轮次</button>，或在下方粘贴分享链接 / CID 加入。</p></div>`}</div>
   <div class="panel join" style="margin-top:22px">
     <div><h3>${ic('download')} 加入轮次</h3><p class="sub">粘贴分享链接，或直接输入 CID / 交易 ID（页面将按 索引 → 节点 → REST API 顺序核对并追赶最新进度）。</p></div>
     <div class="joinrow"><input id="joinText" value="${x.S.join}" placeholder="分享链接、轮次数据、CID 或交易 ID" autocomplete="off" spellcheck="false" aria-label="分享链接或轮次 ID"><button class="btn pri" data-act="join">加入</button></div>
@@ -165,27 +186,33 @@ export function exploreView(x: Ctx): Raw {
 
 /* ------------------------------------------------------------------ create */
 export interface CreateParse {ok: boolean;errors: string[];price: bigint|null;cap: number;min: number;mins: number;registry: boolean|string;registryAddr: string;isCustomRegistry: boolean}
-export function parseCreate(form: CreateForm): CreateParse {
+export function parseCreate(form: CreateForm,net?: Pick<NetInfo,'addressPrefix'|'unit'|'label'|'registry'>): CreateParse {
+  const defaultReg=net?.registry?.address??TN10_ROLLING_REGISTRY.address;
+  const addrPrefix=net?.addressPrefix??'kaspatest';
+  const unit=net?.unit??'TKAS';
+  const label=net?.label??'Testnet 10';
   const useReg=form.registry!==false;
   const rawAddr=(form.registryAddr??'').trim().toLowerCase();
-  const regAddr=rawAddr||TN10_ROLLING_REGISTRY.address;
-  const isCustomRegistry=useReg&&regAddr!==TN10_ROLLING_REGISTRY.address;
+  const regAddr=rawAddr||defaultReg;
+  const isCustomRegistry=useReg&&regAddr!==defaultReg;
   let registry: boolean|string=false,regValid=true;
   if(useReg){
-    try{addressToSpk(regAddr,'kaspatest');registry=regAddr===TN10_ROLLING_REGISTRY.address?true:regAddr;}
+    try{addressToSpk(regAddr,addrPrefix);registry=regAddr===defaultReg?true:regAddr;}
     catch{regValid=false;}
   }
   try {
-    const price=parseTkas(form.price),cap=/^[0-9]{1,7}$/.test(form.cap)?Number(form.cap):NaN,min=/^[0-9]{1,7}$/.test(form.min)?Number(form.min):NaN;
+    const rawPrice=form.price.trim(),intPrice=/^(0|[1-9][0-9]{0,11})$/.test(rawPrice);
+    const price=intPrice?parseTkas(rawPrice):null,cap=/^[0-9]{1,8}$/.test(form.cap)?Number(form.cap):NaN,min=/^[0-9]{1,8}$/.test(form.min)?Number(form.min):NaN;
     const mins=form.dur==='custom'?(/^[0-9]{1,5}$/.test(form.custom)?Number(form.custom):NaN):Number(form.dur);
     const errors: string[]=[];
-    if(price<100000000n)errors.push('票价至少 1 TKAS');
+    if(price==null)errors.push(`票价需为正整数 ${unit}（不含小数）`);
+    else if(price<100000000n)errors.push(`票价至少 1 ${unit}`);
     if(!(cap>=3&&cap<=MAX_TICKET_CAP))errors.push(`票数上限需在 3 – ${MAX_TICKET_CAP.toLocaleString()} 之间`);
     if(!(min>=3&&min<=cap))errors.push('最低票数需 ≥ 3 且不超过票数上限');
     if(!(mins>=1&&mins<=10080))errors.push('封盘等待时间需在 1 分钟 – 7 天之间');
-    if(useReg&&!regValid)errors.push('登记地址无效：需要是 Testnet 10（kaspatest:）的 Schnorr P2PK 或 P2SH 地址');
+    if(useReg&&!regValid)errors.push(`登记地址无效：需要是 ${label}（${addrPrefix}:）的 Schnorr P2PK 或 P2SH 地址`);
     return {ok:!errors.length,errors,price,cap,min,mins,registry,registryAddr:regAddr,isCustomRegistry};
-  } catch {return {ok:false,errors:['票价格式不正确（最多 8 位小数）'],price:null,cap:NaN,min:NaN,mins:NaN,registry:false,registryAddr:regAddr,isCustomRegistry};}
+  } catch {return {ok:false,errors:[`票价需为正整数 ${unit}（不含小数）`],price:null,cap:NaN,min:NaN,mins:NaN,registry:false,registryAddr:regAddr,isCustomRegistry};}
 }
 /** The button says what will really happen: only a private-key wallet can create (deposit + network fee); a receive-only address cannot. */
 function createCta(x: Ctx,formOk: boolean): Raw {
@@ -197,44 +224,45 @@ function createCta(x: Ctx,formOk: boolean): Raw {
   return html`<button class="btn pri" data-fix="wallet">${ic('wallet')}连接钱包后创建</button>`;
 }
 export function createView(x: Ctx): Raw {
-  const f=x.S.form,p=parseCreate(f),good=p.price!=null&&p.cap>=3&&p.cap<=MAX_TICKET_CAP,shards=good?Math.ceil(p.cap/256):0,over=good&&p.cap>VERIFIED_TICKET_CAP;
+  const f=x.S.form,p=parseCreate(f,x.net),good=p.price!=null&&p.price>=100000000n&&p.cap>=3&&p.cap<=MAX_TICKET_CAP,shards=good?Math.min(MAX_SHARDS,Math.ceil(p.cap/256)):0;
   const pool=p.price!=null&&good?BigInt(p.cap)*p.price:null,dur=p.mins>=1?daaDuration(BigInt(p.mins)*600n):'—';
-  const useReg=f.registry!==false,regVal=f.registryAddr!==undefined?f.registryAddr:TN10_ROLLING_REGISTRY.address;
+  const u=unitOf(x),defaultReg=x.net.registry.address;
+  const useReg=f.registry!==false,regVal=f.registryAddr!==undefined?f.registryAddr:defaultReg;
   return html`
   <div class="cols">
     <div class="panel">
       <h2>${ic('create')} 创建一个新轮次</h2>
       <p class="sub">填写规则 → 查看完整费用 → 确认后提交。现在填写不会扣款，创建后的规则不可更改。</p>
       <div class="form">
-        <label class="field">每张票价格（${UNIT}）<input id="cPrice" value="${f.price}" inputmode="decimal" maxlength="20"><small>≥ 1 ${UNIT}，最多 8 位小数</small></label>
-        <label class="field">总票数上限<input id="cCap" value="${f.cap}" inputmode="numeric" maxlength="7"><small>3 – ${MAX_TICKET_CAP.toLocaleString()}</small></label>
-        <label class="field">开奖最低票数<input id="cMin" value="${f.min}" inputmode="numeric" maxlength="7"><small>≥ 3；封盘时不足则全部退款</small></label>
+        <label class="field">每张票价格（${u}）<input id="cPrice" value="${f.price}" inputmode="numeric" maxlength="12"><small>≥ 1 ${u} 的整数</small></label>
+        <label class="field">总票数上限<input id="cCap" value="${f.cap}" inputmode="numeric" maxlength="8"><small>3 – ${MAX_TICKET_CAP.toLocaleString()}</small></label>
+        <label class="field">开奖最低票数<input id="cMin" value="${f.min}" inputmode="numeric" maxlength="8"><small>≥ 3；封盘时不足则全部退款</small></label>
         <div class="field full">最早可封盘时间<div class="pills">${CLOSE_PRESETS.map(([k,l])=>html`<button type="button" data-dur="${k}" aria-pressed="${f.dur===k}">${l}</button>`)}</div>
           ${f.dur==='custom'?html`<input id="cCustom" value="${f.custom}" inputmode="numeric" maxlength="5" placeholder="分钟（1 – 10080）">`:''}
           <small>时间到了才“允许”封盘，不会自动封盘；票卖满时可提前封盘。按约 10 DAA/秒换算，创建时读取当前 DAA。</small></div>
-        <label class="check full"><input type="checkbox" id="cReg" ${useReg?'checked':''}>附加 0.2 ${UNIT} Registry 登记输出（供索引自动发现本轮）</label>
-        <label class="field full" id="cRegBox" ${useReg?'':'hidden'}>登记地址<input id="cRegAddr" value="${regVal}" spellcheck="false" autocomplete="off" placeholder="${TN10_ROLLING_REGISTRY.address}">
-          <small>默认是 Kaswin 登记地址（留空即默认）。仅支持 Testnet 10 的 Schnorr P2PK 或 P2SH 地址；0.2 ${UNIT} 付给该地址，不可撤回。</small>
+        <label class="check full"><input type="checkbox" id="cReg" ${useReg?'checked':''}>附加 0.2 ${u} Registry 登记输出（供索引自动发现本轮）</label>
+        <label class="field full" id="cRegBox" ${useReg?'':'hidden'}>登记地址<input id="cRegAddr" value="${regVal}" spellcheck="false" autocomplete="off" placeholder="${defaultReg}">
+          <small>默认是 Kaswin 登记地址（留空即默认）。仅支持 ${x.net.label} 的 Schnorr P2PK 或 P2SH 地址；0.2 ${u} 付给该地址，不可撤回。</small>
           ${p.isCustomRegistry?html`<small class="why">已改为非默认地址：默认 Indexer 与 REST 只扫描默认登记地址，本轮不会被它们自动发现，只能由监听该地址的索引收录。</small>`:''}</label>
       </div>
       ${p.ok?'':html`<p class="err">${p.errors[0]}</p>`}
-      ${over?html`<div class="notice warn" style="margin-top:12px"><b>超出已验证范围。</b>Testnet 10 上目前实测到 ${VERIFIED_TICKET_CAP.toLocaleString()} 张（17 个封存分片）的完整派奖与 771 张（3 个封存分片）的批量退款；${p.cap.toLocaleString()} 张最多会产生约 ${shards} 个封存分片，更大规模的多分片路径尚未经实链验证。仅限测试币。</div>`:html`<div class="notice" style="margin-top:12px">Testnet 10 上已实测到 ${VERIFIED_TICKET_CAP.toLocaleString()} 张（17 个封存分片）的完整派奖与 771 张（3 个封存分片）的批量退款。</div>`}
+      <div class="notice" style="margin-top:12px">封存分片只按<b>购买笔数</b>计算（每 256 笔封存 1 个分片，单轮最多 256 个分片 / 65,536 笔购买），与总票数上限无关。Testnet 10 已实测到 17 个封存分片（${VERIFIED_TICKET_CAP.toLocaleString()} 张）的完整派奖与 3 个封存分片（771 张）的批量退款；更多分片路径尚未在实链跑满。</div>
       ${createCta(x,p.ok)}
     </div>
     <div>
       <div class="panel"><h3>预览</h3><div class="facts">
-        ${fact('售满时的票款',pool==null?'—':`${kas(pool)} ${UNIT}`)}
+        ${fact('售满时的票款',pool==null?'—':`${kas(pool)} ${u}`)}
         ${fact('每张票中奖概率（售满）',good?`1 / ${p.cap.toLocaleString()}`:'—')}
         ${fact('最早封盘',`约 ${dur} 后`)}
         ${fact('封存分片',good?`最多约 ${shards} 个（每 256 笔购买封存一个）`:'—')}
-        ${fact('执行者奖励',good?`约 ${shards} ${UNIT}（每个分片 1 ${UNIT}，从奖池扣）`:'—')}
-        ${fact(`低于 ${Number.isFinite(p.min)?p.min:'最低'} 张`,'全部退款，每条购买记录扣 0.02 TKAS 执行费')}
+        ${fact('执行者奖励',good?`约 ${shards} ${u}（每个分片 1 ${u}，从奖池扣）`:'—')}
+        ${fact(`低于 ${Number.isFinite(p.min)?p.min:'最低'} 张`,`全部退款，每条购买记录扣 0.02 ${u} 执行费`)}
       </div></div>
       <div class="panel"><h3>你需要付出</h3><dl class="kv">
-        <dt>押金</dt><dd>${DEPOSIT_TKAS} ${UNIT}（派奖或无人购买时全额退回；全部退款完成时退回 3.98）</dd>
-        <dt>登记输出</dt><dd>${useReg?`0.2 ${UNIT}（可选，转入上方填写的登记地址）`:`不附加（不进入公共索引，仅可通过分享链接加入）`}</dd>
-        <dt>网络费</dt><dd>确认前按节点实时费率报价（通常不到 0.1 ${UNIT}）</dd>
-        <dt>钱包至少</dt><dd>约 ${useReg?'4.5':'4.3'} ${UNIT}${signing(x.wallet)&&x.balance!=null?html` <span class="muted">（当前余额 ${kas(x.balance)} ${UNIT}）</span>`:''}</dd>
+        <dt>押金</dt><dd>${DEPOSIT_TKAS} ${u}（派奖或无人购买时全额退回；全部退款完成时退回 3.98）</dd>
+        <dt>登记输出</dt><dd>${useReg?`0.2 ${u}（可选，转入上方填写的登记地址）`:`不附加（不进入公共索引，仅可通过分享链接加入）`}</dd>
+        <dt>网络费</dt><dd>确认前按节点实时费率报价（通常不到 0.1 ${u}）</dd>
+        <dt>钱包至少</dt><dd>约 ${useReg?'4.5':'4.3'} ${u}${signing(x.wallet)&&x.balance!=null?html` <span class="muted">（当前余额 ${kas(x.balance)} ${u}）</span>`:''}</dd>
       </dl><p class="sub" style="margin:12px 0 0">创建者没有特权：任何人都可以封盘、开奖、派奖、退款。创建者只在最后取回押金。</p></div>
     </div>
   </div>`;
@@ -262,23 +290,29 @@ function actionCard(a: string,D: Detail,x: Ctx): Raw|'' {
   if(!info)return '';
   const g=x.gate(a);
   if(!s.ok&&/不适用|没有旧分片|不满足/.test(s.reason??''))return '';
-  const waiting=!s.ok;
-  const extra=a==='BUY'?html`<div class="qtyrow"><label class="field">数量<input id="qty" value="${x.S.qty}" inputmode="numeric" maxlength="6"></label>
+  const draw=a==='DRAW'?drawReadiness(D,x):null;
+  const waiting=!s.ok||!!draw&&!draw.ready,quantityError=a==='BUY'?qtyError(x.S.qty,f,s):null;
+  const extra=a==='BUY'?html`<div class="qtyrow"><label class="field">数量<input id="qty" value="${x.S.qty}" inputmode="numeric" maxlength="8" aria-describedby="qtyCost" aria-invalid="${quantityError?'true':'false'}"></label>
     <div class="pills">${[1,5,10].map(n=>html`<button type="button" data-qty="${n}">${n}</button>`)}</div></div>
-    <p class="small muted" id="qtyCost">${qtyCost(x.S.qty,f,s)}</p>`:'';
-  const label=x.busy?'处理中…':waiting?'暂不可用':g.ok?info.verb:g.fix==='wallet'?'连接钱包':g.fix==='settings'?'检查连接':'暂不可用';
+    <p class="small ${quantityError?'err':'muted'}" id="qtyCost" role="status" aria-live="polite">${qtyCost(x.S.qty,f,s,unitOf(x))}</p>`:'';
+  const label=x.busy?'处理中…':draw&&!draw.ready?draw.button:waiting?'暂不可用':g.ok?(draw?draw.button:info.verb):g.fix==='wallet'?'连接钱包':g.fix==='settings'?'检查连接':'暂不可用';
   const attr=x.busy?'disabled aria-busy="true"':waiting?'disabled':g.ok?`data-act="${a}"`:g.fix?`data-fix="${g.fix}"`:'disabled';
   return html`<div class="act ${waiting||x.busy?'off':''}"><h4>${info.title}</h4><p>${info.desc}</p>
     <div class="small muted">${isFree(a)?'无需签名 · 只需一个收款地址领取奖励':'需要钱包付手续费 / 票款'}</div>${extra}
-    ${x.busy?html`<div class="why" role="status">${g.reason??'正在处理上一步，请稍候。'}</div>`:waiting?html`<div class="why">${s.reason}</div>`:g.ok?'':html`<div class="why">${g.reason}</div>`}
-    <button class="btn ${g.ok&&!waiting?'pri':''} block" ${raw(attr)}>${label}</button></div>`;
+    ${x.busy?html`<div class="why" role="status">${g.reason??'正在处理上一步，请稍候。'}</div>`:waiting?html`<div class="why">${draw&&!draw.ready?draw.label:s.reason}</div>`:g.ok?'':html`<div class="why">${g.reason}</div>`}
+    <button ${raw(a==='BUY'?'id="buySubmit"':'')} class="btn ${g.ok&&!waiting?'pri':''} block" ${raw(attr)} ${raw(quantityError&&!x.busy&&!waiting&&(g.ok||g.fix)?'disabled':'')}>${label}</button></div>`;
 }
-export function qtyCost(text: string,f: Facts,s?: ActionState): string {
+export function qtyError(text: string,f: Facts,s?: ActionState): string|null {
+  const q=String(text).trim();
+  if(!/^[1-9][0-9]{0,7}$/.test(q))return '请输入要购买的张数';
+  const max=Math.max(0,Math.min(s?.maxQuantity??Infinity,f.ticketCap-f.tickets));
+  return Number(q)>max?`最多还能买 ${max} 张`:null;
+}
+export function qtyCost(text: string,f: Facts,s?: ActionState,unit='KAS'): string {
   try {
-    if(!/^[1-9][0-9]{0,6}$/.test(String(text).trim()))return '请输入要购买的张数';
-    const n=Number(text),max=s?.maxQuantity??Infinity;
-    if(n>max)return `最多还能买 ${max} 张`;
-    return `${n} 张 × ${kas(f.ticketPrice)} = ${kas(BigInt(n)*f.ticketPrice)} ${UNIT}，另付网络费（确认前报价）`;
+    const error=qtyError(text,f,s);if(error)return error;
+    const n=Number(text);
+    return `${n} 张 × ${kas(f.ticketPrice)} = ${kas(BigInt(n)*f.ticketPrice)} ${unit}，另付网络费（确认前报价）`;
   } catch {return '';}
 }
 /** Why the node refused, in terms of what the user can do. The kind comes from the node's own message (conflict.mjs); unknown wording gets the generic text. */
@@ -302,6 +336,7 @@ function intentPanel(r: Round,x: Ctx): Raw|'' {
 function verifyPanel(v: VerifyState|null): Raw|'' {
   if(!v)return '';
   if(v.state==='checking')return html`<div class="notice">正在向节点核对这一轮的链上状态…</div>`;
+  if(v.state==='partial')return html`<div class="notice warn">已同步部分进度，链上还有更新状态，后台正在继续追赶…（可点「刷新状态」继续）</div>`;
   if(v.state==='ok')return html`<div class="notice ok">已向节点核对（${new Date(v.at??0).toLocaleTimeString()}）：本机记录与链上状态一致。</div>`;
   return html`<div class="notice bad"><b>与链上状态不一致</b>：${errText(v.code??'')}</div>`;
 }
@@ -309,14 +344,14 @@ function txTable(D: Detail,x: Ctx): Raw {
   const r=D.r,hasShards=!!(D.shards&&D.shards.length);
   if(!r.receipts.length)return html`<p class="muted small">还没有已确认的交易。</p>`;
   // Confirmed BUY receipts (and confirmed REFUND_OLD/REFUND_SELF when shard dot-map is present) are represented per-shard/purchase above.
-  const list=r.receipts.filter(t=>{
-    if(t.finalized===false)return true;
-    if(t.action==='BUY')return false;
-    if(hasShards&&(t.action==='REFUND_OLD'||t.action==='REFUND_SELF'))return false;
-    return true;
-  });
-  const omittedBuys=r.receipts.filter(t=>t.action==='BUY'&&t.finalized!==false).length;
-  const omittedRefunds=hasShards?r.receipts.filter(t=>(t.action==='REFUND_OLD'||t.action==='REFUND_SELF')&&t.finalized!==false).length:0;
+  const list: Receipt[]=[];
+  let omittedBuys=0,omittedRefunds=0;
+  for(const t of r.receipts){
+    if(t.finalized===false){list.push(t);continue;}
+    if(t.action==='BUY'){omittedBuys++;continue;}
+    if(hasShards&&(t.action==='REFUND_OLD'||t.action==='REFUND_SELF')){omittedRefunds++;continue;}
+    list.push(t);
+  }
   const omittedParts=[omittedBuys>0?`${omittedBuys.toLocaleString()} 笔已确认购买交易`:'',omittedRefunds>0?`${omittedRefunds.toLocaleString()} 笔已确认退款交易`:''].filter(Boolean);
   if(!list.length)return html`<p class="muted small">共 ${omittedParts.join('、')}，请在上方分片点图中查看；尚无封盘、开奖或结算交易。</p>`;
   const limit=x.S.txLimit??20,total=list.length,shown=list.slice(Math.max(0,total-limit)).reverse();
@@ -408,12 +443,13 @@ function purchaseTip(rec: ShardRecordView|null,sh: ShardView,D: Detail,x: Ctx): 
   const buyRc=buyReceiptFor(sh,rec,D);
   const refundRc=rec.refunded?refundReceiptFor(sh,rec,D):null;
   const badge=isWin?html`<span class="badge t-gold">🏆 中奖记录（中奖票 #${draw.ticket+1}）</span>`:rec.refunded?html`<span class="badge t-muted">已退款</span>`:html`<span class="badge t-mint">第 ${rec.index+1} 笔购买</span>`;
+  const u=unitOf(x);
   return html`<div class="matrix-tip">
     <div class="tip-head">${badge}<strong>票号 #${rangeText(rec.startTicket,rec.endTicket)}</strong><span class="tag">${rec.count.toLocaleString()} 张</span>
-      <span class="muted">${kas(BigInt(rec.count)*D.f.ticketPrice)} ${UNIT}</span><span class="spacer"></span>${rec.mine?html`<span class="tag kas">我</span>`:''}</div>
+      <span class="muted">${kas(BigInt(rec.count)*D.f.ticketPrice)} ${u}</span><span class="spacer"></span>${rec.mine?html`<span class="tag kas">我</span>`:''}</div>
     <div class="tip-body"><span>买家：${hash(addr,{n:10,link:x.ex.addr(addr)})}</span>
-      <span>购买交易：${buyRc?html`${hash(buyRc.txid,{n:10,link:x.ex.tx(buyRc.txid)})} <span class="dim">(${buyRc.finalized===false?'确认中':'已接受'} · 网络费 ${feeText(buyRc.feeSompi)} ${UNIT})</span>`:html`<span class="muted">本机未保留完整购买交易索引</span>`}</span>
-      ${rec.refunded?html`<span>退款交易：${refundRc?html`${hash(refundRc.txid,{n:10,link:x.ex.tx(refundRc.txid)})} <span class="dim">(${refundRc.finalized===false?'确认中':'已接受'} · 网络费 ${feeText(refundRc.feeSompi)} ${UNIT})</span>`:html`<span class="muted">本机未保留完整退款交易索引</span>`}</span>`:''}
+      <span>购买交易：${buyRc?html`${hash(buyRc.txid,{n:10,link:x.ex.tx(buyRc.txid)})} <span class="dim">(${buyRc.finalized===false?'确认中':'已接受'} · 网络费 ${feeText(buyRc.feeSompi)} ${u})</span>`:html`<span class="muted">本机未保留完整购买交易索引</span>`}</span>
+      ${rec.refunded?html`<span>退款交易：${refundRc?html`${hash(refundRc.txid,{n:10,link:x.ex.tx(refundRc.txid)})} <span class="dim">(${refundRc.finalized===false?'确认中':'已接受'} · 网络费 ${feeText(refundRc.feeSompi)} ${u})</span>`:html`<span class="muted">本机未保留完整退款交易索引</span>`}</span>`:''}
     </div>
   </div>`;
 }
@@ -440,11 +476,7 @@ function selectedShardPanel(sh: ShardView,D: Detail,x: Ctx): Raw {
     const title=`第 ${rec.index+1} 笔 · 票号 #${range} (${rec.count} 张) · 买家 ${shortHash(addr,8,6)}${rec.mine?' (我)':''}${st}`;
     return html`<button type="button" class="cell${isWin?' w':''}${rec.mine?' me':''}${rec.refunded?' refunded':''}${isSel?' active':''}" style="--c:${colorOf(rec.key)}" data-purchase="${rec.index}" aria-pressed="${isSel}" aria-label="第 ${rec.index+1} 笔购买" title="${title}">${isWin?'🏆':rec.index+1}</button>`;
   });
-  const owners=[...new Set(recs.map(r=>r.key))];
-  const legend=html`<div class="legend">${owners.slice(0,8).map(k=>{
-    const addr=addrOf(k),cnt=recs.filter(r=>r.key===k).reduce((n,r)=>n+r.count,0);
-    return html`<span><i style="--c:${colorOf(k)}"></i><span class="mono">${shortHash(addr,10,4)}</span> ${cnt.toLocaleString()} 张</span>`;
-  })}${owners.length>8?html`<span>…共 ${owners.length} 位买家</span>`:''}${draw&&draw.shard===sh.index?html`<span><i style="--c:var(--gold)"></i>中奖票 #${draw.ticket+1}（第 ${draw.record+1} 笔）</span>`:''}</div>`;
+  const legend=draw&&draw.shard===sh.index?html`<div class="legend"><span><i style="--c:var(--gold)"></i>中奖票 #${draw.ticket+1}（第 ${draw.record+1} 笔）</span></div>`:'';
   return html`<div class="shard-detail">${header}
     <div class="matrix" role="region" aria-label="分片购买点图">${cells}</div>
     ${purchaseTip(selRec,sh,D,x)}
@@ -482,40 +514,96 @@ function shardSection(D: Detail,x: Ctx): Raw {
     ${legend}
     ${sel?selectedShardPanel(sel,D,x):html`<div class="matrix-tip"><div class="tip-placeholder">${ic('search')}<span>点击上方任意分片方格，查看该分片的购买点图与明细（每片最多 256 笔）</span></div></div>`}`;
 }
+function roundCountdown(D: Detail,x: Ctx): Raw|'' {
+  const {r,f}=D;if(r.terminal||r.halted||r.intent||!r.manager)return '';
+  if(f.module==='sales')return html`<div class="notice round-countdown" role="status"><h3>${ic('clock')} 最早封盘倒计时</h3><p>${x.daa===null?'正在读取节点时间…':D.a.CLOSE?.ok?'已满足封盘条件，任何人可封盘。':`距最早封盘还有约 ${daaDuration(f.closeEligibleDaa-x.daa)}`}</p><p class="small muted">到时不会自动封盘或开奖；封盘后继续显示开奖等待进度。</p></div>`;
+  if(f.module!=='sealed')return '';
+  const m=drawReadiness(D,x);
+  return html`<div class="notice round-countdown ${m.ready?'ok':''}" role="status"><h3>${ic('clock')} ${m.label}</h3>
+    <p>${m.detail}</p>${m.percent!==null?html`<progress max="100" value="${m.percent}" aria-label="${m.label}"></progress>`:''}
+    <p class="small muted">预计时间按约 10 DAA/秒估算；实际可操作时间以节点核验为准，不会自动开奖。</p></div>`;
+}
+function discoveredDetailView(d: DiscoveredRound,x: Ctx): Raw {
+  const ph=indexedPhase(d),u=unitOf(x),cid=d.cid;
+  const tkt=d.terminal?(d.bought??d.tickets??0):(d.tickets??0);
+  const sc=d.shards||(d.terminal&&(d.buys??0)>=256?Math.floor((d.buys??0)/256):0);
+  const mval=!d.terminal?safeBig(d.managerValue):0n;
+  const refund=d.module==='refund'||d.terminal==='REFUNDED',labels=refund?STEPS_REFUND:STEPS_NORMAL;
+  const pos=d.terminal?4:d.module==='sealed'?1:d.module==='win'||d.module==='refund'?2:0;
+  const statusNotice=x.verify?.state==='bad'
+    ?verifyPanel(x.verify)
+    :x.conn.node===false
+      ?html`<div class="notice warn">当前节点未连接，先展示本地缓存的轮次摘要；连接节点后将自动同步完整分片明细与最新状态。</div>`
+      :html`<div class="notice">已先加载本地缓存摘要，正在后台同步完整分片明细并向节点核对最新状态…</div>`;
+  return html`
+  <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回</button><span class="spacer"></span>
+    <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(cid)?'已关注':'关注'}</button>
+    ${!d.terminal?html`<button class="btn sm" data-act="verify" title="同步最新进度并向节点核对" ${raw(x.busy||x.verify?.state==='checking'||x.conn.node===null?'disabled aria-busy="true"':'')}>${ic('refresh')}${x.verify?.state==='checking'||x.conn.node===null?'刷新中…':'刷新状态'}</button>`:''}</div>
+  <div class="panel t-${ph.tone}">
+    <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${ph.tone}">${ph.label}</span><span class="spacer"></span>
+      <span class="tag">本地缓存摘要</span></div>
+    <h2 style="margin:8px 0 14px">轮次 ${hash(cid,{n:14})}</h2>
+    <div class="stepper">${labels.map((l,i)=>html`<div class="step ${i<pos?'done':i===pos?'now':''} ${refund&&i>=2?'alt':''}"><div class="b">${i<pos?'✓':i+1}</div>${l}</div>`)}</div>
+    ${statusNotice}
+    <p class="muted" style="margin:0 0 12px">${d.terminal?HINT_TERMINAL[d.terminal]??'':HINT_MODULE[d.module??'']??''}</p>
+    <div class="cols3">
+      ${kpi(d.terminal?'历史售出票数':'当前已售票数',`${tkt.toLocaleString()} 张`,d.buys!=null?`${d.buys.toLocaleString()} 笔购买`:'正在后台读取票价与上限…')}
+      ${kpi('封存分片',`${sc}`,sc>0?'同步完成后可展开分片点图':'未满 1 个分片')}
+      ${kpi('合约锁定',mval>0n?`${kas(mval)} ${u}`:(d.terminal?'已结算':'—'),d.terminal?'合约输出已结算回收':'含押金与当前票款')}
+    </div>
+  </div>`;
+}
 const ORDER: Record<string,string[]>={sales:['BUY','CLOSE'],sealed:['DRAW','TIMEOUT'],win:['PAY_OLD','PAY_SELF'],refund:['REFUND_OLD','REFUND_SELF']};
 export function roundView(x: Ctx): Raw {
-  const D=x.detail;
+  const D=x.detail,p=x.submission?.cid===x.S.cid?x.submission:null;
+  const progress=p?html`<div class="notice ${p.error?'bad':''}" role="${p.error?'alert':'status'}" aria-live="polite" aria-busy="${p.error?'false':'true'}">
+    <h3>${p.error?'交易处理未完成':'已签名，正在保存并提交交易…'}</h3>
+    <p>${p.error?p.error:'签名已完成。提交结果与节点接受状态将在本页自动更新，请不要关闭页面。'}</p>
+    ${p.error?html`<p>请查看运行日志；如有待确认交易，请先核对状态，避免重复操作。</p>`:''}
+    <dl class="kv"><dt>操作</dt><dd>${ACTION_INFO[p.action]?.title??p.action}</dd><dt>交易 ID</dt><dd>${hash(p.txid,{n:14})}</dd></dl>
+  </div>`:'';
   if(!D){
-    if(x.verify?.state==='checking')return html`<div class="empty"><p>正在通过索引、节点与 REST API 同步轮次最新状态…</p></div>`;
+    if(p)return html`<div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回轮次列表</button></div><div class="panel"><h2>轮次 ${hash(p.cid,{n:14})}</h2>${progress}</div>`;
+    const disc=x.S.cid?x.discovered?.find(d=>d.cid===x.S.cid)??null:null;
+    if(disc)return discoveredDetailView(disc,x);
+    if(x.verify?.state==='checking'||x.conn.node===null)return html`<div class="empty"><p>正在通过索引、节点与 REST API 同步轮次最新状态…</p></div>`;
+    if(x.verify?.state==='bad')return html`<div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回轮次列表</button></div><div class="panel">${verifyPanel(x.verify)}</div>`;
     return html`<div class="empty">没有找到这一轮。<button class="link" data-go2="explore">返回轮次列表</button></div>`;
   }
-  const {r,f,ph}=D,price=f.ticketPrice,open=!r.terminal&&!r.halted&&!r.intent&&r.manager;
+  const {r,f,ph}=D,price=f.ticketPrice,open=!r.terminal&&!r.halted&&!r.intent&&r.manager,u=unitOf(x);
   const order=ORDER[f.module??'']??[];
   const cards=open?order.map(a=>actionCard(a,D,x)).filter(c=>c!==''):[];
   const mine=D.mine,ownerAddr=x.ex.addrOfKey(f.owner);
   // The creation transaction is the GENESIS receipt. `r.origin` is NOT it: it is the output GENESIS spent as its first input (the covenant's genesis outpoint, created by an earlier transaction).
   const genesisTx=r.receipts.find(t=>t.action==='GENESIS');
+  const detailVerifyNotice=D.preview
+    ?(x.verify?.state==='bad'?verifyPanel(x.verify):x.conn.node===false
+      ?html`<div class="notice warn">当前节点未连接，先展示本地缓存的轮次明细；连接节点并核对通过后即可操作。</div>`
+      :html`<div class="notice">已加载本地/索引明细快照，正在后台向节点核对链上共识状态…</div>`)
+    :(x.verify?verifyPanel(x.verify):(!r.terminal&&!r.intent&&x.conn.node===null)
+      ?html`<div class="notice">已加载本地存储记录，正在后台连接节点核对最新链上状态…</div>`
+      :'');
   return html`
   <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回</button><span class="spacer"></span>
     <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(r.cid)?'已关注':'关注'}</button>
-    ${!r.terminal?html`<button class="btn sm" data-act="verify" title="同步最新进度并向节点核对" ${raw(x.busy||x.verify?.state==='checking'?'disabled aria-busy="true"':'')}>${ic('refresh')}${x.verify?.state==='checking'?'刷新中…':'刷新状态'}</button>`:''}
-    <button type="button" class="btn sm" data-act="moreRound" aria-haspopup="dialog" aria-label="更多轮次操作">更多</button></div>
+    ${!r.terminal||D.preview?html`<button class="btn sm" data-act="verify" title="同步最新进度并向节点核对" ${raw(x.busy||x.verify?.state==='checking'||x.conn.node===null?'disabled aria-busy="true"':'')}>${ic('refresh')}${x.verify?.state==='checking'||x.conn.node===null?'刷新中…':'刷新状态'}</button>`:''}
+    <button type="button" class="btn sm" data-act="moreRound" aria-haspopup="dialog" aria-label="更多轮次操作" ${raw(D.preview?'disabled title="完成节点核对后可分享或导出"':'')}>更多</button></div>
   <div class="panel t-${ph.tone}">
     <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${ph.tone}">${ph.label}</span><span class="spacer"></span>
-      ${r.source==='imported'?html`<span class="tag amber">导入 · 操作前向节点核对</span>`:''}</div>
+      ${D.preview?html`<span class="tag amber">本地预览 · 后台核对中</span>`:r.source==='imported'?html`<span class="tag amber">导入 · 操作前向节点核对</span>`:''}</div>
     <h2 style="margin:8px 0 14px">轮次 ${hash(r.cid,{n:14})}</h2>
     ${f.module||r.terminal?stepper(D):''}
-    ${intentPanel(r,x)}${verifyPanel(x.verify)}
+    ${progress}${intentPanel(r,x)}${detailVerifyNotice}
     <p class="muted" style="margin:0 0 12px">${nextHint(D)}</p>
     <div class="cols3">
-      ${kpi(r.terminal==='PAID'?'奖池（票款总额）':'当前票款',f.tickets!=null?html`${kas(BigInt(f.tickets)*price)} <span class="small muted">${UNIT}</span>`:'—',f.tickets!=null?`${f.tickets.toLocaleString()} 张 × ${kas(price)} ${UNIT}`:'')}
+      ${kpi(r.terminal==='PAID'?'奖池（票款总额）':'当前票款',f.tickets!=null?html`${kas(BigInt(f.tickets)*price)} <span class="small muted">${u}</span>`:'—',f.tickets!=null?`${f.tickets.toLocaleString()} 张 × ${kas(price)} ${u}`:'')}
       ${kpi('售出 / 上限',f.tickets!=null?`${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()}`:'—',f.tickets!=null?`开奖最低 ${f.minTickets} 张 · ${f.shards} 个封存分片 + ${f.localRecords} 笔当前记录`:'')}
       ${f.winnerKey?kpi('中奖者',hash(x.ex.addrOfKey(f.winnerKey),{n:12}),D.isWinner?'就是你！':'奖金将付给该地址'):
         kpi(mine?'你持有':'你的票',mine?`${mine.tickets.toLocaleString()} 张`:signing(x.wallet)?'0 张':'—',mine&&mine.total>0?`中奖概率约 ${(mine.tickets/mine.total*100).toFixed(2)}%`:signing(x.wallet)?'还没买票':'连接钱包后显示')}
     </div>
   </div>
   <div class="round-layout">
-    <aside class="round-actions panel"><h3>${ic('arrow')} 下一步怎么做</h3>
+    <aside class="round-actions panel"><h3>${ic('arrow')} 下一步怎么做</h3>${roundCountdown(D,x)}
       ${r.terminal?html`<div class="notice ok">${TERMINAL_LABEL[r.terminal]}：${nextHint(D)}</div>`:cards.length?html`<div class="actions" style="grid-template-columns:1fr">${cards}</div>`:html`<p class="muted small">${r.intent?'等待上面那笔交易确认。':r.halted?'这一轮已停止。':'暂时没有可执行的操作。'}</p>`}
     </aside>
     <div class="round-main">
@@ -524,7 +612,7 @@ export function roundView(x: Ctx): Raw {
     </div>
     <div class="round-rules">
       <div class="panel"><h3>${ic('clock')} 规则与链上标识</h3><dl class="kv">
-        <dt>票价</dt><dd>${kas(price)} ${UNIT}</dd>
+        <dt>票价</dt><dd>${kas(price)} ${u}</dd>
         <dt>开奖最低票数</dt><dd>${f.minTickets} 张（不足则退款）</dd>
         <dt>最早封盘</dt><dd>${x.daa!=null&&x.daa>=f.closeEligibleDaa?'已到时间':`约 ${wait(x.daa,f.closeEligibleDaa)}`}<span class="muted small"> · 票卖满可提前</span></dd>
         <dt>开奖等待</dt><dd>封盘后约 100 DAA（约 10 秒）</dd>
@@ -532,12 +620,12 @@ export function roundView(x: Ctx): Raw {
         <dt>分片</dt><dd>每 256 笔购买封存一个，购买笔数不设上限</dd>
         <dt>创建者</dt><dd>${ownerAddr?hash(ownerAddr,{n:12,link:x.ex.addr(ownerAddr)}):html`<span class="muted">本机没有记录${r.terminal?'（轮次结束后合约状态不再保留创建者，押金已退回）':''}</span>`}</dd>
         <dt>创建交易</dt><dd>${genesisTx?hash(genesisTx.txid,{n:10,link:x.ex.tx(genesisTx.txid)}):html`<span class="muted">—</span>`}</dd>
-        <dt>累计网络费</dt><dd>${kas(r.fees)} ${UNIT}</dd>
+        <dt>累计网络费</dt><dd>${kas(r.fees)} ${u}</dd>
       </dl>
       <details style="margin-top:10px"><summary class="small muted">技术信息</summary><dl class="kv" style="margin-top:8px">
         <dt>完整 CID</dt><dd class="mono small">${r.cid}</dd>
         ${r.origin?html`<dt>创世输出</dt><dd class="mono small" title="创建这一轮时被花掉的资金输出（合约 ID 由它推出），不是创建交易本身">${shortHash(r.origin.transactionId,10,6)}:${r.origin.index}</dd>`:''}
-        ${r.manager?html`<dt>状态 UTXO</dt><dd class="mono small">${shortHash(r.manager.outpoint.transactionId,10,6)}:${r.manager.outpoint.index}</dd><dt>合约锁定</dt><dd>${kas(r.manager.value)} ${UNIT}</dd>`:''}
+        ${r.manager?html`<dt>状态 UTXO</dt><dd class="mono small">${shortHash(r.manager.outpoint.transactionId,10,6)}:${r.manager.outpoint.index}</dd><dt>合约锁定</dt><dd>${kas(r.manager.value)} ${u}</dd>`:''}
         <dt>数据来源</dt><dd>${r.source==='imported'?'导入（未认证；每次操作前核对链上 UTXO）':'本页创建'}</dd>
       </dl></details></div>
     </div>
@@ -553,7 +641,7 @@ export function roundToolsBody(cid: string): Raw {
 
 /* ------------------------------------------------------------------ mine */
 export function mineView(x: Ctx): Raw {
-  const w=x.wallet;
+  const w=x.wallet,u=unitOf(x);
   const mineRounds=w?(x.mine?.rounds??[]):[];
   const txs=w?(x.mine?.txs??[]):[];
   const pendingCount=x.items.filter(i=>(i.r.pending?.length??0)>0||(!!i.r.intent&&['SUBMITTED','UNKNOWN'].includes(i.r.intent.status))).length;
@@ -561,10 +649,10 @@ export function mineView(x: Ctx): Raw {
   <div class="cols">
     <div class="panel"><h2>${ic('wallet')} 钱包</h2>
       ${w?html`<dl class="kv"><dt>类型</dt><dd>${w.kind==='extension'?w.name??'扩展钱包':w.kind==='key'?'内存钱包（私钥只在本页内存）':'仅收款地址（不能签名）'}</dd><dt>地址</dt><dd>${hash(w.address,{n:16,link:x.ex.addr(w.address)})}</dd>
-        ${signing(w)?html`<dt>余额</dt><dd>${x.balance==null?'读取中…':`${kas(x.balance)} ${UNIT}`}</dd>`:''}</dl>
+        ${signing(w)?html`<dt>余额</dt><dd>${x.balance==null?'读取中…':`${kas(x.balance)} ${u}`}</dd>`:''}</dl>
         <div class="btnrow" style="margin-top:12px"><button class="btn sm" data-fix="wallet">管理钱包</button></div>`
         :html`<p class="sub">还没有连接钱包。连接后才能创建、购买、封盘和开奖；派奖与退款通常只需要一个收款地址。</p><button class="btn pri" data-fix="wallet">${ic('wallet')}连接钱包</button>`}
-      <div class="notice warn" style="margin-top:14px">本页仅使用 Testnet 10。选择内存私钥模式时只用一次性测试密钥；使用扩展时，私钥保留在扩展中。</div></div>
+      <div class="notice warn" style="margin-top:14px">当前网络为 ${x.net.label}。${x.net.key==='mainnet'?'主网已禁用内存明文私钥，请使用扩展钱包或 Kaspire。':'选择内存私钥模式时只用一次性测试密钥；使用扩展时，私钥保留在扩展中。'}</div></div>
     <div class="panel"><h2>${ic('ledger')} 我参与的轮次</h2>
       ${!w?html`<p class="muted small">连接钱包后显示你创建、买票、中奖或在本机操作过的轮次。</p>`:
         mineRounds.length?html`<div class="outs">${mineRounds.map(({item:i,tickets,created,won})=>html`<button class="out" data-open="${i.r.cid}" style="text-align:left;cursor:pointer"><span class="r">${i.ph.label}</span><span class="mono small">${shortHash(i.r.cid,12,8)}</span><span class="v">${won?'🏆 中奖 · ':tickets>0?`我 ${tickets} 张 · `:created?'创建 · ':''}${i.f.tickets!=null?`${i.f.tickets}/${i.f.ticketCap}`:''}</span></button>`)}</div>`
@@ -597,7 +685,7 @@ function budgetChart(): Raw {
     ${fam.map(([a,_l,c,m])=>html`<path class="l" d="${path(a,m)}" stroke="${c}"/>`)}
   </svg><div class="legend">${fam.map(([_a,l,c])=>html`<span><i style="--c:${c}"></i>${l}</span>`)}</div>`;
 }
-function budgetPanel(pc: number): Raw {
+function budgetPanel(pc: number,unit='KAS'): Raw {
   const safePc=Math.max(1,Math.min(256,Math.trunc(pc)||32));
   const rows:[string,string,number,number][]=[
     [`第 ${Math.min(safePc+1,256)} 笔购买`,'BUY',Math.min(safePc,255),3],
@@ -612,66 +700,70 @@ function budgetPanel(pc: number): Raw {
     <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>动作</th><th>compute budget</th><th>约占算力质量</th><th>网络费</th></tr></thead>
     <tbody>${rows.map(([l,a,n,minT])=>{const b=calcBudget(a,n,minT);return html`<tr><td>${l}</td><td class="mono">${b}</td><td class="mono">${(b*10000).toLocaleString()} units</td><td class="mono">按实际交易报价</td></tr>`;})}</tbody></table></div>
     ${budgetChart()}
-    <p class="small muted">交易手续费由真实交易质量与节点实时费率动态迭代收敛，单笔风控上限 0.5 ${UNIT}（派奖 ≤1 ${UNIT}）。此表基于离线拟合上界模型（仅供预估，共识接受以节点为准）。</p>`;
+    <p class="small muted">交易手续费由真实交易质量与节点实时费率动态迭代收敛，单笔风控上限 0.5 ${unit}（派奖 ≤1 ${unit}）。此表基于离线拟合上界模型（仅供预估，共识接受以节点为准）。</p>`;
 }
 export function rulesView(x?: Ctx): Raw {
-  const pc=x?.S?.budgetPc??32;
+  const pc=x?.S?.budgetPc??32,u=unitOf(x),netLabel=x?.net?.label??'Kaspa mainnet',isMainnet=(x?.net?.key??'mainnet')==='mainnet';
   const item=(n: string,t: string,d: string)=>html`<li><span class="n">${n}</span><div><b>${t}</b><span>${d}</span></div></li>`;
   return html`
   <div class="panel"><h2>${ic('shield')} 规则说明</h2><p class="sub">Rolling 是“滚动分片”的抽奖合约：购买笔数不受单片 256 笔的限制。下面是你需要知道的全部规则。</p>
     <div class="flow" style="box-shadow:none"><ol>
-      ${item('01','创建 · 售票','创建者设定票价、票数上限、最低票数和最早封盘时间，并锁入 4 TKAS 押金。任何人可以买票。')}
+      ${item('01','创建 · 售票',`创建者设定票价、票数上限、最低票数和最早封盘时间，并锁入 4 ${u} 押金。任何人可以买票。`)}
       ${item('02','满 256 笔自动封存','每满 256 笔购买，当前分片封存、开一个新分片继续卖。购买笔数不设上限。')}
       ${item('03','封盘','到了最早封盘时间（或票卖满）后任何人可封盘。票数达到最低票数则进入开奖；不足则转入退款；无人购买则退回押金。')}
       ${item('04','开奖','封盘后约 100 DAA（约 10 秒），任何人可开奖。中奖票由链上数据决定，创建者、买家和执行者都无法挑选或预测。')}
-      ${item('05','派奖 · 退款','任何人都可以推进，无需签名。派奖：奖金付给中奖者，押金退创建者，执行者每个分片拿 1 TKAS。退款：每条购买记录扣 0.02 TKAS 执行费，其余原路退回。')}
+      ${item('05','派奖 · 退款',`任何人都可以推进，无需签名。派奖：奖金付给中奖者，押金退创建者，执行者每个分片拿 1 ${u}。退款：每条购买记录扣 0.02 ${u} 执行费，其余原路退回。`)}
     </ol></div></div>
   <div class="cols">
     <div class="panel"><h3>费用与押金</h3><dl class="kv">
-      <dt>押金</dt><dd>4 TKAS，派奖或无人购买时全额退回创建者；全部退款完成时退回 3.98。</dd>
+      <dt>押金</dt><dd>4 ${u}，派奖或无人购买时全额退回创建者；全部退款完成时退回 3.98。</dd>
       <dt>网络费</dt><dd>每笔交易按节点实时费率计算，确认前会明确报价。</dd>
-      <dt>执行奖励</dt><dd>派奖：每个分片 1 TKAS（从奖池扣）。退款：每条记录 0.02 TKAS 汇成执行费池，扣除网络费后归执行者。</dd></dl></div>
+      <dt>执行奖励</dt><dd>派奖：每个分片 1 ${u}（从奖池扣）。退款：每条记录 0.02 ${u} 汇成执行费池，扣除网络费后归执行者。</dd></dl></div>
     <div class="panel"><h3>谁能做什么</h3><dl class="kv">
       <dt>创建者</dt><dd>没有特权，只在最后取回押金。</dd>
       <dt>任何人</dt><dd>买票、封盘、开奖、派奖、退款。派奖和退款无需签名，只需要一个领取奖励的地址。</dd>
       <dt>多人参与</dt><dd>用「复制分享链接」把一轮发给朋友，对方在「加入轮次」粘贴。别人操作后你的本机记录会过期，需要重新获取最新链接。</dd></dl></div>
   </div>
-  <div class="panel"><h3>${ic('gauge')} 费用与算力预算计算器</h3>${budgetPanel(pc)}</div>
+  <div class="panel"><h3>${ic('gauge')} 费用与算力预算计算器</h3>${budgetPanel(pc,u)}</div>
   <div class="panel"><h3>${ic('lock')} 请先了解这些限制</h3>
-    <div class="notice warn"><b>这是 Testnet 10 实验版。</b>合约 Profile 证据状态为 UNVALIDATED，尚未完成全部上线前验证，不要用于主网或真实资产。TKAS 没有真实价值。</div>
+    <div class="notice warn"><b>${isMainnet?'当前为 Kaspa 主网（Rolling 候选 Profile）':'这是 Testnet 10 实验版'}。</b>合约 Profile 证据状态为 UNVALIDATED，尚未完成全部上线前验证，请谨慎控制金额。</div>
     <ul class="small muted" style="line-height:1.9;margin:0;padding-left:18px">
-      <li>已在 Testnet 10 实测：空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、多批次派奖（最高 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（协议上限：256 个封存分片 × 256 笔购买）；超过 ${VERIFIED_TICKET_CAP.toLocaleString()} 张的轮次页面会标出“超出已验证范围”。</li>
+      <li>已在 Testnet 10 实测：空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、多批次派奖（最高 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（分片只按购买笔数计算，单轮最多 256 个封存分片 / 65,536 笔购买）。</li>
       <li>尚未在实链完全验证：外部浏览器扩展对其余分支的实链签名（目前 KasWare 已在实链完成 TIMEOUT 与 REFUND_SELF；Kastle 及其余分支扩展实链签名尚未覆盖）、高于已测规模（超过 17 个分片的派奖、超过 3 个分片的退款、三人以上同时抢购），以及超出已观测深度的链重组恢复。</li>
-      <li>钱包支持：支持 KasWare / Kastle 的 Testnet 10 Schnorr 账户（扩展逐笔确认与交易一致性核对已在离线与模拟注入中验证，其中 KasWare 已在实链完成 TIMEOUT 与 REFUND_SELF 签名广播，其余分支及 Kastle 扩展实链签名仍待实测）；也可使用测试内存私钥或公开收款地址。</li>
+      <li>钱包支持：支持 KasWare / Kastle 的 ${netLabel} Schnorr 账户与 Kaspire 钱包；${isMainnet?'主网已禁用内存明文私钥，':'也可使用测试内存私钥，'}免签动作可使用公开收款地址。</li>
       <li>索引与备份：页面默认接入只读 Rolling 索引，并支持在无索引或索引滞后时按「索引 → 节点虚链追赶 → REST API」自动同步最新进度；无索引或离线时仍可通过分享链接和文件导入/导出使用，建议定期导出记录备份。</li>
-      <li>交易确认基准：交易是否被接受只以 Testnet 10 节点选中链上的复核结果为准，页面与本地预算公式的离线核对都不等于共识验证。</li></ul></div>`;
+      <li>交易确认基准：交易是否被接受只以 ${netLabel} 节点选中链上的复核结果为准，页面与本地预算公式的离线核对都不等于共识验证。</li></ul></div>`;
 }
 
 /* ------------------------------------------------------------------ dialogs */
 export function walletBody(x: Ctx): Raw {
-  const w=x.wallet;
+  const w=x.wallet,u=unitOf(x),isMainnet=x.net.key==='mainnet';
   if(w)return html`<dl class="kv"><dt>类型</dt><dd>${w.kind==='extension'?w.name??'扩展钱包':w.kind==='key'?'内存钱包':'仅收款地址（不能签名）'}</dd><dt>地址</dt><dd class="mono" style="word-break:break-all">${w.address}</dd>
-    ${signing(w)?html`<dt>余额</dt><dd>${x.balance==null?'读取中…':`${kas(x.balance)} ${UNIT}`}</dd>`:''}</dl>
+    ${signing(w)?html`<dt>余额</dt><dd>${x.balance==null?'读取中…':`${kas(x.balance)} ${u}`}</dd>`:''}</dl>
     <p class="sub" style="margin-top:12px">${w.kind==='extension'?'签名由扩展钱包确认，本页不会取得私钥。':w.kind==='key'?'断开后私钥会从本页内存清除。':'这个地址只能收取免签动作的执行奖励。'}</p>`;
-  const tab=x.S.wtab,options=x.walletOptions??[],preferred=options.some(o=>o.id===x.S.walletProvider)?x.S.walletProvider:options[0]?.id??'kasware';
-  return html`<div class="seg" style="margin-bottom:12px;flex-wrap:wrap"><button data-wtab="extension" aria-pressed="${tab==='extension'}">扩展 / Kaspire</button><button data-wtab="key" aria-pressed="${tab==='key'}">测试私钥</button><button data-wtab="addr" aria-pressed="${tab==='addr'}">仅收款地址</button></div>
+  const tab=isMainnet&&x.S.wtab==='key'?'extension':x.S.wtab,options=x.walletOptions??[],preferred=options.some(o=>o.id===x.S.walletProvider)?x.S.walletProvider:options[0]?.id??'kasware';
+  return html`<div class="seg" style="margin-bottom:12px;flex-wrap:wrap"><button data-wtab="extension" aria-pressed="${tab==='extension'}">扩展 / Kaspire</button>${isMainnet?'':html`<button data-wtab="key" aria-pressed="${tab==='key'}">测试私钥</button>`}<button data-wtab="addr" aria-pressed="${tab==='addr'}">仅收款地址</button></div>
     <p class="err" id="wErr" role="alert"></p>
     ${tab==='extension'?html`<label class="field">外部钱包<select id="wProvider">
         ${['kasware','kastle'].map(id=>html`<option value="${id}" ${preferred===id?'selected':''}>${id==='kasware'?'KasWare 扩展':'Kastle 扩展'}${options.some(o=>o.id===id)?'':'（未检测到）'}</option>`)}
         <option value="kaspire" ${preferred==='kaspire'?'selected':''}>Kaspire 手机 App（WalletConnect）</option>
       </select></label>
-      <p class="sub">KasWare / Kastle 需在扩展中切换到 Testnet 10；Kaspire 可在手机浏览器直接拉起 App，或用手机 Kaspire 扫码连接。页面只请求指定输入的签名，核对后由页面提交，不会读取私钥。</p>`
+      <p class="sub">KasWare / Kastle 需在扩展中切换到 ${x.net.label}；Kaspire 可在手机浏览器直接拉起 App，或用手机 Kaspire 扫码连接。页面只请求指定输入的签名，核对后由页面提交，不会读取私钥。</p>`
     :tab==='key'?html`<div class="notice warn"><b>只使用一次性的 Testnet 10 私钥</b>。不要输入主网或有真实资产的私钥。私钥只放在本页内存，读取后立即清空输入框，不写入磁盘、不上传。</div>
       <label class="field">TN10 私钥（64 位十六进制）<input id="wKey" type="password" autocomplete="off" data-lpignore="true" spellcheck="false" placeholder="粘贴后点击“连接”"></label><p class="small muted">刷新或关闭页面即清除，本页不提供私钥和测试币。</p>`
-    :html`<label class="field">收款地址（kaspatest:q…）<input id="wAddr" autocomplete="off" spellcheck="false" placeholder="kaspatest:q…"></label><p class="small muted">派奖和退款通常无需签名，执行者奖励发到此地址；少数退款尾批需要改用有资金的钱包辅助。</p>`}`;
+    :html`<label class="field">收款地址（${x.net.addressPrefix}:q…）<input id="wAddr" autocomplete="off" spellcheck="false" placeholder="${x.net.addressPrefix}:q…"></label><p class="small muted">派奖和退款通常无需签名，执行者奖励发到此地址；少数退款尾批需要改用有资金的钱包辅助。</p>`}`;
 }
 export function settingsBody(x: Ctx): Raw {
-  const c=x.conn;
+  const c=x.conn,isMainnet=x.net.key==='mainnet';
   return html`<div class="notice">一般不需要修改。节点和索引默认指向当前数据源；只有出现连接问题或你有自己的节点时才需要改动。</div>
+    <div class="row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 14px;padding:10px 12px;background:var(--panel2);border-radius:10px;border:1px solid var(--line2)">
+      <div><b>当前网络：${x.net.label}</b><div class="small muted">${isMainnet?'默认主网 · 禁用内存私钥':'测试网络 · 可用测试私钥'}</div></div>
+      <button type="button" class="btn sm" data-act="switchNet">切换到 ${isMainnet?'Testnet 10':'Kaspa 主网'}</button>
+    </div>
     <div class="form">
-      <label class="field full">Testnet 10 节点（每行一个 wss:// 地址）<textarea id="sNodes" rows="2" spellcheck="false" autocomplete="off" style="background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;width:100%">${x.S.nodes}</textarea>
+      <label class="field full">${x.net.label} 节点（每行一个 wss:// 地址）<textarea id="sNodes" rows="2" spellcheck="false" autocomplete="off" style="background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;width:100%">${x.S.nodes}</textarea>
         <small>${c.node===true?`已连接 · ${c.nodeUrl??''}`:c.node===false?'连接失败':'未连接'}。只有连接成功的新地址才会被保存，失败时保留原配置。</small></label>
-      <label class="field full">Rolling 索引 API（可选）<input id="sIndexer" value="${x.S.indexer??''}" spellcheck="false" autocomplete="off" placeholder="https://你的索引服务/tn10/rolling/v1/ProfileID">
+      <label class="field full">Rolling 索引 API（可选）<input id="sIndexer" value="${x.S.indexer??''}" spellcheck="false" autocomplete="off" placeholder="https://你的索引服务/${x.net.key}/rolling/v1/ProfileID">
         <small>${c.indexer===true?(c.indexerStale?'索引暂不可用':'索引已连接'):c.indexer===false?'连接失败':'未配置'}。用于发现轮次和同步他人推进的状态；页面仍会向当前节点核对。留空可继续用分享链接。</small></label>
     </div>
     <p class="err" id="sErr" role="alert"></p><div id="sProbe" style="display:grid;gap:8px;margin-top:8px"></div>
@@ -685,19 +777,19 @@ export function settingsBody(x: Ctx): Raw {
 
 /** Confirmation of a prepared transaction: what you pay / receive first, details collapsed. */
 export function confirmBody(x: ConfirmCtx): Raw {
-  const p=x.prepared,rv=p.review,w=x.wallet,mine=w?.spk?.script;
+  const p=x.prepared,rv=p.review,w=x.wallet,mine=w?.spk?.script,u=unitOf(x);
   const authorized=rv.inputs.filter(i=>i.kind.includes('需签名')).reduce((n,i)=>n+i.value,0n);
   const received=rv.outputs.filter(o=>!o.covenant&&o.script===mine).reduce((n,o)=>n+o.value,0n);
   const net=received-authorized,pay=net<0n;
   return html`<p style="margin:0 0 12px">${x.planText}</p>
-    <div class="sum" style="border-top:0"><span>${pay?'你将支付（含网络费）':'你预计收到'}</span><span class="mono">${pay?kas(-net):kas(net)} ${UNIT}</span></div>
-    <div class="sum"><span>网络费</span><span class="mono">${kas(rv.fee)} ${UNIT}</span></div>
+    <div class="sum" style="border-top:0"><span>${pay?'你将支付（含网络费）':'你预计收到'}</span><span class="mono">${pay?kas(-net):kas(net)} ${u}</span></div>
+    <div class="sum"><span>网络费</span><span class="mono">${kas(rv.fee)} ${u}</span></div>
     <h3 style="margin-top:14px">资金去向</h3>
     <div class="outs">${rv.outputs.map(o=>html`<div class="out ${!o.covenant&&o.script===mine?'mine':''}"><span class="r">${ROLE_LABEL[o.role]??o.role}</span>
-      <span class="out-addr mono small">${o.covenant?'合约（轮次状态）':x.ex.addrOfScript(o.script)}${!o.covenant&&o.script===mine?' · 你':''}</span><span class="v">${kas(o.value)} ${UNIT}</span></div>`)}</div>
+      <span class="out-addr mono small">${o.covenant?'合约（轮次状态）':x.ex.addrOfScript(o.script)}${!o.covenant&&o.script===mine?' · 你':''}</span><span class="v">${kas(o.value)} ${u}</span></div>`)}</div>
     <details style="margin-top:12px"><summary class="small muted">技术细节</summary><dl class="kv" style="margin-top:8px">
       <dt>交易 ID</dt><dd class="mono small">${rv.txid}</dd><dt>费率</dt><dd>${p.feerate} sompi/克（${p.fee} sompi）</dd>
       <dt>mass</dt><dd class="small">compute ${p.mass.computeMass} · transient ${p.mass.transientMass} · storage ${p.mass.storageMass}</dd>
-      <dt>输入</dt><dd class="small">${rv.inputs.map(i=>`#${i.index} ${kas(i.value)} ${UNIT} · ${i.kind}`).join('；')}</dd></dl></details>
+      <dt>输入</dt><dd class="small">${rv.inputs.map(i=>`#${i.index} ${kas(i.value)} ${u} · ${i.kind}`).join('；')}</dd></dl></details>
     <p class="small muted" style="margin-top:10px">点击确认后：${w?.kind==='extension'?'在扩展钱包中确认签名 → 本页验签':'本页在本地签名并验签'} → 保存记录 → 提交给节点。是否被接受以节点选中链为准。</p>`;
 }

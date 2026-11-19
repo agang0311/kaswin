@@ -164,9 +164,9 @@ function finish(transaction,inputs,authorized,fee,roles,budgets) {
 const base=()=>({version:1,inputs:[],outputs:[],lockTime:0n,subnetworkId:'00'.repeat(20),gas:0n,payload:'',storageMass:0n});
 const input=(f,signatureScript='',sequence=0n)=>({previousOutpoint:{...f.outpoint},signatureScript,sequence});
 function call(args,tag,raw) {return hex(cat(...args.map(v=>typeof v==='bigint'?pushInt(v):pushBytes(v)),pushBytes(unhex(tag,4)),pushBytes(raw)));}
-export function buildAction(x,p,op,{targets=[],funds=[],fee,budgets}={}) {
+export function buildAction(x,p,op,{targets=[],funds=[],fee,budgets,allowDelegatedBuyer=false}={}) {
   const s=verifyManager(x,p);checkFunding(funds,op.actorKey);
-  if(op.action==='BUY')check(!op.buyerKey||op.buyerKey===op.actorKey,'STANDARD_SELF_PURCHASE');
+  if(op.action==='BUY'&&!allowDelegatedBuyer)check(!op.buyerKey||op.buyerKey===op.actorKey,'STANDARD_SELF_PURCHASE');
   const external=funds.reduce((n,f)=>n+f.value,0n),t=transition(x,p,op,targets,fee,external);
   if(t.externalCost!==null) check(funds.length>=1,'FUNDING_REQUIRED');
   if(['PAY_OLD','PAY_SELF','REFUND_OLD'].includes(op.action))check(funds.length===0,'NO_FUNDING_BRANCH');

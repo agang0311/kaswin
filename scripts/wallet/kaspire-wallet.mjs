@@ -49,7 +49,7 @@ async function getSignClient() {
     const origin=typeof location==='object'&&/^https?:/.test(location.origin)?location.origin:'https://cd311.cn:888';
     clientPromise=SignClient.init({
       projectId:KASPIRE_PROJECT_ID,
-      metadata:{name:'Kaswin Rolling (Testnet 10)',description:'Kaswin Rolling Testnet 10 Experiment',url:origin,icons:[]},
+      metadata:{name:'Kaswin Rolling',description:'Kaswin Rolling Lottery',url:origin,icons:[]},
     }).catch(e=>{clientPromise=null;throw e;});
   }
   return clientPromise;
@@ -75,26 +75,26 @@ function bounded(fn,timeoutCode,ms,signal=null) {
   });
 }
 
-function ownerFromSession(session) {
+function ownerFromSession(session,net) {
   const accts=session?.namespaces?.kaspa?.accounts??[];
   for(const raw of accts) {
     const parts=String(raw).split(':');
-    if(parts.length===3&&parts[0]==='kaspa'&&parts[1]==='testnet-10') {
+    if(parts.length===3&&parts[0]==='kaspa'&&parts[1]===net.networkId) {
       const payload=parts[2];
-      const address=payload.startsWith(`${PREFIX}:`)?payload:`${PREFIX}:${payload}`;
-      const decoded=decodeAddress(address,PREFIX);
+      const address=payload.startsWith(`${net.addressPrefix}:`)?payload:`${net.addressPrefix}:${payload}`;
+      const decoded=decodeAddress(address,net.addressPrefix);
       check(decoded.version===0&&decoded.payload.length===32,'WALLET_SCHNORR_REQUIRED');
       const key=hex(decoded.payload);
-      return {address:pubkeyToAddress(key,PREFIX),key,network:'testnet-10'};
+      return {address:pubkeyToAddress(key,net.addressPrefix),key,network:net.networkId};
     }
   }
   throw new Error('WALLET_NETWORK_MISMATCH');
 }
 
-function sessionActive(s) {
+function sessionActive(s,chain=KASPIRE_CHAIN) {
   if(!s||typeof s!=='object')return false;
   if(typeof s.expiry==='number'&&s.expiry*1000<=Date.now())return false;
-  return !!s?.namespaces?.kaspa?.chains?.includes(KASPIRE_CHAIN);
+  return !!s?.namespaces?.kaspa?.chains?.includes(chain);
 }
 
 function extractSignedJson(res) {
@@ -106,40 +106,46 @@ function extractSignedJson(res) {
   throw new Error('WALLET_RESPONSE_INVALID');
 }
 
-export async function openKaspireWallet({client=null,onPairingUri=null,onInvalidate=()=>{},onLog=()=>{},signal=null,timeoutMs=120000,reuseExisting=true}={}) {
+export async function openKaspireWallet({client=null,onPairingUri=null,onInvalidate=()=>{},onLog=()=>{},signal=null,timeoutMs=120000,reuseExisting=true,net={networkId:'testnet-10',addressPrefix:PREFIX}}={}) {
   check(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=300000,'WALLET_TIMEOUT_CONFIG');
+  const chain=`kaspa:${net.networkId}`;
   const sc=client??await getSignClient();
   let session=null,owner=null;
 
   if(reuseExisting) {
-    const existing=sc.session.getAll().filter(sessionActive);
+    const existing=sc.session.getAll().filter(s=>sessionActive(s,chain));
     for(const cand of existing) {
-      try {owner=ownerFromSession(cand);session=cand;onLog(`Kaspire：复用已有会话 (${cand.topic.slice(0,8)}…)`);break;}
+      try {owner=ownerFromSession(cand,net);session=cand;onLog(`Kaspire：复用已有会话 (${cand.topic.slice(0,8)}…)`);break;}
       catch {try{await sc.disconnect({topic:cand.topic,reason:{code:6000,message:'stale'}});}catch{}}
     }
   }
 
   if(!session) {
     let pair;
+    onLog('Kaspire：正在连接 WalletConnect 中继…');
     try {
       pair=await bounded(()=>sc.connect({
-        requiredNamespaces:{kaspa:{chains:[KASPIRE_CHAIN],methods:['kaspa_getAccounts','kaspa_getNetwork','kaspa_getPublicKey','kaspa_signPskt'],events:['accountsChanged','networkChanged']}},
+        requiredNamespaces:{kaspa:{chains:[chain],methods:['kaspa_getAccounts','kaspa_getNetwork','kaspa_getPublicKey','kaspa_signPskt'],events:['accountsChanged','networkChanged']}},
       }),'WALLET_CONNECT_TIMEOUT',15000,signal);
     } catch(e){throw safeError(e,'WALLET_CONNECT_TIMEOUT');}
+    onLog(`Kaspire：配对请求已生成（中继${sc.core?.relayer?.connected?'已连接':'未连接'}），等待 Kaspire 确认…`);
     const wcUri=pair?.uri;
     check(typeof wcUri==='string'&&/^wc:[0-9a-f]{64}@2\?/i.test(wcUri),'WALLET_REQUEST_REJECTED');
     const schemeUri=kaspireSchemeLink(wcUri),appLink=kaspireAppLink(wcUri),intentUri=kaspireAndroidIntent(wcUri);
     onPairingUri?.({wcUri,schemeUri,appLink,intentUri});
     const onVisible=()=>{
       if(typeof document==='object'&&document.visibilityState==='visible') {
-        try{void sc.core?.relayer?.transportOpen?.();}catch{}
+        try{void (sc.core?.relayer?.restartTransport?.()??sc.core?.relayer?.transportOpen?.());}catch{}
       }
     };
     if(typeof document==='object')document.addEventListener('visibilitychange',onVisible);
     try {
       session=await bounded(()=>pair.approval(),'WALLET_CONNECT_TIMEOUT',timeoutMs,signal);
-      owner=ownerFromSession(session);
-    } catch(e){throw safeError(e,'WALLET_CONNECT_TIMEOUT');}
+      owner=ownerFromSession(session,net);
+    } catch(e){
+      onLog(`Kaspire：连接未完成 (${String(e?.code??e?.message??e).slice(0,160)})`);
+      throw safeError(e,'WALLET_CONNECT_TIMEOUT');
+    }
     finally{if(typeof document==='object')document.removeEventListener('visibilitychange',onVisible);}
   }
 
@@ -195,7 +201,7 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
       onLog(`Kaspire：正在发送签名请求 (${session.topic.slice(0,8)}…)`);
       try {
         rawRes=await bounded(()=>sc.request({
-          topic:session.topic,chainId:KASPIRE_CHAIN,
+          topic:session.topic,chainId:chain,
           request:{method:'kaspa_signPskt',params},
         }),'WALLET_SIGN_TIMEOUT',timeoutMs);
         onLog('Kaspire：已收到签名响应，正在本地验签…');

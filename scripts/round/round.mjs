@@ -20,8 +20,8 @@ const outpoint=(o,c)=>{check(o&&typeof o.index==='number'&&Number.isSafeInteger(
 const spkOf=(s,c)=>{check(s&&s.version===0&&typeof s.script==='string'&&/^(?:[0-9a-f]{2}){1,100}$/.test(s.script),c);return {version:0,script:s.script};};
 const big=(v,c,max=S.VALUE_LIMIT)=>{check(typeof v==='bigint'&&v>=0n&&v<=max,c);return v;};
 
-export function emptyRound({cid,origin,settings,source='local'}) {
-  return {v:ROUND_VERSION,network:TN10_NETWORK_ID,profileId:TN10_PROFILE_ID,cid:hash32(cid,'ROUND_CID'),origin:outpoint(origin,'ROUND_ORIGIN'),
+export function emptyRound({cid,origin,settings,source='local',network=TN10_NETWORK_ID}) {
+  return {v:ROUND_VERSION,network,profileId:TN10_PROFILE_ID,cid:hash32(cid,'ROUND_CID'),origin:outpoint(origin,'ROUND_ORIGIN'),
     settings:{...settings},manager:null,frozen:[],accepting:null,step:0,buys:0,bought:0,fees:0n,terminal:null,receipts:[],pending:[],halted:null,source,intent:null};
 }
 
@@ -224,8 +224,8 @@ export function moveCandidate(round,txid,{acceptingBlock,acceptingDaa}) {
 }
 
 /** Offline validation of a record (own or imported). Does NOT authenticate against the chain. */
-export function validateRound(r,profile,{allowIntent=true}={}) {
-  check(r&&typeof r==='object'&&r.v===ROUND_VERSION&&r.network===TN10_NETWORK_ID&&r.profileId===TN10_PROFILE_ID,'ROUND_SCOPE');
+export function validateRound(r,profile,{allowIntent=true,network=TN10_NETWORK_ID}={}) {
+  check(r&&typeof r==='object'&&r.v===ROUND_VERSION&&r.network===network&&r.profileId===TN10_PROFILE_ID,'ROUND_SCOPE');
   hash32(r.cid,'ROUND_CID');outpoint(r.origin,'ROUND_ORIGIN');
   const st=r.settings;check(st&&typeof st.ticketCap==='number'&&typeof st.minTickets==='number','ROUND_SETTINGS');
   big(st.ticketPrice,'ROUND_SETTINGS');big(st.closeEligibleDaa,'ROUND_SETTINGS');S.integer(st.ticketCap,3,S.MAX_TICKETS);S.integer(st.minTickets,3,st.ticketCap);
@@ -248,18 +248,20 @@ export function validateRound(r,profile,{allowIntent=true}={}) {
     check(m.cid===r.cid&&outpointKey(m.origin)===outpointKey(r.origin)&&!r.terminal,'MANAGER_BINDING');
     s=verifyManager(m,profile);
   } else check(r.frozen.length===0,'ROUND_FROZEN_WITHOUT_MANAGER');
-  const hashes=new Set((s?.indices??[]).map(i=>i.hash)),seen=new Set(r.manager?[outpointKey(r.manager.outpoint)]:[]),remaining=new Map();
+  const hashes=new Set((s?.indices??[]).map(i=>i.hash)),seen=new Set(r.manager?[outpointKey(r.manager.outpoint)]:[]),remaining=new Map(),frozenByHash=new Map();
   for(const f of r.frozen) {
     outpoint(f.outpoint,'FROZEN_OUTPOINT');big(f.value,'FROZEN_VALUE');big(f.utxoDaa,'FROZEN_DAA',S.DAA_LIMIT);spkOf(f.spk,'FROZEN_SPK');
-    check(f.cid===r.cid&&f.redeemScript instanceof Uint8Array&&identify(f.redeemScript,profile).module==='frozen','FROZEN_SCOPE');
+    const dec=identify(f.redeemScript,profile);
+    check(f.cid===r.cid&&f.redeemScript instanceof Uint8Array&&dec.module==='frozen','FROZEN_SCOPE');
     const h=hex(blake2b256(f.redeemScript)),point=outpointKey(f.outpoint);check(hashes.has(h)&&!seen.has(point)&&f.spk.script===p2sh(h).script,'FROZEN_HASH');seen.add(point);
     const key=h+':'+f.value;remaining.set(key,(remaining.get(key)??0)+1);
+    if(!frozenByHash.has(h))frozenByHash.set(h,dec.records);
   }
   if(s) {
     const start=s.module==='win'?s.p:s.module==='refund'?s.r:0;check(r.frozen.length===s.indices.length-start,'ROUND_FROZEN_COUNT');
     for(let j=start;j<s.indices.length;j++) {
-      const raw=r.frozen.find(f=>hex(blake2b256(f.redeemScript))===s.indices[j].hash)?.redeemScript;check(raw,'ROUND_PREIMAGE');
-      const key=s.indices[j].hash+':'+S.frozenValue(s,j,identify(raw,profile).records);check((remaining.get(key)??0)>0,'ROUND_FROZEN_VALUE');remaining.set(key,remaining.get(key)-1);
+      const records=frozenByHash.get(s.indices[j].hash);check(records,'ROUND_PREIMAGE');
+      const key=s.indices[j].hash+':'+S.frozenValue(s,j,records);check((remaining.get(key)??0)>0,'ROUND_FROZEN_VALUE');remaining.set(key,remaining.get(key)-1);
     }
   }
   check(r.intent===null||allowIntent,'ROUND_INTENT_NOT_ALLOWED');
@@ -286,9 +288,9 @@ export function validateRound(r,profile,{allowIntent=true}={}) {
 }
 export const roundToText=round=>encodeTagged(round);
 /** Import: parse + validate. Result is marked imported/unauthenticated and can never carry a trusted live status. */
-export function roundFromText(text,profile) {
+export function roundFromText(text,profile,{network=TN10_NETWORK_ID}={}) {
   const r=decodeTagged(text);
   check(r&&typeof r==='object'&&!Array.isArray(r),'ROUND_SHAPE');
-  validateRound(r,profile);
+  validateRound(r,profile,{network});
   return {...r,source:'imported'};
 }

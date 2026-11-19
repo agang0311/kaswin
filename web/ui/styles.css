@@ -186,12 +186,19 @@ tr.me td{background:var(--kas-soft)}tr.win td{background:var(--gold-soft)}
 .act{border:1px solid var(--line);background:var(--panel2);border-radius:14px;padding:13px;display:flex;flex-direction:column;gap:7px}
 .act h4{margin:0;font-size:14px;display:flex;gap:7px;align-items:center}.act p{margin:0;color:var(--muted);font-size:12px;flex:1}
 .act.off{opacity:.55}
+.round-countdown{border-color:var(--violet);margin:12px 0}
+.round-countdown.ok{border-color:var(--kas)}
+.round-countdown h3{font-size:15px;margin:0 0 8px}
+.round-countdown p{margin:8px 0;line-height:1.65}
+.round-countdown progress{display:block;width:100%;height:10px;accent-color:var(--violet)}
+.round-countdown.ok progress{accent-color:var(--kas)}
 .why{font-size:11.5px;color:var(--amber)}
 
 /* Forms */
 .field{display:grid;gap:5px;font-size:12px;font-weight:700;color:var(--muted)}
 .field input,.field select{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;color:var(--text);font-weight:600;font-size:14px;outline:0;width:100%}
 .field input:focus,.field select:focus{border-color:var(--kas);box-shadow:0 0 0 3px var(--kas-soft)}
+.field input[aria-invalid="true"]{border-color:var(--rose)}
 .field small{font-weight:500;color:var(--dim)}
 .form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form .full{grid-column:1/-1}
 .pills{display:flex;flex-wrap:wrap;gap:6px}.pills button{padding:7px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);font-size:12px;font-weight:700;color:var(--muted)}

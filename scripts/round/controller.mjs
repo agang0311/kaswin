@@ -9,24 +9,179 @@
  *    mempool halts the round (fail closed). */
 import {mempoolEntry,inputsState,sameInput} from '../chain/chain.mjs';
 import {check} from '../core.mjs';
+import {outpointKey} from '../core/lib/transaction.js';
 import {emptyRound,advanceRound,settleCandidate,moveCandidate,availableActions,describeRound,roundToText,roundFromText,validateRound} from './round.mjs';
 import {authenticateIntent,submitIntent,statusAfterFailure,checkAcceptance,recheckCandidate} from '../tracking/intent.mjs';
-import {prepareOperation,nodeFeeRate,liveRound,connectTN10,signAndRecord} from './prepare.mjs';
+import {prepareOperation,nodeFeeRate,liveRound,connectNetwork,signAndRecord} from './prepare.mjs';
 import {classifyRejection} from '../tracking/conflict.mjs';
+import {spkToAddress} from '../wallet/address.mjs';
 import {openMemoryWallet,publicRecipient} from '../wallet/wallet.mjs';
 import {openExtensionWallet} from '../wallet/extension-wallet.mjs';
 import {openKaspireWallet} from '../wallet/kaspire-wallet.mjs';
 import {createIndexerClient} from './indexer-client.mjs';
 import {discoverRestRollingRounds,syncRoundThreeTier} from './catchup.mjs';
+import {sanitizeDiscoveredRounds} from '../store/round-store.mjs';
 import {TN10} from '../chain/tn10.mjs';
 import {parseTkas,parseUint} from '../../web/ui/format.mjs';
 const FUNDED=new Set(['GENESIS','BUY','CLOSE','DRAW','TIMEOUT']);
 const LOST_GRACE_MS=180000;
 const codeOf=e=>e?.code??e?.safeCode??(typeof e?.message==='string'&&/^[A-Z0-9_]{3,64}$/.test(e.message)?e.message:'ERROR');
 
-export function createController({profile,roundStore,connect=connectTN10,now=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),fetcher=globalThis.fetch,net=TN10}) {
-  const c={rpc:null,indexer:null,indexerInfo:null,indexerCursor:null,discovered:[],discoveredSource:null,wallet:null,prepared:null,busy:false,busyLabel:null,logs:[]},listeners=new Set();
-  const emit=()=>{for(const f of listeners)try{f();}catch{}};
+export function createController({profile,roundStore,connect=(urls,opts)=>connectNetwork(urls,opts),now=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),fetcher=globalThis.fetch,net=TN10,discoveryCache=null}) {
+  const c={rpc:null,indexer:null,indexerInfo:null,indexerCursor:null,discovered:[],discoveredSource:null,discoveredCachedAt:null,watchedAddress:null,lastSynced:null,wallet:null,prepared:null,busy:false,busyLabel:null,logs:[]},listeners=new Set();
+  let cachedOrigin=null,api=null;
+  const applyCachedDiscovery=snap=>{
+    if(!snap||typeof snap!=='object')return false;
+    const rounds=sanitizeDiscoveredRounds(snap.rounds);
+    if(!rounds.length)return false;
+    c.discovered=rounds;c.discoveredSource='cache';
+    c.discoveredCachedAt=typeof snap.savedAt==='number'&&Number.isFinite(snap.savedAt)?snap.savedAt:null;
+    cachedOrigin=snap.origin==='rest'?'rest':'indexer';
+    return true;
+  };
+  const persistDiscovery=(rounds,origin,base='',{temporaryFallback=false}={})=>{
+    const clean=sanitizeDiscoveredRounds(rounds),savedAt=now();
+    if(!(temporaryFallback&&cachedOrigin==='indexer')){
+      cachedOrigin=origin==='rest'?'rest':'indexer';
+      void roundStore.writeDiscovery?.({rounds:clean,origin:cachedOrigin,base,savedAt});
+      if(discoveryCache?.write){try{discoveryCache.write({rounds:clean.slice(0,200),origin:cachedOrigin,base,savedAt});}catch{}}
+    }
+    return clean;
+  };
+  if(discoveryCache?.read){try{applyCachedDiscovery(discoveryCache.read());}catch{}}
+  const outpointFromEntry=entry=>{
+    const op=entry?.outpoint??entry?.utxoEntry?.outpoint??entry?.entry?.outpoint;
+    return op&&typeof op.transactionId==='string'&&op.index!=null?`${op.transactionId}:${Number(op.index)}`:null;
+  };
+  let watchedCid=null,watchSeq=0,watchTimer=null,watchQueue=Promise.resolve();
+  let activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+  const wakeRetries=new Map();
+  const teardownWatch=({unsubscribe=true}={})=>{
+    if(watchTimer){clearTimeout(watchTimer);watchTimer=null;}
+    const prev=activeWatch;
+    activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+    c.watchedAddress=null;
+    try{prev.offUtxos?.();}catch{}
+    try{prev.offDisconnect?.();}catch{}
+    if(unsubscribe&&prev.rpc&&prev.address&&typeof prev.rpc.subscribe==='function'){
+      void prev.rpc.subscribe([prev.address],false).catch(()=>{});
+    }
+  };
+  const activeRoundSyncs=new Set();
+  const wakeWatchedRound=(cid,triggerKey,delayMs=80)=>{
+    if(watchedCid!==cid||!c.rpc||activeRoundSyncs.has(cid))return;
+    if(watchTimer)clearTimeout(watchTimer);
+    watchTimer=setTimeout(async()=>{
+      watchTimer=null;
+      if(watchedCid!==cid||!c.rpc||!api)return;
+      const cur=await roundStore.get(cid).catch(()=>null);
+      if(!cur||cur.round.terminal||cur.round.halted)return;
+      if(cur.round.intent){
+        if(['SUBMITTED','UNKNOWN','PREPARED'].includes(cur.round.intent.status)){
+          try{await api.track(cid);}catch{}
+        }
+        return;
+      }
+      if(c.prepared?.cid===cid||c.busy){
+        if(activeWatch.rpc===c.rpc)activeWatch.pendingWake=true;
+        return;
+      }
+      activeWatch.pendingWake=false;
+      try{
+        await api.syncRound(cid,{force:true,timeBudgetMs:5000,skipIndexer:true});
+        wakeRetries.delete(triggerKey);
+      }catch{
+        const count=wakeRetries.get(triggerKey)??0;
+        if(count<1&&watchedCid===cid&&c.rpc){
+          wakeRetries.set(triggerKey,count+1);
+          wakeWatchedRound(cid,triggerKey,1000);
+        }
+      }
+    },delayMs);
+  };
+  const applyWatch=async seq=>{
+    if(seq!==watchSeq)return;
+    const rpc=c.rpc,cid=watchedCid;
+    if(!cid||!rpc||typeof rpc.subscribe!=='function'||typeof rpc.on!=='function'){teardownWatch();return;}
+    if(activeRoundSyncs.has(cid))return;
+    const cur=await roundStore.get(cid).catch(()=>null);
+    if(seq!==watchSeq||watchedCid!==cid||c.rpc!==rpc)return;
+    if(!cur||cur.round.terminal||cur.round.halted){teardownWatch();return;}
+    let targetAddr=null,targetTipKey=null,mode=null;
+    if(cur.round.manager){
+      targetAddr=spkToAddress(cur.round.manager.spk,net.addressPrefix);
+      targetTipKey=outpointKey(cur.round.manager.outpoint);
+      mode='manager';
+    }else if(cur.round.step===0&&cur.round.intent?.draft?.transaction?.outputs?.[0]?.scriptPublicKey){
+      targetAddr=spkToAddress(cur.round.intent.draft.transaction.outputs[0].scriptPublicKey,net.addressPrefix);
+      mode='genesis';
+    }
+    if(!targetAddr){teardownWatch();return;}
+    if(activeWatch.rpc===rpc&&activeWatch.address===targetAddr){
+      activeWatch.tipKey=targetTipKey;activeWatch.mode=mode;
+      if(activeWatch.pendingWake&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy){
+        activeWatch.pendingWake=false;
+        wakeWatchedRound(cid,targetTipKey??targetAddr,20);
+      }
+      return;
+    }
+    const prev=activeWatch;
+    try{prev.offUtxos?.();}catch{}
+    try{prev.offDisconnect?.();}catch{}
+    const offUtxos=rpc.on('utxos',({added=[],removed=[]}={})=>{
+      if(activeWatch.rpc!==rpc||watchedCid!==cid)return;
+      if(activeWatch.mode==='manager'){
+        const hit=removed.some(e=>outpointFromEntry(e)===activeWatch.tipKey||e?.address===activeWatch.address);
+        if(hit)wakeWatchedRound(cid,activeWatch.tipKey??activeWatch.address);
+      }else if(activeWatch.mode==='genesis'){
+        const hit=added.some(e=>e?.address===activeWatch.address||!e?.address);
+        if(hit)wakeWatchedRound(cid,`genesis:${activeWatch.address}`);
+      }
+    });
+    const offDisconnect=rpc.on('disconnect',()=>{
+      if(activeWatch.rpc===rpc)teardownWatch({unsubscribe:false});
+    });
+    try{
+      await rpc.subscribe([targetAddr],true);
+    }catch{
+      try{offUtxos?.();}catch{}
+      try{offDisconnect?.();}catch{}
+      if(prev.rpc===rpc&&prev.address)void prev.rpc.subscribe([prev.address],false).catch(()=>{});
+      activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+      c.watchedAddress=null;
+      return;
+    }
+    if(seq!==watchSeq||watchedCid!==cid||c.rpc!==rpc){
+      try{offUtxos?.();}catch{}
+      try{offDisconnect?.();}catch{}
+      void rpc.subscribe([targetAddr],false).catch(()=>{});
+      if(prev.rpc===rpc&&prev.address&&prev.address!==targetAddr)void prev.rpc.subscribe([prev.address],false).catch(()=>{});
+      activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+      c.watchedAddress=null;
+      return;
+    }
+    activeWatch={rpc,address:targetAddr,tipKey:targetTipKey,mode,pendingWake:false,offUtxos,offDisconnect};
+    c.watchedAddress=targetAddr;
+    if(prev.rpc===rpc&&prev.address&&prev.address!==targetAddr){
+      void prev.rpc.subscribe([prev.address],false).catch(()=>{});
+    }
+    // KCI subscribe-first gap check: verify the manager UTXO is still live AFTER the subscription took effect.
+    if(mode==='manager'&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy){
+      try{
+        await liveRound(rpc,cur.round,profile,{targets:[]});
+      }catch(e){
+        if(codeOf(e)==='STALE_INPUT'&&watchedCid===cid&&c.rpc===rpc&&activeWatch.address===targetAddr){
+          wakeWatchedRound(cid,targetTipKey??targetAddr,20);
+        }
+      }
+    }
+  };
+  const scheduleWatchSync=()=>{
+    const seq=++watchSeq;
+    watchQueue=watchQueue.catch(()=>{}).then(()=>applyWatch(seq));
+    return watchQueue;
+  };
+  const emit=()=>{if(watchedCid)void scheduleWatchSync();for(const f of listeners)try{f();}catch{}};
   const log=(kind,text)=>{c.logs.push({at:now(),kind,text});if(c.logs.length>200)c.logs.shift();emit();};
   // All operations that touch round records remain single-writer. Background reconciliation/verification does not mark the UI busy;
   // a user operation reserves busy immediately and runs after the active job, ahead of queued background jobs.
@@ -72,7 +227,7 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
     const save=async next=>{cur={round:next,revision:(await roundStore.replace(next,cur.revision)).revision};};
     for(const entry of structuredClone(cur.round.pending??[])) {
       let res;
-      try{res=await recheckCandidate(c.rpc,entry,profile,{now:now()});}
+      try{res=await recheckCandidate(c.rpc,entry,profile,{now:now(),network:net.networkId});}
       catch(e) {
         if(codeOf(e)==='CANDIDATE_DROPPED'){await save({...cur.round,halted:'CANDIDATE_DROPPED'});log('error',`候选交易 ${entry.txid} 既未被接受也不在内存池：轮次已停止，请人工核对`);}
         throw e;
@@ -86,29 +241,49 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
     }
     return out;
   }
-  return {
+  api={
     state:c,onChange:f=>{listeners.add(f);return()=>listeners.delete(f);},
+    isSyncing:cid=>activeRoundSyncs.has(cid),
     log,
+    watchRound(cid=null) {
+      const next=typeof cid==='string'&&/^[0-9a-f]{64}$/.test(cid)?cid:null;
+      if(watchedCid!==next){watchedCid=next;wakeRetries.clear();}
+      return scheduleWatchSync();
+    },
     async connectNode(urls) {
       const epoch=++nodeEpoch;
       try {
-        const rpc=await connect(urls);
+        const rpc=await connect(urls,{net});
         if(epoch!==nodeEpoch){rpc?.close?.();return;}
         indexChecks.clear();const old=c.rpc;c.rpc=rpc;old?.close?.();
-        log('info',`已连接 ${c.rpc.url}（testnet-10，已同步，UTXO 索引可用）`);
+        log('info',`已连接 ${c.rpc.url}（${net.networkId}，已同步，UTXO 索引可用）`);
       } catch(e) {
         log('error',`连接节点失败：${codeOf(e)}${e?.message&&e.message!==codeOf(e)?` — ${String(e.message).slice(0,160)}`:''}`);throw e;
       }
     },
+    async restoreDiscovery() {
+      const stored=await roundStore.readDiscovery?.().catch(()=>null);
+      if(c.discoveredSource==='indexer'||c.discoveredSource==='rest')return c.discovered;
+      let fallback=null;
+      if(discoveryCache?.read){try{fallback=discoveryCache.read();}catch{}}
+      const best=stored?.rounds?.length&&fallback?.rounds?.length
+        ?((stored.savedAt??0)>=(fallback.savedAt??0)?stored:fallback)
+        :(stored?.rounds?.length?stored:fallback);
+      if(applyCachedDiscovery(best))emit();
+      return c.discovered;
+    },
     async checkIndexer(base) {
       const epoch=++indexerEpoch;
-      if(!String(base).trim()){indexChecks.clear();c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discovered=[];c.discoveredSource=null;emit();return null;}
+      if(!String(base).trim()){indexChecks.clear();c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discoveredSource=c.discovered.length?'cache':null;emit();return null;}
       try {
-        const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher}),info=await client.info(),page=await client.rounds();
+        const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher,networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id});
+        const [info,page]=await Promise.all([client.info(),client.rounds()]);
         if(epoch!==indexerEpoch)return info;
-        indexChecks.clear();c.indexer=client;c.indexerInfo=info;c.indexerCursor=page.nextCursor;c.discovered=page.rounds;c.discoveredSource='indexer';
-        log('info',`Rolling 索引已连接：${client.base}（只读发现，状态由当前节点核对）`);return info;
+        const rounds=persistDiscovery(page.rounds,'indexer',client.base);
+        indexChecks.clear();c.indexer=client;c.indexerInfo=info;c.indexerCursor=page.nextCursor;c.discovered=rounds;c.discoveredSource='indexer';c.discoveredCachedAt=null;
+        log('info',`Rolling 索引已连接：${client.base}（只读发现，状态由当前节点核对）`);emit();return info;
       } catch(e) {
+        if(epoch===indexerEpoch&&c.discovered.length&&!c.discoveredSource)c.discoveredSource='cache';
         log('error',`连接索引失败：${codeOf(e)}${e?.message&&e.message!==codeOf(e)?` — ${String(e.message).slice(0,160)}`:''}`);throw e;
       }
     },
@@ -116,21 +291,23 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
       const client=c.indexer;
       if(client){
         try{
-          const info=await client.info(),page=await client.rounds();
-          return await guard('更新索引列表',async()=>{check(c.indexer===client,'INDEXER_CONNECTION_CHANGED');c.indexerInfo=info;c.indexerCursor=page.nextCursor;c.discovered=page.rounds;c.discoveredSource='indexer';emit();return page;},{readKey:'indexer:list:apply'});
+          const [info,page]=await Promise.all([c.indexerInfo?Promise.resolve(c.indexerInfo):client.info(),client.rounds()]);
+          return await guard('更新索引列表',async()=>{check(c.indexer===client,'INDEXER_CONNECTION_CHANGED');const rounds=persistDiscovery(page.rounds,'indexer',client.base);c.indexerInfo=info;c.indexerCursor=page.nextCursor;c.discovered=rounds;c.discoveredSource='indexer';c.discoveredCachedAt=null;emit();return page;},{readKey:'indexer:list:apply'});
         }catch(e){
           if(c.indexer===client)c.indexerInfo={...c.indexerInfo,stale:true};
           try{
             const restPage=await discoverRestRollingRounds({net,cursor:0,fetcher,profile});
-            return await guard('更新 REST 备选列表',async()=>{c.indexerCursor=restPage.nextCursor;c.discovered=restPage.rounds;c.discoveredSource='rest';emit();return {...restPage,fallbackFrom:codeOf(e)};},{readKey:'indexer:list:rest'});
+            return await guard('更新 REST 备选列表',async()=>{const rounds=persistDiscovery(restPage.rounds,'rest','',{temporaryFallback:true});c.indexerCursor=restPage.nextCursor;c.discovered=rounds;c.discoveredSource='rest';c.discoveredCachedAt=null;emit();return {...restPage,fallbackFrom:codeOf(e)};},{readKey:'indexer:list:rest'});
           }catch{
-            if(c.indexer===client){c.indexerCursor=null;c.discovered=[];c.discoveredSource=null;emit();}
+            if(c.indexer===client){c.indexerCursor=null;c.discoveredSource=c.discovered.length?'cache':null;emit();}
             throw e;
           }
         }
       }
-      const restPage=await discoverRestRollingRounds({net,cursor:0,fetcher,profile});
-      return guard('更新 REST 列表',async()=>{if(c.indexer)return {skipped:'INDEXER_CONNECTED'};c.indexerCursor=restPage.nextCursor;c.discovered=restPage.rounds;c.discoveredSource='rest';emit();return restPage;},{readKey:'indexer:list:rest'});
+      let restPage;
+      try{restPage=await discoverRestRollingRounds({net,cursor:0,fetcher,profile});}
+      catch(e){c.indexerCursor=null;c.discoveredSource=c.discovered.length?'cache':null;emit();throw e;}
+      return guard('更新 REST 列表',async()=>{if(c.indexer)return {skipped:'INDEXER_CONNECTED'};const rounds=persistDiscovery(restPage.rounds,'rest','');c.indexerCursor=restPage.nextCursor;c.discovered=rounds;c.discoveredSource='rest';c.discoveredCachedAt=null;emit();return restPage;},{readKey:'indexer:list:rest'});
     });},
     async moreIndex() {return indexRead('more',async()=>{
       const cursor=c.indexerCursor;if(cursor===null)return {done:true};
@@ -139,7 +316,7 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
         return guard('补充 REST 列表',async()=>{
           check(c.indexerCursor===cursor,'INDEXER_CONNECTION_CHANGED');
           const byId=new Map([...c.discovered,...page.rounds].map(r=>[r.cid,r]));check(byId.size<=500,'INDEXER_DISCOVERY_LIMIT');
-          c.discovered=[...byId.values()];c.indexerCursor=page.nextCursor;c.discoveredSource='rest';emit();return page;
+          c.discovered=persistDiscovery([...byId.values()],'rest','',{temporaryFallback:!!c.indexer});c.indexerCursor=page.nextCursor;c.discoveredSource='rest';c.discoveredCachedAt=null;emit();return page;
         },{readKey:'indexer:more:rest'});
       }
       const client=need(c.indexer,'INDEXER_REQUIRED');
@@ -147,28 +324,81 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
       return guard('补充索引列表',async()=>{
         check(c.indexer===client&&c.indexerCursor===cursor,'INDEXER_CONNECTION_CHANGED');
         const byId=new Map([...c.discovered,...page.rounds].map(r=>[r.cid,r]));check(byId.size<=500,'INDEXER_DISCOVERY_LIMIT');
-        c.discovered=[...byId.values()];c.indexerCursor=page.nextCursor;emit();return page;
+        c.discovered=persistDiscovery([...byId.values()],'indexer',client.base);c.indexerCursor=page.nextCursor;c.discoveredCachedAt=null;emit();return page;
       },{readKey:'indexer:more:apply'});
     });},
-    async syncRound(input,{lookup=false,allowHalted=false,force=true}={}) {return indexRead(`round:${input}`,async()=>{
+    async cachedPreview(cid) {
+      if(typeof cid!=='string'||!/^[0-9a-f]{64}$/.test(cid))return null;
+      const text=await roundStore.getPreview?.(cid).catch(()=>null);
+      if(typeof text!=='string')return null;
+      try{
+        const r=roundFromText(text,profile,{network:net.networkId});
+        return r.cid===cid&&!r.intent&&!r.pending?.length?r:null;
+      }catch{return null;}
+    },
+    async loadPreview(cid) {
+      if(typeof cid!=='string'||!/^[0-9a-f]{64}$/.test(cid))return null;
+      const local=await roundStore.get(cid).catch(()=>null);
+      if(local?.round)return null;
+      const cached=await api.cachedPreview(cid);
+      const client=c.indexer;
+      if(client){
+        try{
+          const doc=await client.exportRound(cid);
+          const fresh=roundFromText(doc.roundText,profile,{network:net.networkId});
+          if(fresh.cid===cid&&!fresh.intent&&!fresh.pending?.length){
+            void roundStore.savePreview?.(cid,doc.roundText);
+            return fresh;
+          }
+        }catch{}
+      }
+      return cached;
+    },
+    async syncRound(input,{lookup=false,allowHalted=false,force=true,timeBudgetMs=null,skipIndexer=false,preferRest=false}={}) {return indexRead(`round:${input}`,async()=>{
+      activeRoundSyncs.add(input);
+      try{
       const rpc=need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const initial=await roundStore.get(input);
       if(initial?.round.terminal)return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
       if(c.prepared?.cid===input||initial&&(initial.round.intent||(!allowHalted&&initial.round.halted)))return {cid:input,skipped:'LOCAL_PENDING'};
       const client=c.indexer;
+      const markSynced=r=>{
+        c.lastSynced={cid:r.cid,nodeUrl:rpc.url??'',managerOutpoint:r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',step:r.step,frozen:r.frozen.length,at:now()};
+      };
       if(!force&&client&&initial){
         const cached=indexChecks.get(initial.round.cid);
         if(cached?.client===client&&cached.rpc===rpc&&cached.localRevision===initial.revision&&now()-cached.checkedAt<15000){
-          try{await liveRound(rpc,initial.round,profile,{targets:initial.round.frozen});return {cid:initial.round.cid,unchanged:true,source:'cache',steps:0,terminal:initial.round.terminal};}catch{}
+          try{await liveRound(rpc,initial.round,profile,{targets:initial.round.frozen});markSynced(initial.round);return {cid:initial.round.cid,unchanged:true,source:'cache',steps:0,terminal:initial.round.terminal};}catch{}
         }
       }
+      let expectedRev=initial?.revision??null,progressChain=Promise.resolve();
+      const onProgress=async snap=>{
+        progressChain=progressChain.then(async()=>{
+          if(c.rpc!==rpc||c.busy||c.prepared?.cid===snap.cid)return;
+          await guard('保存同步进度',async()=>{
+            if(c.rpc!==rpc||c.prepared?.cid===snap.cid)return;
+            const current=await roundStore.get(snap.cid);
+            if(current?.round.intent||(!allowHalted&&current?.round.halted))return;
+            if((current?.revision??null)!==expectedRev)return;
+            const round={...snap,source:current?.round.source??snap.source};
+            validateRound(round,profile,{network:net.networkId});
+            const saved=current?await roundStore.replace(round,current.revision):await roundStore.create(round);
+            expectedRev=saved.revision;
+            void roundStore.removePreview?.(snap.cid);
+            if(c.lastSynced?.cid===snap.cid)c.lastSynced=null;
+          },{readKey:`sync:round:${snap.cid}:progress`});
+        }).catch(()=>{});
+        return progressChain;
+      };
       const synced=await syncRoundThreeTier({
-        cid:initial?input:(lookup?null:input),round:initial?.round??null,lookupInput:lookup?input:null,rpc,indexer:client,profile,net,fetcher,
+        cid:initial?input:(lookup?null:input),round:initial?.round??null,lookupInput:lookup?input:null,rpc,indexer:client,profile,net,fetcher,timeBudgetMs,skipIndexer,preferRest,onProgress,
       });
-      const cid=synced.round.cid,cur=initial??await roundStore.get(cid);
+      await progressChain;
+      const cid=synced.round.cid,cur=await roundStore.get(cid);
       if(c.prepared?.cid===cid||cur&&(cur.round.intent||(!allowHalted&&cur.round.halted)))return {cid,skipped:'LOCAL_PENDING'};
-      if(cur&&cur.round.step===synced.round.step&&cur.round.terminal===synced.round.terminal&&cur.round.manager?.outpoint?.transactionId===synced.round.manager?.outpoint?.transactionId&&!synced.caughtUp){
+      if(cur&&expectedRev===(initial?.revision??null)&&cur.round.step===synced.round.step&&cur.round.terminal===synced.round.terminal&&cur.round.manager?.outpoint?.transactionId===synced.round.manager?.outpoint?.transactionId&&!synced.caughtUp){
         if(client&&synced.round.indexer?.headTxid)indexChecks.set(cid,{client,rpc,localRevision:cur.revision,headTxid:synced.round.indexer.headTxid,acceptingBlock:synced.round.indexer.acceptingBlock,revision:String(synced.round.indexer.revision??''),checkedAt:now()});
+        markSynced(cur.round);
         return {cid,unchanged:true,source:synced.source,steps:0,terminal:synced.round.terminal};
       }
       // Fetch and catch-up run outside the write queue. Re-read under the queue before saving, so slow queries never block preparation
@@ -176,29 +406,36 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
       return guard('保存同步轮次',async()=>{
         check(c.rpc===rpc,'INDEXER_CONNECTION_CHANGED');const current=await roundStore.get(cid);
         if(c.prepared?.cid===cid||current?.round.intent||(!allowHalted&&current?.round.halted))return {cid,skipped:'LOCAL_PENDING'};
-        if(current?.revision!==cur?.revision)return {cid,skipped:'LOCAL_CHANGED'};
+        if((current?.revision??null)!==expectedRev)return {cid,skipped:'LOCAL_CHANGED'};
         const round={...synced.round,source:current?.round.source??synced.round.source};
-        validateRound(round,profile);
+        validateRound(round,profile,{network:net.networkId});
         const saved=current?await roundStore.replace(round,current.revision):await roundStore.create(round);
-        if(client&&round.indexer?.headTxid)indexChecks.set(cid,{client,rpc,localRevision:saved.revision,headTxid:round.indexer.headTxid,acceptingBlock:round.indexer.acceptingBlock,revision:String(round.indexer.revision??''),checkedAt:now()});
+        void roundStore.removePreview?.(cid);
+        if(synced.partial||synced.source==='rest'){
+          if(c.lastSynced?.cid===cid)c.lastSynced=null;
+        }else{
+          markSynced(round);
+          if(client&&round.indexer?.headTxid)indexChecks.set(cid,{client,rpc,localRevision:saved.revision,headTxid:round.indexer.headTxid,acceptingBlock:round.indexer.acceptingBlock,revision:String(round.indexer.revision??''),checkedAt:now()});
+        }
         if(synced.steps>0)log('info',`轮次 ${cid.slice(0,16)}… 已自动追赶 ${synced.steps} 步最新链上状态（来源：${synced.source}）`);
         else log('info',`已核对并同步轮次 ${cid.slice(0,16)}…（来源：${synced.source}）`);
-        return {cid,source:synced.source,caughtUp:synced.caughtUp,steps:synced.steps,terminal:round.terminal};
+        return {cid,source:synced.source,caughtUp:synced.caughtUp,steps:synced.steps,terminal:round.terminal,partial:!!synced.partial};
       },{readKey:`sync:round:${input}:apply`});
+      }finally{activeRoundSyncs.delete(input);if(watchedCid===input)void scheduleWatchSync();}
     });},
     syncIndexedRound(input,opts) {return this.syncRound(input,opts);},
-    openWallet(keyText) {replaceWallet(null);replaceWallet(openMemoryWallet(keyText));log('info',`内存钱包已连接：${c.wallet.address}`);return c.wallet.address;},
-    usePublicAddress(address) {replaceWallet(null);replaceWallet(publicRecipient(address));log('info',`使用公开收款地址（免签动作）：${c.wallet.address}`);return c.wallet.address;},
+    openWallet(keyText) {check(net.key!=='mainnet','MAINNET_MEMORY_KEY_DISABLED');replaceWallet(null);replaceWallet(openMemoryWallet(keyText,{prefix:net.addressPrefix}));log('info',`内存钱包已连接：${c.wallet.address}`);return c.wallet.address;},
+    usePublicAddress(address) {replaceWallet(null);replaceWallet(publicRecipient(address,{prefix:net.addressPrefix}));log('info',`使用公开收款地址（免签动作）：${c.wallet.address}`);return c.wallet.address;},
     async connectExternalWallet(id,opts={}) {return guard('连接钱包',async()=>{
       let wallet;
       const onInvalidate=()=>{
         if(c.wallet!==wallet)return;replaceWallet(null);log('warn','外部钱包账户或网络已变化，连接与未发送报价已撤销，请重新连接。');
       };
       wallet=id==='kaspire'
-        ?await openKaspireWallet({...opts,onInvalidate,onLog:msg=>log('info',msg)})
-        :await openExtensionWallet(id,{globals:opts.globals??globalThis,onInvalidate});
+        ?await openKaspireWallet({...opts,net,onInvalidate,onLog:msg=>log('info',msg)})
+        :await openExtensionWallet(id,{globals:opts.globals??globalThis,net,onInvalidate});
       check(!wallet.closed,'WALLET_CHANGED');replaceWallet(wallet);
-      log('info',`${wallet.name} 已连接：${wallet.address}（testnet-10）`);return wallet.address;
+      log('info',`${wallet.name} 已连接：${wallet.address}（${net.networkId}）`);return wallet.address;
     });},
     disconnectWallet({keepSession=false}={}) {const old=c.wallet;replaceWallet(null);if(!keepSession)old?.disconnectSession?.().catch(()=>{});if(old)log('info','钱包已断开，未发送报价已撤销');},
     async rounds() {return (await roundStore.list()).map(x=>x.round).sort((a,b)=>a.cid<b.cid?-1:1);},
@@ -226,12 +463,12 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
         check(!round.halted,'ROUND_HALTED');
         if(choice.action==='BUY'){const q=Number(choice.quantity);check(Number.isSafeInteger(q)&&q>=1,'QUANTITY');op.quantity=q;}
       }
-      const reserved=await roundStore.reserved(),feerate=await nodeFeeRate(c.rpc);
+      const [reserved,feerate]=await Promise.all([roundStore.reserved(),nodeFeeRate(c.rpc)]);
       // Zero-depth chaining: the node's UTXO view can lag the accepting block for a moment. Only when this round has unverified
       // candidates, wait briefly (never build on guesses); everything else fails immediately.
       const lag=(round?.pending?.length??0)>0;let prepared;
       for(let attempt=0;;attempt++) {
-        try{prepared=await prepareOperation({rpc:c.rpc,profile,round,choice:op,wallet,feerate,reserved});break;}
+        try{prepared=await prepareOperation({rpc:c.rpc,profile,round,choice:op,wallet,feerate,reserved,net});break;}
         catch(e){
           if(codeOf(e)==='STALE_INPUT'&&round&&(!lag||attempt>=40))log('warn','本地 round state 可能已过期（他人已在这一轮操作过）：请导入最新的 round state 后再试');
           if(!lag||attempt>=40||codeOf(e)!=='STALE_INPUT')throw e;await sleep(500);}
@@ -242,22 +479,23 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
       return c.prepared;});},
     discardPrepared() {c.prepared=null;emit();},
     /** Sign -> signed-engine check -> PERSIST intent -> send. Returns the stored intent status. */
-    async signAndSend() {return guard('签名并发送',async()=>{
+    async signAndSend({onSigned=()=>{}}={}) {return guard('签名并发送',async()=>{
       const p=need(c.prepared,'NOTHING_PREPARED');need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const wallet=c.wallet,epoch=walletEpoch;
       need(wallet&&wallet.address===p.walletAddress&&walletValid(wallet,epoch)&&p.walletEpoch===epoch,'WALLET_REQUIRED');
-      const intent=await signAndRecord({rpc:c.rpc,profile,prepared:p,wallet});
+      log('info',`正在请求 ${wallet.name??'钱包'} 签名 ${p.op.action}…`);
+      const intent=await signAndRecord({rpc:c.rpc,profile,prepared:p,wallet,net,onSigned:()=>{c.prepared=null;log('info','钱包已返回签名并完成本地验签，正在读取链上游标…');onSigned();}});
       check(walletValid(wallet,epoch),'WALLET_CHANGED');
       c.prepared=null;
       // Durable BEFORE send: from here an unknown outcome can only be reconciled, never replaced.
       if(intent.action==='GENESIS') {
-        const r=emptyRound({cid:p.cid,origin:p.draft.origin,settings:p.settings});r.intent=intent;validateRound(r,profile);await roundStore.create(r);
+        const r=emptyRound({cid:p.cid,origin:p.draft.origin,settings:p.settings,network:net.networkId});r.intent=intent;validateRound(r,profile,{network:net.networkId});await roundStore.create(r);
       } else await mutate(p.cid,r=>{check(!r.intent&&r.manager,'INTENT_UNRESOLVED_REPLACEMENT_BLOCKED');
         check(`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`===`${intent.draft.inputUtxos[0].outpoint.transactionId}:${intent.draft.inputUtxos[0].outpoint.index}`,'INTENT_MANAGER');
         r.intent=intent;return r;});
       log('info',`意图已持久化：${intent.txid}；正在提交…`);
       let status;
-      try {await submitIntent(c.rpc,intent,profile,{beforeSend:()=>check(walletValid(wallet,epoch),'WALLET_CHANGED')});status='SUBMITTED';log('info',`已提交 ${intent.txid}（首次被选中链接受即为候选，可继续下一步；满 100 DAA 复核后才算已接受）`);}
+      try {await submitIntent(c.rpc,intent,profile,{beforeSend:()=>check(walletValid(wallet,epoch),'WALLET_CHANGED'),network:net.networkId});status='SUBMITTED';log('info',`已提交 ${intent.txid}（首次被选中链接受即为候选，可继续下一步；满 100 DAA 复核后才算已接受）`);}
       catch(e) {status=statusAfterFailure(e);log('error',`提交${status==='UNSENT'?'未发出':status==='REJECTED'?'被节点拒绝':'结果未知'}：${codeOf(e)}（状态 ${status}）`);
         if(status==='REJECTED') {
           intent.nodeError=String(e.message).slice(0,600); // the full text of a mempool conflict is ~290 chars; classifyRejection needs both outpoint and spender
@@ -277,7 +515,7 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
       let result={accepted:false};
       if(cur.round.intent) {
         const intent=structuredClone(cur.round.intent);
-        const res=await checkAcceptance(c.rpc,intent,profile,{recover,checkpoint:async i=>{
+        const res=await checkAcceptance(c.rpc,intent,profile,{recover,network:net.networkId,checkpoint:async i=>{
           const next={...cur.round,intent:{...cur.round.intent,cursor:i.cursor}};
           cur={round:next,revision:(await roundStore.replace(next,cur.revision)).revision};}});
         if(res.accepted||res.candidate) {
@@ -312,7 +550,7 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
       });
       let unprovable=false;
       try {
-        const r=await checkAcceptance(c.rpc,structuredClone(i),profile,{recover:false});
+        const r=await checkAcceptance(c.rpc,structuredClone(i),profile,{recover:false,network:net.networkId});
         check(r.complete===true&&!r.transient&&!r.accepted&&!r.candidate,'INTENT_ACCEPTANCE_UNRESOLVED');
       } catch(e) {
         if(!(force&&codeOf(e)==='SEARCH_RANGE'&&gone===probe.length))throw e;
@@ -334,13 +572,14 @@ export function createController({profile,roundStore,connect=connectTN10,now=()=
     exportText(cid) {return (async()=>roundToText(need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND')))();},
     /** Import = data only. Never authenticated until prepare() verifies the live UTXOs; a local pending intent is never overwritten. */
     async importText(text) {return guard('导入',async()=>{
-      const r=roundFromText(text,profile);
-      if(r.intent)await authenticateIntent(r.intent,profile);
-      for(const p of r.pending??[])await authenticateIntent(p.intent,profile);   // candidates are re-verified from this record later: authenticate them like the live intent
+      const r=roundFromText(text,profile,{network:net.networkId});
+      if(r.intent)await authenticateIntent(r.intent,profile,{network:net.networkId});
+      for(const p of r.pending??[])await authenticateIntent(p.intent,profile,{network:net.networkId});   // candidates are re-verified from this record later: authenticate them like the live intent
       const cur=await roundStore.get(r.cid);
       if(cur){check(!cur.round.intent||(r.intent&&cur.round.intent.wireDigest===r.intent.wireDigest),'IMPORT_WOULD_REPLACE_LOCAL_INTENT');await roundStore.replace(r,cur.revision);}
       else await roundStore.create(r);
       log('info',`已导入 round ${r.cid.slice(0,16)}…（未认证：准备交易前会核对链上 UTXO）`);return r.cid;});},
-    close() {c.rpc?.close();replaceWallet(null);c.rpc=null;c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discovered=[];c.discoveredSource=null;indexChecks.clear();},
+    close() {watchedCid=null;teardownWatch({unsubscribe:false});c.rpc?.close();replaceWallet(null);c.rpc=null;c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discovered=[];c.discoveredSource=null;indexChecks.clear();},
   };
+  return api;
 }

@@ -21,10 +21,22 @@ test('build writes index.html and build-manifest.json to the selected directory 
   const after=existsSync(new URL('../../dist/index.html',import.meta.url))?sha(readFileSync(new URL('../../dist/index.html',import.meta.url))):null;
   assert.equal(after,mainBefore);
 });
-test('page prominently states TN10-only, the fixed Profile and the UNVALIDATED evidence boundary; never claims full validation',()=>{
-  assert.match(html,/Testnet 10 实验版/);assert.match(html,/UNVALIDATED/);assert.ok(html.includes(TN10_PROFILE_ID)&&manifest.profileId===TN10_PROFILE_ID);
-  assert.equal(manifest.evidence,'UNVALIDATED');assert.match(html,/未完成全面验证/);assert.doesNotMatch(html,/已全部验证|fully validated|已通过全部验证/i);
-  assert.equal(manifest.network,'testnet-10');assert.ok(!/id="netSwitch"|mainnet-trading/.test(html));
+test('page defaults to mainnet with TN10 switch, fixed Profile and UNVALIDATED evidence boundary; never claims full validation',()=>{
+  assert.match(html,/Kaspa 主网/);assert.match(html,/UNVALIDATED/);assert.ok(html.includes(TN10_PROFILE_ID)&&manifest.profileId===TN10_PROFILE_ID);
+  assert.equal(manifest.evidence,'UNVALIDATED');assert.doesNotMatch(html,/已全部验证|fully validated|已通过全部验证/i);
+  assert.equal(manifest.mode,'mainnet');assert.equal(manifest.network,'mainnet');
+  assert.equal(manifest.capabilities.mainnetTrading,true);assert.equal(manifest.capabilities.tn10Trading,true);
+  assert.equal(manifest.capabilities.memoryWallet,false);assert.equal(manifest.capabilities.networkSwitch,true);
+  assert.match(html,/id="netBtn"/);
+});
+test('tn10 mode builds with testnet-10 default network',async()=>{
+  const tn10Out=mkdtempSync(join(tmpdir(),'kaswin-build-tn10-'));
+  try{
+    const {manifest:m}=await buildKaswin({outDir:tn10Out,mode:'tn10'});
+    assert.equal(m.mode,'tn10');assert.equal(m.network,'testnet-10');
+    assert.equal(m.capabilities.mainnetTrading,false);assert.equal(m.capabilities.tn10Trading,true);
+    assert.equal(m.capabilities.networkSwitch,true);
+  }finally{rmSync(tn10Out,{recursive:true,force:true});}
 });
 test('CSP hash matches the inline script, and GitHub navigation is the only external link in the shell',()=>{
   const m=/script-src 'sha256-([^']+)'/.exec(html);assert.ok(m);
@@ -42,9 +54,9 @@ test('browser import graph is clean: no node:*, fs, test signer, fixtures, engin
   assert.ok(!files.some(f=>/\.test\.(mjs|ts)$/.test(f)));
   // the presentation layer is TypeScript (type-checked by the build); the protocol modules it drives stay plain .mjs
   for(const ts of ['app','bridge','share','settings'])assert.ok(files.includes(`web/app/${ts}.ts`),ts);
-  for(const ts of ['ui','views','messages'])assert.ok(files.includes(`web/ui/${ts}.ts`),ts);
+  for(const ts of ['ui','views','messages','draw-readiness'])assert.ok(files.includes(`web/ui/${ts}.ts`),ts);
   assert.ok(!files.includes('web/app/app.mjs'));assert.equal(manifest.toolchain.typescript,'5.8.3');
-  for(const needed of ['scripts/core.mjs','scripts/core/lib/index.js','scripts/core/lib/state.js','scripts/core/lib/profile.js','scripts/core/lib/transactions.js','scripts/core/lib/mass.js','scripts/core/lib/accepted.js','scripts/round/draw-proof.mjs','scripts/chain/chain.mjs','scripts/wallet/sighash.mjs','scripts/round/draw-confirmations.mjs'])
+  for(const needed of ['scripts/core.mjs','scripts/core/lib/index.js','scripts/core/lib/state.js','scripts/core/lib/profile.js','scripts/core/lib/transactions.js','scripts/core/lib/mass.js','scripts/core/lib/accepted.js','scripts/round/draw-proof.mjs','scripts/round/draw-progress.mjs','scripts/chain/chain.mjs','scripts/wallet/sighash.mjs','scripts/round/draw-confirmations.mjs'])
     assert.ok(files.includes(needed),needed);
   assert.doesNotMatch(script,/from"node:|require\("node:|readFileSync|createHash\(/);
   // The graph checker itself rejects each class of forbidden dependency.

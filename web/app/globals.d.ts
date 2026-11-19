@@ -2,3 +2,4 @@
 declare module '@kaswin/rolling-profile' {
   export const profileData: unknown;
 }
+declare const __KASWIN_DEFAULT_NET__: 'mainnet' | 'tn10';

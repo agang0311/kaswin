@@ -53,7 +53,7 @@ export interface DraftBase<T extends InputContext=InputContext> {
 export interface Draft extends DraftBase<ManagerContext|TargetContext|Funding> {transition:Transition|GenesisTransition;origin:Outpoint;cid:string;}
 export interface ActionDraft extends Draft {transition:Transition;}
 export interface GenesisDraft extends Draft {transition:GenesisTransition;inputUtxos:Utxo<Funding>[];}
-export interface BuildOptions {targets?:TargetContext[];funds?:Funding[];fee:bigint;budgets:number[];}
+export interface BuildOptions {targets?:TargetContext[];funds?:Funding[];fee:bigint;budgets:number[];allowDelegatedBuyer?:boolean;}
 export interface GenesisOptions {funds:Funding[];fee:bigint;budgets:number[];registrySpk?:Spk|null;}
 export interface DrawSample {ticket:number;seed:Uint8Array;proof:Uint8Array;}
 export interface DrawResult {ticket:number;winnerKey:string;seed:string;j:number;i:number;data:Uint8Array;}
@@ -224,9 +224,9 @@ function call(args:readonly (bigint|Uint8Array)[],tag:string,raw:Uint8Array):str
   return hex(cat(...args.map(v=>typeof v==='bigint'?pushInt(v):pushBytes(v)),pushBytes(unhex(tag,4)),pushBytes(raw)));
 }
 /** The empty options default preserves legacy validation order; fee and budgets still have to be explicit. */
-export function buildAction(x:ManagerContext,p:Profile,op:Operation,{targets=[],funds=[],fee,budgets}:BuildOptions={} as BuildOptions):ActionDraft {
+export function buildAction(x:ManagerContext,p:Profile,op:Operation,{targets=[],funds=[],fee,budgets,allowDelegatedBuyer=false}:BuildOptions={} as BuildOptions):ActionDraft {
   const s=verifyManager(x,p);checkFunding(funds,op.actorKey);
-  if(op.action==='BUY')check(!op.buyerKey||op.buyerKey===op.actorKey,'STANDARD_SELF_PURCHASE');
+  if(op.action==='BUY'&&!allowDelegatedBuyer)check(!op.buyerKey||op.buyerKey===op.actorKey,'STANDARD_SELF_PURCHASE');
   const external=funds.reduce((n,f)=>n+f.value,0n),t=transition(x,p,op,targets,fee,external);
   if(t.externalCost!==null)check(funds.length>=1,'FUNDING_REQUIRED');
   if(op.action==='PAY_OLD'||op.action==='PAY_SELF'||op.action==='REFUND_OLD')check(funds.length===0,'NO_FUNDING_BRANCH');

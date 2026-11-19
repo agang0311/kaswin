@@ -5,7 +5,7 @@
 import {probeNode} from '../chain/nodes.mjs';
 import {TN10} from '../chain/tn10.mjs';
 import {checkServerIdentity} from '../chain/node-identity.mjs';
-import {commonUtxos,verifyInputsLive,inputsState,sameInput} from '../chain/chain.mjs';
+import {commonUtxos,inputsState,sameInput} from '../chain/chain.mjs';
 import {parseFeeEstimate} from '../chain/feetiers.mjs';
 import {outpointKey,referenceTxId} from '../core/lib/transaction.js';
 import {blake2b256} from '../core/lib/hashes.js';
@@ -20,33 +20,34 @@ import {verifyOrdinarySignatures} from '../wallet/wallet.mjs';
 import {authenticateIntent,takeCursor,wireDigestOf} from '../tracking/intent.mjs';
 import {interpretGenesis} from './round.mjs';
 import {actionBudgets} from './budget.mjs';
-import {TN10_NETWORK_ID,TN10_PROFILE_ID,TN10_ROLLING_REGISTRY} from '../contract/protocol.mjs';
+import {TN10_PROFILE_ID,registryFor} from '../contract/protocol.mjs';
 import {addressToSpk} from '../wallet/address.mjs';
 const {check,hex}=S;
 const FUNDED=['GENESIS','BUY','CLOSE','DRAW','TIMEOUT'];
 
-function resolveRegistrySpk(registry) {
+function resolveRegistrySpk(registry,net=TN10) {
   if(registry===false||registry===null)return null;
-  if(registry===undefined||registry===true)return TN10_ROLLING_REGISTRY.spk;
+  if(registry===undefined||registry===true)return net.registry.spk;
   check(typeof registry==='string'&&registry.trim().length>0,'REGISTRY_ADDRESS');
-  try{return addressToSpk(registry.trim().toLowerCase(),'kaspatest');}
+  try{return addressToSpk(registry.trim().toLowerCase(),net.addressPrefix);}
   catch{check(false,'REGISTRY_ADDRESS');}
 }
 export const PAYOUT_BATCH=16;
 
-/** One TN10 node that identifies as testnet-10, is synced and has the UTXO index (probeNode verifies all three). */
-export async function connectTN10(urls,opts={}) {
+/** One Kaspa node matching `net`, synced and with UTXO index (probeNode verifies all three). */
+export async function connectNetwork(urls,{net=TN10,...opts}={}) {
   let rpc,last;
-  for(const url of urls) {try{rpc=await probeNode(url,{net:TN10,verifyDag:true,timeoutMs:15000,...opts});break;}catch(e){last=e;}}
+  for(const url of urls) {try{rpc=await probeNode(url,{net,verifyDag:true,timeoutMs:15000,...opts});break;}catch(e){last=e;}}
   if(!rpc)throw last??new Error('NO_NODE');
   const call=rpc.call.bind(rpc);
   rpc.call=async(method,...args)=>{
     for(let attempt=0;;attempt++)try{return await call(method,...args);}catch(e){
       if(method.startsWith('submit')||attempt>=2||!['RPC_TIMEOUT','NODE_DISCONNECTED'].includes(e.code??e.safeCode))throw e;}
   };
-  rpc.currentDaa=async()=>{const i=await rpc.call('getServerInfo');checkServerIdentity(i,TN10.networkId);return BigInt(i.virtualDaaScore);};
+  rpc.currentDaa=async()=>{const i=await rpc.call('getServerInfo');checkServerIdentity(i,net.networkId);return BigInt(i.virtualDaaScore);};
   return rpc;
 }
+export const connectTN10=(urls,opts={})=>connectNetwork(urls,{net:TN10,...opts});
 /** Exact decimal fee: ceil(orderingMass * rate), never below the relay floor. */
 export function requiredFee(mass,rate='100') {
   check(typeof rate==='string'&&/^(0|[1-9][0-9]*)(\.[0-9]{1,12})?$/.test(rate),'FEE_RATE');
@@ -68,8 +69,8 @@ export async function refreshLive(rpc,contexts) {
 }
 export async function liveRound(rpc,round,profile,{targets=[]}={}) {
   check(round.manager,'ROUND_HAS_NO_MANAGER');
-  const [manager,...ts]=await refreshLive(rpc,[round.manager,...targets]);
-  manager.currentDaa=await rpc.currentDaa();manager.covenantId=manager.cid;
+  const [[manager,...ts],currentDaa]=await Promise.all([refreshLive(rpc,[round.manager,...targets]),rpc.currentDaa()]);
+  manager.currentDaa=currentDaa;manager.covenantId=manager.cid;
   const s=verifyManager(manager,profile);
   return {manager,targets:ts,state:s};
 }
@@ -90,13 +91,13 @@ export async function mempoolSpentOutpoints(rpc,address) {
 /** Funding inputs for `minimum` sompi: largest first, at most 8, never coinbase/covenant, never an outpoint this page reserved, never one the mempool already spends.
  * WALLET_FUNDS_PENDING (not INSUFFICIENT) when the wallet would have enough if its unconfirmed spends were confirmed. */
 export async function selectFunds(rpc,wallet,minimum,reserved=new Set()) {
-  const own=(await commonUtxos(rpc,wallet.address)).filter(u=>!u.isCoinbase&&!u.covenantId&&!reserved.has(outpointKey(u.outpoint))&&u.spk.script===wallet.spk.script);
+  const [ownRaw,inPool]=await Promise.all([commonUtxos(rpc,wallet.address),mempoolSpentOutpoints(rpc,wallet.address)]);
+  const own=ownRaw.filter(u=>!u.isCoinbase&&!u.covenantId&&!reserved.has(outpointKey(u.outpoint))&&u.spk.script===wallet.spk.script);
   const pick=list=>{
     const picked=[];let sum=0n;
     for(const u of list.slice().sort((a,b)=>a.value>b.value?-1:a.value<b.value?1:0)){if(picked.length===8)break;picked.push({...u,utxoDaa:u.daa});sum+=u.value;if(sum>=minimum)break;}
     return sum>=minimum?picked:null;
   };
-  const inPool=await mempoolSpentOutpoints(rpc,wallet.address);
   const picked=pick(own.filter(u=>!inPool.has(outpointKey(u.outpoint))));
   if(picked)return picked;
   check(!(inPool.size&&pick(own)),'WALLET_FUNDS_PENDING');
@@ -124,25 +125,29 @@ export function pickTargets(round,s,profile,action,count=PAYOUT_BATCH) {
 
 const effects=outs=>stable(outs.map(o=>({value:o.value,spk:o.scriptPublicKey,covenant:o.covenant??null})));
 /** Build + locally budget + price one transaction (unsigned). `op` = {action,quantity?,proof?,accessor?,j?,winningRedeem?,settings?}. */
-export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserved=new Set()}) {
+export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserved=new Set(),net=TN10}) {
   const action=op.action,keyed=wallet.kind==='key'||wallet.kind==='extension';
   check(['GENESIS','BUY','CLOSE','DRAW','TIMEOUT','PAY_OLD','PAY_SELF','REFUND_OLD','REFUND_SELF'].includes(action),'ACTION');
   const needsFunds=FUNDED.includes(action)||(action==='REFUND_SELF'&&keyed);
   check(!needsFunds||keyed,'WALLET_KEY_REQUIRED');
-  let manager=null,targets=[],s=null;
+  const settings=op.settings;
+  const registrySpk=action==='GENESIS'?resolveRegistrySpk(op.registry,net):null;
+  let manager=null,targets=[],s=null,funds=[];
   if(action!=='GENESIS') {
-    let wanted=[];
-    if(action==='PAY_OLD'||action==='REFUND_OLD')wanted=op.targets??[];
-    const live=await liveRound(rpc,round,profile,{targets:wanted});manager=live.manager;targets=live.targets;s=live.state;
+    const wanted=(action==='PAY_OLD'||action==='REFUND_OLD')?(op.targets??[]):[];
+    const liveTask=liveRound(rpc,round,profile,{targets:wanted});
+    if(needsFunds) {
+      const price=round.settings?.ticketPrice;
+      const minimum=action==='BUY'?BigInt(op.quantity)*price+S.FEE_CAP+1n:S.FEE_CAP+1n;
+      const [live,selected]=await Promise.all([liveTask,selectFunds(rpc,wallet,minimum,reserved)]);
+      manager=live.manager;targets=live.targets;s=live.state;funds=selected;
+    } else {
+      const live=await liveTask;manager=live.manager;targets=live.targets;s=live.state;
+    }
     for(const t of targets)check(t.cid===manager.cid,'TARGET_CID');
-  }
-  const settings=op.settings,price=s?.ticketPrice;
-  const registrySpk=action==='GENESIS'?resolveRegistrySpk(op.registry):null;
-  let funds=[];
-  if(needsFunds) {
-    const regValue=registrySpk?TN10_ROLLING_REGISTRY.valueSompi:0n;
-    const minimum=action==='GENESIS'?S.DEPOSIT+regValue+S.FEE_CAP+1n:action==='BUY'?BigInt(op.quantity)*price+S.FEE_CAP+1n:S.FEE_CAP+1n;
-    funds=await selectFunds(rpc,wallet,minimum,reserved);
+  } else if(needsFunds) {
+    const regValue=registrySpk?registryFor(net).valueSompi:0n;
+    funds=await selectFunds(rpc,wallet,S.DEPOSIT+regValue+S.FEE_CAP+1n,reserved);
   }
   const bare={...op};delete bare.settings;delete bare.targets;delete bare.registry;
   const budgets=actionBudgets(action,{manager,state:s,targets,funds,op});
@@ -158,7 +163,6 @@ export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserve
   }
   check(fee<=(action.startsWith('PAY')?S.PAY_FEE_CAP:S.FEE_CAP),'PROTOCOL_FEE_CAP');
   for(const u of draft.inputUtxos)u.daa=u.utxoDaa??u.daa;
-  await verifyInputsLive(rpc,draft.inputUtxos,{allowDaaDrift:true}); // contexts were just refreshed from the node; a re-accepted parent may sit at another DAA
   draft.transaction.storageMass=mass.storageMass;
   // Independent re-reading of the unsigned transaction (witness decoding, CID/script/amount) against the verified contexts.
   if(action==='GENESIS') interpretGenesis(draft.transaction,profile);
@@ -181,25 +185,29 @@ export function reviewOf(draft,wallet=null) {
 }
 
 /** Sign (ordinary inputs, SIGHASH_ALL, locally verified), recompute mass/fee, and return a not-yet-persisted intent. */
-export async function signAndRecord({rpc,profile,prepared,wallet}) {
+export async function signAndRecord({rpc,profile,prepared,wallet,net=TN10,onSigned=()=>{}}) {
   const {draft,op}=prepared;
+  // Fetch the acceptance search cursor in parallel with wallet signing so remote wRPC latency doesn't stall post-sign submission.
+  const cursorPromise=takeCursor(rpc);
+  cursorPromise.catch(()=>{});
   await wallet.sign(draft);
   await verifyOrdinarySignatures(draft);
+  onSigned();
   const mass=quoteMass(draft);
   check(mass.storageMass===draft.transaction.storageMass&&draft.fee>=requiredFee(mass,prepared.feerate),'SIGNED_MASS_FEE');
   const {transition,...plain}=draft;void transition;
-  const intent={v:1,network:TN10_NETWORK_ID,profileId:TN10_PROFILE_ID,txid:referenceTxId(draft.transaction),wireDigest:wireDigestOf(draft.transaction),
-    cursor:await takeCursor(rpc),status:'PREPARED',action:op.action,quantity:op.quantity??0,targetCount:prepared.targetCount,
+  const intent={v:1,network:net.networkId,profileId:TN10_PROFILE_ID,txid:referenceTxId(draft.transaction),wireDigest:wireDigestOf(draft.transaction),
+    cursor:await cursorPromise,status:'PREPARED',action:op.action,quantity:op.quantity??0,targetCount:prepared.targetCount,
     accessor:op.accessor??null,proof:op.proof??null,mass,draft:plain,createdAtMs:Date.now(),
     evidence:{budgetModel:'calibrated-vm-model-v1',note:'client-side calibrated script-unit bound; not consensus validation'}};
-  await authenticateIntent(intent,profile);
+  await authenticateIntent(intent,profile,{network:net.networkId});
   return intent;
 }
 
 /** Entry point for the UI: resolves targets / DRAW proof, and shrinks a PAY_OLD batch when (and only when) a RESOURCE or fee limit
  * is hit. Invalid state/proof errors stop immediately and are never "fixed" by a smaller batch. */
-export async function prepareOperation({rpc,profile,round,choice,wallet,feerate,reserved}) {
-  const common={rpc,profile,round,wallet,feerate,reserved};
+export async function prepareOperation({rpc,profile,round,choice,wallet,feerate,reserved,net=TN10}) {
+  const common={rpc,profile,round,wallet,feerate,reserved,net};
   if(choice.action==='DRAW')return prepareAction({...common,op:await planDraw(rpc,round,profile)});
   if(choice.action==='PAY_OLD'||choice.action==='REFUND_OLD') {
     check(round.manager,'ROUND_HAS_NO_MANAGER');

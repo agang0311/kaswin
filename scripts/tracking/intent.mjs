@@ -20,8 +20,8 @@ const code=e=>e?.code??e?.safeCode??e?.message;
 
 /** Offline integrity of a persisted/imported intent: txid, exact wire bytes, mass, outpoints, ordinary signatures,
  * and an independent re-interpretation of the transaction effects against its input contexts. */
-export async function authenticateIntent(intent,profile) {
-  check(intent&&intent.network===TN10_NETWORK_ID&&intent.profileId===TN10_PROFILE_ID,'INTENT_SCOPE');
+export async function authenticateIntent(intent,profile,{network=TN10_NETWORK_ID}={}) {
+  check(intent&&intent.network===network&&intent.profileId===TN10_PROFILE_ID,'INTENT_SCOPE');
   const d=intent.draft,tx=d.transaction;
   check(referenceTxId(tx)===intent.txid,'INTENT_TXID');
   const wire=txToRpc(tx);check(sha256Hex(jsonText(wire))===intent.wireDigest,'INTENT_CONTENT_CHANGED');
@@ -49,18 +49,18 @@ async function chainCursor(rpc,hash=null,depth=0) {
   }
   throw new Error('CURSOR_RECOVERY_BOUND');
 }
-/** Cursor recorded in the intent BEFORE sending, ~32 chain blocks back, so the later acceptance search cannot miss the block. */
-export const takeCursor=rpc=>chainCursor(rpc,null,32);
+/** Cursor recorded in the intent BEFORE sending, ~16 chain blocks back, so the later acceptance search cannot miss the block. */
+export const takeCursor=(rpc,depth=16)=>chainCursor(rpc,null,depth);
 async function search(rpc,txid,cursor) {
   try{return await searchAccepted(rpc,txid,cursor,{pages:4});}
   catch(e){if(!['CURSOR_REORG'].includes(code(e)))throw e;return searchAccepted(rpc,txid,await chainCursor(rpc,cursor),{pages:4});}
 }
 
 /** Send the persisted intent's exact bytes. Throws with e.submissionAttempted=true once the frame was handed to the transport. */
-export async function submitIntent(rpc,intent,profile,{beforeSend=()=>{}}={}) {
+export async function submitIntent(rpc,intent,profile,{beforeSend=()=>{},network=TN10_NETWORK_ID}={}) {
   let sent=false;
   try {
-    const {wire,mass}=await authenticateIntent(intent,profile);
+    const {wire,mass}=await authenticateIntent(intent,profile,{network});
     await verifyInputsLive(rpc,intent.draft.inputUtxos.map(u=>({...u,daa:u.utxoDaa??u.daa})),{allowDaaDrift:true}); // a re-accepted parent may sit at another DAA
     const now=await rpc.currentDaa(),tx=intent.draft.transaction;
     check(tx.lockTime===0n||tx.lockTime<now,'SUBMIT_LOCK_MATURITY');
@@ -88,8 +88,8 @@ async function someInputLive(rpc,intent) {
 }
 /** One acceptance pass. Returns {accepted:false,...progress} or {accepted:true,...receipt}. `recover` may resubmit the SAME signed bytes
  * (after live-input verification inside submitIntent) when the node neither has it accepted nor in its mempool. It never builds a new tx. */
-export async function checkAcceptance(rpc,intent,profile,{recover=false,checkpoint=async()=>{}}={}) {
-  await authenticateIntent(intent,profile);
+export async function checkAcceptance(rpc,intent,profile,{recover=false,checkpoint=async()=>{},network=TN10_NETWORK_ID}={}) {
+  await authenticateIntent(intent,profile,{network});
   let found;
   try {found=await search(rpc,intent.txid,intent.cursor);}
   catch(e){
@@ -103,7 +103,7 @@ export async function checkAcceptance(rpc,intent,profile,{recover=false,checkpoi
   if(recover&&!found.accepting&&found.complete) {
     check(intent.status!=='REJECTED','RECORDED_REJECTION_REQUIRES_REVIEW');
     if(!await mempoolEntry(rpc,intent.txid)) {
-      try{await submitIntent(rpc,intent,profile);resubmitted=true;}
+      try{await submitIntent(rpc,intent,profile,{network});resubmitted=true;}
       catch(e){if(code(e)==='STALE_INPUT')conflict=true;else throw e;} // inputs gone: maybe just accepted (re-searched next pass) or spent elsewhere
     }
   }
@@ -124,9 +124,9 @@ const TRANSIENT=['RPC_TIMEOUT','SINK_BEHIND','READ_VIEW_CHANGED'],LIMBO_MS=18000
  *  {status:'WAIT'|'FINAL'|'REACCEPTED'|'LIMBO',...}; throws CANDIDATE_DROPPED when the transaction is neither accepted nor in the mempool
  *  (and any hard verification failure). A shallow selected-chain reorg normally re-accepts the SAME signed bytes in another block at a
  *  slightly different DAA: that is REACCEPTED (the caller records the history and refreshes the DAA of the UTXOs it created). */
-export async function recheckCandidate(rpc,entry,profile,{now=Date.now()}={}) {
+export async function recheckCandidate(rpc,entry,profile,{now=Date.now(),network=TN10_NETWORK_ID}={}) {
   const intent=entry.intent;
-  await authenticateIntent(intent,profile);check(intent.txid===entry.txid,'CANDIDATE_INTENT');
+  await authenticateIntent(intent,profile,{network});check(intent.txid===entry.txid,'CANDIDATE_INTENT');
   const virtualDaa=await rpc.currentDaa(),depth=virtualDaa>BigInt(entry.acceptingDaa)?virtualDaa-BigInt(entry.acceptingDaa):0n;
   try {
     const f=await acceptedAt(rpc,entry.txid,entry.acceptingBlock);matchesDraft(f,intent.draft);

@@ -7,30 +7,30 @@ import {referenceTxId} from '../core/lib/transaction.js';
 import {decodeAddress,pubkeyToAddress} from './address.mjs';
 import {parseJson,jsonText} from '../chain/json.mjs';
 import {verifyOrdinarySignatures} from './wallet.mjs';
-const PREFIX='kaspatest';
+import {TN10} from '../chain/tn10.mjs';
 const NAMES={kasware:'KasWare',kastle:'Kastle'};
 export const availableExtensionWallets=(globals=globalThis)=>Object.keys(NAMES).filter(id=>!!globals[id]).map(id=>({id,name:NAMES[id]}));
 const spkText=s=>Number(s.version).toString(16).padStart(4,'0')+s.script;
 const sameSession=(a,b)=>a.address===b.address&&a.key===b.key&&a.network===b.network;
 
-async function session(provider,id,{request=false}={}) {
+async function session(provider,id,{request=false,net=TN10}={}) {
   let address,pub,network;
   if(id==='kastle') {
     check(typeof provider.getAccount==='function'&&typeof provider.getNetwork==='function'&&typeof provider.signTx==='function','WALLET_UNSUPPORTED');
     if(request)check(typeof provider.connect==='function'&&await provider.connect()===true,'WALLET_NOT_AUTHORIZED');
     const account=await provider.getAccount();address=account?.address;pub=account?.publicKey;network=await provider.getNetwork();
-    check(network==='testnet-10','WALLET_NETWORK_MISMATCH');
+    check(network===net.networkId,'WALLET_NETWORK_MISMATCH');
   } else {
     check(typeof provider.getPublicKey==='function'&&typeof provider.getNetwork==='function'&&typeof provider.signPskt==='function'&&typeof provider.getAccounts==='function','WALLET_UNSUPPORTED');
     check(!request||typeof provider.requestAccounts==='function','WALLET_UNSUPPORTED');
     const accounts=await (request?provider.requestAccounts():provider.getAccounts());address=Array.isArray(accounts)?accounts[0]:null;
-    pub=await provider.getPublicKey();network=await provider.getNetwork();check(network==='kaspa_testnet_10','WALLET_NETWORK_MISMATCH');
+    pub=await provider.getPublicKey();network=await provider.getNetwork();check(network===net.kaswareNetwork,'WALLET_NETWORK_MISMATCH');
   }
   check(typeof address==='string'&&address.length>0,'WALLET_NOT_AUTHORIZED');
-  const decoded=decodeAddress(address,PREFIX);check(decoded.version===0&&decoded.payload.length===32,'WALLET_SCHNORR_REQUIRED');
+  const decoded=decodeAddress(address,net.addressPrefix);check(decoded.version===0&&decoded.payload.length===32,'WALLET_SCHNORR_REQUIRED');
   const key=hex(decoded.payload),publicKey=String(pub??'').toLowerCase();
   check(publicKey===key||(/^0[23][0-9a-f]{64}$/.test(publicKey)&&publicKey.slice(2)===key),'WALLET_PUBLIC_KEY_MISMATCH');
-  return {address:pubkeyToAddress(key,PREFIX),key,network:'testnet-10'};
+  return {address:pubkeyToAddress(key,net.addressPrefix),key,network:net.networkId};
 }
 
 export function extensionSafeJson(draft,owner) {
@@ -52,7 +52,7 @@ export function committed(value,auth) {
     outputs:value.outputs.map(o=>({value:String(o.value),spk:String(o.scriptPublicKey).toLowerCase(),covenant:o.covenant?[String(o.covenant.authorizingInput),String(o.covenant.covenantId).toLowerCase()]:null}))});
 }
 
-export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()=>{},timeoutMs=90000}={}) {
+export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()=>{},timeoutMs=90000,net=TN10}={}) {
   check(Object.hasOwn(NAMES,id),'WALLET_UNSUPPORTED');const provider=globals[id];check(provider&&typeof provider==='object','WALLET_NOT_INSTALLED');
   check(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=300000,'WALLET_TIMEOUT_CONFIG');
   const safeCodes=new Set(['WALLET_UNSUPPORTED','WALLET_NOT_AUTHORIZED','WALLET_NETWORK_MISMATCH','WALLET_SCHNORR_REQUIRED','WALLET_PUBLIC_KEY_MISMATCH','WALLET_CONNECT_TIMEOUT','WALLET_SIGN_TIMEOUT','WALLET_CLOSED','WALLET_CHANGED']);
@@ -63,7 +63,7 @@ export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()
     finally{clearTimeout(timer);}
   };
   let owner;
-  try{owner=await bounded(()=>session(provider,id,{request:true}),'WALLET_CONNECT_TIMEOUT');}catch(e){throw safeError(e);}
+  try{owner=await bounded(()=>session(provider,id,{request:true,net}),'WALLET_CONNECT_TIMEOUT');}catch(e){throw safeError(e);}
   let closed=false;const listeners=[];
   const close=()=>{if(closed)return;closed=true;for(const [name,fn]of listeners)try{provider.removeListener?.(name,fn);}catch{}};
   const invalidate=()=>{if(closed)return;close();onInvalidate();};
@@ -72,7 +72,7 @@ export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()
   }
   const assertSession=async deadline=>{
     check(!closed,'WALLET_CLOSED');check(globals[id]===provider,'WALLET_CHANGED');let current;
-    try{current=await bounded(()=>session(provider,id),'WALLET_SIGN_TIMEOUT',deadline);}catch(e){throw safeError(e);}
+    try{current=await bounded(()=>session(provider,id,{net}),'WALLET_SIGN_TIMEOUT',deadline);}catch(e){throw safeError(e);}
     check(!closed&&sameSession(current,owner),'WALLET_CHANGED');
   };
   return Object.freeze({kind:'extension',id,name:NAMES[id],canSign:true,...owner,spk:p2pk(owner.key),get closed(){return closed;},close,
@@ -90,7 +90,7 @@ export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()
       const request=extensionSafeJson(draft,owner),approved=jsonText(draft.transaction),contexts=jsonText(draft.inputUtxos);let response;
       try {
         response=await bounded(()=>id==='kastle'
-          ?provider.signTx('testnet-10',request,[...auth].map(inputIndex=>({inputIndex,signType:'All'})))
+          ?provider.signTx(net.networkId,request,[...auth].map(inputIndex=>({inputIndex,signType:'All'})))
           :provider.signPskt({txJsonString:request,options:{signInputs:[...auth].map(index=>({index,sighashType:1}))}}),'WALLET_SIGN_TIMEOUT',deadline);
       }catch(e){throw safeError(e);}
       await assertSession(deadline);check(jsonText(draft.transaction)===approved&&jsonText(draft.inputUtxos)===contexts,'WALLET_DRAFT_CHANGED');

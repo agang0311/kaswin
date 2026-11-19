@@ -10,7 +10,8 @@ import {loadDeploymentProfile} from '../../scripts/contract/bundle.mjs';
 import {FileArchive} from '../../scripts/indexer/archive.mjs';
 import {RollingNodeAdapter} from '../../scripts/indexer/node-adapter.mjs';
 import {RollingIndexer} from '../../scripts/indexer/indexer.mjs';
-import {durable,connectTN10} from './tn10-run.mjs';
+import {searchAccepted} from '../../scripts/chain/chain.mjs';
+import {durable,connectTN10,readAllReceipts} from './tn10-run.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),runs=join(here,'artifacts/tn10'),root=join(here,'artifacts/tn10-index');
 export async function replay({runDirectory=null,outputDirectory=null,nodeUrl=null}={}) {
  const destination=outputDirectory?resolve(outputDirectory):root,selected=runDirectory?resolve(runDirectory):null;
@@ -28,13 +29,23 @@ export async function replay({runDirectory=null,outputDirectory=null,nodeUrl=nul
   const indexer=new RollingIndexer({archive,profile,networkGenesis:TN10.genesis,nodeAdapter:node}),rows=[];
   for(const d of await readdir(runs,{withFileTypes:true}))if(d.isDirectory()&&(!selected||join(runs,d.name)===selected)) {
    let state;try{state=JSON.parse(await readFile(join(runs,d.name,'state.json'),'utf8'));}catch(e){if(e.code==='ENOENT')continue;throw e;}
-   if(!state.cid||!state.receipts.length)continue;
-   let view=await archive.getRound(TN10.genesis,profile.id,state.cid);
-   for(const receipt of state.receipts) {
-    view=await indexer.ingest(receipt.txid,{acceptingBlockHash:receipt.acceptingBlock},view?.revision??'0');
+   const receipts=await readAllReceipts(join(runs,d.name),state);
+   if(!state.cid||!receipts.length)continue;
+   let view=await archive.getRound(TN10.genesis,profile.id,state.cid),lastChainBlock=null;
+   for(const receipt of receipts) {
+    try {
+     view=await indexer.ingest(receipt.txid,{acceptingBlockHash:receipt.acceptingBlock},view?.revision??'0');
+     lastChainBlock=receipt.acceptingBlock;
+    } catch(e) {
+     const code=e.code??e.safeCode??e.message;
+     if(!lastChainBlock||(code!=='NOT_CHAIN'&&code!=='REORG'))throw e;
+     const found=await searchAccepted(rpc,receipt.txid,lastChainBlock,{pages:8});
+     view=await indexer.ingest(receipt.txid,{acceptingBlockHash:found.accepting},view?.revision??'0');
+     lastChainBlock=found.accepting;
+    }
     console.log(JSON.stringify({scenario:state.scenario,txid:receipt.txid,revalidated:true,revision:view.revision}));
    }
-   const snapshot={scenario:state.scenario,round:view,receipts:state.receipts,verifiedAt:new Date().toISOString()};
+   const snapshot={scenario:state.scenario,round:view,receipts,verifiedAt:new Date().toISOString()};
    await durable(join(destination,`${state.cid}.json`),snapshot);rows.push(snapshot);
   }
   if(selected&&rows.length!==1)throw new Error('REPLAY_SELECTED_RUN_MISSING');
