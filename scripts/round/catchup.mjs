@@ -449,7 +449,7 @@ function findSpenderInPage(cache,tip) {
  * 3) REST API fallback when neither Indexer nor node history covers a step or genesis. */
 export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,indexer=null,profile,net=TN10,fetcher=globalThis.fetch,maxSteps=200,timeBudgetMs=null,skipIndexer=false,preferRest=false,onProgress=null}={}) {
   check(rpc,'NODE_REQUIRED');
-  let cur=round?structuredClone(round):null,source=cur?'local':null,usedRest=false;
+  let cur=round?{...round,frozen:(round.frozen??[]).slice(),receipts:(round.receipts??[]).slice(),pending:(round.pending??[]).slice()}:null,source=cur?'local':null,usedRest=false;
   let lastProgressAt=Date.now(),lastYieldAt=Date.now();
   const yieldTick=async(force=false)=>{
     const nowMs=Date.now();
@@ -458,7 +458,7 @@ export async function syncRoundThreeTier({cid,round=null,lookupInput=null,rpc,in
   const emitProgress=async(steps,force=false)=>{
     if(typeof onProgress!=='function'||!cur)return;
     const nowMs=Date.now();
-    if(!force&&nowMs-lastProgressAt<1500)return;
+    if(!force&&nowMs-lastProgressAt<4000)return;
     lastProgressAt=nowMs;
     const snap={...cur,receipts:cur.receipts.slice(),frozen:cur.frozen.slice()};
     await onProgress(snap,{steps,source:steps>0?(usedRest?'rest+node':'node'):(source??'node')});

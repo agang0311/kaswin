@@ -223,22 +223,24 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
   /** One pass over a round's candidates: promote (>=100 DAA deep), follow a reorg, or halt the round when one was lost. */
   async function recheckPending(cid) {
     const out={finalized:0,reaccepted:0,waiting:0};
-    let cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND');
-    const save=async next=>{cur={round:next,revision:(await roundStore.replace(next,cur.revision)).revision};};
-    for(const entry of structuredClone(cur.round.pending??[])) {
-      let res;
-      try{res=await recheckCandidate(c.rpc,entry,profile,{now:now(),network:net.networkId});}
-      catch(e) {
-        if(codeOf(e)==='CANDIDATE_DROPPED'){await save({...cur.round,halted:'CANDIDATE_DROPPED'});log('error',`候选交易 ${entry.txid} 既未被接受也不在内存池：轮次已停止，请人工核对`);}
-        throw e;
+    let cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),nextRound=cur.round,dirty=false;
+    const flush=async()=>{if(dirty){dirty=false;cur={round:nextRound,revision:(await roundStore.replace(nextRound,cur.revision)).revision};}};
+    try{
+      for(const entry of structuredClone(cur.round.pending??[])) {
+        let res;
+        try{res=await recheckCandidate(c.rpc,entry,profile,{now:now(),network:net.networkId});}
+        catch(e) {
+          if(codeOf(e)==='CANDIDATE_DROPPED'){nextRound={...nextRound,halted:'CANDIDATE_DROPPED'};dirty=true;await flush();log('error',`候选交易 ${entry.txid} 既未被接受也不在内存池：轮次已停止，请人工核对`);}
+          throw e;
+        }
+        if(res.status==='FINAL') {nextRound=settleCandidate(nextRound,entry.txid,{depth:res.depth});dirty=true;out.finalized++;log('info',`已接受并复核（深度 ${res.depth}≥100）：${entry.txid}`);}
+        else if(res.status==='REACCEPTED') {nextRound=moveCandidate(nextRound,entry.txid,res);dirty=true;out.reaccepted++;log('warn',`选中链浅层重组：${entry.txid} 在新的块被重新接受（DAA ${res.acceptingDaa}）`);}
+        else if(res.status==='LIMBO') {
+          out.waiting++;
+          if(entry.limboSince==null){nextRound={...nextRound,pending:nextRound.pending.map(p=>p.txid===entry.txid?{...p,limboSince:res.limboSince}:p)};dirty=true;}
+        } else out.waiting++;
       }
-      if(res.status==='FINAL') {await save(settleCandidate(cur.round,entry.txid,{depth:res.depth}));out.finalized++;log('info',`已接受并复核（深度 ${res.depth}≥100）：${entry.txid}`);}
-      else if(res.status==='REACCEPTED') {await save(moveCandidate(cur.round,entry.txid,res));out.reaccepted++;log('warn',`选中链浅层重组：${entry.txid} 在新的块被重新接受（DAA ${res.acceptingDaa}）`);}
-      else if(res.status==='LIMBO') {
-        out.waiting++;
-        if(entry.limboSince==null)await save({...cur.round,pending:cur.round.pending.map(p=>p.txid===entry.txid?{...p,limboSince:res.limboSince}:p)});
-      } else out.waiting++;
-    }
+    }finally{await flush();}
     return out;
   }
   api={
@@ -394,7 +396,8 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
         cid:initial?input:(lookup?null:input),round:initial?.round??null,lookupInput:lookup?input:null,rpc,indexer:client,profile,net,fetcher,timeBudgetMs,skipIndexer,preferRest,onProgress,
       });
       await progressChain;
-      const cid=synced.round.cid,cur=await roundStore.get(cid);
+      const cid=synced.round.cid;
+      const cur=initial&&initial.round.cid===cid&&expectedRev===initial.revision&&!synced.caughtUp?initial:await roundStore.get(cid);
       if(c.prepared?.cid===cid||cur&&(cur.round.intent||(!allowHalted&&cur.round.halted)))return {cid,skipped:'LOCAL_PENDING'};
       if(cur&&expectedRev===(initial?.revision??null)&&cur.round.step===synced.round.step&&cur.round.terminal===synced.round.terminal&&cur.round.manager?.outpoint?.transactionId===synced.round.manager?.outpoint?.transactionId&&!synced.caughtUp){
         if(client&&synced.round.indexer?.headTxid)indexChecks.set(cid,{client,rpc,localRevision:cur.revision,headTxid:synced.round.indexer.headTxid,acceptingBlock:synced.round.indexer.acceptingBlock,revision:String(synced.round.indexer.revision??''),checkedAt:now()});
@@ -569,7 +572,7 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       const live=await liveRound(c.rpc,r,profile,{targets:r.frozen});
       log('info',`链上核对通过：manager 与 ${live.targets.length} 个分片均为活跃且一致的 UTXO（阶段 ${live.state.module}）`);
       return {module:live.state.module,frozen:live.targets.length};},{readKey:`verify:${cid}`});},
-    exportText(cid) {return (async()=>roundToText(need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND')))();},
+    exportText(cid) {return (async()=>roundToText(cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND')))();},
     /** Import = data only. Never authenticated until prepare() verifies the live UTXOs; a local pending intent is never overwritten. */
     async importText(text) {return guard('导入',async()=>{
       const r=roundFromText(text,profile,{network:net.networkId});

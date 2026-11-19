@@ -166,13 +166,20 @@ export function shardCatalog(round,profile,walletKey=null) {
   return shards;
 }
 
+const cloneRoundShell=round=>({...round,settings:{...round.settings},origin:{...round.origin},
+  manager:round.manager?{...round.manager,outpoint:{...round.manager.outpoint},spk:{...round.manager.spk}}:null,
+  frozen:(round.frozen??[]).map(f=>({...f,outpoint:{...f.outpoint},spk:{...f.spk}})),
+  receipts:(round.receipts??[]).slice(),
+  pending:(round.pending??[]).map(p=>({...p})),
+});
+
 /** Pure advance after a verified acceptance. `accepted` = {txid,tx,acceptingBlock,acceptingDaa,observedVirtualDaa,actualFee,nodeComputeMass,storageMass,candidate?}.
  * V2.0.2 pacing: `candidate:true` (first selected-chain acceptance, not yet >=100 DAA deep) advances the round at once and queues the
  * intent in `pending`; settleCandidate promotes it later. Effects are interpreted from the accepted transaction (node data) against the
  * verified input contexts. Idempotent by txid. */
 export function advanceRound(round,intent,accepted,profile) {
   if(round.receipts.some(r=>r.txid===accepted.txid))return round;
-  const r=structuredClone(round),txid=accepted.txid;let t,cid,origin;
+  const r=cloneRoundShell(round),txid=accepted.txid;let t,cid,origin;
   if(intent.action==='GENESIS') {
     check(!r.manager&&r.step===0,'GENESIS_ALREADY_APPLIED');
     t=interpretGenesis(accepted.tx,profile);cid=t.cid;origin=t.origin;check(cid===r.cid,'GENESIS_CID');
@@ -211,17 +218,19 @@ export function advanceRound(round,intent,accepted,profile) {
 
 /** Promote a CANDIDATE after recheckCandidate returned FINAL (accepting block >=100 DAA deep, still on the selected chain, draft unchanged). */
 export function settleCandidate(round,txid,{depth}) {
-  const r=structuredClone(round),rc=r.receipts.find(x=>x.txid===txid);
+  const r=cloneRoundShell(round),rcIdx=r.receipts.findIndex(x=>x.txid===txid),rc=rcIdx>=0?{...r.receipts[rcIdx]}:null;
   check(rc&&rc.finalized===false&&(r.pending??[]).some(p=>p.txid===txid),'NOT_A_CANDIDATE');
-  Object.assign(rc,{accepted:true,candidate:false,finalized:true,finalDepth:depth.toString()});r.pending=r.pending.filter(p=>p.txid!==txid);
+  Object.assign(rc,{accepted:true,candidate:false,finalized:true,finalDepth:depth.toString()});
+  r.receipts[rcIdx]=rc;r.pending=r.pending.filter(p=>p.txid!==txid);
   return r;
 }
 /** A shallow reorg displaced the accepting block and the SAME signed bytes were accepted again elsewhere: record the history, move the
  * candidate, and refresh the DAA of the UTXOs that transaction created (the manager / frozen shards the next steps are built on). */
 export function moveCandidate(round,txid,{acceptingBlock,acceptingDaa}) {
-  const r=structuredClone(round),rc=r.receipts.find(x=>x.txid===txid),p=(r.pending??[]).find(x=>x.txid===txid);
+  const r=cloneRoundShell(round),rcIdx=r.receipts.findIndex(x=>x.txid===txid),rc=rcIdx>=0?{...r.receipts[rcIdx],reaccepted:[...(r.receipts[rcIdx].reaccepted??[])]}:null,p=(r.pending??[]).find(x=>x.txid===txid);
   check(rc&&rc.finalized===false&&p,'NOT_A_CANDIDATE');
-  (rc.reaccepted??=[]).push({acceptingBlock:rc.acceptingBlock,acceptingDaa:rc.acceptingDaa});
+  r.receipts[rcIdx]=rc;
+  rc.reaccepted.push({acceptingBlock:rc.acceptingBlock,acceptingDaa:rc.acceptingDaa});
   if(r.accepting===rc.acceptingBlock)r.accepting=acceptingBlock;
   if(r.manager?.outpoint.transactionId===txid)Object.assign(r.manager,{utxoDaa:acceptingDaa,daa:acceptingDaa});
   for(const f of r.frozen)if(f.outpoint.transactionId===txid)Object.assign(f,{utxoDaa:acceptingDaa,daa:acceptingDaa});

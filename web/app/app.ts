@@ -94,10 +94,15 @@ let detailSyncAt=0,detailPolling=false,lastDetailOkAt=0;
 
 /* ------------------------------------------------------------------ derived data */
 let deferViewWrite=(): boolean=>false;
-const touched=()=>LS.get<Record<string,number>>('touched',{});
+let touchedCache: Record<string,number>|null=null;
+let ownersCache: Record<string,string>|null=null;
+let myTxsCache: Record<string,string[]>|null=null;
+const touched=(): Record<string,number>=>(touchedCache??=LS.get<Record<string,number>>('touched',{}));
+const owners=(): Record<string,string>=>(ownersCache??=LS.get<Record<string,string>>('owners',{}));
+const myTxs=(): Record<string,string[]> =>(myTxsCache??=LS.get<Record<string,string[]>>('myTxs',{}));
 const touch=(cid: string)=>{const t=touched();t[cid]=Date.now();LS.set('touched',t);};
 const recordMyTx=(walletKey: string,txid: string)=>{
-  const map=LS.get<Record<string,string[]>>('myTxs',{});
+  const map=myTxs();
   const list=map[walletKey]??[];
   if(!list.includes(txid)){list.push(txid);if(list.length>500)list.splice(0,list.length-500);map[walletKey]=list;LS.set('myTxs',map);}
 };
@@ -139,7 +144,7 @@ function holdings(it: Item,shards: ShardView[]|null=null): Holdings|null {
 /** Items are rebuilt from the stored rounds + the last known DAA. Reading the store is the ONLY awaited step before rendering: a slow / hung node call
  * can no longer delay (or, by finishing late, overwrite) the newest stored state, and DAA is refreshed separately (pollDaa). */
 function rebuild() {
-  const t=touched(),own=LS.get<Record<string,string>>('owners',{});let dirty=false;
+  const t=touched(),own=owners();let dirty=false;
   const activeCids=new Set(lastRounds.map(r=>r.cid));
   for(const k of itemCache.keys())if(!activeCids.has(k))itemCache.delete(k);
   items=lastRounds.map(r=>buildItem(r,daa,t,own));
@@ -205,7 +210,7 @@ const shardsFor=(it: Item): ShardView[]|null=>{
 const detail=(): Detail|null=>{
   let it=items.find(i=>i.r.cid===S.cid)??null,isPreview=false;
   if(!it&&previewRound&&previewRound.cid===S.cid){
-    it=buildItem(previewRound,daa,touched(),LS.get<Record<string,string>>('owners',{}));
+    it=buildItem(previewRound,daa,touched(),owners());
     isPreview=true;
   }
   if(!it)return null;
@@ -227,7 +232,7 @@ async function hydrateRoundPreview(cid: string) {
 }
 function mineData(): MineData|null {
   const w=ctl.state.wallet;if(!w)return null;
-  const myTxSet=new Set(LS.get<Record<string,string[]>>('myTxs',{})[w.key]??[]);
+  const myTxSet=new Set(myTxs()[w.key]??[]);
   const rounds: MineData['rounds']=[],txs: {cid: Hex; t: Receipt}[]=[];
   for(const i of items){
     const created=i.f.owner===w.key,won=!!i.f.winnerKey&&i.f.winnerKey===w.key;
@@ -464,7 +469,7 @@ async function onSend() {
   else toast('提交结果暂未确认，页面会自动核对，请不要重复操作。','warn');
   touch(cid);verify.delete(cid);
   if(signerKey&&txid&&status!=='UNSENT'&&status!=='REJECTED')recordMyTx(signerKey,txid);
-  if(creatorKey&&status!=='UNSENT'){const own=LS.get<Record<string,string>>('owners',{});own[cid]=creatorKey;LS.set('owners',own);}   // readable from the manager only while the round is live
+  if(creatorKey&&status!=='UNSENT'){const own=owners();own[cid]=creatorKey;LS.set('owners',own);}   // readable from the manager only while the round is live
   await refresh();
   submission=null;render();
   if(status==='REJECTED'&&!genesis&&classifyRejection(items.find(i=>i.r.cid===cid)?.r.intent).kind==='ROUND_INPUT')void doVerify(cid,{quiet:true});
@@ -527,7 +532,7 @@ async function onShare(cid: string) {
 }
 async function onExport(cid: string) {download(`kaswin-rolling-${cid.slice(0,12)}.json`,await ctl.exportText(cid));}
 async function onExportAll() {
-  const rounds: string[]=[];for(const r of await ctl.rounds())rounds.push(await ctl.exportText(r.cid));
+  const rounds: string[]=[];for(const r of await ctl.rounds())rounds.push(await ctl.exportText(r as unknown as string));
   if(!rounds.length){toast('还没有轮次可导出','warn');return;}
   download('kaswin-rolling-rounds.json',JSON.stringify({kind:'KASWIN_ROLLING_BUNDLE',rounds}));
 }
@@ -850,6 +855,10 @@ function bind() {
     else if(k==='theme'){const v=LS.get('theme',S.theme);if(v==='dark'||v==='light'){S.theme=v;chrome();}}
     else if(k==='nodes')S.nodes=LS.get('nodes',S.nodes);
     else if(k==='indexer')S.indexer=LS.get('indexer',S.indexer);
+    else if(k==='touched'){touchedCache=null;rebuild();render();}
+    else if(k==='owners'){ownersCache=null;rebuild();render();}
+    else if(k==='myTxs'){myTxsCache=null;if(S.view==='mine')render();}
+    else if(k==='saved'){savedCids=new Set<string>(LS.get<string[]>('saved',[]));render();}
   });
 }
 
