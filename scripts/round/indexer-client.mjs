@@ -156,7 +156,10 @@ export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10
     try{const drawInfo=await verifyDrawReceipt(round,rpc,profile);if(drawInfo)round.draw=drawInfo;}catch{}
   }
   const counted=result.next??state;round.bought=totalTickets(counted);round.buys=counted.indices.length*256+counted.records.length;
-  const final=await acceptedAt(rpc,head.txid,head.acceptingBlock);check(final.acceptingDaa===evidence.acceptingDaa,'INDEXER_HEAD_MOVED');
+  if(result.next||((result.terminal==='PAID'||state.module==='win')&&round.draw)){
+    const fb=(await rpc.call('getBlock',{hash:head.acceptingBlock,includeTransactions:false}))?.block;
+    check(fb?.header?.hash===head.acceptingBlock&&fb.verboseData?.isChainBlock===true&&BigInt(fb.header.daaScore)===evidence.acceptingDaa,'INDEXER_HEAD_MOVED');
+  }
   round.indexer={revision:String(document.revision),headTxid:head.txid,acceptingBlock:head.acceptingBlock,checkedAt:Date.now(),nodeEndpoint:rpc.url??null};
   return round;
 }

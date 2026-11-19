@@ -338,9 +338,10 @@ export async function findSpenderOnNode(rpc,round,{maxPages=9}={}) {
     firstSink=uint(sinkRes.blueScore);
   }catch{return {kind:'NOT_AVAILABLE',reason:'PARENT_PRUNED'};}
 
-  let win=60n;
+  let win=60n,cachedSink=firstSink;
   for(let page=0;page<maxPages;page++){
-    const sink=page===0&&firstSink!==null?firstSink:uint((await rpc.call('getSinkBlueScore')).blueScore);
+    if(cachedSink===null||blue+win>=cachedSink)cachedSink=uint((await rpc.call('getSinkBlueScore')).blueScore);
+    const sink=cachedSink;
     if(sink<blue)return {kind:'NOT_AVAILABLE',reason:'SINK_BEHIND'};
     const target=blue+win,min=sink>target?sink-target:0n;
     if(min>BigInt(Number.MAX_SAFE_INTEGER))return {kind:'NOT_AVAILABLE',reason:'RANGE'};
@@ -377,7 +378,7 @@ export async function findSpenderViaRest(rpc,round,{net=TN10,maxPages=3,fetcher=
       const txid=String(raw.transaction_id).toLowerCase(),accepting=String(raw.accepting_block_hash).toLowerCase();
       if(rpc){
         try{
-          const ev=await acceptedAt(rpc,txid,accepting),virtualDaa=await rpc.currentDaa();
+          const [ev,virtualDaa]=await Promise.all([acceptedAt(rpc,txid,accepting),rpc.currentDaa()]);
           return {kind:'FOUND_NODE',evidence:ev,virtualDaa};
         }catch{}
       }

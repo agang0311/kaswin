@@ -44,7 +44,12 @@ export async function connectNetwork(urls,{net=TN10,...opts}={}) {
     for(let attempt=0;;attempt++)try{return await call(method,...args);}catch(e){
       if(method.startsWith('submit')||attempt>=2||!['RPC_TIMEOUT','NODE_DISCONNECTED'].includes(e.code??e.safeCode))throw e;}
   };
-  rpc.currentDaa=async()=>{const i=await rpc.call('getServerInfo');checkServerIdentity(i,net.networkId);return BigInt(i.virtualDaaScore);};
+  let inflightDaa=null;
+  rpc.currentDaa=async()=>{
+    if(inflightDaa)return inflightDaa;
+    inflightDaa=(async()=>{const i=await rpc.call('getServerInfo');checkServerIdentity(i,net.networkId);return BigInt(i.virtualDaaScore);})().finally(()=>{inflightDaa=null;});
+    return inflightDaa;
+  };
   return rpc;
 }
 export const connectTN10=(urls,opts={})=>connectNetwork(urls,{net:TN10,...opts});
@@ -54,7 +59,15 @@ export function requiredFee(mass,rate='100') {
   const [a,b='']=rate.split('.'),den=10n**BigInt(b.length),num=BigInt(a+b);
   const fee=(mass.orderingMass*num+den-1n)/den;return fee>mass.relayFloor?fee:mass.relayFloor;
 }
-export async function nodeFeeRate(rpc) {return String(Math.max(1,Math.ceil(parseFeeEstimate(await rpc.call('getFeeEstimate')).normal.feerate)));}
+const inflightFeeRate=new WeakMap();
+export async function nodeFeeRate(rpc) {
+  if(rpc&&typeof rpc==='object'){
+    const hit=inflightFeeRate.get(rpc);if(hit)return hit;
+    const p=(async()=>String(Math.max(1,Math.ceil(parseFeeEstimate(await rpc.call('getFeeEstimate')).normal.feerate))))().finally(()=>{inflightFeeRate.delete(rpc);});
+    inflightFeeRate.set(rpc,p);return p;
+  }
+  return String(Math.max(1,Math.ceil(parseFeeEstimate(await rpc.call('getFeeEstimate')).normal.feerate)));
+}
 
 /** Imported or stale records are NOT trusted: each context must be the live, identical UTXO (value/script/covenant);
  * its DAA is then taken from the node. Returns refreshed copies. */
@@ -104,9 +117,9 @@ export async function selectFunds(rpc,wallet,minimum,reserved=new Set()) {
   check(false,'WALLET_FUNDS_INSUFFICIENT');
 }
 /** DRAW: real PASS-A for the first-crossing target + 100-confirmation requirement (tn10-proof, no fixtures). */
-export async function planDraw(rpc,round,profile) {
+export async function planDraw(rpc,round,profile,{live=null}={}) {
   check(round.accepting,'ACCEPTING_BLOCK_REQUIRED');
-  const {manager,state:s}=await liveRound(rpc,round,profile);check(s.module==='sealed','NOT_SEALED');
+  const {manager,state:s}=live??await liveRound(rpc,round,profile);check(s.module==='sealed','NOT_SEALED');
   const p=await acquireRollingProof(rpc,manager,profile,round.accepting);
   const sample=drawSample(manager,s,{proof:p.opening,accessor:p.accessor});
   const ends=[...s.indices.map(x=>x.end),S.totalTickets(s)],j=ends.findIndex(end=>sample.ticket<end);
@@ -125,7 +138,7 @@ export function pickTargets(round,s,profile,action,count=PAYOUT_BATCH) {
 
 const effects=outs=>stable(outs.map(o=>({value:o.value,spk:o.scriptPublicKey,covenant:o.covenant??null})));
 /** Build + locally budget + price one transaction (unsigned). `op` = {action,quantity?,proof?,accessor?,j?,winningRedeem?,settings?}. */
-export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserved=new Set(),net=TN10}) {
+export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserved=new Set(),net=TN10,live:preLive=null}) {
   const action=op.action,keyed=wallet.kind==='key'||wallet.kind==='extension';
   check(['GENESIS','BUY','CLOSE','DRAW','TIMEOUT','PAY_OLD','PAY_SELF','REFUND_OLD','REFUND_SELF'].includes(action),'ACTION');
   const needsFunds=FUNDED.includes(action)||(action==='REFUND_SELF'&&keyed);
@@ -135,7 +148,7 @@ export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserve
   let manager=null,targets=[],s=null,funds=[];
   if(action!=='GENESIS') {
     const wanted=(action==='PAY_OLD'||action==='REFUND_OLD')?(op.targets??[]):[];
-    const liveTask=liveRound(rpc,round,profile,{targets:wanted});
+    const liveTask=preLive?Promise.resolve(preLive):liveRound(rpc,round,profile,{targets:wanted});
     if(needsFunds) {
       const price=round.settings?.ticketPrice;
       const minimum=action==='BUY'?BigInt(op.quantity)*price+S.FEE_CAP+1n:S.FEE_CAP+1n;
@@ -208,14 +221,20 @@ export async function signAndRecord({rpc,profile,prepared,wallet,net=TN10,onSign
  * is hit. Invalid state/proof errors stop immediately and are never "fixed" by a smaller batch. */
 export async function prepareOperation({rpc,profile,round,choice,wallet,feerate,reserved,net=TN10}) {
   const common={rpc,profile,round,wallet,feerate,reserved,net};
-  if(choice.action==='DRAW')return prepareAction({...common,op:await planDraw(rpc,round,profile)});
+  if(choice.action==='DRAW'){
+    const live=await liveRound(rpc,round,profile);
+    return prepareAction({...common,op:await planDraw(rpc,round,profile,{live}),live});
+  }
   if(choice.action==='PAY_OLD'||choice.action==='REFUND_OLD') {
     check(round.manager,'ROUND_HAS_NO_MANAGER');
     const s=verifyManager({...round.manager,currentDaa:round.manager.utxoDaa},profile);
     const all=pickTargets(round,s,profile,choice.action),sizes=choice.action==='PAY_OLD'?[...new Set([all.length,8,4,2,1].filter(k=>k<=all.length))]:[1];
-    let last;
+    let last,liveAll=null;
     for(const k of sizes) {
-      try{return await prepareAction({...common,op:{action:choice.action,targets:all.slice(0,k)}});}
+      const subTargets=all.slice(0,k);
+      if(!liveAll)liveAll=await liveRound(rpc,round,profile,{targets:subTargets});
+      const live={manager:liveAll.manager,targets:liveAll.targets.slice(0,k),state:liveAll.state};
+      try{return await prepareAction({...common,op:{action:choice.action,targets:subTargets},live});}
       catch(e){if(!(e instanceof ResourceLimit)&&!['PROTOCOL_FEE_CAP','FEE','PRIZE_MIN'].includes(e.code))throw e;last=e;}
     }
     throw last;

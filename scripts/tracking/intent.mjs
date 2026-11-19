@@ -110,14 +110,12 @@ export async function checkAcceptance(rpc,intent,profile,{recover=false,checkpoi
   }
   if(!found.accepting)return {accepted:false,complete:found.complete,resubmitted,inputsGone:conflict};
   const [virtualDaa,ev]=await Promise.all([rpc.currentDaa(),acceptedAt(rpc,intent.txid,found.accepting)]);
-  const firstFee=matchesDraft(ev,intent.draft),depth=virtualDaa>ev.acceptingDaa?virtualDaa-ev.acceptingDaa:0n;
+  const actualFee=matchesDraft(ev,intent.draft),depth=virtualDaa>ev.acceptingDaa?virtualDaa-ev.acceptingDaa:0n;
   // Not deep enough: a CANDIDATE carrying everything the round needs to continue (effects are read from the node-served transaction).
   if(virtualDaa<ev.acceptingDaa+REORG_RECHECK_DAA)return {accepted:false,candidate:true,depth,txid:intent.txid,acceptingBlock:ev.accepting,acceptingDaa:ev.acceptingDaa,observedVirtualDaa:virtualDaa,
-    nodeEndpoint:rpc.url,nodeComputeMass:ev.computeMass,storageMass:ev.tx.storageMass,quotedMass:intent.mass,actualFee:firstFee,tx:ev.tx,inputs:ev.inputs};
-  const final=await acceptedAt(rpc,intent.txid,found.accepting),actualFee=matchesDraft(final,intent.draft);
-  check(final.acceptingDaa===ev.acceptingDaa,'ACCEPTANCE_MOVED');
-  return {accepted:true,txid:intent.txid,acceptingBlock:final.accepting,acceptingDaa:final.acceptingDaa,observedVirtualDaa:virtualDaa,nodeEndpoint:rpc.url,
-    nodeComputeMass:final.computeMass,storageMass:final.tx.storageMass,quotedMass:intent.mass,actualFee,tx:final.tx,inputs:final.inputs};
+    nodeEndpoint:rpc.url,nodeComputeMass:ev.computeMass,storageMass:ev.tx.storageMass,quotedMass:intent.mass,actualFee,tx:ev.tx,inputs:ev.inputs};
+  return {accepted:true,txid:intent.txid,acceptingBlock:ev.accepting,acceptingDaa:ev.acceptingDaa,observedVirtualDaa:virtualDaa,nodeEndpoint:rpc.url,
+    nodeComputeMass:ev.computeMass,storageMass:ev.tx.storageMass,quotedMass:intent.mass,actualFee,tx:ev.tx,inputs:ev.inputs};
 }
 
 const TRANSIENT=['RPC_TIMEOUT','SINK_BEHIND','READ_VIEW_CHANGED'],LIMBO_MS=180000;
