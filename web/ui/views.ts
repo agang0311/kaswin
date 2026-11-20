@@ -22,24 +22,24 @@ const signing=(w: Ctx['wallet']): boolean=>!!w&&(w.kind==='key'||w.kind==='exten
 /** Receipt fees come from stored / imported data: a malformed value shows a dash instead of aborting the render. */
 const feeText=(v: unknown): string=>{try{return kas(BigInt(v as string));}catch{return '—';}};
 const hash=(v: string|null|undefined,{n=10,link=null}: {n?: number;link?: string|null}={}): Raw|string=>v?html`<span class="hash"><span class="mono">${link?html`<a class="hash-link" href="${link}" target="_blank" rel="noopener noreferrer">${shortHash(v,n,6)}</a>`:shortHash(v,n,6)}</span><button class="copy" data-copy="${v}" aria-label="复制" title="复制">${ic('copy')}</button></span>`:'—';
-const kpi=(label: string,value: unknown,sub: unknown='')=>html`<div class="kpi"><small>${label}</small><strong>${value}</strong><span>${sub}</span></div>`;
+const kpi=(label: string,value: unknown,sub: unknown='')=>html`<div class="kpi"><small>${label}</small><strong>${value}</strong>${sub?html`<span>${sub}</span>`:''}</div>`;
 const fact=(k: string,v: unknown): Raw|string=>v==null||v===false?'':html`<div class="fact"><dt>${k}</dt><dd>${v}</dd></div>`;
 const wait=(daa: bigint|null,until: bigint): string=>daa==null?'需读取节点 DAA':daa>=until?'现在可操作':`约 ${daaDuration(until-daa)} 后`;
 const isFree=(a: string): boolean=>!!ACTION_INFO[a]?.free;
 
 /* ------------------------------------------------------------------ explore */
-const STEP_TERMINAL: Record<string,string>={PAID:'已派奖 · 奖金见交易输出',EMPTY:'无人购买 · 押金已退回',REFUNDED:'退款完成 · 每条记录扣 0.02 TKAS'};
+const STEP_TERMINAL: Record<string,string>={PAID:'已派奖',EMPTY:'无人购买 · 已退押金',REFUNDED:'已全部退款'};
 function stepText(i: Item,x: Ctx): string {
   const {r,f}=i;
   if(r.terminal)return STEP_TERMINAL[r.terminal]??'已结束';
-  if(r.halted)return '有交易未能确认，需要核对后重新导入';
-  if(r.intent||(r.pending??[]).length)return '交易确认中 · 稍候自动更新';
-  if(!r.manager)return '等待创建交易被节点确认';
+  if(r.halted)return '交易未确认，请重新核对';
+  if(r.intent||(r.pending??[]).length)return '交易确认中…';
+  if(!r.manager)return '等待创建确认…';
   const manager=r.manager;
-  if(f.module==='sales')return x.daa!=null&&x.daa<f.closeEligibleDaa&&f.tickets<f.ticketCap?`售票中 · ${wait(x.daa,f.closeEligibleDaa)}可封盘`:'任何人可封盘 · 票数够则开奖，不足则退款';
+  if(f.module==='sales')return x.daa!=null&&x.daa<f.closeEligibleDaa&&f.tickets<f.ticketCap?`售票中 · ${wait(x.daa,f.closeEligibleDaa)}可封盘`:'已满条件 · 可立即封盘';
   if(f.module==='sealed')return `已封存 · ${wait(x.daa,manager.utxoDaa+100n)}可开奖`;
-  if(f.module==='win')return `派奖中 · 已处理 ${f.payCursor}/${f.shards} 个封存分片`;
-  return `退款中 · 封存分片 ${f.refundShard}/${f.shards}`;
+  if(f.module==='win')return `派奖中 · 分片 ${f.payCursor}/${f.shards}`;
+  return `退款中 · 分片 ${f.refundShard}/${f.shards}`;
 }
 const CARD_CTA: Record<string,string>={open:'查看并购买',sealed:'查看开奖条件',paying:'查看派奖进度',refund:'查看退款进度'};
 const safeBig=(v: string|null|undefined): bigint=>{try{return v!=null?BigInt(v):0n;}catch{return 0n;}};
@@ -52,11 +52,11 @@ function indexedPhase(d: DiscoveredRound): Phase {
 }
 function indexedStep(d: DiscoveredRound,ph: Phase): string {
   if(d.terminal)return STEP_TERMINAL[d.terminal]??'已结束';
-  if(ph.key==='open')return '售票中 · 点击核对当前票数、票价与封盘时间';
-  if(ph.key==='sealed')return '已封存 · 达到等待时间后任何人可开奖';
-  if(ph.key==='paying')return '派奖中 · 打开查看分片派奖进度';
-  if(ph.key==='refund')return '退款中 · 打开查看分片退款进度';
-  return '点击由当前节点核对最新状态';
+  if(ph.key==='open')return '售票中 · 点击查看票价与进度';
+  if(ph.key==='sealed')return '待开奖 · 点击查看开奖倒计时';
+  if(ph.key==='paying')return '派奖中 · 点击查看分片进度';
+  if(ph.key==='refund')return '退款中 · 点击查看退款进度';
+  return '点击查看最新状态';
 }
 function isDiscFresher(i: Item,d: DiscoveredRound|undefined): d is DiscoveredRound {
   if(!d||i.r.terminal||i.r.intent||i.r.halted)return false;
@@ -71,34 +71,26 @@ function card(i: Item,x: Ctx,freshDisc?: DiscoveredRound): Raw {
   const shards=freshDisc?(freshDisc.shards||(freshDisc.terminal&&(freshDisc.buys??0)>=256?Math.floor((freshDisc.buys??0)/256):f.shards)):f.shards;
   const isTerminal=!!(r.terminal||freshDisc?.terminal);
   const have=tickets!=null,pct=have&&f.ticketCap?Math.min(100,tickets/f.ticketCap*100):isTerminal?100:0;
-  const cta=CARD_CTA[ph.key]??'查看轮次详情',u=unitOf(x);
+  const cta=CARD_CTA[ph.key]??'查看详情',u=unitOf(x);
   return html`<article class="card t-${ph.tone}" data-open="${r.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(r.cid)}">
-    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="tag">${freshDisc?'索引已更新':r.source==='imported'?'已同步':'我创建的'}</span></div>
-    <div class="mono dim small">CID ${shortHash(r.cid,12,8)}</div>
-    <div class="small muted">${isTerminal?'历史票款总额 · 非实际奖金':'票款奖池 · 不含押金'}</div>
+    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="mono dim small">CID ${shortHash(r.cid,8,6)}</span><span class="tag">${freshDisc?'有新进度':r.source==='imported'?'已同步':'我创建的'}</span></div>
     <div class="big">${have?kas(BigInt(tickets)*price):'—'}<small>${u}</small></div>
     ${have?html`<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()} 张 · ${kas(price)} ${u}/张</span><span>${shards>0?`${shards} 个封存分片`:''}</span></div>`:html`<div class="small muted">打开查看详情</div>`}
-    <div class="card-next">${freshDisc?indexedStep(freshDisc,ph):stepText(i,x)}</div>
-    <div class="src">${freshDisc?'索引有新进度 · 点击后由节点核对':r.source==='imported'?'本机已同步 · 操作前会向节点核对':'本机记录'}</div>
-    <div class="card-cta">${cta} ${ic('arrow')}</div>
+    <div class="row card-foot"><span class="card-next">${freshDisc?indexedStep(freshDisc,ph):stepText(i,x)}</span><span class="card-cta">${cta} ${ic('arrow')}</span></div>
   </article>`;
 }
 function indexedCard(d: DiscoveredRound,x?: Ctx): Raw {
   const ph=indexedPhase(d),tkt=d.terminal?(d.bought??d.tickets??0):(d.tickets??0),isRest=d.source==='rest',isCache=x?.conn.discoveredSource==='cache',u=unitOf(x);
   const sc=d.shards||(d.terminal&&(d.buys??0)>=256?Math.floor((d.buys??0)/256):0);
-  const mval=!d.terminal?safeBig(d.managerValue):0n,cta=CARD_CTA[ph.key]??'查看轮次详情';
+  const mval=!d.terminal?safeBig(d.managerValue):0n,cta=CARD_CTA[ph.key]??'查看详情';
   const subParts=[sc>0?`${sc} 个封存分片`:'未满 1 个分片'];
-  if(d.buys!=null)subParts.push(`${d.buys.toLocaleString()} 笔购买`);
+  if(d.buys!=null)subParts.push(`${d.buys.toLocaleString()} 笔`);
   return html`<article class="card t-${ph.tone}" data-indexed="${d.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(d.cid)}">
-    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="tag">${isCache?'本地缓存':isRest?'REST 发现':'索引发现'}</span></div>
-    <div class="mono dim small">CID ${shortHash(d.cid,12,8)}</div>
-    <div class="small muted">${d.terminal?'历史售出票数 · 点击查看详情':isRest?'创世登记摘要 · 点击向节点追赶':'索引摘要 · 点击向节点核对'}</div>
+    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="mono dim small">CID ${shortHash(d.cid,8,6)}</span><span class="tag">${isCache?'本地缓存':isRest?'REST 发现':'索引发现'}</span></div>
     <div class="big">${tkt.toLocaleString()}<small>张</small></div>
     ${d.terminal?html`<div class="bar"><i style="width:100%"></i></div>`:''}
     <div class="row small muted"><span>${subParts.join(' · ')}</span><span>${mval>0n?`状态锁定 ${kas(mval)} ${u}`:''}</span></div>
-    <div class="card-next">${isRest?'点击后由节点 / REST 自动追赶最新进度':indexedStep(d,ph)}</div>
-    <div class="src">${isCache?'本地缓存 · 点击后由节点核对':isRest?'REST API 发现 · 点击后由节点核对':'索引数据 · 点击后由节点核对'}</div>
-    <div class="card-cta">${cta} ${ic('arrow')}</div>
+    <div class="row card-foot"><span class="card-next">${isRest?'点击追赶最新进度':indexedStep(d,ph)}</span><span class="card-cta">${cta} ${ic('arrow')}</span></div>
   </article>`;
 }
 interface ExploreEntry {cid: string;ph: Phase;value: bigint;at: number;item?: Item;disc?: DiscoveredRound}
@@ -134,33 +126,24 @@ export function exploreView(x: Ctx): Raw {
   const seg: [string,string][]=[['all','全部'],['open','售票中'],['sealed','待开奖'],['settle','派奖/退款'],['done','已结束'],['saved','★ 关注']];
   const isRest=x.conn.discoveredSource==='rest',isCache=x.conn.discoveredSource==='cache';
   const sourceNotice=isCache&&x.conn.indexerStale
-    ?html`<div class="source-strip"><span class="dot"></span><span>索引暂不可用，当前显示本地缓存列表（共 ${disc.length} 轮，本机已核对 ${all.length} 轮）· <b>点击任意轮次会再由节点核对并追赶最新进度</b></span></div>`
+    ?html`<div class="source-strip"><span class="dot"></span><span>索引暂不可用，当前显示本地缓存列表（${disc.length} 轮）</span></div>`
     :isRest
-    ?html`<div class="source-strip"><span class="dot"></span><span>${x.conn.indexerStale?'索引暂不可用，已切换为 REST API 备用查询':'未连接索引，已使用 REST API 备用查询'}（共 ${disc.length} 轮，本机已核对 ${all.length} 轮）· <b>点进轮次后会自动向节点 / REST 追赶最新状态</b></span></div>`
+    ?html`<div class="source-strip"><span class="dot"></span><span>${x.conn.indexerStale?'索引暂不可用，已切换为 REST API 备用查询':'使用 REST API 备用查询'}（${disc.length} 轮）</span></div>`
     :x.conn.indexerStale
-      ?html`<div class="notice warn">索引正在追赶最新链状态，列表可能暂未包含刚确认的轮次；点击任意轮次仍会向当前节点核对。</div>`
+      ?html`<div class="notice warn">索引正在追赶最新链状态，点击任意轮次会向节点核对。</div>`
       :'';
   const u=unitOf(x);
   return html`
-  <section class="hero">
-    <div>
-      <h1>参与一轮，<em>看清每一步。</em></h1>
-      <p>选择轮次、核对票款与费用，再确认交易。售票、开奖、派奖与退款由固定合约约束，购买笔数不受 256 笔限制。当前网络为 ${x.net.label}（${u}）。</p>
-      <div class="hero-actions"><button class="btn pri" data-go2="create">${ic('create')}创建轮次</button><button class="btn ghost" data-go2="protocol">${ic('shield')}规则说明</button></div>
-    </div>
-    <div class="flow"><span class="eyebrow">HOW IT WORKS</span><h3>从买票到结算，去向清楚</h3><ol>
-      <li><span class="n">01</span><div><b>选轮次 · 买票</b><span>票价、剩余票数、最低开奖门槛先看清</span></div></li>
-      <li><span class="n">02</span><div><b>封盘 · 确定下一步</b><span>达到门槛可开奖；不足则分批退款</span></div></li>
-      <li><span class="n">03</span><div><b>链上开奖 · 直接到账</b><span>任何人可推进，付款输出可逐项核对</span></div></li>
-    </ol></div>
-  </section>
-  <div class="section-title"><h2>轮次广场</h2><span class="muted small">当前数据源中的已知轮次 · 非全网统计</span></div>
+  <div class="section-title">
+    <div><h2>轮次广场</h2><span class="muted small">不限购买笔数的链上抽奖 · ${x.net.label}（${u}）</span></div>
+    <div class="hero-actions"><button class="btn pri sm" data-go2="create">${ic('create')}创建轮次</button><button class="btn ghost sm" data-go2="protocol">${ic('shield')}规则说明</button></div>
+  </div>
   <section class="kpis">
-    ${kpi('已知轮次',entries.length,isCache?`本地缓存 ${disc.length} · 本机 ${all.length}`:isRest?`REST 备用 ${disc.length} · 本机 ${all.length}`:x.conn.indexer?`索引 ${disc.length} · 本机 ${all.length}`:`本机创建 ${all.filter(i=>i.r.source!=='imported').length} · 导入 ${all.filter(i=>i.r.source==='imported').length}`)}
-    ${kpi('售票中',g.open,'可购买 / 可封盘')}
-    ${kpi('待开奖 / 结算中',`${g.sealed} / ${g.settle}`,'任何人可推进')}
-    ${kpi('已派奖轮次',paid,`共 ${g.done} 轮已结束`)}
-    ${kpi('锁定价值',kas(locked),`${u} · 进行中的轮次`)}
+    ${kpi('已知轮次',entries.length,isCache?`本地缓存 ${disc.length} · 本机 ${all.length}`:isRest?`REST 备用 ${disc.length} · 本机 ${all.length}`:x.conn.indexer?`索引 ${disc.length} · 本机 ${all.length}`:`本机 ${all.length}`)}
+    ${kpi('售票中',g.open)}
+    ${kpi('待开奖 / 结算',`${g.sealed} / ${g.settle}`)}
+    ${kpi('已派奖',paid,`共 ${g.done} 轮已结束`)}
+    ${kpi('锁定价值',kas(locked),u)}
   </section>
   <div class="toolbar">
     <div class="seg" role="group" aria-label="筛选">${seg.map(([k,l])=>html`<button data-filter="${k}" aria-pressed="${x.S.filter===k}">${l}<span class="c">${g[k]}</span></button>`)}</div>
@@ -171,7 +154,6 @@ export function exploreView(x: Ctx): Raw {
     ${otherEntries.length?html`<details class="other-rounds-details">
       <summary class="btn ghost sm" title="查看无法按当前固定 Profile 解析的轮次">${ic('archive')}<span>不适用轮次 (${otherEntries.length})</span></summary>
       <div class="panel" style="margin-top:12px;background:var(--panel2);border:1px dashed var(--line2)">
-        <p class="small muted" style="margin-top:0">以下轮次无法按当前固定 Profile 解析，页面不提供操作。</p>
         <div class="grid">${filteredOther.map(e=>e.item?card(e.item,x):indexedCard(e.disc!,x))}</div>
       </div>
     </details>`:''}
@@ -179,7 +161,7 @@ export function exploreView(x: Ctx): Raw {
   ${sourceNotice}
   <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x,e.disc):indexedCard(e.disc!,x)):html`<div class="empty">${ic('ticket')}<p>${entries.length?'当前筛选下没有轮次。':'还没有轮次。'}你可以<button class="link" data-go2="create">创建一个新轮次</button>，或在下方粘贴分享链接 / CID 加入。</p></div>`}</div>
   <div class="panel join" style="margin-top:22px">
-    <div><h3>${ic('download')} 加入轮次</h3><p class="sub">粘贴分享链接，或直接输入 CID / 交易 ID（页面将按 索引 → 节点 → REST API 顺序核对并追赶最新进度）。</p></div>
+    <div><h3>${ic('download')} 加入轮次</h3><p class="sub">粘贴分享链接、CID 或交易 ID 即可同步并加入。</p></div>
     <div class="joinrow"><input id="joinText" value="${x.S.join}" placeholder="分享链接、轮次数据、CID 或交易 ID" autocomplete="off" spellcheck="false" aria-label="分享链接或轮次 ID"><button class="btn pri" data-act="join">加入</button></div>
   </div>`;
 }
@@ -232,57 +214,54 @@ export function createView(x: Ctx): Raw {
   <div class="cols">
     <div class="panel">
       <h2>${ic('create')} 创建一个新轮次</h2>
-      <p class="sub">填写规则 → 查看完整费用 → 确认后提交。现在填写不会扣款，创建后的规则不可更改。</p>
+      <p class="sub">设置票价、票数上限与封盘时间（创建后不可更改）。</p>
       <div class="form">
         <label class="field">每张票价格（${u}）<input id="cPrice" value="${f.price}" inputmode="numeric" maxlength="12"><small>≥ 1 ${u} 的整数</small></label>
         <label class="field">总票数上限<input id="cCap" value="${f.cap}" inputmode="numeric" maxlength="8"><small>3 – ${MAX_TICKET_CAP.toLocaleString()}</small></label>
-        <label class="field">开奖最低票数<input id="cMin" value="${f.min}" inputmode="numeric" maxlength="8"><small>≥ 3；封盘时不足则全部退款</small></label>
+        <label class="field">开奖最低票数<input id="cMin" value="${f.min}" inputmode="numeric" maxlength="8"><small>≥ 3；不足则全部退款</small></label>
         <div class="field full">最早可封盘时间<div class="pills">${CLOSE_PRESETS.map(([k,l])=>html`<button type="button" data-dur="${k}" aria-pressed="${f.dur===k}">${l}</button>`)}</div>
           ${f.dur==='custom'?html`<input id="cCustom" value="${f.custom}" inputmode="numeric" maxlength="5" placeholder="分钟（1 – 10080）">`:''}
-          <small>时间到了才“允许”封盘，不会自动封盘；票卖满时可提前封盘。按约 10 DAA/秒换算，创建时读取当前 DAA。</small></div>
+          <small>到时或售满后可手动封盘（约 10 DAA/秒）。</small></div>
         <label class="check full"><input type="checkbox" id="cReg" ${useReg?'checked':''}>附加 0.2 ${u} Registry 登记输出（供索引自动发现本轮）</label>
         <label class="field full" id="cRegBox" ${useReg?'':'hidden'}>登记地址<input id="cRegAddr" value="${regVal}" spellcheck="false" autocomplete="off" placeholder="${defaultReg}">
-          <small>默认是 Kaswin 登记地址（留空即默认）。仅支持 ${x.net.label} 的 Schnorr P2PK 或 P2SH 地址；0.2 ${u} 付给该地址，不可撤回。</small>
-          ${p.isCustomRegistry?html`<small class="why">已改为非默认地址：默认 Indexer 与 REST 只扫描默认登记地址，本轮不会被它们自动发现，只能由监听该地址的索引收录。</small>`:''}</label>
+          <small>留空使用默认登记地址（0.2 ${u}，不可撤回）。</small>
+          ${p.isCustomRegistry?html`<small class="why">已改为非默认地址：默认索引不会自动收录本轮。</small>`:''}</label>
       </div>
       ${p.ok?'':html`<p class="err">${p.errors[0]}</p>`}
-      <div class="notice" style="margin-top:12px">封存分片只按<b>购买笔数</b>计算（每 256 笔封存 1 个分片，单轮最多 256 个分片 / 65,536 笔购买），与总票数上限无关。Testnet 10 已实测到 17 个封存分片（${VERIFIED_TICKET_CAP.toLocaleString()} 张）的完整派奖与 3 个封存分片（771 张）的批量退款；更多分片路径尚未在实链跑满。</div>
+      <div class="notice" style="margin-top:12px">每 256 笔<b>购买笔数</b>自动封存 1 个分片（单轮最多 256 个分片 / 65,536 笔购买）。</div>
       ${createCta(x,p.ok)}
     </div>
     <div>
       <div class="panel"><h3>预览</h3><div class="facts">
-        ${fact('售满时的票款',pool==null?'—':`${kas(pool)} ${u}`)}
-        ${fact('每张票中奖概率（售满）',good?`1 / ${p.cap.toLocaleString()}`:'—')}
+        ${fact('售满票款',pool==null?'—':`${kas(pool)} ${u}`)}
         ${fact('最早封盘',`约 ${dur} 后`)}
-        ${fact('封存分片',good?`最多约 ${shards} 个（每 256 笔购买封存一个）`:'—')}
-        ${fact('执行者奖励',good?`约 ${shards} ${u}（每个分片 1 ${u}，从奖池扣）`:'—')}
-        ${fact(`低于 ${Number.isFinite(p.min)?p.min:'最低'} 张`,`全部退款，每条购买记录扣 0.02 ${u} 执行费`)}
+        ${fact('封存分片',good?`最多约 ${shards} 个`:'—')}
+        ${fact(`低于 ${Number.isFinite(p.min)?p.min:'最低'} 张`,`全部退款（每笔扣 0.02 ${u}）`)}
       </div></div>
       <div class="panel"><h3>你需要付出</h3><dl class="kv">
-        <dt>押金</dt><dd>${DEPOSIT_TKAS} ${u}（派奖或无人购买时全额退回；全部退款完成时退回 3.98）</dd>
-        <dt>登记输出</dt><dd>${useReg?`0.2 ${u}（可选，转入上方填写的登记地址）`:`不附加（不进入公共索引，仅可通过分享链接加入）`}</dd>
-        <dt>网络费</dt><dd>确认前按节点实时费率报价（通常不到 0.1 ${u}）</dd>
-        <dt>钱包至少</dt><dd>约 ${useReg?'4.5':'4.3'} ${u}${signing(x.wallet)&&x.balance!=null?html` <span class="muted">（当前余额 ${kas(x.balance)} ${u}）</span>`:''}</dd>
-      </dl><p class="sub" style="margin:12px 0 0">创建者没有特权：任何人都可以封盘、开奖、派奖、退款。创建者只在最后取回押金。</p></div>
+        <dt>押金</dt><dd>${DEPOSIT_TKAS} ${u}（结算后退回创建者）</dd>
+        <dt>登记输出</dt><dd>${useReg?`0.2 ${u}`:`不附加（不进入公共索引，仅可通过分享链接加入）`}</dd>
+        <dt>建议余额</dt><dd>约 ${useReg?'4.5':'4.3'} ${u}${signing(x.wallet)&&x.balance!=null?html` <span class="muted">（余额 ${kas(x.balance)} ${u}）</span>`:''}</dd>
+      </dl></div>
     </div>
   </div>`;
 }
 
 /* ------------------------------------------------------------------ round detail */
-const STEPS_NORMAL=['创建 · 售票','封盘 · 待开奖','派奖','完成'],STEPS_REFUND=['创建 · 售票','封盘','退款','完成'];
+const STEPS_NORMAL=['售票','待开奖','派奖','完成'],STEPS_REFUND=['售票','封盘','退款','完成'];
 function stepper(D: Detail): Raw {
   const {r,f}=D,refund=f.module==='refund'||r.terminal==='REFUNDED',labels=refund?STEPS_REFUND:STEPS_NORMAL;
   const pos=r.terminal?4:f.module==='sealed'?1:f.module==='win'||f.module==='refund'?2:0;
   return html`<div class="stepper">${labels.map((l,i)=>html`<div class="step ${i<pos?'done':i===pos?'now':''} ${refund&&i>=2?'alt':''}"><div class="b">${i<pos?'✓':i+1}</div>${l}</div>`)}</div>`;
 }
-const HINT_TERMINAL: Record<string,string>={PAID:'奖金已付给中奖者，押金已退回创建者。',EMPTY:'无人购买，押金已退回创建者。',REFUNDED:'所有购买记录已退款，每条扣 0.02 TKAS 执行费。'};
-const HINT_MODULE: Record<string,string>={sales:'售票中。时间到后任何人可封盘；票卖满也可提前封盘。',sealed:'已封存，等待开奖。开奖由链上数据决定，任何人无法挑选。',
-  win:'已开奖，正在派奖。任何人都可以推进，无需签名。',refund:'票数不足，正在分批退款。任何人都可以推进，无需签名。'};
+const HINT_TERMINAL: Record<string,string>={PAID:'奖金已派发，押金已退回创建者。',EMPTY:'无人购买，押金已退回创建者。',REFUNDED:'全部购买记录已退款。'};
+const HINT_MODULE: Record<string,string>={sales:'售票中 · 到时或售满后可封盘。',sealed:'已封盘 · 等待链上随机数开奖。',
+  win:'已开奖 · 可免签推进分片派奖。',refund:'票数不足 · 可免签推进分批退款。'};
 function nextHint(D: Detail): string {
   const {r,f}=D;
   if(r.terminal)return HINT_TERMINAL[r.terminal]??'';
-  if(r.halted)return `这一轮已停止（${r.halted}）：有交易既没有被确认也不在内存池。请核对后让对方发最新分享链接重新导入。`;
-  if(r.intent)return '有一笔交易还在等待确认，期间不能发起新的操作。';
+  if(r.halted)return `这一轮已停止（${r.halted}）：有交易未确认，请重新核对或导入。`;
+  if(r.intent)return '有交易等待确认中，期间不能发起新操作。';
   return HINT_MODULE[f.module??'']??'';
 }
 function actionCard(a: string,D: Detail,x: Ctx): Raw|'' {
@@ -297,8 +276,7 @@ function actionCard(a: string,D: Detail,x: Ctx): Raw|'' {
     <p class="small ${quantityError?'err':'muted'}" id="qtyCost" role="status" aria-live="polite">${qtyCost(x.S.qty,f,s,unitOf(x))}</p>`:'';
   const label=x.busy?'处理中…':draw&&!draw.ready?draw.button:waiting?'暂不可用':g.ok?(draw?draw.button:info.verb):g.fix==='wallet'?'连接钱包':g.fix==='settings'?'检查连接':'暂不可用';
   const attr=x.busy?'disabled aria-busy="true"':waiting?'disabled':g.ok?`data-act="${a}"`:g.fix?`data-fix="${g.fix}"`:'disabled';
-  return html`<div class="act ${waiting||x.busy?'off':''}"><h4>${info.title}</h4><p>${info.desc}</p>
-    <div class="small muted">${isFree(a)?'无需签名 · 只需一个收款地址领取奖励':'需要钱包付手续费 / 票款'}</div>${extra}
+  return html`<div class="act ${waiting||x.busy?'off':''}"><h4>${info.title}${isFree(a)?html`<span class="tag kas">免签领奖</span>`:''}</h4><p>${info.desc}</p>${extra}
     ${x.busy?html`<div class="why" role="status">${g.reason??'正在处理上一步，请稍候。'}</div>`:waiting?html`<div class="why">${draw&&!draw.ready?draw.label:s.reason}</div>`:g.ok?'':html`<div class="why">${g.reason}</div>`}
     <button ${raw(a==='BUY'?'id="buySubmit"':'')} class="btn ${g.ok&&!waiting?'pri':''} block" ${raw(attr)} ${raw(quantityError&&!x.busy&&!waiting&&(g.ok||g.fix)?'disabled':'')}>${label}</button></div>`;
 }
@@ -335,9 +313,9 @@ function intentPanel(r: Round,x: Ctx): Raw|'' {
 }
 function verifyPanel(v: VerifyState|null): Raw|'' {
   if(!v)return '';
-  if(v.state==='checking')return html`<div class="notice">正在向节点核对这一轮的链上状态…</div>`;
-  if(v.state==='partial')return html`<div class="notice warn">已同步部分进度，链上还有更新状态，后台正在继续追赶…（可点「刷新状态」继续）</div>`;
-  if(v.state==='ok')return html`<div class="notice ok">已向节点核对（${new Date(v.at??0).toLocaleTimeString()}）：本机记录与链上状态一致。</div>`;
+  if(v.state==='checking')return html`<div class="notice">正在向节点核对链上状态…</div>`;
+  if(v.state==='partial')return html`<div class="notice warn">已同步部分进度，后台正在继续追赶…</div>`;
+  if(v.state==='ok')return html`<div class="notice ok">已向节点核对（${new Date(v.at??0).toLocaleTimeString()}）</div>`;
   const transient=['INDEXER_TIMEOUT','INDEXER_UNAVAILABLE','RPC_TIMEOUT','NODE_REQUIRED','NODE_CLOSED'].includes(v.code??'');
   return html`<div class="notice ${transient?'warn':'bad'}"><b>${transient?'同步未完成':'与链上状态不一致'}</b>：${errText(v.code??'')}</div>`;
 }
@@ -354,14 +332,13 @@ function txTable(D: Detail,x: Ctx): Raw {
     list.push(t);
   }
   const omittedParts=[omittedBuys>0?`${omittedBuys.toLocaleString()} 笔已确认购买交易`:'',omittedRefunds>0?`${omittedRefunds.toLocaleString()} 笔已确认退款交易`:''].filter(Boolean);
-  if(!list.length)return html`<p class="muted small">共 ${omittedParts.join('、')}，请在上方分片点图中查看；尚无封盘、开奖或结算交易。</p>`;
+  if(!list.length)return html`<p class="muted small">共 ${omittedParts.join('、')}，请在上方分片点图中查看。</p>`;
   const limit=x.S.txLimit??20,total=list.length,shown=list.slice(Math.max(0,total-limit)).reverse();
   return html`<div class="tablewrap"><table><tr><th>步骤</th><th>交易</th><th>状态</th><th>网络费</th></tr>${shown.map(t=>html`<tr>
     <td>${ACTION_INFO[t.action]?.title??t.action}</td><td>${hash(t.txid,{n:8,link:x.ex.tx(t.txid)})}</td>
     <td>${t.finalized===false?html`<span class="badge t-violet">确认中</span>`:html`<span class="badge t-mint">已接受</span>`}</td><td class="mono">${feeText(t.feeSompi)}</td></tr>`)}</table></div>
-    ${total>shown.length?html`<div class="btnrow"><span class="small muted">已显示最近 ${shown.length} / ${total.toLocaleString()} 笔阶段交易</span><button type="button" class="btn sm" data-moretx="100">再加载 100 笔</button><button type="button" class="btn sm" data-moretx="all">显示全部</button></div>`:''}
-    ${omittedParts.length?html`<p class="small muted" style="margin-top:8px">已省略 ${omittedParts.join('、')}（请在上方分片点图按片查看）。</p>`:''}
-    ${r.pending?.length?html`<p class="small muted" style="margin-top:8px">“确认中”表示已进入节点选中链；满约 100 DAA（约 10 秒）后页面会自动复核，浅层重组时同一笔交易通常会在别的区块重新被接受。</p>`:''}`;
+    ${total>shown.length?html`<div class="btnrow"><span class="small muted">最近 ${shown.length} / ${total.toLocaleString()} 笔</span><button type="button" class="btn sm" data-moretx="100">再加载 100 笔</button><button type="button" class="btn sm" data-moretx="all">显示全部</button></div>`:''}
+    ${omittedParts.length?html`<p class="small muted" style="margin-top:8px">已省略 ${omittedParts.join('、')}（见上方分片点图）。</p>`:''}`;
 }
 const DOT_COLORS=['#49eacb','#60a5fa','#a78bfa','#f472b6','#f59e0b','#34d399','#f87171','#22d3ee','#c084fc','#fbbf24','#4ade80','#fb7185'];
 const SHARD_META: Record<ShardStatus,{label: string;tone: string;color: string}>={
@@ -438,7 +415,7 @@ function shardRefundReceipts(sh: ShardView,D: Detail): Receipt[] {
   return refundSelfs.length===expectedSelf?refundSelfs:[];
 }
 function purchaseTip(rec: ShardRecordView|null,sh: ShardView,D: Detail,x: Ctx): Raw {
-  if(!rec)return html`<div class="matrix-tip"><div class="tip-placeholder">${ic('search')}<span>点击分片内任意方格查看该笔购买的票号、买家、购买${sh.status==='refunded'||sh.status==='refunding'?'与退款':''}交易（本分片共 ${sh.records?.length??0} 笔）</span></div></div>`;
+  if(!rec)return html`<p class="small muted" style="margin:6px 0 0">点击上方方格查看该笔购买的票号、买家与交易（共 ${sh.records?.length??0} 笔）。</p>`;
   const addr=x.ex.addrOfKey(rec.key)??rec.key,draw=D.r.draw??null;
   const isWin=!!draw&&draw.shard===sh.index&&draw.record===rec.index;
   const buyRc=buyReceiptFor(sh,rec,D);
@@ -510,19 +487,18 @@ function shardSection(D: Detail,x: Ctx): Raw {
     ${counts.mine?html`<span><i style="--c:var(--kas);box-shadow:inset 0 0 0 1px #fff"></i>含我的票</span>`:''}
     ${draw?html`<span><i style="--c:var(--gold)"></i>中奖分片 #${draw.shard+1}（中奖票 #${draw.ticket+1}）</span>`:''}
   </div>`;
-  return html`<p class="small muted" style="margin:0 0 8px">${r.terminal?`本轮已结束（${TERMINAL_LABEL[r.terminal]??r.terminal}），`:''}共 ${shards.length} 个分片（封存 ${counts.frozen} 个${counts.active?` · ${r.terminal?'尾部':'当前'} 1 个`:''}），总计 ${f.tickets.toLocaleString()} 张票。点击任意分片点图查看该分片内的购买记录。</p>
+  return html`<p class="small muted" style="margin:0 0 8px">${r.terminal?`本轮已结束（${TERMINAL_LABEL[r.terminal]??r.terminal}），`:''}共 ${shards.length} 个分片（封存 ${counts.frozen} 个）· ${f.tickets.toLocaleString()} 张票 · 点击任意分片点图查看明细</p>
     <div class="matrix shards" role="region" aria-label="分片分布">${cells}</div>
     ${legend}
-    ${sel?selectedShardPanel(sel,D,x):html`<div class="matrix-tip"><div class="tip-placeholder">${ic('search')}<span>点击上方任意分片方格，查看该分片的购买点图与明细（每片最多 256 笔）</span></div></div>`}`;
+    ${sel?selectedShardPanel(sel,D,x):''}`;
 }
 function roundCountdown(D: Detail,x: Ctx): Raw|'' {
   const {r,f}=D;if(r.terminal||r.halted||r.intent||!r.manager)return '';
-  if(f.module==='sales')return html`<div class="notice round-countdown" role="status"><h3>${ic('clock')} 最早封盘倒计时</h3><p>${x.daa===null?'正在读取节点时间…':D.a.CLOSE?.ok?'已满足封盘条件，任何人可封盘。':`距最早封盘还有约 ${daaDuration(f.closeEligibleDaa-x.daa)}`}</p><p class="small muted">到时不会自动封盘或开奖；封盘后继续显示开奖等待进度。</p></div>`;
+  if(f.module==='sales')return html`<div class="notice round-countdown" role="status"><h3>${ic('clock')} 最早封盘倒计时</h3><p>${x.daa===null?'正在读取节点时间…':D.a.CLOSE?.ok?'已满足封盘条件，任何人可封盘。':`距最早封盘还有约 ${daaDuration(f.closeEligibleDaa-x.daa)}`}</p></div>`;
   if(f.module!=='sealed')return '';
   const m=drawReadiness(D,x);
   return html`<div class="notice round-countdown ${m.ready?'ok':''}" role="status"><h3>${ic('clock')} ${m.label}</h3>
-    <p>${m.detail}</p>${m.percent!==null?html`<progress max="100" value="${m.percent}" aria-label="${m.label}"></progress>`:''}
-    <p class="small muted">预计时间按约 10 DAA/秒估算；实际可操作时间以节点核验为准，不会自动开奖。</p></div>`;
+    <p>${m.detail}</p>${m.percent!==null?html`<progress max="100" value="${m.percent}" aria-label="${m.label}"></progress>`:''}</div>`;
 }
 function discoveredDetailView(d: DiscoveredRound,x: Ctx): Raw {
   const ph=indexedPhase(d),u=unitOf(x),cid=d.cid;
@@ -534,8 +510,8 @@ function discoveredDetailView(d: DiscoveredRound,x: Ctx): Raw {
   const statusNotice=x.verify?.state==='bad'
     ?verifyPanel(x.verify)
     :x.conn.node===false
-      ?html`<div class="notice warn">当前节点未连接，先展示本地缓存的轮次摘要；连接节点后将自动同步完整分片明细与最新状态。</div>`
-      :html`<div class="notice">已先加载本地缓存摘要，正在后台同步完整分片明细并向节点核对最新状态…</div>`;
+      ?html`<div class="notice warn">节点未连接，先展示本地缓存摘要；连接节点后自动同步最新状态。</div>`
+      :html`<div class="notice">正在后台同步分片明细并向节点核对最新状态…</div>`;
   return html`
   <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回</button><span class="spacer"></span>
     <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(cid)?'已关注':'关注'}</button>
@@ -548,9 +524,9 @@ function discoveredDetailView(d: DiscoveredRound,x: Ctx): Raw {
     ${statusNotice}
     <p class="muted" style="margin:0 0 12px">${d.terminal?HINT_TERMINAL[d.terminal]??'':HINT_MODULE[d.module??'']??''}</p>
     <div class="cols3">
-      ${kpi(d.terminal?'历史售出票数':'当前已售票数',`${tkt.toLocaleString()} 张`,d.buys!=null?`${d.buys.toLocaleString()} 笔购买`:'正在后台读取票价与上限…')}
-      ${kpi('封存分片',`${sc}`,sc>0?'同步完成后可展开分片点图':'未满 1 个分片')}
-      ${kpi('合约锁定',mval>0n?`${kas(mval)} ${u}`:(d.terminal?'已结算':'—'),d.terminal?'合约输出已结算回收':'含押金与当前票款')}
+      ${kpi(d.terminal?'历史售出票数':'当前已售票数',`${tkt.toLocaleString()} 张`,d.buys!=null?`${d.buys.toLocaleString()} 笔购买`:'读取中…')}
+      ${kpi('封存分片',`${sc}`)}
+      ${kpi('合约锁定',mval>0n?`${kas(mval)} ${u}`:(d.terminal?'已结算':'—'))}
     </div>
   </div>`;
 }
@@ -591,20 +567,20 @@ export function roundView(x: Ctx): Raw {
     <button type="button" class="btn sm" data-act="moreRound" aria-haspopup="dialog" aria-label="更多轮次操作" ${raw(D.preview?'disabled title="完成节点核对后可分享或导出"':'')}>更多</button></div>
   <div class="panel t-${ph.tone}">
     <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${ph.tone}">${ph.label}</span><span class="spacer"></span>
-      ${D.preview?html`<span class="tag amber">本地预览 · 后台核对中</span>`:r.source==='imported'?html`<span class="tag amber">导入 · 操作前向节点核对</span>`:''}</div>
+      ${D.preview?html`<span class="tag amber">本地预览 · 后台核对中</span>`:''}</div>
     <h2 style="margin:8px 0 14px">轮次 ${hash(r.cid,{n:14})}</h2>
     ${f.module||r.terminal?stepper(D):''}
     ${progress}${intentPanel(r,x)}${detailVerifyNotice}
     <p class="muted" style="margin:0 0 12px">${nextHint(D)}</p>
     <div class="cols3">
       ${kpi(r.terminal==='PAID'?'奖池（票款总额）':'当前票款',f.tickets!=null?html`${kas(BigInt(f.tickets)*price)} <span class="small muted">${u}</span>`:'—',f.tickets!=null?`${f.tickets.toLocaleString()} 张 × ${kas(price)} ${u}`:'')}
-      ${kpi('售出 / 上限',f.tickets!=null?`${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()}`:'—',f.tickets!=null?`开奖最低 ${f.minTickets} 张 · ${f.shards} 个封存分片 + ${f.localRecords} 笔当前记录`:'')}
-      ${f.winnerKey?kpi('中奖者',hash(x.ex.addrOfKey(f.winnerKey),{n:12}),D.isWinner?'就是你！':'奖金将付给该地址'):
-        kpi(mine?'你持有':'你的票',mine?`${mine.tickets.toLocaleString()} 张`:signing(x.wallet)?'0 张':'—',mine&&mine.total>0?`中奖概率约 ${(mine.tickets/mine.total*100).toFixed(2)}%`:signing(x.wallet)?'还没买票':'连接钱包后显示')}
+      ${kpi('售出 / 上限',f.tickets!=null?`${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()}`:'—',f.tickets!=null?`最低 ${f.minTickets} 张 · 封存 ${f.shards} 片`:'')}
+      ${f.winnerKey?kpi('中奖者',hash(x.ex.addrOfKey(f.winnerKey),{n:12}),D.isWinner?'就是你！':''):
+        kpi(mine?'你持有':'你的票',mine?`${mine.tickets.toLocaleString()} 张`:signing(x.wallet)?'0 张':'—',mine&&mine.total>0?`约 ${(mine.tickets/mine.total*100).toFixed(2)}%`:'')}
     </div>
   </div>
   <div class="round-layout">
-    <aside class="round-actions panel"><h3>${ic('arrow')} 下一步怎么做</h3>${roundCountdown(D,x)}
+    <aside class="round-actions panel"><h3>${ic('arrow')} 下一步</h3>${roundCountdown(D,x)}
       ${r.terminal?html`<div class="notice ok">${TERMINAL_LABEL[r.terminal]}：${nextHint(D)}</div>`:cards.length?html`<div class="actions" style="grid-template-columns:1fr">${cards}</div>`:html`<p class="muted small">${r.intent?'等待上面那笔交易确认。':r.halted?'这一轮已停止。':'暂时没有可执行的操作。'}</p>`}
     </aside>
     <div class="round-main">
@@ -612,22 +588,21 @@ export function roundView(x: Ctx): Raw {
       <div class="panel"><h3>${ic('ledger')} 交易记录</h3>${txTable(D,x)}</div>
     </div>
     <div class="round-rules">
-      <div class="panel"><h3>${ic('clock')} 规则与链上标识</h3><dl class="kv">
+      <div class="panel"><h3>${ic('clock')} 规则与标识</h3><dl class="kv">
         <dt>票价</dt><dd>${kas(price)} ${u}</dd>
-        <dt>开奖最低票数</dt><dd>${f.minTickets} 张（不足则退款）</dd>
-        <dt>最早封盘</dt><dd>${x.daa!=null&&x.daa>=f.closeEligibleDaa?'已到时间':`约 ${wait(x.daa,f.closeEligibleDaa)}`}<span class="muted small"> · 票卖满可提前</span></dd>
-        <dt>开奖等待</dt><dd>封盘后约 100 DAA（约 10 秒）</dd>
-        <dt>超时转退款</dt><dd>封盘后约 12 小时无人开奖时</dd>
-        <dt>分片</dt><dd>每 256 笔购买封存一个，购买笔数不设上限</dd>
-        <dt>创建者</dt><dd>${ownerAddr?hash(ownerAddr,{n:12,link:x.ex.addr(ownerAddr)}):html`<span class="muted">本机没有记录${r.terminal?'（轮次结束后合约状态不再保留创建者，押金已退回）':''}</span>`}</dd>
+        <dt>最低票数</dt><dd>${f.minTickets} 张</dd>
+        <dt>最早封盘</dt><dd>${x.daa!=null&&x.daa>=f.closeEligibleDaa?'已到时间':`约 ${wait(x.daa,f.closeEligibleDaa)}`}</dd>
+        <dt>创建者</dt><dd>${ownerAddr?hash(ownerAddr,{n:10,link:x.ex.addr(ownerAddr)}):html`<span class="muted">—</span>`}</dd>
         <dt>创建交易</dt><dd>${genesisTx?hash(genesisTx.txid,{n:10,link:x.ex.tx(genesisTx.txid)}):html`<span class="muted">—</span>`}</dd>
-        <dt>累计网络费</dt><dd>${kas(r.fees)} ${u}</dd>
       </dl>
-      <details style="margin-top:10px"><summary class="small muted">技术信息</summary><dl class="kv" style="margin-top:8px">
+      <details style="margin-top:10px"><summary class="small muted">更多规则与技术信息</summary><dl class="kv" style="margin-top:8px">
+        <dt>开奖等待</dt><dd>封盘后约 100 DAA（~10 秒）</dd>
+        <dt>超时转退款</dt><dd>封盘后约 12 小时未开奖</dd>
+        <dt>累计网络费</dt><dd>${kas(r.fees)} ${u}</dd>
         <dt>完整 CID</dt><dd class="mono small">${r.cid}</dd>
         ${r.origin?html`<dt>创世输出</dt><dd class="mono small" title="创建这一轮时被花掉的资金输出（合约 ID 由它推出），不是创建交易本身">${shortHash(r.origin.transactionId,10,6)}:${r.origin.index}</dd>`:''}
         ${r.manager?html`<dt>状态 UTXO</dt><dd class="mono small">${shortHash(r.manager.outpoint.transactionId,10,6)}:${r.manager.outpoint.index}</dd><dt>合约锁定</dt><dd>${kas(r.manager.value)} ${u}</dd>`:''}
-        <dt>数据来源</dt><dd>${r.source==='imported'?'导入（未认证；每次操作前核对链上 UTXO）':'本页创建'}</dd>
+        <dt>数据来源</dt><dd>${r.source==='imported'?'导入':'本页创建'}</dd>
       </dl></details></div>
     </div>
   </div>`;
@@ -752,27 +727,25 @@ export function walletBody(x: Ctx): Raw {
         ${['kasware','kastle'].map(id=>html`<option value="${id}" ${preferred===id?'selected':''}>${id==='kasware'?'KasWare 扩展':'Kastle 扩展'}${options.some(o=>o.id===id)?'':'（未检测到）'}</option>`)}
         <option value="kaspire" ${preferred==='kaspire'?'selected':''}>Kaspire 手机 App（WalletConnect）</option>
       </select></label>
-      <p class="sub">KasWare / Kastle 需在扩展中切换到 ${x.net.label}；Kaspire 可在手机浏览器直接拉起 App，或用手机 Kaspire 扫码连接。页面只请求指定输入的签名，核对后由页面提交，不会读取私钥。</p>`
-    :tab==='key'?html`<div class="notice warn"><b>只使用一次性的 Testnet 10 私钥</b>。不要输入主网或有真实资产的私钥。私钥只放在本页内存，读取后立即清空输入框，不写入磁盘、不上传。</div>
-      <label class="field">TN10 私钥（64 位十六进制）<input id="wKey" type="password" autocomplete="off" data-lpignore="true" spellcheck="false" placeholder="粘贴后点击“连接”"></label><p class="small muted">刷新或关闭页面即清除，本页不提供私钥和测试币。</p>`
-    :html`<label class="field">收款地址（${x.net.addressPrefix}:q…）<input id="wAddr" autocomplete="off" spellcheck="false" placeholder="${x.net.addressPrefix}:q…"></label><p class="small muted">派奖和退款通常无需签名，执行者奖励发到此地址；少数退款尾批需要改用有资金的钱包辅助。</p>`}`;
+      <p class="sub">KasWare / Kastle 请切换到 ${x.net.label}；Kaspire 支持手机浏览器直接拉起或扫码连接。</p>`
+    :tab==='key'?html`<div class="notice warn"><b>仅限一次性 Testnet 10 测试私钥</b>，仅保存在当前页面内存。</div>
+      <label class="field">TN10 私钥（64 位十六进制）<input id="wKey" type="password" autocomplete="off" data-lpignore="true" spellcheck="false" placeholder="粘贴后点击“连接”"></label>`
+    :html`<label class="field">收款地址（${x.net.addressPrefix}:q…）<input id="wAddr" autocomplete="off" spellcheck="false" placeholder="${x.net.addressPrefix}:q…"></label><p class="small muted">用于接收派奖与退款的免签执行奖励。</p>`}`;
 }
 export function settingsBody(x: Ctx): Raw {
   const c=x.conn,isMainnet=x.net.key==='mainnet';
-  return html`<div class="notice">一般不需要修改。节点和索引默认指向当前数据源；只有出现连接问题或你有自己的节点时才需要改动。</div>
-    <div class="row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 14px;padding:10px 12px;background:var(--panel2);border-radius:10px;border:1px solid var(--line2)">
+  return html`<div class="row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:10px 12px;background:var(--panel2);border-radius:10px;border:1px solid var(--line2)">
       <div><b>当前网络：${x.net.label}</b><div class="small muted">${isMainnet?'默认主网 · 禁用内存私钥':'测试网络 · 可用测试私钥'}</div></div>
       <button type="button" class="btn sm" data-act="switchNet">切换到 ${isMainnet?'Testnet 10':'Kaspa 主网'}</button>
     </div>
     <div class="form">
       <label class="field full">${x.net.label} 节点（每行一个 wss:// 地址）<textarea id="sNodes" rows="2" spellcheck="false" autocomplete="off" style="background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;width:100%">${x.S.nodes}</textarea>
-        <small>${c.node===true?`已连接 · ${c.nodeUrl??''}`:c.node===false?'连接失败':'未连接'}。只有连接成功的新地址才会被保存，失败时保留原配置。</small></label>
+        <small>${c.node===true?`已连接 · ${c.nodeUrl??''}`:c.node===false?'连接失败':'未连接'}</small></label>
       <label class="field full">Rolling 索引 API（可选）<input id="sIndexer" value="${x.S.indexer??''}" spellcheck="false" autocomplete="off" placeholder="https://你的索引服务/${x.net.key}/rolling/v1/ProfileID">
-        <small>${c.indexer===true?(c.indexerStale?'索引暂不可用':'索引已连接'):c.indexer===false?'连接失败':'未配置'}。用于发现轮次和同步他人推进的状态；页面仍会向当前节点核对。留空可继续用分享链接。</small></label>
+        <small>${c.indexer===true?(c.indexerStale?'索引暂不可用':'索引已连接'):c.indexer===false?'连接失败':'未配置'}</small></label>
     </div>
     <p class="err" id="sErr" role="alert"></p><div id="sProbe" style="display:grid;gap:8px;margin-top:8px"></div>
     <h3 style="margin-top:16px">备份与恢复</h3>
-    <p class="sub">本机意图与轮次记录保存在当前浏览器。索引可帮助找回链上状态；换设备或清除浏览器数据前仍应导出。</p>
     <div class="btnrow"><button class="btn" data-act="exportAll">${ic('download')}导出全部轮次</button>
       <button class="btn" data-act="pickFile">${ic('download')}导入轮次文件</button><input id="sFile" type="file" accept="application/json,.json" hidden></div>
     <details style="margin-top:16px"><summary class="small muted">运行日志（不含私钥）</summary><div class="log" style="margin-top:8px;max-height:220px;overflow:auto;font:12px var(--mono)">

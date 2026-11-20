@@ -71,8 +71,8 @@ test('shipped bundle keeps the key hygiene hooks: password input, wallet wipe on
   assert.match(script,/type="password"/);assert.match(script,/autocomplete="off"/);
   assert.match(script,/pagehide/);
   assert.doesNotMatch(script,/localStorage\.setItem\([^)]*(secret|private|wKey)/i);
-  // user-facing page: the experiment banner and the footer profile id are in the static HTML, outside the script
+  // user-facing page: the footer profile id is in the static HTML, outside the script
   const shell=html.replace(script,'');
-  assert.match(shell,/class="exp-bar"/);assert.ok(shell.includes(`id="profileId">${TN10_PROFILE_ID}<`));
+  assert.doesNotMatch(shell,/class="exp-bar"/);assert.ok(shell.includes(`id="profileId">${TN10_PROFILE_ID}<`));
   for(const id of ['view','toasts','modal','mTitle','mBody','mFoot','mClose','nodeChip','walletBtn','settingsBtn','themeBtn','githubBtn','languageBtn'])assert.ok(shell.includes(`id="${id}"`),id);
 });

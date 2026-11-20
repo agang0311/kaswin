@@ -285,12 +285,14 @@ function chrome() {
   const netBtn=document.getElementById('netBtn');
   if(netBtn)netBtn.textContent=`${activeNet.key==='mainnet'?'Mainnet':'Testnet 10'} ⇄`;
   const footerNet=document.getElementById('footerNet'),fk=`${activeNet.key}|${profile?.id??TN10_PROFILE_ID}`;
-  if(footerNet&&fk!==lastFooterKey){lastFooterKey=fk;put(footerNet,html`${activeNet.label} · ${UNIT}<br>节点核对共识 · 钱包逐笔批准 · 扩展私钥不进入本页<br>候选 Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);}
+  if(footerNet&&fk!==lastFooterKey){lastFooterKey=fk;put(footerNet,html`${activeNet.label} · ${UNIT} · 节点核对共识 · Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);}
   const w=ctl?.state.wallet,b=$('walletBtn');
   b.className='wbtn'+(w?' on':'');
   b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?' · 仅收款':''}`:'连接钱包';
   document.querySelectorAll<HTMLElement>('.nav [data-go]').forEach(n=>{if(n.dataset.go===(S.view==='round'?'explore':S.view))n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
   document.documentElement.dataset.theme=S.theme;
+  const themeColor=document.getElementById('themeColorMeta');
+  if(themeColor)themeColor.setAttribute('content',S.theme==='dark'?'#081119':'#f4f7f9');
   const themeLabel=S.theme==='dark'?'切换为浅色模式':'切换为深色模式';
   if(lastThemeIcon!==S.theme){lastThemeIcon=S.theme;$('themeBtn').innerHTML=ic(S.theme==='dark'?'sun':'moon').s;}
   $('themeBtn').setAttribute('aria-label',themeLabel);$('themeBtn').title=themeLabel;
@@ -906,7 +908,48 @@ async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=fa
   finally{detailPolling=false;}
 }
 
+function installPwaManifest() {
+  try {
+    const link=document.getElementById('appManifest') as HTMLLinkElement|null;
+    if(!link||!/^https?:$/i.test(location.protocol))return;
+    const renderIcon=(size: number): string=>{
+      const c=document.createElement('canvas');c.width=c.height=size;
+      const g=c.getContext('2d');if(!g)return '';
+      const s=size/2500;g.scale(s,s);
+      g.fillStyle='#70C7BA';
+      g.beginPath();g.arc(1250,1250,1200,0,Math.PI*2);g.fill();
+      g.fillStyle='#FFFFFF';
+      const pts:[number,number][]=[[1575.1,524.7],[1309.9,564.4],[1387.2,1078.6],[831.8,650.1],[668.9,863.3],[1155.4,1237.5],[668.9,1613.7],[831.8,1826.9],[1387.2,1398.4],[1309.9,1912.6],[1575.1,1952.3],[1681.6,1237.5]];
+      g.beginPath();pts.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.fill();
+      return c.toDataURL('image/png');
+    };
+    const icon192=renderIcon(192),icon512=renderIcon(512);
+    const touchIcon=document.getElementById('appleTouchIcon') as HTMLLinkElement|null;
+    if(touchIcon&&icon192)touchIcon.href=icon192;
+    const startUrl=location.origin+location.pathname;
+    const scope=location.origin+location.pathname.replace(/[^/]*$/,'');
+    const manifest={
+      id:startUrl,
+      name:'Kaswin Rolling',
+      short_name:'Kaswin',
+      description:'Kaswin Rolling: decentralized lottery rounds on Kaspa L1 covenants.',
+      start_url:startUrl,
+      scope,
+      display:'standalone',
+      orientation:'portrait-primary',
+      background_color:'#081119',
+      theme_color:S.theme==='dark'?'#081119':'#f4f7f9',
+      icons:[
+        ...(icon192?[{src:icon192,sizes:'192x192',type:'image/png',purpose:'any maskable'}]:[]),
+        ...(icon512?[{src:icon512,sizes:'512x512',type:'image/png',purpose:'any maskable'}]:[]),
+      ],
+    };
+    link.href='data:application/manifest+json;charset=utf-8,'+encodeURIComponent(JSON.stringify(manifest));
+  } catch {}
+}
+
 async function main() {
+  installPwaManifest();
   profile=loadProfile(profileData);                 // the browser re-derives the Profile id (assertProfile)
   if(profile.id!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
   store=await openStore({genesis:activeNet.genesis,profileId:profile.id});

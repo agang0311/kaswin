@@ -3,14 +3,14 @@ import type {Round,Facts,Phase} from '../app/types.ts';
 export const UNIT='TKAS';
 /** Order = the order they are offered on the round page. `free` = no private key needed (the executor only supplies a reward address). */
 export const ACTION_INFO: Record<string,{title:string;verb:string;free:boolean;desc:string}>={
-  BUY:{title:'购买票',verb:'购买',free:false,desc:'票款进入合约，另付网络费。每满 256 笔购买，当前分片会自动封存，购买不受 256 笔上限限制。'},
-  CLOSE:{title:'封盘',verb:'封盘',free:false,desc:'结束售票。达到最低票数进入开奖；不足则转入退款；无人购买则退还押金。任何人可操作，发起者付网络费。'},
-  DRAW:{title:'开奖',verb:'开奖',free:false,desc:'用链上数据抽出中奖票，任何人都无法挑选或预测。需封盘后约 100 DAA（约 10 秒）。发起者付网络费。'},
-  TIMEOUT:{title:'超时转退款',verb:'转入退款',free:false,desc:'封盘后约 12 小时仍无人开奖时，任何人可把本轮转入退款。'},
-  PAY_OLD:{title:'派奖：处理已封存的分片',verb:'派奖',free:true,desc:'把前面已封存分片的票款并入奖金，一次最多 16 个分片。无需签名，任何人可执行，每个分片的执行者获得 1 TKAS 奖励。'},
-  PAY_SELF:{title:'派奖：结算',verb:'派奖',free:true,desc:'把奖金付给中奖者，押金退还创建者。无需签名，任何人可执行并获得 1 TKAS 执行奖励。'},
-  REFUND_OLD:{title:'退款：已封存的分片',verb:'退款',free:true,desc:'按购买记录批量退款，每批最多 32 条，每条扣 0.02 TKAS 执行费。无需签名，任何人可执行，执行费池扣除网络费后归执行者。'},
-  REFUND_SELF:{title:'退款：当前分片',verb:'退款',free:true,desc:'退还当前分片里剩余购买记录和创建者押金。通常无需签名，任何人可执行。'},
+  BUY:{title:'购买票',verb:'购买',free:false,desc:'票款进入合约；每满 256 笔自动封存分片。'},
+  CLOSE:{title:'封盘',verb:'封盘',free:false,desc:'结束售票；达标进开奖，不足转退款。'},
+  DRAW:{title:'开奖',verb:'开奖',free:false,desc:'封盘满 100 DAA 后按链上随机数抽出中奖票。'},
+  TIMEOUT:{title:'超时转退款',verb:'转入退款',free:false,desc:'封盘逾约 12 小时未开奖时转为全部退款。'},
+  PAY_OLD:{title:'派奖：处理已封存的分片',verb:'派奖',free:true,desc:'每批合并最多 16 个封存分片，每片奖励执行者 1 TKAS。'},
+  PAY_SELF:{title:'派奖：结算',verb:'派奖',free:true,desc:'派发奖金并退还押金，奖励执行者 1 TKAS。'},
+  REFUND_OLD:{title:'退款：已封存的分片',verb:'退款',free:true,desc:'每批退最多 32 条（每条扣 0.02 TKAS 归执行者）。'},
+  REFUND_SELF:{title:'退款：当前分片',verb:'退款',free:true,desc:'退还当前分片剩余记录并退回创建者押金。'},
 };
 export const ROLE_LABEL: Record<string,string>={MANAGER:'轮次状态（合约）',FROZEN:'已封存分片（合约）',WINNER:'中奖者',CREATOR:'创建者（押金退回）',EXECUTOR:'执行者奖励',
   BUYER_REFUND:'买家退款',CHANGE:'找零',REGISTRATION:'登记输出'};
