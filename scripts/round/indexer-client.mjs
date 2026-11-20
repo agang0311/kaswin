@@ -7,7 +7,7 @@ import {same} from '../core/lib/bytes.js';
 import {acceptedAt} from '../chain/chain.mjs';
 import {parseSpk} from '../chain/nodes.mjs';
 import {parseJson} from '../chain/json.mjs';
-import {roundFromText,interpretGenesis} from './round.mjs';
+import {roundFromText,applyRoundDelta,interpretGenesis} from './round.mjs';
 import {liveRound} from './prepare.mjs';
 import {TN10_NETWORK_ID,TN10_GENESIS,TN10_PROFILE_ID} from '../contract/protocol.mjs';
 const HASH=/^[0-9a-f]{64}$/;
@@ -30,9 +30,9 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
       check(response.ok,'INDEXER_UNAVAILABLE');
       const length=response.headers?.get('content-length');check(!length||(/^[0-9]+$/.test(length)&&BigInt(length)<=BigInt(maxBytes)),'INDEXER_RESPONSE_SIZE');
       const reader=response.body?.getReader();let text;
-      if(reader){let size=0;const chunks=[],decoder=new TextDecoder();
-        try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;check(size<=maxBytes,'INDEXER_RESPONSE_SIZE');chunks.push(decoder.decode(value,{stream:true}));}text=chunks.join('')+decoder.decode();}
-        finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+      if(reader){let size=0,finished=false;const chunks=[],decoder=new TextDecoder();
+        try{for(;;){const {done,value}=await reader.read();if(done){finished=true;break;}size+=value.byteLength;check(size<=maxBytes,'INDEXER_RESPONSE_SIZE');chunks.push(decoder.decode(value,{stream:true}));}text=chunks.join('')+decoder.decode();}
+        finally{if(!finished)await reader.cancel().catch(()=>{});reader.releaseLock();}
       }else{text=await response.text();check(new TextEncoder().encode(text).length<=maxBytes,'INDEXER_RESPONSE_SIZE');}
       let value;try{value=parseJson(text);}catch{throw new Error('INDEXER_RESPONSE_INVALID');}
       return scope(value,{networkId,genesisHash,profileId});
@@ -50,18 +50,44 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
       check(value.nextCursor==null||(typeof value.nextCursor==='string'&&value.nextCursor.length<=2048),'INDEXER_RESPONSE_INVALID');
       return {...value,nextCursor:value.nextCursor??null};
     },
-    exportRound(cid){
+    async roundDetail(cid){
       check(HASH.test(cid),'INDEXER_CID');
-      const hit=inflightExports.get(cid);if(hit)return hit;
-      const cached=recentExports.get(cid);
-      if(cached&&Date.now()-cached.at<4000)return Promise.resolve(cached.value);
-      const p=get(`/rounds/${cid}/export`,{maxBytes:64_000_000,reqTimeoutMs:Math.max(timeoutMs,45000)}).then(value=>{
-        check(value.cid===cid&&typeof value.roundText==='string'&&HASH.test(value.head?.txid)&&HASH.test(value.head?.acceptingBlock),'INDEXER_RESPONSE_INVALID');
-        if(recentExports.size>=8)recentExports.delete(recentExports.keys().next().value);
-        recentExports.set(cid,{at:Date.now(),value});
+      const value=await get(`/rounds/${cid}`);
+      check(value.cid===cid&&value.summary&&typeof value.summary==='object','INDEXER_RESPONSE_INVALID');
+      return value;
+    },
+    exportRound(cid,{sinceTxid=null,sinceStep=null}={}){
+      check(HASH.test(cid),'INDEXER_CID');
+      const hasSince=sinceTxid!=null&&HASH.test(sinceTxid);
+      const q=new URLSearchParams();
+      if(hasSince){
+        q.set('sinceTxid',sinceTxid);
+        if(Number.isSafeInteger(sinceStep)&&sinceStep>=0)q.set('sinceStep',String(sinceStep));
+      }
+      const key=hasSince?`${cid}:${sinceTxid}:${sinceStep??''}`:cid;
+      const hit=inflightExports.get(key);if(hit)return hit;
+      if(!hasSince){
+        const cached=recentExports.get(cid);
+        if(cached&&Date.now()-cached.at<20000)return Promise.resolve(cached.value);
+      }
+      const path=`/rounds/${cid}/export`+(hasSince?`?${q}`:'');
+      const p=get(path,{maxBytes:64_000_000,reqTimeoutMs:Math.max(timeoutMs,45000)}).then(value=>{
+        const mode=value.mode??'full';
+        check(value.cid===cid&&HASH.test(value.head?.txid)&&HASH.test(value.head?.acceptingBlock),'INDEXER_RESPONSE_INVALID');
+        if(mode==='unchanged'||mode==='ahead'){
+          // lightweight confirmation without transferring snapshot
+        }else if(mode==='delta'){
+          check(value.delta&&typeof value.delta==='object'&&HASH.test(value.base?.txid)&&Number.isSafeInteger(value.base?.step),'INDEXER_RESPONSE_INVALID');
+        }else if(mode==='full'){
+          check(typeof value.roundText==='string','INDEXER_RESPONSE_INVALID');
+          if(!hasSince){
+            if(recentExports.size>=8)recentExports.delete(recentExports.keys().next().value);
+            recentExports.set(cid,{at:Date.now(),value});
+          }
+        }else throw new Error('INDEXER_RESPONSE_INVALID');
         return value;
-      }).finally(()=>{inflightExports.delete(cid);});
-      inflightExports.set(cid,p);return p;
+      }).finally(()=>{inflightExports.delete(key);});
+      inflightExports.set(key,p);return p;
     },
     async resolveTxid(txid){check(HASH.test(txid),'INDEXER_TXID');const value=await get(`/txid/${txid}`);check(HASH.test(value.cid),'INDEXER_RESPONSE_INVALID');return value.cid;},
   });
@@ -82,9 +108,25 @@ export async function verifyDrawReceipt(round,rpc,profile) {
   return {txid:drawRc.txid,shard,record,ticket:sample.ticket};
 }
 
+/** Materialize a full, delta, or unchanged (with cached baseRound) Indexer export document into an offline-validated Round record. */
+export function materializeIndexedDocument(document,profile,{baseRound=null,network=TN10_NETWORK_ID}={}) {
+  if(document?.mode==='delta')return applyRoundDelta(baseRound,document,profile,{network});
+  if(document?.mode==='unchanged'){
+    check(baseRound&&typeof baseRound==='object'&&baseRound.cid===document.cid&&baseRound.receipts?.at(-1)?.txid===document.head?.txid,'DELTA_BASE_INVALID');
+    const cloned=structuredClone(baseRound);
+    const preimages=new Map();
+    for(const f of cloned.frozen??[])if(f?.redeemScript instanceof Uint8Array)preimages.set(hex(blake2b256(f.redeemScript)),f.redeemScript);
+    for(const sh of cloned.history?.shards??[])if(sh?.hash&&Array.isArray(sh.records)){
+      try{preimages.set(sh.hash,redeem({module:'frozen',records:sh.records},profile));}catch{}
+    }
+    return {round:cloned,preimages};
+  }
+  return {round:roundFromText(document.roundText,profile,{network}),preimages:null};
+}
+
 /** Reconstruct contexts from NODE-served spent inputs and witnesses, never REST input amounts/scripts. */
-export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}={}) {
-  scope(document,{networkId,genesisHash,profileId});const round=roundFromText(document.roundText,profile,{network:networkId}),head=document.head;
+export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID,baseRound=null}={}) {
+  scope(document,{networkId,genesisHash,profileId});const {round,preimages}=materializeIndexedDocument(document,profile,{baseRound,network:networkId}),head=document.head;
   check(round.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock)&&/^(0|[1-9][0-9]{0,24})$/.test(String(document.revision)),'INDEXER_RESPONSE_INVALID');
   check(!round.intent&&!round.pending.length&&!round.halted,'INDEXER_PENDING_STATE');
   const [evidence,daa]=await Promise.all([acceptedAt(rpc,head.txid,head.acceptingBlock),rpc.currentDaa()]);
@@ -130,18 +172,19 @@ export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10
     round.bought=totalTickets(state);
     if(result.terminal!=='EMPTY'&&(state.indices.length>0||state.records.length>0)){
       const supplied=new Map();
+      if(preimages)for(const [h,raw] of preimages)supplied.set(h,raw);
       for(const item of Array.isArray(document.historicalShards?.shards)?document.historicalShards.shards:[]){
-        if(item&&typeof item.hash==='string'&&typeof item.redeemHex==='string')supplied.set(item.hash,item.redeemHex);
+        if(item&&typeof item.hash==='string'&&typeof item.redeemHex==='string')supplied.set(item.hash,unhex(item.redeemHex));
       }
       const shards=state.indices.map(idx=>{
-        const redeemHex=supplied.get(idx.hash);
-        if(redeemHex){
-          const raw=unhex(redeemHex);
+        const raw=supplied.get(idx.hash);
+        if(raw){
           check(hex(blake2b256(raw))===idx.hash,'INDEXER_HISTORICAL_SHARD_HASH');
           const decoded=identify(raw,profile);
           check(decoded.module==='frozen','INDEXER_HISTORICAL_SHARD_MODULE');
           return {end:idx.end,hash:idx.hash,records:decoded.records.map(rec=>({end:rec.end,key:rec.key}))};
         }
+        if(document.mode==='delta'||document.mode==='unchanged')throw Object.assign(new Error('DELTA_MISSING_PREIMAGE'),{code:'DELTA_MISSING_PREIMAGE'});
         return {end:idx.end,hash:idx.hash,records:null};
       });
       round.history={

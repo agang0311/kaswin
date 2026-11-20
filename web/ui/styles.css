@@ -322,14 +322,38 @@ footer>*{min-width:0;max-width:100%}footer .mono{overflow-wrap:anywhere;word-bre
 /* The fixed bottom nav (<=720px) must never cover a control: keep scrolled-into-view / focused elements clear of it, and lift toasts above it. */
 @media(max-width:720px){html{scroll-padding-bottom:104px}main{padding-bottom:120px}.toasts{bottom:calc(86px + env(safe-area-inset-bottom))}dialog.modal>.toasts{bottom:18px}}
 
-/* ---- Shard & purchase dot-map drill-down (16 columns: 16x16 = 256) ---- */
-.matrix,.matrix.shards{grid-template-columns:repeat(16,minmax(0,1fr));gap:4px}
+/* ---- Shard pixel-map wall & 16x16 matrix drill-down ---- */
+.shard-wall{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;max-width:520px;width:100%;margin:10px 0}
+.shard-card{display:block;padding:0;aspect-ratio:1;min-width:0;border-radius:3px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;position:relative;transition:transform .12s,border-color .12s,box-shadow .12s}
+.shard-card:hover{transform:scale(1.25);z-index:5;border-color:var(--kas);box-shadow:0 3px 10px rgba(0,0,0,.4)}
+.shard-card.active{outline:2px solid var(--text);outline-offset:1px;border-color:var(--kas);transform:scale(1.2);z-index:6}
+.shard-card.me{border-color:var(--kas);box-shadow:0 0 0 1px var(--kas)}
+.shard-card.w{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 0 8px var(--gold);z-index:4}
+.shard-card.done{opacity:.78}
+.shard-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;image-rendering:crisp-edges;border-radius:2px;background:var(--panel3)}
+
+.matrix{grid-template-columns:repeat(16,minmax(0,1fr));gap:4px;max-width:520px;width:100%}
 .matrix .cell{min-width:0;padding:0;line-height:1;letter-spacing:-.04em}
 .matrix .cell.done{background:var(--panel3);color:var(--muted);border:1px solid var(--line2)}
 .matrix .cell.refunded{opacity:.58}
 .matrix .cell.me{box-shadow:inset 0 0 0 2px rgba(255,255,255,.85)}
 :root[data-theme=light] .matrix .cell.me{box-shadow:inset 0 0 0 2px #0d1b26}
+.matrix .cell.blank{grid-column:auto;background:var(--panel2);border:1px solid var(--line);cursor:default;pointer-events:none;opacity:.42}
+.matrix.pixel{gap:0;border:1px solid var(--line2);border-radius:4px}
+.matrix.pixel .cell{border-radius:0;font-size:0;color:transparent}
+.matrix.pixel .cell.me{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55)}
+:root[data-theme=light] .matrix.pixel .cell.me{box-shadow:inset 0 0 0 1px rgba(13,27,38,.55)}
+.matrix.pixel .cell.w{outline:2px solid #fff;outline-offset:-2px;box-shadow:0 0 8px var(--gold);z-index:4}
+.matrix.pixel .cell.active{outline:2px solid var(--text);outline-offset:-1px;transform:scale(1.22);z-index:6}
+.matrix.pixel .cell.blank{border:0;opacity:1;background:var(--panel2);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--line) 40%,transparent)}
+
 .shard-detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line2)}
 .shard-head{display:flex;gap:8px 10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .shard-head h4{margin:0;font-size:14px}
-@media(max-width:720px){.matrix,.matrix.shards{grid-template-columns:repeat(16,minmax(0,1fr));gap:3px}.matrix .cell{border-radius:4px;font-size:clamp(7px,2vw,10px)}}
+@media(max-width:720px){
+  .shard-wall{grid-template-columns:repeat(16,minmax(0,1fr));gap:2px}
+  .matrix{grid-template-columns:repeat(16,minmax(0,1fr));gap:3px}
+  .matrix .cell{border-radius:4px;font-size:clamp(7px,2vw,10px)}
+  .matrix.pixel{gap:0}
+  .matrix.pixel .cell{border-radius:0;font-size:0}
+}

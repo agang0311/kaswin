@@ -311,10 +311,12 @@ function intentPanel(r: Round,x: Ctx): Raw|'' {
       ${canDiscard?html`<button class="btn sm warn" data-act="discard" ${busy?'disabled':''}>放弃这笔</button>`:''}
     </div></div>`;
 }
-function verifyPanel(v: VerifyState|null): Raw|'' {
+function verifyPanel(v: VerifyState|null,disc: DiscoveredRound|null=null,currentTickets: number|null=null): Raw|'' {
   if(!v)return '';
-  if(v.state==='checking')return html`<div class="notice">正在向节点核对链上状态…</div>`;
-  if(v.state==='partial')return html`<div class="notice warn">已同步部分进度，后台正在继续追赶…</div>`;
+  const hasNewerDisc=disc&&currentTickets!=null&&(disc.tickets??0)>currentTickets;
+  const hint=hasNewerDisc?`（索引最新已达 ${(disc!.tickets??0).toLocaleString()} 张 · ${disc!.shards??0} 片）`:'';
+  if(v.state==='checking')return html`<div class="notice">正在向节点核对链上状态${hint}…</div>`;
+  if(v.state==='partial')return html`<div class="notice warn">已同步部分进度，后台正在继续追赶${hint}…</div>`;
   if(v.state==='ok')return html`<div class="notice ok">已向节点核对（${new Date(v.at??0).toLocaleTimeString()}）</div>`;
   const transient=['INDEXER_TIMEOUT','INDEXER_UNAVAILABLE','RPC_TIMEOUT','NODE_REQUIRED','NODE_CLOSED'].includes(v.code??'');
   return html`<div class="notice ${transient?'warn':'bad'}"><b>${transient?'同步未完成':'与链上状态不一致'}</b>：${errText(v.code??'')}</div>`;
@@ -340,7 +342,11 @@ function txTable(D: Detail,x: Ctx): Raw {
     ${total>shown.length?html`<div class="btnrow"><span class="small muted">最近 ${shown.length} / ${total.toLocaleString()} 笔</span><button type="button" class="btn sm" data-moretx="100">再加载 100 笔</button><button type="button" class="btn sm" data-moretx="all">显示全部</button></div>`:''}
     ${omittedParts.length?html`<p class="small muted" style="margin-top:8px">已省略 ${omittedParts.join('、')}（见上方分片点图）。</p>`:''}`;
 }
-const DOT_COLORS=['#49eacb','#60a5fa','#a78bfa','#f472b6','#f59e0b','#34d399','#f87171','#22d3ee','#c084fc','#fbbf24','#4ade80','#fb7185'];
+const DOT_COLORS=['#49eacb','#60a5fa','#a78bfa','#f472b6','#f59e0b','#34d399','#f87171','#22d3ee','#c084fc','#fbbf24','#4ade80','#fb7185','#38bdf8','#e879f9','#a3e635','#fb923c'];
+type Rgb=readonly [number,number,number];
+const hexRgb=(h: string): Rgb=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const DOT_RGBS: readonly Rgb[]=DOT_COLORS.map(hexRgb);
+const WIN_RGB: Rgb=[251,191,36];
 const SHARD_META: Record<ShardStatus,{label: string;tone: string;color: string}>={
   active:{label:'当前分片',tone:'t-mint',color:'var(--kas)'},
   frozen:{label:'已封存',tone:'t-violet',color:'var(--sky)'},
@@ -349,9 +355,49 @@ const SHARD_META: Record<ShardStatus,{label: string;tone: string;color: string}>
   refunded:{label:'已退款',tone:'t-muted',color:'var(--violet)'},
 };
 const rangeText=(start: number,end: number): string=>start===end?`${start}`:`${start}–${end}`;
-function makeKeyColor(recs: ShardRecordView[]): (k: string)=>string {
-  const m=new Map<string,string>();
-  return k=>{let c=m.get(k);if(!c){c=DOT_COLORS[m.size%DOT_COLORS.length] as string;m.set(k,c);}return c;};
+function keyColorIdx(key: string): number {
+  let h=0x811c9dc5;
+  for(let i=0;i<key.length;i++){h^=key.charCodeAt(i);h=Math.imul(h,0x01000193);}
+  return (h>>>0)%DOT_COLORS.length;
+}
+const keyColor=(key: string): string=>DOT_COLORS[keyColorIdx(key)] as string;
+/** Paint each 16x16 shard thumbnail canvas directly from shard purchase records; 1 record = 1 sharp pixel. */
+export function paintShardCanvases(root: ParentNode,D: Detail|null,theme='dark'): void {
+  if(!D?.shards?.length)return;
+  const canvases=root.querySelectorAll<HTMLCanvasElement>('canvas[data-shard-canvas]');
+  if(!canvases.length)return;
+  const byIdx=new Map<number,ShardView>(D.shards.map(s=>[s.index,s]));
+  const draw=D.r.draw??null,light=theme==='light';
+  const bgA: Rgb=light?[232,240,247]:[11,23,34],bgB: Rgb=light?[221,232,242]:[15,30,44];
+  const archivedPaid: Rgb=light?[56,161,148]:[52,148,142],archivedRef: Rgb=light?[139,122,184]:[124,110,168];
+  const setPx=(buf: Uint8ClampedArray,pos: number,rgb: Rgb,alpha=1)=>{
+    const off=pos*4,bg=(((pos&15)+(pos>>4))&1)?bgB:bgA;
+    if(alpha>=1){buf[off]=rgb[0];buf[off+1]=rgb[1];buf[off+2]=rgb[2];}
+    else{buf[off]=Math.round(bg[0]+(rgb[0]-bg[0])*alpha);buf[off+1]=Math.round(bg[1]+(rgb[1]-bg[1])*alpha);buf[off+2]=Math.round(bg[2]+(rgb[2]-bg[2])*alpha);}
+    buf[off+3]=255;
+  };
+  for(const cv of canvases){
+    const idx=Number(cv.dataset.shardCanvas),sh=byIdx.get(idx);
+    if(!sh)continue;
+    const ctx2d=cv.getContext('2d');
+    if(!ctx2d)continue;
+    const img=ctx2d.createImageData(16,16),buf=img.data;
+    for(let p=0;p<256;p++)setPx(buf,p,((p&15)+(p>>4))&1?bgB:bgA,1);
+    if(sh.records===null){
+      const mark=sh.status==='refunded'?archivedRef:archivedPaid;
+      for(let y=2;y<14;y++)for(let x=2;x<14;x++){
+        const edge=x===2||x===13||y===2||y===13,check=((x+y)&1)===0&&x>=4&&x<=11&&y>=4&&y<=11;
+        if(edge||check)setPx(buf,y*16+x,mark,edge?.75:.45);
+      }
+    }else{
+      for(const rec of sh.records){
+        if(rec.index<0||rec.index>=256)continue;
+        const isWin=!!draw&&draw.shard===sh.index&&draw.record===rec.index;
+        setPx(buf,rec.index,isWin?WIN_RGB:(DOT_RGBS[keyColorIdx(rec.key)] as Rgb),!isWin&&rec.refunded?.45:1);
+      }
+    }
+    ctx2d.putImageData(img,0,0);
+  }
 }
 function buyReceiptFor(sh: ShardView,rec: ShardRecordView,D: Detail): Receipt|null {
   const shards=D.shards;if(!shards)return null;
@@ -432,12 +478,13 @@ function purchaseTip(rec: ShardRecordView|null,sh: ShardView,D: Detail,x: Ctx): 
   </div>`;
 }
 function selectedShardPanel(sh: ShardView,D: Detail,x: Ctx): Raw {
-  const meta=SHARD_META[sh.status],recs=sh.records,draw=D.r.draw??null;
+  const meta=SHARD_META[sh.status],recs=sh.records,draw=D.r.draw??null,pixelMode=!!x.S.pixelMode;
+  const modeSwitch=recs&&recs.length?html`<div class="seg" role="group" aria-label="点图模式"><button type="button" data-pixelmode="0" aria-pressed="${!pixelMode}">编号</button><button type="button" data-pixelmode="1" aria-pressed="${pixelMode}">纯像素</button></div>`:'';
   const header=html`<div class="shard-head"><span class="badge ${meta.tone}">${meta.label}</span>
     <h4>${sh.kind==='active'?'当前分片':`封存分片 #${sh.index+1}`}</h4>
     <span class="small muted">票号 #${rangeText(sh.startTicket,sh.endTicket)} · ${sh.tickets.toLocaleString()} 张${recs?` · ${recs.length} 笔购买`:''}</span>
     ${sh.mineCount>0?html`<span class="tag kas">我持有 ${sh.mineCount.toLocaleString()} 张</span>`:''}<span class="spacer"></span>
-    <button type="button" class="btn sm" data-shard="close">收起分片</button></div>`;
+    ${modeSwitch}<button type="button" class="btn sm" data-shard="close">收起分片</button></div>`;
   if(recs===null){
     const shardRefunds=sh.status==='refunded'||sh.status==='refunding'?shardRefundReceipts(sh,D):[];
     return html`<div class="shard-detail">${header}
@@ -447,16 +494,18 @@ function selectedShardPanel(sh: ShardView,D: Detail,x: Ctx): Raw {
   if(!recs.length)return html`<div class="shard-detail">${header}<p class="muted small">这个分片还没有购买记录。</p></div>`;
   const addrCache=new Map<string,string>();
   const addrOf=(k: string): string=>{let a=addrCache.get(k);if(!a){a=x.ex.addrOfKey(k)??k;addrCache.set(k,a);}return a;};
-  const colorOf=makeKeyColor(recs),selIdx=x.S.purchase??null,selRec=selIdx!=null?recs.find(r=>r.index===selIdx)??null:null;
+  const selIdx=x.S.purchase??null,selRec=selIdx!=null?recs.find(r=>r.index===selIdx)??null:null;
   const cells=recs.map(rec=>{
     const isWin=!!draw&&draw.shard===sh.index&&draw.record===rec.index,isSel=selIdx===rec.index,addr=addrOf(rec.key);
     const range=rangeText(rec.startTicket,rec.endTicket),st=isWin?` · 🏆 中奖票 #${draw.ticket+1}`:rec.refunded?' · 已退款':'';
     const title=`第 ${rec.index+1} 笔 · 票号 #${range} (${rec.count} 张) · 买家 ${shortHash(addr,8,6)}${rec.mine?' (我)':''}${st}`;
-    return html`<button type="button" class="cell${isWin?' w':''}${rec.mine?' me':''}${rec.refunded?' refunded':''}${isSel?' active':''}" style="--c:${colorOf(rec.key)}" data-purchase="${rec.index}" aria-pressed="${isSel}" aria-label="第 ${rec.index+1} 笔购买" title="${title}">${isWin?'🏆':rec.index+1}</button>`;
+    return html`<button type="button" class="cell${isWin?' w':''}${rec.mine?' me':''}${rec.refunded?' refunded':''}${isSel?' active':''}" style="--c:${keyColor(rec.key)}" data-purchase="${rec.index}" aria-pressed="${isSel}" aria-label="第 ${rec.index+1} 笔购买" title="${title}">${isWin?'🏆':rec.index+1}</button>`;
   });
+  const emptyCount=Math.max(0,256-recs.length);
+  const blanks=emptyCount>0?Array.from({length:emptyCount},()=>html`<span class="cell blank" aria-hidden="true"></span>`):[];
   const legend=draw&&draw.shard===sh.index?html`<div class="legend"><span><i style="--c:var(--gold)"></i>中奖票 #${draw.ticket+1}（第 ${draw.record+1} 笔）</span></div>`:'';
   return html`<div class="shard-detail">${header}
-    <div class="matrix" role="region" aria-label="分片购买点图">${cells}</div>
+    <div class="matrix${pixelMode?' pixel':''}" role="region" aria-label="分片购买点图">${cells}${blanks}</div>
     ${purchaseTip(selRec,sh,D,x)}
     ${legend}
   </div>`;
@@ -477,7 +526,7 @@ function shardSection(D: Detail,x: Ctx): Raw {
   const cells=shards.map(sh=>{
     const meta=SHARD_META[sh.status],isSel=sel?.index===sh.index,done=sh.records===null,isWinShard=!!draw&&draw.shard===sh.index;
     const title=`分片 #${sh.index+1}（${meta.label}）· 票号 #${rangeText(sh.startTicket,sh.endTicket)}（${sh.tickets.toLocaleString()} 张${sh.recordCount!=null?` / ${sh.recordCount} 笔`:''}）${isWinShard?` · 🏆 含中奖票 #${draw.ticket+1}`:''}${sh.mineCount>0?` · 我持有 ${sh.mineCount} 张`:''}`;
-    return html`<button type="button" class="cell${isWinShard?' w':''}${done?' done':''}${sh.mineCount>0?' me':''}${isSel?' active':''}" style="--c:${done?'var(--panel3)':meta.color}" data-shard="${sh.index}" aria-pressed="${isSel}" aria-label="分片 ${sh.index+1}" title="${title}">${isWinShard?'🏆':sh.index+1}</button>`;
+    return html`<button type="button" class="shard-card${isWinShard?' w':''}${done?' done':''}${sh.mineCount>0?' me':''}${isSel?' active':''}" style="--c:${done?'var(--panel3)':meta.color}" data-shard="${sh.index}" aria-pressed="${isSel}" aria-label="分片 ${sh.index+1}" title="${title}"><canvas class="shard-canvas" width="16" height="16" data-shard-canvas="${sh.index}" aria-hidden="true"></canvas></button>`;
   });
   const legend=html`<div class="legend">
     ${counts.active?html`<span><i style="--c:${r.terminal?'var(--sky)':'var(--kas)'}"></i>${r.terminal?'尾部分片':'当前分片'}</span>`:''}
@@ -487,8 +536,8 @@ function shardSection(D: Detail,x: Ctx): Raw {
     ${counts.mine?html`<span><i style="--c:var(--kas);box-shadow:inset 0 0 0 1px #fff"></i>含我的票</span>`:''}
     ${draw?html`<span><i style="--c:var(--gold)"></i>中奖分片 #${draw.shard+1}（中奖票 #${draw.ticket+1}）</span>`:''}
   </div>`;
-  return html`<p class="small muted" style="margin:0 0 8px">${r.terminal?`本轮已结束（${TERMINAL_LABEL[r.terminal]??r.terminal}），`:''}共 ${shards.length} 个分片（封存 ${counts.frozen} 个）· ${f.tickets.toLocaleString()} 张票 · 点击任意分片点图查看明细</p>
-    <div class="matrix shards" role="region" aria-label="分片分布">${cells}</div>
+  return html`<p class="small muted" style="margin:0 0 8px">${r.terminal?`本轮已结束（${TERMINAL_LABEL[r.terminal]??r.terminal}），`:''}共 ${shards.length} 个分片（封存 ${counts.frozen} 个）· ${f.tickets.toLocaleString()} 张票 · 点击任意分片点图查看 16×16 像素明细</p>
+    <div class="shard-wall" role="region" aria-label="分片分布">${cells}</div>
     ${legend}
     ${sel?selectedShardPanel(sel,D,x):''}`;
 }
@@ -553,11 +602,12 @@ export function roundView(x: Ctx): Raw {
   const mine=D.mine,ownerAddr=x.ex.addrOfKey(f.owner);
   // The creation transaction is the GENESIS receipt. `r.origin` is NOT it: it is the output GENESIS spent as its first input (the covenant's genesis outpoint, created by an earlier transaction).
   const genesisTx=r.receipts.find(t=>t.action==='GENESIS');
+  const disc=x.discovered?.find(d=>d.cid===r.cid)??null;
   const detailVerifyNotice=D.preview
     ?(x.verify?.state==='bad'?verifyPanel(x.verify):x.conn.node===false
       ?html`<div class="notice warn">当前节点未连接，先展示本地缓存的轮次明细；连接节点并核对通过后即可操作。</div>`
       :html`<div class="notice">已加载本地/索引明细快照，正在后台向节点核对链上共识状态…</div>`)
-    :(x.verify?verifyPanel(x.verify):(!r.terminal&&!r.intent&&x.conn.node===null)
+    :(x.verify?verifyPanel(x.verify,disc,f.tickets):(!r.terminal&&!r.intent&&x.conn.node===null)
       ?html`<div class="notice">已加载本地存储记录，正在后台连接节点核对最新链上状态…</div>`
       :'');
   return html`

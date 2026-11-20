@@ -7,7 +7,7 @@ import {buildAction,buildGenesis} from '../contracts/transactions.mjs';
 import * as S from '../contracts/state.mjs';
 import {openMemoryWallet} from '../../scripts/wallet/wallet.mjs';
 import {emptyRound,advanceRound,availableActions,describeRound,shardCatalog,roundToText,roundFromText,validateRound,interpretGenesis,ROUND_VERSION} from '../../scripts/round/round.mjs';
-import {encodeTagged,decodeTagged} from '../../scripts/store/codec.mjs';
+import {encodeTagged,decodeTagged,MAX_STATE_TEXT} from '../../scripts/store/codec.mjs';
 import {profileFromData,profileToData} from '../../scripts/contract/profile-data.mjs';
 import {MemoryStore,RoundStore} from '../../scripts/store/round-store.mjs';
 import {parseTkas,formatTkas,parseUint} from '../../web/ui/format.mjs';
@@ -38,7 +38,7 @@ test('tagged codec is lossless for bigint/bytes and rejects malformed tags',()=>
   const v={a:123456789012345678901234n,b:Uint8Array.of(1,2,255),c:[{d:0n}]};
   assert.deepEqual(decodeTagged(encodeTagged(v)),v);
   assert.throws(()=>decodeTagged('{"a":{"$bigint":"-1"}}'),/STATE_BIGINT/);assert.throws(()=>decodeTagged('{"a":{"$bytes":"zz"}}'));
-  assert.throws(()=>decodeTagged('x'.repeat(13_000_000)),/STATE_TEXT_SIZE/);
+  assert.throws(()=>decodeTagged('x'.repeat(MAX_STATE_TEXT+1)),/STATE_TEXT_SIZE/);
 });
 test('export/import round trip is data only: marked imported, offline-validated, tampering rejected',()=>{
   const f=fixture({module:'win',cnt:2,local:3,p:0}),r=record(f);

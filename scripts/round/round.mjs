@@ -9,7 +9,7 @@ import * as S from '../core.mjs';
 import {identify,redeem,rootId,scriptHash,verifyManager,decodeSpend,drawSample} from '../core.mjs';
 import {interpretAccepted} from '../core.mjs';
 import {TN10_NETWORK_ID,TN10_PROFILE_ID} from '../contract/protocol.mjs';
-import {encodeTagged,decodeTagged} from '../store/codec.mjs';
+import {encodeTagged,decodeTagged,decodeTaggedValue} from '../store/codec.mjs';
 import {daaDuration} from '../../web/ui/format.mjs';
 const {check,hex,unhex}=S;
 export const ROUND_VERSION=1;
@@ -301,11 +301,64 @@ export function validateRound(r,profile,{allowIntent=true,network=TN10_NETWORK_I
   }
   return s;
 }
-export const roundToText=round=>encodeTagged(round);
+const packReceipt=rc=>{
+  if(!rc||typeof rc!=='object'||rc.finalized===false)return rc;
+  if(rc.action==='BUY')return [rc.txid,rc.feeSompi];
+  return rc.acceptingBlock?[rc.txid,rc.action,rc.feeSompi,rc.acceptingBlock]:[rc.txid,rc.action,rc.feeSompi];
+};
+const unpackReceipt=rc=>{
+  if(!Array.isArray(rc))return rc;
+  if(rc.length===2)return {txid:rc[0],action:'BUY',accepted:true,candidate:false,finalized:true,feeSompi:rc[1]};
+  if(rc.length===3||(rc.length===4&&typeof rc[3]==='string'))return {txid:rc[0],action:rc[1],accepted:true,candidate:false,finalized:true,feeSompi:rc[2],...(rc[3]!=null?{acceptingBlock:rc[3]}:{})};
+  return null;
+};
+/** Apply a KCI incremental delta onto a verified local base round, reusing cached frozen redeemScripts and offline-validating the merged result. */
+export function applyRoundDelta(baseRound,document,profile,{network=TN10_NETWORK_ID}={}) {
+  check(baseRound&&typeof baseRound==='object'&&!baseRound.pending?.length&&!baseRound.intent,'DELTA_BASE_INVALID');
+  check(document&&document.mode==='delta'&&document.cid===baseRound.cid&&document.delta&&typeof document.delta==='object','DELTA_SHAPE');
+  const lastRc=baseRound.receipts?.at(-1);
+  check(lastRc&&document.base?.txid===lastRc.txid&&document.base?.step===baseRound.receipts.length,'DELTA_ANCHOR_MISMATCH');
+  const d=decodeTaggedValue(document.delta);
+  check(d&&typeof d==='object'&&Array.isArray(d.receipts)&&Array.isArray(d.frozen),'DELTA_SHAPE');
+  const preimages=new Map();
+  for(const f of baseRound.frozen??[])if(f?.redeemScript instanceof Uint8Array)preimages.set(hex(blake2b256(f.redeemScript)),f.redeemScript);
+  for(const sh of baseRound.history?.shards??[])if(sh?.hash&&Array.isArray(sh.records)){
+    try{preimages.set(sh.hash,redeem({module:'frozen',records:sh.records},profile));}catch{}
+  }
+  if(d.newPreimages!=null){
+    check(typeof d.newPreimages==='object'&&!Array.isArray(d.newPreimages),'DELTA_PREIMAGES');
+    for(const [h,rh] of Object.entries(d.newPreimages)){
+      hash32(h,'DELTA_PREIMAGES');check(typeof rh==='string','DELTA_PREIMAGES');
+      const raw=unhex(rh);
+      check(hex(blake2b256(raw))===h,'DELTA_PREIMAGE_HASH');
+      preimages.set(h,raw);
+    }
+  }
+  const frozen=d.manager===null?[]:d.frozen.map(f=>{
+    check(f&&typeof f==='object','DELTA_FROZEN');
+    const sh=hash32(f.scriptHash,'DELTA_FROZEN');
+    const redeemScript=preimages.get(sh);
+    if(!redeemScript)throw Object.assign(new Error('DELTA_MISSING_PREIMAGE'),{code:'DELTA_MISSING_PREIMAGE'});
+    return {outpoint:f.outpoint,value:f.value,utxoDaa:f.utxoDaa,spk:f.spk,cid:f.cid??baseRound.cid,redeemScript};
+  });
+  const newReceipts=d.receipts.map(unpackReceipt);
+  const merged={
+    v:baseRound.v,network:baseRound.network,profileId:baseRound.profileId,cid:baseRound.cid,origin:baseRound.origin,settings:baseRound.settings,
+    manager:d.manager??null,frozen,accepting:d.accepting??null,step:d.step,buys:d.buys,bought:d.bought,fees:d.fees,terminal:d.terminal??null,
+    receipts:baseRound.receipts.concat(newReceipts),pending:[],halted:null,source:'imported',intent:null,
+  };
+  if(d.draw!=null)merged.draw=d.draw;
+  else if(baseRound.draw!=null)merged.draw=baseRound.draw;
+  check(merged.step===merged.receipts.length&&merged.step>baseRound.step,'DELTA_STEP');
+  validateRound(merged,profile,{network});
+  return {round:merged,preimages};
+}
+export const roundToText=round=>encodeTagged(Array.isArray(round?.receipts)?{...round,receipts:round.receipts.map(packReceipt)}:round);
 /** Import: parse + validate. Result is marked imported/unauthenticated and can never carry a trusted live status. */
 export function roundFromText(text,profile,{network=TN10_NETWORK_ID}={}) {
-  const r=decodeTagged(text);
-  check(r&&typeof r==='object'&&!Array.isArray(r),'ROUND_SHAPE');
+  const raw=decodeTagged(text);
+  check(raw&&typeof raw==='object'&&!Array.isArray(raw),'ROUND_SHAPE');
+  const r=Array.isArray(raw.receipts)?{...raw,receipts:raw.receipts.map(unpackReceipt)}:raw;
   validateRound(r,profile,{network});
   return {...r,source:'imported'};
 }

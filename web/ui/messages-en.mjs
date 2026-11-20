@@ -881,4 +881,13 @@ export const EN = [
   ['，仅保存在当前页面内存。', ', kept only in page memory.'],
   ['用于接收派奖与退款的免签执行奖励。', 'Used to receive no-sign executor rewards for payouts and refunds.'],
   ['{0} · {1} · 节点核对共识 · Profile ', '{0} · {1} · Node-verified consensus · Profile '],
+  ['点图模式', 'Dot-map mode'],
+  ['编号', 'Numbers'],
+  ['纯像素', 'Pixels'],
+  ['已回收', 'Reclaimed'],
+  ['共 {0} 个分片（封存 {1} 个）· {2} 张票 · 点击任意分片点图查看 16×16 像素明细', '{0} shards ({1} sealed) · {2} tickets · Click any shard pixel map for 16×16 details'],
+  ['{0}共 {1} 个分片（封存 {2} 个）· {3} 张票 · 点击任意分片点图查看 16×16 像素明细', '{0}{1} shards ({2} sealed) · {3} tickets · Click any shard pixel map for 16×16 details'],
+  ['正在向节点核对链上状态{0}…', 'Verifying on-chain status with node{0}…'],
+  ['已同步部分进度，后台正在继续追赶{0}…', 'Partially synced; catching up in background{0}…'],
+  ['（索引最新已达 {0} 张 · {1} 片）', ' (indexer latest: {0} tickets · {1} shards)'],
 ];

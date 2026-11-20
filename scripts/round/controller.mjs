@@ -18,7 +18,7 @@ import {spkToAddress} from '../wallet/address.mjs';
 import {openMemoryWallet,publicRecipient} from '../wallet/wallet.mjs';
 import {openExtensionWallet} from '../wallet/extension-wallet.mjs';
 import {openKaspireWallet} from '../wallet/kaspire-wallet.mjs';
-import {createIndexerClient} from './indexer-client.mjs';
+import {createIndexerClient,materializeIndexedDocument} from './indexer-client.mjs';
 import {discoverRestRollingRounds,syncRoundThreeTier} from './catchup.mjs';
 import {sanitizeDiscoveredRounds} from '../store/round-store.mjs';
 import {TN10} from '../chain/tn10.mjs';
@@ -88,7 +88,7 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       }
       activeWatch.pendingWake=false;
       try{
-        await api.syncRound(cid,{force:true,timeBudgetMs:5000,skipIndexer:true});
+        await api.syncRound(cid,{force:true,timeBudgetMs:5000});
         wakeRetries.delete(triggerKey);
       }catch{
         const count=wakeRetries.get(triggerKey)??0;
@@ -277,15 +277,22 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
     async checkIndexer(base) {
       const epoch=++indexerEpoch;
       if(!String(base).trim()){indexChecks.clear();c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discoveredSource=c.discovered.length?'cache':null;emit();return null;}
+      const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher,networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id});
       try {
-        const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher,networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id});
-        const [info,page]=await Promise.all([client.info(),client.rounds()]);
+        const infoPromise=client.info(),roundsPromise=client.rounds();
+        const info=await infoPromise;
+        if(epoch!==indexerEpoch)return info;
+        indexChecks.clear();c.indexer=client;c.indexerInfo=info;emit();
+        const page=await roundsPromise;
         if(epoch!==indexerEpoch)return info;
         const rounds=persistDiscovery(page.rounds,'indexer',client.base);
-        indexChecks.clear();c.indexer=client;c.indexerInfo=info;c.indexerCursor=page.nextCursor;c.discovered=rounds;c.discoveredSource='indexer';c.discoveredCachedAt=null;
+        c.indexerCursor=page.nextCursor;c.discovered=rounds;c.discoveredSource='indexer';c.discoveredCachedAt=null;
         log('info',`Rolling 索引已连接：${client.base}（只读发现，状态由当前节点核对）`);emit();return info;
       } catch(e) {
-        if(epoch===indexerEpoch&&c.discovered.length&&!c.discoveredSource)c.discoveredSource='cache';
+        if(epoch===indexerEpoch){
+          if(c.indexer===client){c.indexer=null;c.indexerInfo=null;}
+          if(c.discovered.length&&!c.discoveredSource)c.discoveredSource='cache';
+        }
         log('error',`连接索引失败：${codeOf(e)}${e?.message&&e.message!==codeOf(e)?` — ${String(e.message).slice(0,160)}`:''}`);throw e;
       }
     },
@@ -346,10 +353,26 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       const client=c.indexer;
       if(client){
         try{
-          const doc=await client.exportRound(cid);
-          const fresh=roundFromText(doc.roundText,profile,{network:net.networkId});
+          const canDelta=!!(cached&&!cached.pending?.length&&cached.receipts?.length>0&&cached.receipts.length===cached.step&&/^[0-9a-f]{64}$/.test(cached.receipts.at(-1)?.txid??''));
+          let doc=canDelta
+            ?await client.exportRound(cid,{sinceTxid:cached.receipts.at(-1).txid,sinceStep:cached.receipts.length})
+            :await client.exportRound(cid);
+          if((doc.mode==='unchanged'||doc.mode==='ahead')&&cached)return cached;
+          let fresh;
+          if(doc.mode==='delta'){
+            try{fresh=materializeIndexedDocument(doc,profile,{baseRound:cached,network:net.networkId}).round;}
+            catch(e){
+              const code=e?.code??e?.safeCode??e?.message??'';
+              if(code.startsWith('DELTA_')){
+                doc=await client.exportRound(cid);
+                fresh=roundFromText(doc.roundText,profile,{network:net.networkId});
+              }else throw e;
+            }
+          }else{
+            fresh=roundFromText(doc.roundText,profile,{network:net.networkId});
+          }
           if(fresh.cid===cid&&!fresh.intent&&!fresh.pending?.length){
-            void roundStore.savePreview?.(cid,doc.roundText);
+            void roundStore.savePreview?.(cid,doc.mode==='delta'?roundToText(fresh):doc.roundText);
             return fresh;
           }
         }catch{}
@@ -373,12 +396,13 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
           try{await liveRound(rpc,initial.round,profile,{targets:initial.round.frozen});markSynced(initial.round);return {cid:initial.round.cid,unchanged:true,source:'cache',steps:0,terminal:initial.round.terminal};}catch{}
         }
       }
-      let expectedRev=initial?.revision??null,progressChain=Promise.resolve();
+      const sigOf=r=>`${r.cid}|${r.step}|${r.terminal??''}|${r.manager?.outpoint?.transactionId??'-'}:${r.manager?.outpoint?.index??-1}|${r.receipts?.length??0}`;
+      let expectedRev=initial?.revision??null,lastSavedSig='',progressChain=Promise.resolve();
       const onProgress=async snap=>{
         progressChain=progressChain.then(async()=>{
           if(c.rpc!==rpc||c.busy||c.prepared?.cid===snap.cid)return;
           await guard('保存同步进度',async()=>{
-            if(c.rpc!==rpc||c.prepared?.cid===snap.cid)return;
+            if(c.rpc!==rpc||c.busy||c.prepared?.cid===snap.cid)return;
             const current=await roundStore.get(snap.cid);
             if(current?.round.intent||(!allowHalted&&current?.round.halted))return;
             if((current?.revision??null)!==expectedRev)return;
@@ -386,16 +410,28 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
             validateRound(round,profile,{network:net.networkId});
             const saved=current?await roundStore.replace(round,current.revision):await roundStore.create(round);
             expectedRev=saved.revision;
+            lastSavedSig=sigOf(round);
             void roundStore.removePreview?.(snap.cid);
             if(c.lastSynced?.cid===snap.cid)c.lastSynced=null;
           },{readKey:`sync:round:${snap.cid}:progress`});
         }).catch(()=>{});
         return progressChain;
       };
+      const onSummary=d=>{
+        const sum=d?.summary;if(!sum||typeof d.cid!=='string')return;
+        const entry={cid:d.cid,terminal:d.terminal??null,module:sum.module??null,tickets:Number(sum.tickets??0),shards:Number(sum.shards??0),
+          bought:Number(sum.bought??sum.tickets??0),buys:Number(sum.buys??0),managerValue:d.manager?.value!=null?String(d.manager.value):null,
+          acceptingDaa:d.head?.acceptingDaa!=null?String(d.head.acceptingDaa):null,updatedAt:Date.now(),source:'indexer'};
+        const idx=c.discovered.findIndex(x=>x.cid===d.cid);
+        c.discovered=idx>=0?c.discovered.map((x,i)=>i===idx?{...x,...entry}:x):[entry,...c.discovered];
+        emit();
+      };
+      const preview=!initial&&/^[0-9a-f]{64}$/.test(input)?await api.cachedPreview(input):null;
       const synced=await syncRoundThreeTier({
-        cid:initial?input:(lookup?null:input),round:initial?.round??null,lookupInput:lookup?input:null,rpc,indexer:client,profile,net,fetcher,timeBudgetMs,skipIndexer,preferRest,onProgress,
+        cid:initial?input:(lookup?null:input),round:initial?.round??null,preview,lookupInput:lookup?input:null,rpc,indexer:client,profile,net,fetcher,timeBudgetMs,skipIndexer,preferRest,onProgress,onSummary,
       });
       await progressChain;
+      if(synced.indexerError&&!skipIndexer)log('warn',`索引跨越未生效（${synced.indexerError}），改为节点核对追赶`);
       const cid=synced.round.cid;
       const cur=initial&&initial.round.cid===cid&&expectedRev===initial.revision&&!synced.caughtUp?initial:await roundStore.get(cid);
       if(c.prepared?.cid===cid||cur&&(cur.round.intent||(!allowHalted&&cur.round.halted)))return {cid,skipped:'LOCAL_PENDING'};
@@ -403,6 +439,18 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
         if(client&&synced.round.indexer?.headTxid)indexChecks.set(cid,{client,rpc,localRevision:cur.revision,headTxid:synced.round.indexer.headTxid,acceptingBlock:synced.round.indexer.acceptingBlock,revision:String(synced.round.indexer.revision??''),checkedAt:now()});
         markSynced(cur.round);
         return {cid,unchanged:true,source:synced.source,steps:0,terminal:synced.round.terminal};
+      }
+      // If onProgress just validated & persisted this exact snapshot (e.g. Indexer seed before timeBudgetMs exit), avoid a duplicate 10MB validate+IDB write.
+      if(cur&&lastSavedSig&&lastSavedSig===sigOf(synced.round)){
+        if(synced.partial||synced.source==='rest'){
+          if(c.lastSynced?.cid===cid)c.lastSynced=null;
+        }else{
+          markSynced(cur.round);
+          if(client&&cur.round.indexer?.headTxid)indexChecks.set(cid,{client,rpc,localRevision:cur.revision,headTxid:cur.round.indexer.headTxid,acceptingBlock:cur.round.indexer.acceptingBlock,revision:String(cur.round.indexer.revision??''),checkedAt:now()});
+        }
+        if(synced.steps>0)log('info',`轮次 ${cid.slice(0,16)}… 已自动追赶 ${synced.steps} 步最新链上状态（来源：${synced.source}）`);
+        else log('info',`已核对并同步轮次 ${cid.slice(0,16)}…（来源：${synced.source}）`);
+        return {cid,source:synced.source,caughtUp:synced.caughtUp,steps:synced.steps,terminal:cur.round.terminal,partial:!!synced.partial};
       }
       // Fetch and catch-up run outside the write queue. Re-read under the queue before saving, so slow queries never block preparation
       // and never overwrite a transaction/candidate created while the read was in flight.
