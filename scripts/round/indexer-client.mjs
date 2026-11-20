@@ -1,6 +1,6 @@
 /** Read-only Rolling index discovery. REST supplies candidates; this module authenticates the head against the user's node. */
 import {check,hex,unhex,ZERO,totalTickets,fromLe} from '../core.mjs';
-import {decodeSpend,drawSample,identify,interpretAccepted} from '../core.mjs';
+import {decodeSpend,drawSample,identify,interpretAccepted,verifyManager} from '../core.mjs';
 import {redeem} from '../core.mjs';
 import {blake2b256} from '../core/lib/hashes.js';
 import {same} from '../core/lib/bytes.js';
@@ -11,6 +11,10 @@ import {roundFromText,applyRoundDelta,interpretGenesis} from './round.mjs';
 import {liveRound} from './prepare.mjs';
 import {TN10_NETWORK_ID,TN10_GENESIS,TN10_PROFILE_ID} from '../contract/protocol.mjs';
 const HASH=/^[0-9a-f]{64}$/;
+export function isPrunedHistoryError(e) {
+  const m=String(e?.message??'').toLowerCase();
+  return m.includes('cannot find header')||m.includes('retention root')||m.includes('pruned')||m.includes('pruning');
+}
 export function indexerBase(text) {
   let u;try{u=new URL(String(text).trim());}catch{throw new Error('INDEXER_URL');}
   check(['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash,'INDEXER_URL');
@@ -129,7 +133,43 @@ export async function verifyIndexedSnapshot(document,rpc,profile,{networkId=TN10
   scope(document,{networkId,genesisHash,profileId});const {round,preimages}=materializeIndexedDocument(document,profile,{baseRound,network:networkId}),head=document.head;
   check(round.cid===document.cid&&head&&HASH.test(head.txid)&&HASH.test(head.acceptingBlock)&&/^(0|[1-9][0-9]{0,24})$/.test(String(document.revision)),'INDEXER_RESPONSE_INVALID');
   check(!round.intent&&!round.pending.length&&!round.halted,'INDEXER_PENDING_STATE');
-  const [evidence,daa]=await Promise.all([acceptedAt(rpc,head.txid,head.acceptingBlock),rpc.currentDaa()]);
+  const daa=await rpc.currentDaa();
+  let evidence=null,prunedErr=null;
+  try{evidence=await acceptedAt(rpc,head.txid,head.acceptingBlock);}
+  catch(e){
+    if(!isPrunedHistoryError(e))throw e;
+    prunedErr=e;
+  }
+  if(!evidence){
+    // The node has pruned the accepting block (>~30h retention window).
+    // Active rounds are still authoritatively verified via the node's live UTXO index (manager + all frozen shards).
+    if(round.manager&&!round.terminal){
+      let live;
+      try{live=await liveRound(rpc,round,profile,{targets:round.frozen});}
+      catch(e){if((e?.code??e?.safeCode)==='STALE_INPUT')e.prunedSeedRound=round;throw e;}
+      check(live.manager.outpoint.transactionId===head.txid&&live.manager.outpoint.index===0,'INDEXER_HEAD_EFFECTS');
+      const liveState=verifyManager(live.manager,profile);
+      for(const key of ['ticketPrice','ticketCap','minTickets','closeEligibleDaa'])check(round.settings[key]===liveState[key],'INDEXER_SETTINGS');
+      const receipt=round.receipts.at(-1);
+      check(round.accepting===head.acceptingBlock&&receipt?.txid===head.txid,'INDEXER_HEAD_BINDING');
+      if(daa<live.manager.utxoDaa+100n){
+        const err=Object.assign(new Error('INDEXER_HEAD_NOT_FINAL'),{code:'INDEXER_HEAD_NOT_FINAL',safeCode:'INDEXER_HEAD_NOT_FINAL',headVerifiedRound:round});
+        throw err;
+      }
+      round.manager=live.manager;round.frozen=live.targets;
+      return round;
+    }
+    // Terminal rounds older than node retention have no remaining UTXOs and no writable actions.
+    // Accept the offline-validated archive record and explicitly mark prunedAtNode so the UI never claims node block verification.
+    if(round.terminal&&!round.manager){
+      check(round.frozen.length===0&&['EMPTY','PAID','REFUNDED'].includes(round.terminal),'INDEXER_TERMINAL');
+      const receipt=round.receipts.at(-1);
+      check(round.accepting===head.acceptingBlock&&receipt?.txid===head.txid,'INDEXER_HEAD_BINDING');
+      round.indexer={...round.indexer,prunedAtNode:true};
+      return round;
+    }
+    throw prunedErr;
+  }
   const tx=evidence.tx;check(evidence.inputs.length===tx.inputs.length&&evidence.inputs.every(Boolean),'MISSING_ACCEPTED_INPUT_CONTEXT');
   const contexts=evidence.inputs.map((u,i)=>({outpoint:tx.inputs[i].previousOutpoint,value:u.value,spk:typeof u.spk==='string'?parseSpk(u.spk):u.spk,
     utxoDaa:u.daa,cid:u.covenantId??null,covenantId:u.covenantId??null}));

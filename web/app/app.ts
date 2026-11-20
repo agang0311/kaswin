@@ -75,7 +75,7 @@ const ex: Explorer={
   addrOfKey:(k: string|null)=>k?pubkeyToAddress(k,ADDR_PREFIX):null,
   addrOfScript:(s: string)=>{const m=/^20([0-9a-f]{64})ac$/.exec(s);return m?pubkeyToAddress(m[1] as string,ADDR_PREFIX):shortHash(s,10,6);},
 };
-const S: UiState={view:'explore',cid:null,filter:'all',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),txLimit:20,budgetPc:32,
+const S: UiState={view:'explore',cid:null,filter:'open',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),detailTab:'map',txLimit:20,budgetPc:32,
   form:{price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:LS.get('nodes',defaultNode),indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
 const conn: Conn={node:null,nodeUrl:null,indexer:null,indexerUrl:null,indexerStale:false,discoveredSource:null};
 const verify=new Map<string,VerifyState>(),initialSyncDone=new Set<string>();
@@ -362,7 +362,7 @@ function route() {
   if(location.hash.startsWith('#join=')){const code=location.href;history.replaceState(null,'',location.pathname+'#/explore');S.view='explore';S.cid=null;S.shard=null;S.purchase=null;S.txLimit=20;previewRound=null;void ctl.watchRound(null);render();void onJoin(code);return;}
   const m=/^#\/(\w+)(?:\/([0-9a-f]{64}))?$/.exec(location.hash);
   const nextView=m&&VIEWS.includes(m[1])?m[1]:'explore',nextCid=m?.[2]??null;
-  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.txLimit=20;if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid){verify.delete(nextCid);initialSyncDone.delete(nextCid);}}
+  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.detailTab='map';S.txLimit=20;if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid){verify.delete(nextCid);initialSyncDone.delete(nextCid);}}
   S.view=nextView;S.cid=nextCid;if(S.view==='round'&&!S.cid)S.view='explore';
   if(S.view!=='round')previewRound=null;
   void ctl.watchRound(S.view==='round'&&shouldWatchRound(S.cid)?S.cid:null);
@@ -648,7 +648,9 @@ function openSettings() {
 function openWallet() {
   const x=ctxt(),w=x.wallet;
   if(!w)warmKaspireClient();
+  const tab=activeNet.key==='mainnet'&&S.wtab==='key'?'extension':S.wtab;
   modal('钱包',walletBody(x),w?html`<button class="btn warn" data-act="disconnect">断开钱包</button><button class="btn" data-act="closeModal">关闭</button>`
+    :tab==='extension'?html`<button class="btn" data-act="closeModal">关闭</button>`
     :html`<button class="btn" data-act="closeModal">取消</button><button class="btn pri" data-act="connectWallet">连接</button>`);
 }
 /** Error text next to the field that caused it (dialogs hide page-level feedback); falls back to a toast when the slot is gone. */
@@ -656,52 +658,60 @@ function inlineError(id: string,text: string) {
   const el=document.getElementById(id);
   if(el)el.textContent=text;else toast(text,'bad');
 }
+async function connectExternalProvider(id: string) {
+  if(ctl.state.busy){inlineError('wErr','正在处理上一步，请稍候。');return;}
+  try {
+    if(id==='kaspire'){
+      const abort=new AbortController();
+      const cancel=()=>{abort.abort();lockModal(false);closeModal();};
+      lockModal(true);
+      put($('mBody'),html`<ul class="progress"><li class="run">正在连接 WalletConnect 中继，准备 Kaspire 配对…</li></ul><p class="small muted">如果已有授权会话将直接恢复，否则会显示拉起链接与二维码。</p>`);
+      put($('mFoot'),html`<button class="btn" id="kaspireCancel">取消</button>`);
+      $('kaspireCancel').onclick=cancel;
+      try {
+        await ctl.connectExternalWallet('kaspire',{
+          signal:abort.signal,
+          onPairingUri:async({wcUri,schemeUri,appLink}:{wcUri: string;schemeUri: string;appLink: string})=>{
+            if(abort.signal.aborted)return;
+            let qr='';
+            try{qr=await renderPairingQrDataUrl(appLink);}catch{}
+            if(abort.signal.aborted)return;
+            put($('mBody'),html`
+              <p class="sub" style="margin-top:0">请使用手机 <b>Kaspire</b> 钱包授权连接（请在 Kaspire 中切换到 <b>${activeNet.label}</b>）：</p>
+              ${qr?html`<div style="display:flex;justify-content:center;margin:12px 0"><img src="${qr}" alt="Kaspire 配对二维码" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:8px"></div>`:''}
+              <div class="btnrow" style="justify-content:center;margin-top:10px">
+                <a class="btn pri" href="${schemeUri}">打开 Kaspire 授权连接</a>
+                <button class="btn" type="button" data-copy="${wcUri}">复制配对链接</button>
+              </div>
+              <p class="small muted" style="text-align:center;margin-top:10px">等待 Kaspire 确认中…（最长 2 分钟）</p>`);
+            if(isMobileBrowser())setTimeout(()=>{if(!abort.signal.aborted)triggerAppLink(schemeUri);},350);
+          },
+        });
+      } catch(e) {
+        lockModal(false);
+        if(abort.signal.aborted)return;
+        openWallet();
+        inlineError('wErr',errText(e));
+        return;
+      } finally {lockModal(false);}
+    } else {
+      lockModal(true);try{await ctl.connectExternalWallet(id);}finally{lockModal(false);}
+    }
+    S.walletProvider=id;LS.set('walletProvider',id);
+  } catch(e) {inlineError('wErr',errText(e));return;}
+  closeModal();toast('钱包已连接');void refreshBalance(true);render();
+}
 async function onConnectWallet() {
   if(ctl.state.busy){inlineError('wErr','正在处理上一步，请稍候。');return;}
+  if(S.wtab==='extension'){
+    const sel=document.getElementById('wProvider') as HTMLSelectElement|null;
+    await connectExternalProvider(sel?.value||S.walletProvider||'kasware');
+    return;
+  }
   try {
     if(S.wtab==='key'){
       if(activeNet.key==='mainnet')throw Object.assign(new Error('MAINNET_MEMORY_KEY_DISABLED'),{code:'MAINNET_MEMORY_KEY_DISABLED'});
       const el=$<HTMLInputElement>('wKey'),v=el.value;el.value='';ctl.openWallet(v);
-    }
-    else if(S.wtab==='extension'){
-      const id=$<HTMLSelectElement>('wProvider').value;
-      if(id==='kaspire'){
-        const abort=new AbortController();
-        const cancel=()=>{abort.abort();lockModal(false);closeModal();};
-        lockModal(true);
-        put($('mBody'),html`<ul class="progress"><li class="run">正在连接 WalletConnect 中继，准备 Kaspire 配对…</li></ul><p class="small muted">如果已有授权会话将直接恢复，否则会显示拉起链接与二维码。</p>`);
-        put($('mFoot'),html`<button class="btn" id="kaspireCancel">取消</button>`);
-        $('kaspireCancel').onclick=cancel;
-        try {
-          await ctl.connectExternalWallet('kaspire',{
-            signal:abort.signal,
-            onPairingUri:async({wcUri,schemeUri,appLink}:{wcUri: string;schemeUri: string;appLink: string})=>{
-              if(abort.signal.aborted)return;
-              let qr='';
-              try{qr=await renderPairingQrDataUrl(appLink);}catch{}
-              if(abort.signal.aborted)return;
-              put($('mBody'),html`
-                <p class="sub" style="margin-top:0">请使用手机 <b>Kaspire</b> 钱包授权连接（请在 Kaspire 中切换到 <b>${activeNet.label}</b>）：</p>
-                ${qr?html`<div style="display:flex;justify-content:center;margin:12px 0"><img src="${qr}" alt="Kaspire 配对二维码" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:8px"></div>`:''}
-                <div class="btnrow" style="justify-content:center;margin-top:10px">
-                  <a class="btn pri" href="${schemeUri}">打开 Kaspire 授权连接</a>
-                  <button class="btn" type="button" data-copy="${wcUri}">复制配对链接</button>
-                </div>
-                <p class="small muted" style="text-align:center;margin-top:10px">等待 Kaspire 确认中…（最长 2 分钟）</p>`);
-              if(isMobileBrowser())setTimeout(()=>{if(!abort.signal.aborted)triggerAppLink(schemeUri);},350);
-            },
-          });
-        } catch(e) {
-          lockModal(false);
-          if(abort.signal.aborted)return;
-          openWallet();
-          inlineError('wErr',errText(e));
-          return;
-        } finally {lockModal(false);}
-      } else {
-        lockModal(true);try{await ctl.connectExternalWallet(id);}finally{lockModal(false);}
-      }
-      S.walletProvider=id;LS.set('walletProvider',id);
     } else ctl.usePublicAddress($<HTMLInputElement>('wAddr').value);
   } catch(e) {inlineError('wErr',errText(e));return;}   // a toast would sit behind the open dialog
   closeModal();toast('钱包已连接');void refreshBalance(true);render();
@@ -836,7 +846,7 @@ const ACT: Record<string,()=>unknown>={
   pasteLatest:()=>{closeModal();go('explore');setTimeout(()=>$('joinText')?.focus(),50);},
 };
 function onClick(ev: Event) {
-  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-fix],[data-filter],[data-sort],[data-dur],[data-qty],[data-wtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
+  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-fix],[data-filter],[data-sort],[data-dur],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
   if(!t)return;const d=t.dataset;
   if(d.go2)return go(d.go2);
   if(d.open)return go('round',d.open);
@@ -846,6 +856,8 @@ function onClick(ev: Event) {
   if(d.dur){S.form.dur=d.dur;saveCreateForm();return render();}
   if(d.qty){S.qty=d.qty;return render();}
   if(d.wtab){S.wtab=d.wtab;return openWallet();}
+  if(d.connect){void connectExternalProvider(d.connect);return;}
+  if(d.dtab==='map'||d.dtab==='txs'||d.dtab==='rules'){S.detailTab=d.dtab;return render();}
   if(d.shard){const idx=d.shard==='close'?null:Number(d.shard);S.shard=S.shard===idx?null:idx;S.purchase=null;return render();}
   if(d.purchase){const idx=Number(d.purchase);S.purchase=S.purchase===idx?null:idx;return render();}
   if(d.pixelmode!==undefined){S.pixelMode=d.pixelmode==='1';LS.set('pixelMode',S.pixelMode);return render();}

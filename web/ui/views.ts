@@ -41,7 +41,7 @@ function stepText(i: Item,x: Ctx): string {
   if(f.module==='win')return `派奖中 · 分片 ${f.payCursor}/${f.shards}`;
   return `退款中 · 分片 ${f.refundShard}/${f.shards}`;
 }
-const CARD_CTA: Record<string,string>={open:'查看并购买',sealed:'查看开奖条件',paying:'查看派奖进度',refund:'查看退款进度'};
+const CARD_CTA: Record<string,string>={open:'立即参与',sealed:'去开奖',paying:'查看派奖',refund:'查看退款'};
 const safeBig=(v: string|null|undefined): bigint=>{try{return v!=null?BigInt(v):0n;}catch{return 0n;}};
 const INDEXED_TERM_PHASE: Record<string,Phase>={PAID:{key:'paid',label:'已派奖',tone:'gold'},EMPTY:{key:'empty',label:'空轮结束',tone:'muted'},REFUNDED:{key:'refunded',label:'退款完成',tone:'muted'}};
 const INDEXED_MOD_PHASE: Record<string,Phase>={sales:{key:'open',label:'售票中',tone:'mint'},sealed:{key:'sealed',label:'待开奖',tone:'violet'},win:{key:'paying',label:'派奖中',tone:'gold'},refund:{key:'refund',label:'退款中',tone:'amber'}};
@@ -73,24 +73,25 @@ function card(i: Item,x: Ctx,freshDisc?: DiscoveredRound): Raw {
   const have=tickets!=null,pct=have&&f.ticketCap?Math.min(100,tickets/f.ticketCap*100):isTerminal?100:0;
   const cta=CARD_CTA[ph.key]??'查看详情',u=unitOf(x);
   return html`<article class="card t-${ph.tone}" data-open="${r.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(r.cid)}">
-    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="mono dim small">CID ${shortHash(r.cid,8,6)}</span><span class="tag">${freshDisc?'有新进度':r.source==='imported'?'已同步':'我创建的'}</span></div>
+    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="mono dim small">#${shortHash(r.cid,6,4)}</span></div>
     <div class="big">${have?kas(BigInt(tickets)*price):'—'}<small>${u}</small></div>
-    ${have?html`<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()} 张 · ${kas(price)} ${u}/张</span><span>${shards>0?`${shards} 个封存分片`:''}</span></div>`:html`<div class="small muted">打开查看详情</div>`}
+    ${have?html`<div class="bar"><i style="width:${pct}%"></i></div><div class="row small muted"><span>${tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()} 张 · ${kas(price)} ${u}/张</span><span>${shards>0?`${shards} 片`:''}</span></div>`:html`<div class="small muted">打开查看详情</div>`}
     <div class="row card-foot"><span class="card-next">${freshDisc?indexedStep(freshDisc,ph):stepText(i,x)}</span><span class="card-cta">${cta} ${ic('arrow')}</span></div>
   </article>`;
 }
 function indexedCard(d: DiscoveredRound,x?: Ctx): Raw {
-  const ph=indexedPhase(d),tkt=d.terminal?(d.bought??d.tickets??0):(d.tickets??0),isRest=d.source==='rest',isCache=x?.conn.discoveredSource==='cache',u=unitOf(x);
+  const ph=indexedPhase(d),tkt=d.terminal?(d.bought??d.tickets??0):(d.tickets??0),isRest=d.source==='rest',u=unitOf(x);
   const sc=d.shards||(d.terminal&&(d.buys??0)>=256?Math.floor((d.buys??0)/256):0);
   const mval=!d.terminal?safeBig(d.managerValue):0n,cta=CARD_CTA[ph.key]??'查看详情';
-  const subParts=[sc>0?`${sc} 个封存分片`:'未满 1 个分片'];
-  if(d.buys!=null)subParts.push(`${d.buys.toLocaleString()} 笔`);
+  const subParts=[`${tkt.toLocaleString()} 张`];
+  if(sc>0)subParts.push(`${sc} 片`);
+  if(d.buys!=null&&d.buys!==tkt)subParts.push(`${d.buys.toLocaleString()} 笔`);
   return html`<article class="card t-${ph.tone}" data-indexed="${d.cid}" tabindex="0" role="button" aria-label="打开轮次 ${shortHash(d.cid)}">
-    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="mono dim small">CID ${shortHash(d.cid,8,6)}</span><span class="tag">${isCache?'本地缓存':isRest?'REST 发现':'索引发现'}</span></div>
-    <div class="big">${tkt.toLocaleString()}<small>张</small></div>
+    <div class="row"><span class="badge t-${ph.tone}">${ph.label}</span><span class="mono dim small">#${shortHash(d.cid,6,4)}</span></div>
+    <div class="big">${mval>0n?html`${kas(mval)}<small>${u}</small>`:html`${tkt.toLocaleString()}<small>张</small>`}</div>
     ${d.terminal?html`<div class="bar"><i style="width:100%"></i></div>`:''}
-    <div class="row small muted"><span>${subParts.join(' · ')}</span><span>${mval>0n?`状态锁定 ${kas(mval)} ${u}`:''}</span></div>
-    <div class="row card-foot"><span class="card-next">${isRest?'点击追赶最新进度':indexedStep(d,ph)}</span><span class="card-cta">${cta} ${ic('arrow')}</span></div>
+    <div class="row small muted"><span>${subParts.join(' · ')}</span><span>${d.terminal?'已结算':''}</span></div>
+    <div class="row card-foot"><span class="card-next">${isRest?'点击同步最新进度':indexedStep(d,ph)}</span><span class="card-cta">${cta} ${ic('arrow')}</span></div>
   </article>`;
 }
 interface ExploreEntry {cid: string;ph: Phase;value: bigint;at: number;item?: Item;disc?: DiscoveredRound}
@@ -116,14 +117,23 @@ export function exploreView(x: Ctx): Raw {
     saved:entries.filter(e=>saved.has(e.cid)).length};
   const paid=entries.filter(e=>is(e,'paid')).length;
   const locked=entries.reduce((n: bigint,e)=>n+e.value,0n);
+  const phaseRank=(e: ExploreEntry): number=>{
+    if(is(e,'paid','empty','refunded','done'))return 3;
+    if(saved.has(e.cid))return 0;
+    return is(e,'open')?1:2;
+  };
   const list=entries.filter(e=>{
     const f=x.S.filter;if(f==='open'&&!is(e,'open'))return false;if(f==='sealed'&&!is(e,'sealed'))return false;
     if(f==='settle'&&!is(e,'paying','refund'))return false;if(f==='done'&&!is(e,'paid','empty','refunded','done'))return false;
     if(f==='saved'&&!saved.has(e.cid))return false;
     return !q||e.cid.includes(q);
-  }).sort((a,b)=>x.S.sort==='value'?(b.value>a.value?1:b.value<a.value?-1:b.at-a.at):b.at-a.at);
+  }).sort((a,b)=>{
+    const r=phaseRank(a)-phaseRank(b);
+    if(r!==0)return r;
+    return x.S.sort==='value'?(b.value>a.value?1:b.value<a.value?-1:b.at-a.at):b.at-a.at;
+  });
   const filteredOther=otherEntries.filter(e=>!q||e.cid.includes(q));
-  const seg: [string,string][]=[['all','全部'],['open','售票中'],['sealed','待开奖'],['settle','派奖/退款'],['done','已结束'],['saved','★ 关注']];
+  const seg: [string,string][]=[['saved','★ 关注'],['open','售票中'],['sealed','待开奖'],['settle','派奖/退款'],['done','已结束'],['all','全部']];
   const isRest=x.conn.discoveredSource==='rest',isCache=x.conn.discoveredSource==='cache';
   const sourceNotice=isCache&&x.conn.indexerStale
     ?html`<div class="source-strip"><span class="dot"></span><span>索引暂不可用，当前显示本地缓存列表（${disc.length} 轮）</span></div>`
@@ -133,23 +143,26 @@ export function exploreView(x: Ctx): Raw {
       ?html`<div class="notice warn">索引正在追赶最新链状态，点击任意轮次会向节点核对。</div>`
       :'';
   const u=unitOf(x);
+  const sourceLabel=isCache?`本地缓存 ${disc.length}`:isRest?`REST 备用 ${disc.length}`:x.conn.indexer?`索引 ${disc.length}`:'';
   return html`
-  <div class="section-title">
-    <div><h2>轮次广场</h2><span class="muted small">不限购买笔数的链上抽奖 · ${x.net.label}（${u}）</span></div>
-    <div class="hero-actions"><button class="btn pri sm" data-go2="create">${ic('create')}创建轮次</button><button class="btn ghost sm" data-go2="protocol">${ic('shield')}规则说明</button></div>
+  <div class="section-title plaza-head">
+    <div>
+      <h2>轮次广场</h2>
+      <div class="plaza-meta small muted">
+        <span>共 <b>${entries.length}</b> 轮</span>
+        <span>售票中 <b>${g.open}</b></span>
+        <span>待开奖/结算 <b>${g.sealed+g.settle}</b></span>
+        <span>锁定 <b>${kas(locked)} ${u}</b></span>
+        ${sourceLabel?html`<span class="dim">${sourceLabel}</span>`:''}
+      </div>
+    </div>
+    <div class="hero-actions"><button class="btn pri sm" data-go2="create">${ic('create')}发起抽奖</button><button class="btn ghost sm" data-go2="protocol">${ic('shield')}规则</button></div>
   </div>
-  <section class="kpis">
-    ${kpi('已知轮次',entries.length,isCache?`本地缓存 ${disc.length} · 本机 ${all.length}`:isRest?`REST 备用 ${disc.length} · 本机 ${all.length}`:x.conn.indexer?`索引 ${disc.length} · 本机 ${all.length}`:`本机 ${all.length}`)}
-    ${kpi('售票中',g.open)}
-    ${kpi('待开奖 / 结算',`${g.sealed} / ${g.settle}`)}
-    ${kpi('已派奖',paid,`共 ${g.done} 轮已结束`)}
-    ${kpi('锁定价值',kas(locked),u)}
-  </section>
   <div class="toolbar">
     <div class="seg" role="group" aria-label="筛选">${seg.map(([k,l])=>html`<button data-filter="${k}" aria-pressed="${x.S.filter===k}">${l}<span class="c">${g[k]}</span></button>`)}</div>
-    <label class="search">${ic('search')}<input id="q" placeholder="搜索 CID" value="${x.S.query}" autocomplete="off" spellcheck="false"></label>
-    <div class="seg"><button data-sort="new" aria-pressed="${x.S.sort==='new'}">最近</button><button data-sort="value" aria-pressed="${x.S.sort==='value'}">锁定价值</button></div>
-    ${x.conn.indexer||isRest||isCache||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="刷新列表" title="刷新轮次列表（索引 / REST 备用）">${ic('refresh')}</button>`:''}
+    <label class="search search-sm">${ic('search')}<input id="q" placeholder="搜索轮次编号" value="${x.S.query}" autocomplete="off" spellcheck="false"></label>
+    <div class="seg"><button data-sort="new" aria-pressed="${x.S.sort==='new'}">最新</button><button data-sort="value" aria-pressed="${x.S.sort==='value'}">奖池</button></div>
+    ${x.conn.indexer||isRest||isCache||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="刷新列表" title="刷新轮次列表">${ic('refresh')}</button>`:''}
     ${x.indexerMore?html`<button class="btn sm" data-act="moreIndex">加载更多</button>`:''}
     ${otherEntries.length?html`<details class="other-rounds-details">
       <summary class="btn ghost sm" title="查看无法按当前固定 Profile 解析的轮次">${ic('archive')}<span>不适用轮次 (${otherEntries.length})</span></summary>
@@ -159,11 +172,11 @@ export function exploreView(x: Ctx): Raw {
     </details>`:''}
   </div>
   ${sourceNotice}
-  <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x,e.disc):indexedCard(e.disc!,x)):html`<div class="empty">${ic('ticket')}<p>${entries.length?'当前筛选下没有轮次。':'还没有轮次。'}你可以<button class="link" data-go2="create">创建一个新轮次</button>，或在下方粘贴分享链接 / CID 加入。</p></div>`}</div>
-  <div class="panel join" style="margin-top:22px">
-    <div><h3>${ic('download')} 加入轮次</h3><p class="sub">粘贴分享链接、CID 或交易 ID 即可同步并加入。</p></div>
-    <div class="joinrow"><input id="joinText" value="${x.S.join}" placeholder="分享链接、轮次数据、CID 或交易 ID" autocomplete="off" spellcheck="false" aria-label="分享链接或轮次 ID"><button class="btn pri" data-act="join">加入</button></div>
-  </div>`;
+  <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x,e.disc):indexedCard(e.disc!,x)):html`<div class="empty">${ic('ticket')}<p>${entries.length?html`当前筛选下没有轮次。${x.S.filter!=='all'?html`<button class="link" data-filter="all">查看全部轮次 (${entries.length})</button> 或 `:''}`:'还没有轮次。'}你可以<button class="link" data-go2="create">发起一个新轮次</button>，或在下方通过分享链接加入。</p></div>`}</div>
+  <details class="join-details"${x.S.join||!entries.length?' open':''}>
+    <summary class="small muted">${ic('download')} <span>有分享链接或轮次编号？点此加入</span></summary>
+    <div class="joinrow" style="margin-top:10px"><input id="joinText" value="${x.S.join}" placeholder="粘贴分享链接、轮次编号或交易 ID" autocomplete="off" spellcheck="false" aria-label="分享链接或轮次 ID"><button class="btn pri" data-act="join">加入</button></div>
+  </details>`;
 }
 
 /* ------------------------------------------------------------------ create */
@@ -213,23 +226,27 @@ export function createView(x: Ctx): Raw {
   return html`
   <div class="cols">
     <div class="panel">
-      <h2>${ic('create')} 创建一个新轮次</h2>
-      <p class="sub">设置票价、票数上限与封盘时间（创建后不可更改）。</p>
+      <h2>${ic('create')} 发起一轮抽奖</h2>
+      <p class="sub">设置票价、总票数与最早封盘时间（创建后上链不可更改）。</p>
       <div class="form">
         <label class="field">每张票价格（${u}）<input id="cPrice" value="${f.price}" inputmode="numeric" maxlength="12"><small>≥ 1 ${u} 的整数</small></label>
         <label class="field">总票数上限<input id="cCap" value="${f.cap}" inputmode="numeric" maxlength="8"><small>3 – ${MAX_TICKET_CAP.toLocaleString()}</small></label>
         <label class="field">开奖最低票数<input id="cMin" value="${f.min}" inputmode="numeric" maxlength="8"><small>≥ 3；不足则全部退款</small></label>
         <div class="field full">最早可封盘时间<div class="pills">${CLOSE_PRESETS.map(([k,l])=>html`<button type="button" data-dur="${k}" aria-pressed="${f.dur===k}">${l}</button>`)}</div>
           ${f.dur==='custom'?html`<input id="cCustom" value="${f.custom}" inputmode="numeric" maxlength="5" placeholder="分钟（1 – 10080）">`:''}
-          <small>到时或售满后可手动封盘（约 10 DAA/秒）。</small></div>
-        <label class="check full"><input type="checkbox" id="cReg" ${useReg?'checked':''}>附加 0.2 ${u} Registry 登记输出（供索引自动发现本轮）</label>
-        <label class="field full" id="cRegBox" ${useReg?'':'hidden'}>登记地址<input id="cRegAddr" value="${regVal}" spellcheck="false" autocomplete="off" placeholder="${defaultReg}">
-          <small>留空使用默认登记地址（0.2 ${u}，不可撤回）。</small>
-          ${p.isCustomRegistry?html`<small class="why">已改为非默认地址：默认索引不会自动收录本轮。</small>`:''}</label>
+          <small>到时或售满后任何人均可封盘开奖。</small></div>
+        <details class="adv-details full"${!useReg||p.isCustomRegistry?' open':''}>
+          <summary class="small muted">高级设置（公共索引登记，默认开启）</summary>
+          <div class="adv-body">
+            <label class="check"><input type="checkbox" id="cReg" ${useReg?'checked':''}>附加 0.2 ${u} Registry 登记输出（供广场自动发现本轮）</label>
+            <label class="field" id="cRegBox" ${useReg?'':'hidden'}>登记地址<input id="cRegAddr" value="${regVal}" spellcheck="false" autocomplete="off" placeholder="${defaultReg}">
+              <small>留空使用默认登记地址（0.2 ${u}，不可撤回）。</small>
+              ${p.isCustomRegistry?html`<small class="why">已改为非默认地址：默认索引不会自动收录本轮。</small>`:''}</label>
+          </div>
+        </details>
       </div>
       ${p.ok?'':html`<p class="err">${p.errors[0]}</p>`}
-      <div class="notice" style="margin-top:12px">每 256 笔<b>购买笔数</b>自动封存 1 个分片（单轮最多 256 个分片 / 65,536 笔购买）。</div>
-      ${createCta(x,p.ok)}
+      <div style="margin-top:14px">${createCta(x,p.ok)}</div>
     </div>
     <div>
       <div class="panel"><h3>预览</h3><div class="facts">
@@ -271,14 +288,15 @@ function actionCard(a: string,D: Detail,x: Ctx): Raw|'' {
   if(!s.ok&&/不适用|没有旧分片|不满足/.test(s.reason??''))return '';
   const draw=a==='DRAW'?drawReadiness(D,x):null;
   const waiting=!s.ok||!!draw&&!draw.ready,quantityError=a==='BUY'?qtyError(x.S.qty,f,s):null;
-  const extra=a==='BUY'?html`<div class="qtyrow"><label class="field">数量<input id="qty" value="${x.S.qty}" inputmode="numeric" maxlength="8" aria-describedby="qtyCost" aria-invalid="${quantityError?'true':'false'}"></label>
-    <div class="pills">${[1,5,10].map(n=>html`<button type="button" data-qty="${n}">${n}</button>`)}</div></div>
+  const extra=a==='BUY'?html`<div class="qtyrow"><label class="field">购买数量<input id="qty" value="${x.S.qty}" inputmode="numeric" maxlength="8" aria-describedby="qtyCost" aria-invalid="${quantityError?'true':'false'}"></label>
+    <div class="pills">${[1,5,10].map(n=>html`<button type="button" data-qty="${n}" aria-pressed="${x.S.qty===String(n)}">${n} 张</button>`)}</div></div>
     <p class="small ${quantityError?'err':'muted'}" id="qtyCost" role="status" aria-live="polite">${qtyCost(x.S.qty,f,s,unitOf(x))}</p>`:'';
-  const label=x.busy?'处理中…':draw&&!draw.ready?draw.button:waiting?'暂不可用':g.ok?(draw?draw.button:info.verb):g.fix==='wallet'?'连接钱包':g.fix==='settings'?'检查连接':'暂不可用';
+  const label=x.busy?'处理中…':draw&&!draw.ready?draw.button:waiting?'暂不可用':g.ok?(draw?draw.button:a==='BUY'?'立即购买':info.verb):g.fix==='wallet'?(a==='BUY'?'连接钱包并购买':'连接钱包'):g.fix==='settings'?'检查连接':'暂不可用';
   const attr=x.busy?'disabled aria-busy="true"':waiting?'disabled':g.ok?`data-act="${a}"`:g.fix?`data-fix="${g.fix}"`:'disabled';
-  return html`<div class="act ${waiting||x.busy?'off':''}"><h4>${info.title}${isFree(a)?html`<span class="tag kas">免签领奖</span>`:''}</h4><p>${info.desc}</p>${extra}
-    ${x.busy?html`<div class="why" role="status">${g.reason??'正在处理上一步，请稍候。'}</div>`:waiting?html`<div class="why">${draw&&!draw.ready?draw.label:s.reason}</div>`:g.ok?'':html`<div class="why">${g.reason}</div>`}
-    <button ${raw(a==='BUY'?'id="buySubmit"':'')} class="btn ${g.ok&&!waiting?'pri':''} block" ${raw(attr)} ${raw(quantityError&&!x.busy&&!waiting&&(g.ok||g.fix)?'disabled':'')}>${label}</button></div>`;
+  const primary=(g.ok||g.fix==='wallet')&&!waiting;
+  return html`<div class="act ${a==='BUY'?'act-hero':''} ${waiting||x.busy?'off':''}"><h4>${info.title}${isFree(a)?html`<span class="tag kas">免签领奖</span>`:''}</h4>${a==='BUY'?'':html`<p>${info.desc}</p>`}${extra}
+    ${x.busy?html`<div class="why" role="status">${g.reason??'正在处理上一步，请稍候。'}</div>`:waiting?html`<div class="why">${draw&&!draw.ready?draw.label:s.reason}</div>`:g.ok||g.fix==='wallet'?'':html`<div class="why">${g.reason}</div>`}
+    <button ${raw(a==='BUY'?'id="buySubmit"':'')} class="btn ${primary?'pri':''} block" ${raw(attr)} ${raw(quantityError&&!x.busy&&!waiting&&(g.ok||g.fix)?'disabled':'')}>${label}</button></div>`;
 }
 export function qtyError(text: string,f: Facts,s?: ActionState): string|null {
   const q=String(text).trim();
@@ -635,54 +653,78 @@ export function roundView(x: Ctx): Raw {
   }
   const {r,f,ph}=D,price=f.ticketPrice,open=!r.terminal&&!r.halted&&!r.intent&&r.manager,u=unitOf(x);
   const order=ORDER[f.module??'']??[];
-  const cards=open?order.map(a=>actionCard(a,D,x)).filter(c=>c!==''):[];
+  const blockedNotes: string[]=[];
+  const cards=open?order.map(a=>{
+    const st=D.a[a];
+    if(a==='CLOSE'&&st&&!st.ok){
+      if(st.reason&&!/不适用|没有旧分片|不满足/.test(st.reason))blockedNotes.push(st.reason);
+      return '';
+    }
+    return actionCard(a,D,x);
+  }).filter(c=>c!==''):[];
   const mine=D.mine,ownerAddr=x.ex.addrOfKey(f.owner);
   // The creation transaction is the GENESIS receipt. `r.origin` is NOT it: it is the output GENESIS spent as its first input (the covenant's genesis outpoint, created by an earlier transaction).
   const genesisTx=r.receipts.find(t=>t.action==='GENESIS');
   const disc=x.discovered?.find(d=>d.cid===r.cid)??null;
+  const isPrunedArchive=!!r.terminal&&!!r.indexer?.prunedAtNode;
+  const isVerifiedOk=!D.preview&&!isPrunedArchive&&x.verify?.state==='ok';
   const detailVerifyNotice=D.preview
     ?(x.verify?.state==='bad'?verifyPanel(x.verify):x.conn.node===false
       ?html`<div class="notice warn">当前节点未连接，先展示本地缓存的轮次明细；连接节点并核对通过后即可操作。</div>`
       :html`<div class="notice">已加载本地/索引明细快照，正在后台向节点核对链上共识状态…</div>`)
-    :(x.verify?verifyPanel(x.verify,disc,f.tickets):(!r.terminal&&!r.intent&&x.conn.node===null)
+    :(x.verify&&x.verify.state!=='ok'?verifyPanel(x.verify,disc,f.tickets):(!r.terminal&&!r.intent&&x.conn.node===null)
       ?html`<div class="notice">已加载本地存储记录，正在后台连接节点核对最新链上状态…</div>`
       :'');
+  const dtab=x.S.detailTab??'map';
+  const closeHint=f.module==='sales'&&!D.a.CLOSE?.ok
+    ?(x.daa===null?'正在读取最早可封盘时间…':`距最早可封盘约 ${daaDuration(f.closeEligibleDaa-x.daa)}`)
+    :'';
+  const actionSection=r.terminal
+    ?html`<div class="notice ok" style="margin-bottom:16px">${TERMINAL_LABEL[r.terminal]}：${nextHint(D)}</div>`
+    :html`<div class="panel action-panel">
+      ${f.module==='sealed'?roundCountdown(D,x):''}
+      ${cards.length?html`<div class="actions ${cards.length===1?'single':''}">${cards}</div>`:html`<p class="muted small" style="margin:0">${r.intent?'等待上面那笔交易确认。':r.halted?'这一轮已停止。':'暂时没有可执行的操作。'}</p>`}
+      ${closeHint||blockedNotes.length?html`<p class="small muted action-foot">${ic('clock')} ${closeHint||blockedNotes[0]}${closeHint&&blockedNotes.length&&blockedNotes[0]!==closeHint?html` · <span>${blockedNotes[0]}</span>`:''}</p>`:''}
+    </div>`;
   return html`
+  <div class="round-shell">
   <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回</button><span class="spacer"></span>
     <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(r.cid)?'已关注':'关注'}</button>
     ${!r.terminal||D.preview?liveSyncToggle(x):''}
     <button type="button" class="btn sm" data-act="moreRound" aria-haspopup="dialog" aria-label="更多轮次操作" ${raw(D.preview?'disabled title="完成节点核对后可分享或导出"':'')}>更多</button></div>
   <div class="panel t-${ph.tone}">
-    <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${ph.tone}">${ph.label}</span><span class="spacer"></span>
-      ${D.preview?html`<span class="tag amber">本地预览 · 后台核对中</span>`:''}</div>
-    <h2 style="margin:8px 0 14px">轮次 ${hash(r.cid,{n:14})}</h2>
+    <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="badge t-${ph.tone}">${ph.label}</span>
+      <span class="muted small">轮次 ${hash(r.cid,{n:8})}</span>
+      <span class="spacer"></span>
+      ${D.preview?html`<span class="tag amber">本地预览 · 后台核对中</span>`:isPrunedArchive?html`<span class="tag" title="该轮次已结束且区块早于节点裁剪窗口，当前展示经离线校验的索引历史存档">历史存档 · 节点已裁剪</span>`:isVerifiedOk?html`<span class="verify-chip" title="已向节点核对（${new Date(x.verify!.at??0).toLocaleTimeString()}）">✓ 已向节点核对</span>`:''}
+    </div>
+    <div class="cols3" style="margin:14px 0 12px">
+      ${kpi(r.terminal==='PAID'?'奖池总额':'当前奖池',f.tickets!=null?html`${kas(BigInt(f.tickets)*price)} <span class="small muted">${u}</span>`:'—',f.tickets!=null?`每张 ${kas(price)} ${u}`:'')}
+      ${kpi('已售 / 上限',f.tickets!=null?`${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()}`:'—',f.tickets!=null?`最低 ${f.minTickets} 张开奖`:'')}
+      ${f.winnerKey?kpi('中奖者',hash(x.ex.addrOfKey(f.winnerKey),{n:12}),D.isWinner?'就是你！':''):
+        kpi(mine?'你持有':'你的票',mine?`${mine.tickets.toLocaleString()} 张`:signing(x.wallet)?'0 张':'—',mine&&mine.total>0?`中奖概率约 ${(mine.tickets/mine.total*100).toFixed(2)}%`:'')}
+    </div>
     ${f.module||r.terminal?stepper(D):''}
     ${progress}${intentPanel(r,x)}${detailVerifyNotice}
-    <p class="muted" style="margin:0 0 12px">${nextHint(D)}</p>
-    <div class="cols3">
-      ${kpi(r.terminal==='PAID'?'奖池（票款总额）':'当前票款',f.tickets!=null?html`${kas(BigInt(f.tickets)*price)} <span class="small muted">${u}</span>`:'—',f.tickets!=null?`${f.tickets.toLocaleString()} 张 × ${kas(price)} ${u}`:'')}
-      ${kpi('售出 / 上限',f.tickets!=null?`${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()}`:'—',f.tickets!=null?`最低 ${f.minTickets} 张 · 封存 ${f.shards} 片`:'')}
-      ${f.winnerKey?kpi('中奖者',hash(x.ex.addrOfKey(f.winnerKey),{n:12}),D.isWinner?'就是你！':''):
-        kpi(mine?'你持有':'你的票',mine?`${mine.tickets.toLocaleString()} 张`:signing(x.wallet)?'0 张':'—',mine&&mine.total>0?`约 ${(mine.tickets/mine.total*100).toFixed(2)}%`:'')}
-    </div>
   </div>
-  <div class="round-layout">
-    <aside class="round-actions panel"><h3>${ic('arrow')} 下一步</h3>${roundCountdown(D,x)}
-      ${r.terminal?html`<div class="notice ok">${TERMINAL_LABEL[r.terminal]}：${nextHint(D)}</div>`:cards.length?html`<div class="actions" style="grid-template-columns:1fr">${cards}</div>`:html`<p class="muted small">${r.intent?'等待上面那笔交易确认。':r.halted?'这一轮已停止。':'暂时没有可执行的操作。'}</p>`}
-    </aside>
-    <div class="round-main">
-      <div class="panel"><h3>${ic('ticket')} 分片点图 · 购买记录</h3>${shardSection(D,x)}</div>
-      <div class="panel"><h3>${ic('ledger')} 交易记录</h3>${txTable(D,x)}</div>
+  ${actionSection}
+  <div class="panel detail-panel">
+    <div class="detail-tabs seg" role="tablist" aria-label="轮次详情">
+      <button type="button" role="tab" data-dtab="map" aria-selected="${dtab==='map'}" aria-pressed="${dtab==='map'}">${ic('ticket')} 票号分布</button>
+      <button type="button" role="tab" data-dtab="txs" aria-selected="${dtab==='txs'}" aria-pressed="${dtab==='txs'}">${ic('ledger')} 交易记录</button>
+      <button type="button" role="tab" data-dtab="rules" aria-selected="${dtab==='rules'}" aria-pressed="${dtab==='rules'}">${ic('clock')} 规则与信息</button>
     </div>
-    <div class="round-rules">
-      <div class="panel"><h3>${ic('clock')} 规则与标识</h3><dl class="kv">
+    <div class="detail-tab-body">
+      ${dtab==='map'?shardSection(D,x):dtab==='txs'?txTable(D,x):html`<dl class="kv">
         <dt>票价</dt><dd>${kas(price)} ${u}</dd>
-        <dt>最低票数</dt><dd>${f.minTickets} 张</dd>
-        <dt>最早封盘</dt><dd>${x.daa!=null&&x.daa>=f.closeEligibleDaa?'已到时间':`约 ${wait(x.daa,f.closeEligibleDaa)}`}</dd>
+        <dt>最低开奖票数</dt><dd>${f.minTickets} 张（不足自动退款）</dd>
+        <dt>最早可封盘</dt><dd>${x.daa!=null&&x.daa>=f.closeEligibleDaa?'已到时间':`约 ${wait(x.daa,f.closeEligibleDaa)}`}</dd>
+        <dt>已封存分片</dt><dd>${f.shards} 片</dd>
         <dt>创建者</dt><dd>${ownerAddr?hash(ownerAddr,{n:10,link:x.ex.addr(ownerAddr)}):html`<span class="muted">—</span>`}</dd>
         <dt>创建交易</dt><dd>${genesisTx?hash(genesisTx.txid,{n:10,link:x.ex.tx(genesisTx.txid)}):html`<span class="muted">—</span>`}</dd>
       </dl>
-      <details style="margin-top:10px"><summary class="small muted">更多规则与技术信息</summary><dl class="kv" style="margin-top:8px">
+      <details class="adv-details" style="margin-top:12px"><summary class="small muted">链上技术信息</summary><dl class="kv" style="margin-top:8px">
         <dt>开奖等待</dt><dd>封盘后约 100 DAA（~10 秒）</dd>
         <dt>超时转退款</dt><dd>封盘后约 12 小时未开奖</dd>
         <dt>累计网络费</dt><dd>${kas(r.fees)} ${u}</dd>
@@ -690,8 +732,9 @@ export function roundView(x: Ctx): Raw {
         ${r.origin?html`<dt>创世输出</dt><dd class="mono small" title="创建这一轮时被花掉的资金输出（合约 ID 由它推出），不是创建交易本身">${shortHash(r.origin.transactionId,10,6)}:${r.origin.index}</dd>`:''}
         ${r.manager?html`<dt>状态 UTXO</dt><dd class="mono small">${shortHash(r.manager.outpoint.transactionId,10,6)}:${r.manager.outpoint.index}</dd><dt>合约锁定</dt><dd>${kas(r.manager.value)} ${u}</dd>`:''}
         <dt>数据来源</dt><dd>${r.source==='imported'?'导入':'本页创建'}</dd>
-      </dl></details></div>
+      </dl></details>`}
     </div>
+  </div>
   </div>`;
 }
 
@@ -807,17 +850,24 @@ export function walletBody(x: Ctx): Raw {
   if(w)return html`<dl class="kv"><dt>类型</dt><dd>${w.kind==='extension'?w.name??'扩展钱包':w.kind==='key'?'内存钱包':'仅收款地址（不能签名）'}</dd><dt>地址</dt><dd class="mono" style="word-break:break-all">${w.address}</dd>
     ${signing(w)?html`<dt>余额</dt><dd>${x.balance==null?'读取中…':`${kas(x.balance)} ${u}`}</dd>`:''}</dl>
     <p class="sub" style="margin-top:12px">${w.kind==='extension'?'签名由扩展钱包确认，本页不会取得私钥。':w.kind==='key'?'断开后私钥会从本页内存清除。':'这个地址只能收取免签动作的执行奖励。'}</p>`;
-  const tab=isMainnet&&x.S.wtab==='key'?'extension':x.S.wtab,options=x.walletOptions??[],preferred=options.some(o=>o.id===x.S.walletProvider)?x.S.walletProvider:options[0]?.id??'kasware';
-  return html`<div class="seg" style="margin-bottom:12px;flex-wrap:wrap"><button data-wtab="extension" aria-pressed="${tab==='extension'}">扩展 / Kaspire</button>${isMainnet?'':html`<button data-wtab="key" aria-pressed="${tab==='key'}">测试私钥</button>`}<button data-wtab="addr" aria-pressed="${tab==='addr'}">仅收款地址</button></div>
-    <p class="err" id="wErr" role="alert"></p>
-    ${tab==='extension'?html`<label class="field">外部钱包<select id="wProvider">
-        ${['kasware','kastle'].map(id=>html`<option value="${id}" ${preferred===id?'selected':''}>${id==='kasware'?'KasWare 扩展':'Kastle 扩展'}${options.some(o=>o.id===id)?'':'（未检测到）'}</option>`)}
-        <option value="kaspire" ${preferred==='kaspire'?'selected':''}>Kaspire 手机 App（WalletConnect）</option>
-      </select></label>
-      <p class="sub">KasWare / Kastle 请切换到 ${x.net.label}；Kaspire 支持手机浏览器直接拉起或扫码连接。</p>`
-    :tab==='key'?html`<div class="notice warn"><b>仅限一次性 Testnet 10 测试私钥</b>，仅保存在当前页面内存。</div>
+  const tab=isMainnet&&x.S.wtab==='key'?'extension':x.S.wtab,options=x.walletOptions??[];
+  const providers:[string,string,string,boolean][]=[
+    ['kasware','KasWare','浏览器扩展钱包',options.some(o=>o.id==='kasware')],
+    ['kastle','Kastle','浏览器扩展钱包',options.some(o=>o.id==='kastle')],
+    ['kaspire','Kaspire','手机 App（扫码或拉起授权）',true],
+  ].sort((a,b)=>(a[0]==='kaspire'?1:a[3]?-1:0)-(b[0]==='kaspire'?1:b[3]?-1:0)) as [string,string,string,boolean][];
+  return html`<p class="err" id="wErr" role="alert"></p>
+    ${tab==='extension'?html`<p class="sub" style="margin:0 0 12px">选择钱包即可连接（请切换到 <b>${x.net.label}</b>）：</p>
+      <div class="wallet-choices">${providers.map(([id,name,desc,ready])=>html`<button type="button" class="wallet-choice${ready&&id!=='kaspire'?' ready':''}" data-connect="${id}">
+        <span class="wc-main"><b>${name}</b><small class="muted">${desc}</small></span>
+        ${id==='kaspire'?html`<span class="tag">扫码 / App</span>`:ready?html`<span class="tag kas">已检测到</span>`:html`<span class="tag">未安装</span>`}
+      </button>`)}</div>
+      <div class="wallet-alt small muted"><span>其他方式：</span><button type="button" class="link" data-wtab="addr">仅填收款地址（免签领奖）</button>${isMainnet?'':html`<span>·</span><button type="button" class="link" data-wtab="key">测试私钥</button>`}</div>`
+    :tab==='key'?html`<div class="wallet-back"><button type="button" class="link" data-wtab="extension">${ic('arrow')} 返回常用钱包</button></div>
+      <div class="notice warn"><b>仅限一次性 Testnet 10 测试私钥</b>，仅保存在当前页面内存。</div>
       <label class="field">TN10 私钥（64 位十六进制）<input id="wKey" type="password" autocomplete="off" data-lpignore="true" spellcheck="false" placeholder="粘贴后点击“连接”"></label>`
-    :html`<label class="field">收款地址（${x.net.addressPrefix}:q…）<input id="wAddr" autocomplete="off" spellcheck="false" placeholder="${x.net.addressPrefix}:q…"></label><p class="small muted">用于接收派奖与退款的免签执行奖励。</p>`}`;
+    :html`<div class="wallet-back"><button type="button" class="link" data-wtab="extension">${ic('arrow')} 返回常用钱包</button></div>
+      <label class="field">收款地址（${x.net.addressPrefix}:q…）<input id="wAddr" autocomplete="off" spellcheck="false" placeholder="${x.net.addressPrefix}:q…"></label><p class="small muted">用于接收派奖与退款的免签执行奖励，不能用于买票或发起抽奖。</p>`}`;
 }
 export function settingsBody(x: Ctx): Raw {
   const c=x.conn,isMainnet=x.net.key==='mainnet';
@@ -839,21 +889,26 @@ export function settingsBody(x: Ctx): Raw {
       ${x.logs.length?x.logs.slice().reverse().slice(0,60).map(l=>html`<div class="${l.kind}">${new Date(l.at).toLocaleTimeString()} ${l.text}</div>`):'暂无日志'}</div></details>`;
 }
 
-/** Confirmation of a prepared transaction: what you pay / receive first, details collapsed. */
+/** Confirmation of a prepared transaction: concise payment summary first, full on-chain outputs and technical details collapsed. */
 export function confirmBody(x: ConfirmCtx): Raw {
   const p=x.prepared,rv=p.review,w=x.wallet,mine=w?.spk?.script,u=unitOf(x);
   const authorized=rv.inputs.filter(i=>i.kind.includes('需签名')).reduce((n,i)=>n+i.value,0n);
   const received=rv.outputs.filter(o=>!o.covenant&&o.script===mine).reduce((n,o)=>n+o.value,0n);
   const net=received-authorized,pay=net<0n;
-  return html`<p style="margin:0 0 12px">${x.planText}</p>
-    <div class="sum" style="border-top:0"><span>${pay?'你将支付（含网络费）':'你预计收到'}</span><span class="mono">${pay?kas(-net):kas(net)} ${u}</span></div>
-    <div class="sum"><span>网络费</span><span class="mono">${kas(rv.fee)} ${u}</span></div>
-    <h3 style="margin-top:14px">资金去向</h3>
-    <div class="outs">${rv.outputs.map(o=>html`<div class="out ${!o.covenant&&o.script===mine?'mine':''}"><span class="r">${ROLE_LABEL[o.role]??o.role}</span>
-      <span class="out-addr mono small">${o.covenant?'合约（轮次状态）':x.ex.addrOfScript(o.script)}${!o.covenant&&o.script===mine?' · 你':''}</span><span class="v">${kas(o.value)} ${u}</span></div>`)}</div>
-    <details style="margin-top:12px"><summary class="small muted">技术细节</summary><dl class="kv" style="margin-top:8px">
-      <dt>交易 ID</dt><dd class="mono small">${rv.txid}</dd><dt>费率</dt><dd>${p.feerate} sompi/克（${p.fee} sompi）</dd>
-      <dt>mass</dt><dd class="small">compute ${p.mass.computeMass} · transient ${p.mass.transientMass} · storage ${p.mass.storageMass}</dd>
-      <dt>输入</dt><dd class="small">${rv.inputs.map(i=>`#${i.index} ${kas(i.value)} ${u} · ${i.kind}`).join('；')}</dd></dl></details>
-    <p class="small muted" style="margin-top:10px">点击确认后：${w?.kind==='extension'?'在扩展钱包中确认签名 → 本页验签':'本页在本地签名并验签'} → 保存记录 → 提交给节点。是否被接受以节点选中链为准。</p>`;
+  return html`<p style="margin:0 0 12px;font-weight:600">${x.planText}</p>
+    <div class="confirm-summary">
+      <div class="sum" style="border-top:0"><span>${pay?'你将支付（含网络费）':'你预计收到'}</span><span class="mono" style="font-size:16px;color:${pay?'var(--text)':'var(--kas-ink)'}">${pay?kas(-net):kas(net)} ${u}</span></div>
+      <div class="sum"><span>网络费</span><span class="mono">${kas(rv.fee)} ${u}</span></div>
+    </div>
+    <details class="adv-details" style="margin-top:12px"><summary class="small muted">查看链上明细（资金去向与技术参数）</summary>
+      <div class="adv-body">
+        <div class="outs">${rv.outputs.map(o=>html`<div class="out ${!o.covenant&&o.script===mine?'mine':''}"><span class="r">${ROLE_LABEL[o.role]??o.role}</span>
+          <span class="out-addr mono small">${o.covenant?'合约（轮次状态）':x.ex.addrOfScript(o.script)}${!o.covenant&&o.script===mine?' · 你':''}</span><span class="v">${kas(o.value)} ${u}</span></div>`)}</div>
+        <dl class="kv" style="margin-top:10px">
+          <dt>交易 ID</dt><dd class="mono small">${rv.txid}</dd><dt>费率</dt><dd>${p.feerate} sompi/克（${p.fee} sompi）</dd>
+          <dt>mass</dt><dd class="small">compute ${p.mass.computeMass} · transient ${p.mass.transientMass} · storage ${p.mass.storageMass}</dd>
+          <dt>输入</dt><dd class="small">${rv.inputs.map(i=>`#${i.index} ${kas(i.value)} ${u} · ${i.kind}`).join('；')}</dd></dl>
+      </div>
+    </details>
+    <p class="small muted" style="margin:10px 0 0">点击确认后将在${w?.kind==='extension'?'钱包扩展中授权签名':'本页本地签名'}并提交到链上。</p>`;
 }

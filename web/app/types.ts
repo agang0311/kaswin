@@ -15,6 +15,7 @@ export interface Round {
   cid: Hex; source: string; terminal: string | null; halted: string | null; intent: Intent | null;
   manager: ManagerUtxo | null; frozen: FrozenUtxo[]; receipts: Receipt[]; pending: unknown[]; fees: bigint;
   origin: Outpoint | null; accepting?: Hex | null; settings: Settings; bought: number; step: number; history?: RoundHistory | null; draw?: DrawResult | null;
+  indexer?: {prunedAtNode?: boolean; base?: string; revision?: string; headTxid?: string; acceptingBlock?: string; checkedAt?: number} | null;
 }
 export interface Facts {
   module: string | null; ticketPrice: bigint; ticketCap: number; minTickets: number; closeEligibleDaa: bigint;
@@ -61,7 +62,7 @@ export interface VerifyState {state: 'checking' | 'ok' | 'partial' | 'bad'; at?:
 export interface CreateForm {price: string; cap: string; min: string; dur: string; custom: string; registry?: boolean; registryAddr?: string}
 export interface UiState {
   view: string; cid: string | null; filter: string; sort: string; query: string; qty: string; join: string; wtab: string; theme: string;
-  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; txLimit?: number; budgetPc?: number;
+  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; detailTab?: 'map' | 'txs' | 'rules'; txLimit?: number; budgetPc?: number;
   form: CreateForm; nodes: string; indexer: string; walletProvider: string;
 }
 export interface NetInfo {

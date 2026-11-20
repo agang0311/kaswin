@@ -397,6 +397,7 @@ async function authenticateIndexerSeed(document,rpc,profile,{net=TN10,baseRound=
   }catch(e){
     const code=e?.code??e?.safeCode??e?.message;
     if(e?.headVerifiedRound&&(code==='INDEXER_HEAD_NOT_FINAL'||code==='STALE_INPUT'))return {round:e.headVerifiedRound,nodeVerified:false};
+    if(e?.prunedSeedRound&&code==='STALE_INPUT')return {round:e.prunedSeedRound,nodeVerified:false};
     // If head was already spent (STALE_INPUT) or <100 DAA deep, check head acceptance on node without failing the whole catch-up.
     if(code==='INDEXER_HEAD_NOT_FINAL'||code==='STALE_INPUT'||code==='ROUND_HAS_NO_MANAGER'){
       const r=materializeIndexedDocument(document,profile,{baseRound,network:net.networkId}).round,head=document.head;
