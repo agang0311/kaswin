@@ -61,9 +61,30 @@ export function loadCandidateProfile(artifactTexts:Record<Module,string>,trusted
   const frames=Object.fromEntries(MODULES.map(m=>[m,parseFrame(m,artifactTexts[m],trustedPins[m],sha256)])) as Record<Module,Frame>;
   return {id:profileId(frames),compilerCommit:COMPILER_COMMIT,frames,status:'UNVALIDATED'};
 }
+interface ProfileSnap {
+  id:string;compilerCommit:string;status:string;
+  tails:readonly Uint8Array[];templateHashes:readonly string[];sourceSha256s:readonly string[];dispatchTags:readonly string[];
+}
+const VERIFIED_PROFILES=new WeakMap<Profile,ProfileSnap>();
 export function assertProfile(p:Profile):void {
   check(p?.compilerCommit===COMPILER_COMMIT&&p.status==='UNVALIDATED','CANDIDATE_PROFILE');
+  const snap=VERIFIED_PROFILES.get(p);
+  if(snap&&snap.id===p.id&&snap.compilerCommit===p.compilerCommit&&snap.status===p.status){
+    let ok=true;
+    for(let i=0;i<MODULES.length;i++){
+      const m=MODULES[i]!,f=p.frames?.[m];
+      if(!f||f.templateHash!==snap.templateHashes[i]||f.sourceSha256!==snap.sourceSha256s[i]||f.dispatchTag!==snap.dispatchTags[i]||!(f.tail instanceof Uint8Array)||!same(f.tail,snap.tails[i]!)){ok=false;break;}
+    }
+    if(ok)return;
+  }
   check(profileId(p.frames)===p.id,'PROFILE_CONTENT_CHANGED');
+  VERIFIED_PROFILES.set(p,{
+    id:p.id,compilerCommit:p.compilerCommit,status:p.status,
+    tails:MODULES.map(m=>p.frames[m].tail.slice()),
+    templateHashes:MODULES.map(m=>p.frames[m].templateHash),
+    sourceSha256s:MODULES.map(m=>p.frames[m].sourceSha256),
+    dispatchTags:MODULES.map(m=>p.frames[m].dispatchTag),
+  });
 }
 export function redeem(s:State,p:Profile):Uint8Array {assertProfile(p);return scriptFor(encode(s),p.frames[s.module].tail);}
 export function scriptHash(s:State,p:Profile):string {return hex(blake2b256(redeem(s,p)));}
@@ -81,7 +102,7 @@ export function identify(raw:Uint8Array,p:Profile):State {
   else if(raw[1]===0x4c){len=raw[2]!;at=3;check(len>75,'NONCANONICAL_PUSH');}
   else{check(raw[1]===0x4d&&raw.length>=4,'LEDGER_PUSH');len=raw[2]!+256*raw[3]!;at=4;check(len>255,'NONCANONICAL_PUSH');}
   check(at+len+p.frames[m].tail.length===raw.length,'REDEEM_LENGTH');
-  const s=decode(m,raw.slice(at,at+len));check(same(redeem(s,p),raw),'NONCANONICAL_REDEEM');return s;
+  const s=decode(m,raw.slice(at,at+len));check(same(scriptFor(encode(s),p.frames[s.module].tail),raw),'NONCANONICAL_REDEEM');return s;
 }
 export function verifyManager(x:ManagerContext,p:Profile):ManagerState {
   assertProfile(p);unhex(x.cid,32);check(x.cid!==ZERO,'CID_ZERO');

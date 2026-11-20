@@ -321,7 +321,7 @@ async function runWorker({role,node}) {
      const cursor=state.accepting??await chainCursor(rpc,null,8);
      const txid=referenceTxId(prepared.draft.transaction);
      const wireDigest=createHash('sha256').update(jsonText(txToRpc(prepared.draft.transaction))).digest('hex');
-     currentIntent={...prepared,txid,cursor,wireDigest,status:'PREPARED',action:'BUY',quantity:1,network:TN10.networkId,profileId:profile.id,accessor:null,proof:null};
+     currentIntent={...prepared,txid,cursor,wireDigest,engineVerifiedDigest:wireDigest,status:'PREPARED',action:'BUY',quantity:1,network:TN10.networkId,profileId:profile.id,accessor:null,proof:null};
      emit({
       event:'prepared',round:msg.round,pid:process.pid,role,txid,
       feeSompi:prepared.draft.fee.toString(),
@@ -335,7 +335,7 @@ async function runWorker({role,node}) {
     check(currentIntent&&currentIntent.txid,'WORKER_NOT_PREPARED');
     const intent=currentIntent;currentIntent=null;
     try {
-     await submitIntent(rpc,intent);
+     await submitIntent(rpc,intent,{skipEngine:true});
      intent.status='SUBMITTED';
      emit({event:'submit_result',round:msg.round,pid:process.pid,role,txid:intent.txid,status:'SUBMITTED',intent});
     }catch(e) {

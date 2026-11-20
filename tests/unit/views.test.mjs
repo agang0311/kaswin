@@ -136,7 +136,7 @@ test('round view: offered actions follow the phase; blocked ones carry their (es
   let out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,qty:'2'},detail:{...item(r,facts(),a),mine:null,isWinner:false}})).s;
   assert.match(out,/购买票/);assert.match(out,/data-act="BUY"/);assert.match(out,/&lt;b&gt;尚未到可关闭/);assert.ok(!out.includes('<b>尚未到可关闭'));
   assert.ok(!out.includes('data-act="DRAW"'));assert.ok(!out.includes('data-act="CLOSE"'));   // CLOSE is blocked -> disabled button, no hook
-  assert.match(out,/data-act="verify"/);assert.match(out,/刷新状态/);assert.ok(!out.includes('data-act="syncIndex"'));
+  assert.match(out,/data-act="verify"/);assert.match(out,/role="switch"/);assert.match(out,/实时同步/);assert.ok(!out.includes('data-act="syncIndex"'));
   assert.match(out,/<button[^>]*data-act="moreRound"[^>]*aria-haspopup="dialog"/);
   // unmet wallet: the same action turns into a "connect wallet" hook instead of a send hook
   out=roundView(ctx({gate:()=>({ok:false,reason:'需要先连接钱包。',fix:'wallet'}),detail:{...item(r,facts(),a),mine:null,isWinner:false}})).s;
@@ -208,7 +208,7 @@ test('foreground work visibly disables transaction buttons; background verificat
   assert.match(out,/正在准备交易，请稍候/);assert.match(out,/<button[^>]*disabled aria-busy="true"[^>]*>处理中…<\/button>/);
   assert.ok(!out.includes('data-act="BUY"'));assert.ok(!out.includes('data-act="CLOSE"'));
   out=roundView(ctx({detail:D,verify:{state:'checking'}})).s;
-  assert.match(out,/<button[^>]*data-act="verify"[^>]*disabled aria-busy="true"[^>]*>[\s\S]*?刷新中…<\/button>/);
+  assert.match(out,/<button[^>]*data-act="verify"[^>]*aria-busy="true"[^>]*>[\s\S]*?实时同步中…<\/button>/);
   assert.match(out,/data-act="BUY"/);assert.match(out,/data-act="CLOSE"/);
   const key={kind:'key',address:'kaspatest:qabc',key:hex('1'),spk:{script:'x'}};
   out=createView(ctx({wallet:key,busy:true})).s;

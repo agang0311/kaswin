@@ -890,4 +890,10 @@ export const EN = [
   ['正在向节点核对链上状态{0}…', 'Verifying on-chain status with node{0}…'],
   ['已同步部分进度，后台正在继续追赶{0}…', 'Partially synced; catching up in background{0}…'],
   ['（索引最新已达 {0} 张 · {1} 片）', ' (indexer latest: {0} tickets · {1} shards)'],
+  ['实时同步', 'Live sync'],
+  ['实时同步中…', 'Syncing…'],
+  ['同步已暂停', 'Sync paused'],
+  ['实时同步已开启，点击暂停', 'Live sync is on — click to pause'],
+  ['实时同步已暂停，点击恢复并立即同步', 'Live sync is paused — click to resume and sync now'],
+  ['已暂停实时同步', 'Live sync paused'],
 ];

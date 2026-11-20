@@ -75,10 +75,10 @@ const ex: Explorer={
   addrOfKey:(k: string|null)=>k?pubkeyToAddress(k,ADDR_PREFIX):null,
   addrOfScript:(s: string)=>{const m=/^20([0-9a-f]{64})ac$/.exec(s);return m?pubkeyToAddress(m[1] as string,ADDR_PREFIX):shortHash(s,10,6);},
 };
-const S: UiState={view:'explore',cid:null,filter:'all',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),txLimit:20,budgetPc:32,
+const S: UiState={view:'explore',cid:null,filter:'all',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),txLimit:20,budgetPc:32,
   form:{price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:LS.get('nodes',defaultNode),indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
 const conn: Conn={node:null,nodeUrl:null,indexer:null,indexerUrl:null,indexerStale:false,discoveredSource:null};
-const verify=new Map<string,VerifyState>();
+const verify=new Map<string,VerifyState>(),initialSyncDone=new Set<string>();
 let savedCids=new Set<string>(LS.get<string[]>('saved',[]));
 let checkProgress: string|null=null,roundTimer: ReturnType<typeof setInterval>|null=null,daaObservedAt=0;
 let drawObservation: {rpc: RpcLike; key: string; value: DrawProgress}|null=null,drawReading=false,drawReadAt=0;
@@ -169,7 +169,7 @@ async function refresh() {
   }
   render();
   void pollDaa();
-  if(S.view==='round'&&S.cid){void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
+  if(S.view==='round'&&S.cid){void ctl.watchRound(shouldWatchRound(S.cid)?S.cid:null);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
 }
 async function pollDaa(force=false) {
   const rpc=ctl.state.rpc;
@@ -301,9 +301,15 @@ function chrome() {
   $('themeBtn').setAttribute('aria-label',themeLabel);$('themeBtn').title=themeLabel;
   $('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';
 }
+const isLiveSync=(): boolean=>S.liveSync!==false;
+const shouldWatchRound=(cid: string|null): boolean=>{
+  if(!cid)return false;
+  if(isLiveSync())return true;
+  return !!items.find(i=>i.r.cid===cid)?.r.intent;
+};
 function syncRoundTimer(x: Ctx) {
   const mod=x.detail?.f.module;
-  const need=S.view==='round'&&!document.hidden&&!!ctl.state.rpc&&(mod==='sealed'||(mod==='sales'&&!x.detail?.a.CLOSE?.ok));
+  const need=S.view==='round'&&!document.hidden&&!!ctl.state.rpc&&(mod==='sealed'||(isLiveSync()&&mod==='sales'&&!x.detail?.a.CLOSE?.ok));
   if(need&&!roundTimer)roundTimer=setInterval(()=>{if(!document.hidden){void pollDaa();if(S.view==='round'&&detail()?.f.module==='sealed'){void pollDrawProgress();render();}}},1000);
   else if(!need&&roundTimer){clearInterval(roundTimer);roundTimer=null;}
 }
@@ -356,15 +362,15 @@ function route() {
   if(location.hash.startsWith('#join=')){const code=location.href;history.replaceState(null,'',location.pathname+'#/explore');S.view='explore';S.cid=null;S.shard=null;S.purchase=null;S.txLimit=20;previewRound=null;void ctl.watchRound(null);render();void onJoin(code);return;}
   const m=/^#\/(\w+)(?:\/([0-9a-f]{64}))?$/.exec(location.hash);
   const nextView=m&&VIEWS.includes(m[1])?m[1]:'explore',nextCid=m?.[2]??null;
-  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.txLimit=20;if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid)verify.delete(nextCid);}
+  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.txLimit=20;if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid){verify.delete(nextCid);initialSyncDone.delete(nextCid);}}
   S.view=nextView;S.cid=nextCid;if(S.view==='round'&&!S.cid)S.view='explore';
   if(S.view!=='round')previewRound=null;
-  void ctl.watchRound(S.view==='round'?S.cid:null);
+  void ctl.watchRound(S.view==='round'&&shouldWatchRound(S.cid)?S.cid:null);
   if(S.view==='round'&&S.cid){touch(S.cid);void hydrateRoundPreview(S.cid);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
   render();
 }
 function go(view: string,cid: string|null=null) {
-  if(view==='round'&&cid)verify.delete(cid);
+  if(view==='round'&&cid){verify.delete(cid);initialSyncDone.delete(cid);}
   const h=view==='round'&&cid?`#/round/${cid}`:`#/${view}`;
   if(location.hash!==h)location.hash=h;else route();
   window.scrollTo?.(0,0);
@@ -397,9 +403,10 @@ function verifyFor(cid: string|null): VerifyState|null {
 async function autoVerify(cid: string) {
   if(detailPolling||ctl.isSyncing?.(cid)||verify.get(cid)?.state==='checking'||verify.get(cid)?.state==='partial'||verifyFor(cid)||!ctl.state.rpc||ctl.state.busy)return;
   const it=items.find(i=>i.r.cid===cid);
-  if(it&&(it.r.terminal||it.r.intent))return;
+  if(it&&(it.r.terminal||it.r.intent||(!isLiveSync()&&initialSyncDone.has(cid))))return;
   if(!it&&!/^[0-9a-f]{64}$/.test(cid))return;
   if(indexInitPending||(!it&&S.indexer.trim()&&conn.indexer===null&&!conn.indexerStale&&!indexWaitTimedOut))return;
+  initialSyncDone.add(cid);
   await doVerify(cid);
 }
 async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
@@ -805,11 +812,25 @@ async function onCheckPending() {
     toast(`已完成 ${targets.length} 个轮次的待确认核对`);
   } finally {checkProgress=null;await refresh();}
 }
+function toggleLiveSync() {
+  const cid=CID(),next=!isLiveSync();
+  S.liveSync=next;LS.set('liveSync',next);
+  if(next){
+    void ctl.watchRound(cid);
+    render();
+    void doVerify(cid,{quiet:false});
+  }else{
+    void ctl.watchRound(shouldWatchRound(cid)?cid:null);
+    if(roundTimer&&detail()?.f.module!=='sealed'){clearInterval(roundTimer);roundTimer=null;}
+    toast('已暂停实时同步');
+    render();
+  }
+}
 const ACT: Record<string,()=>unknown>={
   closeModal:()=>closeModal(),create:onCreate,join:()=>onJoin(S.join),send:onSend,connectWallet:onConnectWallet,disconnect:onDisconnect,
   applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,switchNet:switchNetwork,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
   syncNow:()=>{closeModal();void doVerify(CID(),{quiet:false});},toggleStar:()=>toggleStar(CID()),checkPending:onCheckPending,
-  moreRound:()=>openRoundTools(CID()),verify:()=>doVerify(CID(),{quiet:false}),
+  moreRound:()=>openRoundTools(CID()),verify:toggleLiveSync,
   track:()=>run(()=>ctl.track(CID())),recover:()=>run(()=>ctl.track(CID(),{recover:true}),{ok:'已核对输入并重发原签名'}),
   discard:()=>onDiscard(false),discardForce:()=>onDiscard(true),pickFile:()=>$<HTMLInputElement>('sFile').click(),
   pasteLatest:()=>{closeModal();go('explore');setTimeout(()=>$('joinText')?.focus(),50);},
@@ -908,6 +929,12 @@ function bind() {
 async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=false,immediate=false,rewatch=false}: {allowIndexer?: boolean;preferRest?: boolean;skipIndexer?: boolean;immediate?: boolean;rewatch?: boolean}={}) {
   if(detailPolling||indexInitPending||document.hidden||ctl.state.busy||modalOpen()||S.view!=='round'||!S.cid)return;
   const nowMs=Date.now(),targetCid=S.cid;
+  const curExisting=items.find(i=>i.r.cid===targetCid);
+  const catchingUpExisting=verify.get(targetCid)?.state==='partial';
+  if(!isLiveSync()&&curExisting&&!curExisting.r.intent&&!catchingUpExisting){
+    if(rewatch)void ctl.watchRound(null);
+    return;
+  }
   const pollIntervalMs=ctl.state.watchedAddress?15000:3500;
   if(!immediate&&nowMs-detailSyncAt<pollIntervalMs)return;
   detailPolling=true;detailSyncAt=nowMs;
@@ -936,19 +963,19 @@ async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=fa
           detailSyncAt=0;
           setTimeout(()=>{void runDetailSync({preferRest,immediate:true,rewatch});},120);
         }else if(rewatch&&S.view==='round'&&S.cid===targetCid){
-          void ctl.watchRound(targetCid);
+          void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);
         }
       }else if(rewatch){
-        void ctl.watchRound(targetCid);
+        void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);
       }
     }else{
       if((!previewRound||previewRound.cid!==targetCid)&&!ctl.state.rpc)await hydrateRoundPreview(targetCid);
       if(ctl.state.rpc&&!ctl.isSyncing?.(targetCid)&&verify.get(targetCid)?.state!=='checking'){
         setTimeout(()=>{if(S.view==='round'&&S.cid===targetCid)void autoVerify(targetCid);},0);
       }
-      if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(targetCid);
+      if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);
     }
-  }catch{if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(targetCid);}
+  }catch{if(rewatch&&S.view==='round'&&S.cid===targetCid)void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);}
   finally{detailPolling=false;}
 }
 

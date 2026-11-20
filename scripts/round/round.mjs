@@ -2,6 +2,7 @@
  * A record is DATA, never authority: imported records are unauthenticated until the page verifies the live UTXOs;
  * after acceptance the next state is derived from the node-served accepted transaction, not from the page's draft.
  * Port of the bounded logic in experiments/rolling/tn10-run.mjs (which pulls node:fs/test-signer and must not enter a browser). */
+import {same} from '../core/lib/bytes.js';
 import {p2sh} from '../core/lib/covenant-id.js';
 import {blake2b256} from '../core/lib/hashes.js';
 import {outpointKey} from '../core/lib/transaction.js';
@@ -12,6 +13,43 @@ import {TN10_NETWORK_ID,TN10_PROFILE_ID} from '../contract/protocol.mjs';
 import {encodeTagged,decodeTagged,decodeTaggedValue} from '../store/codec.mjs';
 import {daaDuration} from '../../web/ui/format.mjs';
 const {check,hex,unhex}=S;
+const FROZEN_SCRIPT_CACHE=new WeakMap();
+const FROZEN_BY_SPK=new Map();
+const FROZEN_CACHE_MAX=512;
+/** Verify and decode an immutable frozen shard redeemScript, reusing byte-identical cached results across IndexedDB structuredClone boundaries.
+ * Any 1-bit change in redeemScript fails `same()` and falls through to full blake2b256 + identify(). */
+function inspectFrozenScript(f,profile,{strict=false}={}) {
+  const raw=f?.redeemScript;
+  check(raw instanceof Uint8Array,'FROZEN_SCOPE');
+  const hitRef=FROZEN_SCRIPT_CACHE.get(raw);
+  if(hitRef&&hitRef.profileId===profile.id){
+    if(strict&&hitRef.error)throw hitRef.error;
+    return hitRef;
+  }
+  const spkScript=typeof f?.spk?.script==='string'?f.spk.script:'';
+  const spkKey=spkScript?`${profile.id}:${spkScript}`:'';
+  if(spkKey){
+    const hitSpk=FROZEN_BY_SPK.get(spkKey);
+    if(hitSpk&&same(hitSpk.raw,raw)){
+      FROZEN_SCRIPT_CACHE.set(raw,hitSpk);
+      if(strict&&hitSpk.error)throw hitSpk.error;
+      return hitSpk;
+    }
+  }
+  let decoded=null,error=null;
+  try{decoded=identify(raw,profile);}catch(e){error=e;if(strict)throw e;}
+  const h=hex(blake2b256(raw));
+  const entry={profileId:profile.id,raw:error?raw:raw.slice(),h,decoded,error};
+  FROZEN_SCRIPT_CACHE.set(raw,entry);
+  if(!error&&spkKey&&decoded?.module==='frozen'){
+    if(FROZEN_BY_SPK.size>=FROZEN_CACHE_MAX){
+      const oldest=FROZEN_BY_SPK.keys().next().value;
+      if(oldest!==undefined)FROZEN_BY_SPK.delete(oldest);
+    }
+    FROZEN_BY_SPK.set(spkKey,entry);
+  }
+  return entry;
+}
 export const ROUND_VERSION=1;
 export const GENESIS_MAGIC='KASWIN_ROLLING_GENESIS_V1';
 export const ACTIONS=Object.freeze(['BUY','CLOSE','DRAW','TIMEOUT','PAY_OLD','PAY_SELF','REFUND_OLD','REFUND_SELF']);
@@ -122,9 +160,8 @@ export function shardCatalog(round,profile,walletKey=null) {
   const byHash=new Map();
   for(const f of round.frozen??[]){
     if(!(f?.redeemScript instanceof Uint8Array))continue;
-    const h=hex(blake2b256(f.redeemScript));
-    let decoded=null;try{decoded=identify(f.redeemScript,profile);}catch{}
-    const bucket=byHash.get(h);if(bucket)bucket.push({f,decoded});else byHash.set(h,[{f,decoded}]);
+    const cached=inspectFrozenScript(f,profile);
+    const bucket=byHash.get(cached.h);if(bucket)bucket.push({f,decoded:cached.decoded});else byHash.set(cached.h,[{f,decoded:cached.decoded}]);
   }
   const takeFrozen=j=>{
     const bucket=byHash.get(indices[j].hash);
@@ -266,9 +303,11 @@ export function validateRound(r,profile,{allowIntent=true,network=TN10_NETWORK_I
   const hashes=new Set((s?.indices??[]).map(i=>i.hash)),seen=new Set(r.manager?[outpointKey(r.manager.outpoint)]:[]),remaining=new Map(),frozenByHash=new Map();
   for(const f of r.frozen) {
     outpoint(f.outpoint,'FROZEN_OUTPOINT');big(f.value,'FROZEN_VALUE');big(f.utxoDaa,'FROZEN_DAA',S.DAA_LIMIT);spkOf(f.spk,'FROZEN_SPK');
-    const dec=identify(f.redeemScript,profile);
-    check(f.cid===r.cid&&f.redeemScript instanceof Uint8Array&&dec.module==='frozen','FROZEN_SCOPE');
-    const h=hex(blake2b256(f.redeemScript)),point=outpointKey(f.outpoint);check(hashes.has(h)&&!seen.has(point)&&f.spk.script===p2sh(h).script,'FROZEN_HASH');seen.add(point);
+    check(f.cid===r.cid&&f.redeemScript instanceof Uint8Array,'FROZEN_SCOPE');
+    const info=inspectFrozenScript(f,profile,{strict:true});
+    const dec=info.decoded,h=info.h;
+    check(dec.module==='frozen','FROZEN_SCOPE');
+    const point=outpointKey(f.outpoint);check(hashes.has(h)&&!seen.has(point)&&f.spk.script===p2sh(h).script,'FROZEN_HASH');seen.add(point);
     const key=h+':'+f.value;remaining.set(key,(remaining.get(key)??0)+1);
     if(!frozenByHash.has(h))frozenByHash.set(h,dec.records);
   }
@@ -321,7 +360,7 @@ export function applyRoundDelta(baseRound,document,profile,{network=TN10_NETWORK
   const d=decodeTaggedValue(document.delta);
   check(d&&typeof d==='object'&&Array.isArray(d.receipts)&&Array.isArray(d.frozen),'DELTA_SHAPE');
   const preimages=new Map();
-  for(const f of baseRound.frozen??[])if(f?.redeemScript instanceof Uint8Array)preimages.set(hex(blake2b256(f.redeemScript)),f.redeemScript);
+  for(const f of baseRound.frozen??[])if(f?.redeemScript instanceof Uint8Array)preimages.set(inspectFrozenScript(f,profile).h,f.redeemScript);
   for(const sh of baseRound.history?.shards??[])if(sh?.hash&&Array.isArray(sh.records)){
     try{preimages.set(sh.hash,redeem({module:'frozen',records:sh.records},profile));}catch{}
   }

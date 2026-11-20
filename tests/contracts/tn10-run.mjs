@@ -190,7 +190,7 @@ export function authenticateIntent(intent) {
  intent.draft.inputUtxos.forEach((u,i)=>check(u.outpoint.transactionId===intent.draft.transaction.inputs[i].previousOutpoint.transactionId&&u.outpoint.index===intent.draft.transaction.inputs[i].previousOutpoint.index,'INTENT_OUTPOINT'));
  return {wire,digest};
 }
-export async function submitIntent(rpc,intent) {
+export async function submitIntent(rpc,intent,{skipEngine=false}={}) {
  let sent=false;
  try {
  const {wire,digest}=authenticateIntent(intent);
@@ -200,7 +200,9 @@ export async function submitIntent(rpc,intent) {
  for(let i=0;i<tx.inputs.length;i++)check(tx.inputs[i].sequence===0n||now>=intent.draft.inputUtxos[i].daa+tx.inputs[i].sequence,'SUBMIT_SEQUENCE_MATURITY');
  let confirmation=null;
  if(intent.action==='DRAW')confirmation=await requireConfirmedDrawTarget(rpc,drawTargetFromOpening(intent.proof));
- runEngine(intent.draft,{accessor:intent.accessor,limited:true});
+ if(!(skipEngine&&intent.engineVerifiedDigest===digest&&intent.engine&&intent.action!=='DRAW')) {
+  runEngine(intent.draft,{accessor:intent.accessor,limited:true});
+ }
  const permit=createCliSubmitPermit(TN10,request=>check(createHash('sha256').update(jsonText(request.transaction)).digest('hex')===digest,'SUBMIT_CONTENT_CHANGED'));
  const result=await rpc.call('submitTransaction',{transaction:wire,allowOrphan:false},30000,{submitPermit:permit,beforeSend:()=>{if(confirmation)assertFreshDrawConfirmation(confirmation,confirmation,Date.now(),rpc);sent=true;}});
  check(result.transactionId===intent.txid,'SUBMIT_TXID');return result;
@@ -353,18 +355,37 @@ async function nextOperation(rpc,state,profile,settings,depleted=new Set()) {
  }
  return selectOldShardBatch(state,s,profile,settings)??{action:s.module==='win'?'PAY_SELF':'REFUND_SELF',role:'creator'};
 }
+function estimateInitialFee(state,op,targets,feerate,feeCap) {
+ if(op.action==='GENESIS'||!state?.manager?.redeemScript?.length)return 1000000n;
+ let scriptBytes=BigInt(state.manager.redeemScript.length);
+ for(const t of targets)if(t?.redeemScript?.length)scriptBytes+=BigInt(t.redeemScript.length);
+ const estOrderingMass=scriptBytes*2n;
+ const est=requiredFee({orderingMass:estOrderingMass,relayFloor:estOrderingMass*100n},feerate);
+ if(est<=1000000n)return 1000000n;
+ return est<feeCap?est:feeCap;
+}
 export async function prepare(rpc,state,profile,op,signer,settings,{feerate='100',exclude=null}={}) {
  const targets=op.targets??[],needsFunds=['GENESIS','BUY','CLOSE','DRAW','TIMEOUT','REFUND_SELF'].includes(op.action);
  const funds=needsFunds?await fund(rpc,signer,op.action==='GENESIS'?600000000n:op.action==='BUY'?BigInt(op.quantity)*S.PRICE_MIN+S.FEE_CAP+1n:S.FEE_CAP+1n,exclude):[];
- let fee=1000000n,budgets=Array((op.action==='GENESIS'?0:1)+targets.length+funds.length).fill(65535),draft,mass;
+ const feeCap=op.action.startsWith('PAY')?S.PAY_FEE_CAP:S.FEE_CAP;
+ let fee=estimateInitialFee(state,op,targets,feerate,feeCap),budgets=Array((op.action==='GENESIS'?0:1)+targets.length+funds.length).fill(65535),draft,mass;
  const make=()=>op.action==='GENESIS'?buildGenesis(profile,signer.key,{ticketPrice:S.PRICE_MIN,ticketCap:settings.ticketCap,minTickets:settings.minTickets,closeEligibleDaa:state.closeEligibleDaa},{funds,fee,budgets,registrySpk:TN10.registry.spk}):
   buildAction(state.manager,profile,{...op,actorKey:signer.key},{targets,funds,fee,budgets,allowDelegatedBuyer:op.action==='BUY'&&typeof op.buyerKey==='string'&&op.buyerKey!==signer.key});
  for(let attempt=0;attempt<8;attempt++) {
-  draft=make();budgets=measuredBudgets(draft,op.accessor);draft=make();mass=quoteMass(draft);
+  draft=make();
+  const outCount=draft.transaction.outputs.length;
+  budgets=measuredBudgets(draft,op.accessor);
+  const probe={...draft,transaction:{...draft.transaction,inputs:draft.transaction.inputs.map((inp,i)=>({...inp,computeBudget:budgets[i]}))}};
+  try {
+   const estReq=requiredFee(quoteMass(probe),feerate);
+   if(estReq>fee&&estReq<=feeCap)fee=estReq;
+  }catch{}
+  draft=make();mass=quoteMass(draft);
   const required=requiredFee(mass,feerate);
-  if(fee>=required)break;fee=required;check(attempt<7,'FEE_CONVERGENCE');
+  if(fee>=required&&draft.transaction.outputs.length===outCount)break;
+  fee=required;check(attempt<7,'FEE_CONVERGENCE');
  }
- check(fee<=(op.action.startsWith('PAY')?S.PAY_FEE_CAP:S.FEE_CAP),'EXPERIMENT_FEE_CAP');
+ check(fee<=feeCap,'EXPERIMENT_FEE_CAP');
  for(const u of draft.inputUtxos)u.daa=u.utxoDaa;
  await verifyInputsLive(rpc,draft.inputUtxos,{allowDaaDrift:true});
  draft.transaction.storageMass=mass.storageMass;await signer.sign(draft);

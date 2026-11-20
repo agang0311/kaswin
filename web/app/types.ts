@@ -61,7 +61,7 @@ export interface VerifyState {state: 'checking' | 'ok' | 'partial' | 'bad'; at?:
 export interface CreateForm {price: string; cap: string; min: string; dur: string; custom: string; registry?: boolean; registryAddr?: string}
 export interface UiState {
   view: string; cid: string | null; filter: string; sort: string; query: string; qty: string; join: string; wtab: string; theme: string;
-  shard?: number | null; purchase?: number | null; pixelMode?: boolean; txLimit?: number; budgetPc?: number;
+  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; txLimit?: number; budgetPc?: number;
   form: CreateForm; nodes: string; indexer: string; walletProvider: string;
 }
 export interface NetInfo {
