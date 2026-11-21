@@ -71,16 +71,25 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
     }}],
   });
   const sources=checkGraph(result.metafile);
+  assert.ok(!sources.some(f=>f.includes('@walletconnect/sign-client')||f.includes('node_modules/qrcode/')),'KASPIRE_WC_STILL_IN_MAIN_BUNDLE');
+  const wcResult=await esbuild.build({
+    absWorkingDir:root,entryPoints:['scripts/wallet/kaspire-wc-entry.mjs'],bundle:true,metafile:true,write:false,
+    platform:'browser',format:'iife',globalName:'__KASWIN_KASPIRE_WC__',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
+  });
+  const wcSources=checkGraph(wcResult.metafile);
+  const wcJs=wcResult.outputFiles[0].text;
+  assert.ok(!/require\(["']node:|from["']node:/.test(wcJs),'WC_OUTPUT_NODE_IMPORT');
   const js=result.outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
   assert.ok(!/require\(["']node:|from["']node:/.test(js),'OUTPUT_NODE_IMPORT');
-  const css=await fs.readFile(path.join(root,'web/ui/styles.css'),'utf8');
+  const cssRaw=await fs.readFile(path.join(root,'web/ui/styles.css'),'utf8');
+  const css=(await esbuild.transform(cssRaw,{loader:'css',minify:true})).code.trim();
   const template=await fs.readFile(path.join(root,'web/ui/index.template.html'),'utf8');
   for(const m of ['__APPLICATION_HASH__','/* APPLICATION */','/* STYLES */','__PROFILE_ID__'])assert.equal(template.split(m).length,2,`Template marker: ${m}`);
   const scriptHash=createHash('sha256').update(js).digest('base64');
   const html=template.replace('__APPLICATION_HASH__',`sha256-${scriptHash}`).replace('__PROFILE_ID__',TN10_PROFILE_ID)
     .replace('/* STYLES */',()=>css).replace('/* APPLICATION */',()=>js);
   assert.ok(sources.includes('scripts/core.mjs')&&sources.includes('scripts/core/lib/transactions.js'),'ROLLING_TS_CORE_NOT_WIRED');
-  const inputPaths=[...new Set([...sources.filter(f=>!f.startsWith('rolling-profile:')),...coreSources,
+  const inputPaths=[...new Set([...sources.filter(f=>!f.startsWith('rolling-profile:')),...wcSources,...coreSources,
     'build/core.mjs','build/build.mjs','scripts/core/tsconfig.json','scripts/core/package.json',
     'web/ui/index.template.html','web/ui/styles.css','web/app/tsconfig.json','web/app/globals.d.ts','web/app/types.ts',
     'package.json','package-lock.json','contracts/pins.json','contracts/toolchain.json',
@@ -93,8 +102,9 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
     graph:{files:sources.length,nodeImports:0,forbiddenModules:0},inputs};
   await fs.mkdir(outDir,{recursive:true});
   await fs.writeFile(path.join(outDir,'index.html'),html);
+  await fs.writeFile(path.join(outDir,'kaspire-wc.js'),wcJs);
   await fs.writeFile(path.join(outDir,'build-manifest.json'),JSON.stringify(manifest,null,2)+'\n');
-  return {html,manifest,outDir};
+  return {html,wcJs,manifest,outDir};
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {

@@ -387,9 +387,22 @@ function spawnWorker({role,node}) {
  };
 }
 
-export async function executeContention({runDir,rounds=5,continuous=false,rolesSpec='creator,buyer1,buyer2',node=DEFAULT_LOCAL_NODE,pollMs=250,buyerPool=64,winnerTimeoutMs=600000}={}) {
+export function parseWorkerNodes(spec='') {
+ const out=new Map();
+ for(const part of String(spec??'').split(',').map(s=>s.trim()).filter(Boolean)) {
+  const eq=part.indexOf('=');
+  check(eq>0,'WORKER_NODE_SPEC');
+  const role=part.slice(0,eq).trim(),url=part.slice(eq+1).trim();
+  check(Object.hasOwn(LOCK_ROLE,role)&&/^wss?:\/\//i.test(url),'WORKER_NODE_SPEC');
+  out.set(role,url);
+ }
+ return out;
+}
+
+export async function executeContention({runDir,rounds=5,continuous=false,rolesSpec='creator,buyer1,buyer2',node=DEFAULT_LOCAL_NODE,workerNodesSpec=null,stopAtBuys=null,pollMs=250,buyerPool=64,winnerTimeoutMs=600000}={}) {
  check(process.env.KASWIN_VM_BIN,'KASWIN_VM_BIN_REQUIRED');
  check(continuous||rounds===0||(Number.isSafeInteger(rounds)&&rounds>=1&&rounds<=1000),'CONTENTION_ROUNDS');
+ check(stopAtBuys===null||(Number.isSafeInteger(stopAtBuys)&&stopAtBuys>=1),'CONTENTION_STOP_AT_BUYS');
  check(Number.isSafeInteger(pollMs)&&pollMs>=100&&pollMs<=5000,'POLL_INTERVAL');
  check(Number.isSafeInteger(buyerPool)&&buyerPool>=0&&buyerPool<=256,'BUYER_POOL_SIZE');
  check(Number.isSafeInteger(winnerTimeoutMs)&&winnerTimeoutMs>=30000&&winnerTimeoutMs<=3600000,'WINNER_TIMEOUT_MS');
@@ -428,8 +441,9 @@ export async function executeContention({runDir,rounds=5,continuous=false,rolesS
 
   const nodeCandidates=parseNodeCandidates(node);
   const workerNodeSpec=nodeCandidates.join(',');
+  const workerNodeOverrides=parseWorkerNodes(workerNodesSpec);
   rpc=await connectCandidateNodes(nodeCandidates);
-  for(const role of roles)workers.push(spawnWorker({role,node:workerNodeSpec}));
+  for(const role of roles)workers.push(spawnWorker({role,node:workerNodeOverrides.get(role)??workerNodeSpec}));
   const onlines=await Promise.all(workers.map(w=>w.nextEvent()));
   for(const o of onlines)check(o.event==='online','WORKER_ONLINE_FAILED');
   console.log(JSON.stringify({contentionStart:true,cid:state.cid,runDir:dir,node:rpc.url,nodeCandidates,continuous:maxRounds===Infinity,rounds:maxRounds===Infinity?null:maxRounds,workers:onlines.map(o=>({role:o.role,pid:o.pid,address:o.address,node:o.node}))}));
@@ -444,7 +458,8 @@ export async function executeContention({runDir,rounds=5,continuous=false,rolesS
    const evs=await Promise.all(activeWorkers.map(w=>w.nextEvent(30000)));
    for(const ev of evs)check(ev.event==='reconnected',`WORKER_RECONNECT_FAILED:${ev.role}:${ev.code??ev.event}`);
   };
-  while(!stopping&&r<maxRounds&&state.buys<settings.buys&&activeWorkers.length>=2) {
+  const targetBuys=stopAtBuys===null?settings.buys:Math.min(settings.buys,stopAtBuys);
+  while(!stopping&&r<maxRounds&&state.buys<targetBuys&&activeWorkers.length>=2) {
    r++;
    try{
     await waitManagerLive(rpc,state.manager,{pollMs});
@@ -524,6 +539,7 @@ export async function executeContention({runDir,rounds=5,continuous=false,rolesS
     step:state.step,
     buys:state.buys,
     submitOrder:submitOrder.map(w=>w.role),
+    submitStatuses:Object.fromEntries(outcomes.map(o=>[o.role,o.status])),
     contestedOutpoint,
     winner:{role:winner.role,pid:winner.pid,txid:winner.txid,acceptingBlock:receipt.acceptingBlock,acceptingDaa:receipt.acceptingDaa.toString(),feeSompi:receipt.actualFee.toString()},
     losers:loserChecks,
@@ -571,6 +587,8 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
     continuous:process.argv.includes('--continuous'),
     rolesSpec:arg('roles')??'creator,buyer1,buyer2',
     node:arg('node')??'ws://127.0.0.1:18210',
+    workerNodesSpec:arg('worker-nodes')??null,
+    stopAtBuys:arg('stop-at-buys')!=null?Number(arg('stop-at-buys')):null,
     pollMs:arg('poll-ms')?Number(arg('poll-ms')):250,
     buyerPool:arg('buyer-pool')!=null?Number(arg('buyer-pool')):64,
     winnerTimeoutMs:arg('winner-timeout-ms')!=null?Number(arg('winner-timeout-ms')):600000,

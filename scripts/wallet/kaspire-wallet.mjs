@@ -1,8 +1,6 @@
 /** Kaspire mobile wallet adapter over WalletConnect v2 + Android Intent / App Link wake.
  * Like browser extension adapters, Kaspire only signs the listed ordinary P2PK inputs via kaspa_signPskt;
  * it never broadcasts, and returned signature scripts are locally verified before copying into the page's draft. */
-import SignClient from '@walletconnect/sign-client';
-import QRCode from 'qrcode';
 import {check,hex,FEE_CAP} from '../core.mjs';
 import {p2pk} from '../core/lib/covenant-id.js';
 import {decodeAddress,pubkeyToAddress} from './address.mjs';
@@ -35,11 +33,42 @@ export function wakeKaspire() {
   if(isMobileBrowser())triggerAppLink(KASPIRE_WAKE_LINK);
 }
 
+let depsPromise=null;
+async function loadKaspireDeps() {
+  const cached=globalThis.__KASWIN_KASPIRE_WC__;
+  if(cached?.SignClient&&cached?.QRCode)return cached;
+  if(depsPromise)return depsPromise;
+  depsPromise=(async()=>{
+    if(typeof document==='object'&&document.head) {
+      await new Promise((resolve,reject)=>{
+        const script=document.createElement('script');
+        const timer=setTimeout(()=>{script.remove();reject(new Error('KASPIRE_SDK_TIMEOUT'));},20000);
+        script.src='./kaspire-wc.js';
+        script.async=true;
+        script.onload=()=>{clearTimeout(timer);resolve();};
+        script.onerror=()=>{clearTimeout(timer);script.remove();reject(new Error('KASPIRE_SDK_LOAD_FAILED'));};
+        document.head.appendChild(script);
+      });
+      const loaded=globalThis.__KASWIN_KASPIRE_WC__;
+      if(!loaded?.SignClient||!loaded?.QRCode)throw new Error('KASPIRE_SDK_INVALID');
+      return loaded;
+    }
+    const wcPkg='@walletconnect/'+'sign-client',qrPkg='qr'+'code';
+    const [{default:SignClient},{default:QRCode}]=await Promise.all([
+      import(wcPkg),
+      import(qrPkg),
+    ]);
+    return {SignClient,QRCode};
+  })().catch(e=>{depsPromise=null;throw e;});
+  return depsPromise;
+}
+
 export function warmKaspireClient() {
   void getSignClient().catch(()=>{});
 }
 
 export async function renderPairingQrDataUrl(text) {
+  const {QRCode}=await loadKaspireDeps();
   return QRCode.toDataURL(text,{width:220,margin:2,errorCorrectionLevel:'M'});
 }
 
@@ -47,10 +76,13 @@ let clientPromise=null;
 async function getSignClient() {
   if(!clientPromise) {
     const origin=typeof location==='object'&&/^https?:/.test(location.origin)?location.origin:'https://cd311.cn:888';
-    clientPromise=SignClient.init({
-      projectId:KASPIRE_PROJECT_ID,
-      metadata:{name:'Kaswin Rolling',description:'Kaswin Rolling Lottery',url:origin,icons:[]},
-    }).catch(e=>{clientPromise=null;throw e;});
+    clientPromise=(async()=>{
+      const {SignClient}=await loadKaspireDeps();
+      return SignClient.init({
+        projectId:KASPIRE_PROJECT_ID,
+        metadata:{name:'Kaswin Rolling',description:'Kaswin Rolling Lottery',url:origin,icons:[]},
+      });
+    })().catch(e=>{clientPromise=null;throw e;});
   }
   return clientPromise;
 }

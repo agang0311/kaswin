@@ -12,7 +12,7 @@ import {EN} from '../ui/messages-en.mjs';
 import {parseNodeList} from './settings.ts';
 import {deferPointerRender} from '../ui/interaction.ts';
 import {availableExtensionWallets} from '../../scripts/wallet/extension-wallet.mjs';
-import {isMobileBrowser,KASPIRE_WAKE_LINK,renderPairingQrDataUrl,triggerAppLink,warmKaspireClient} from '../../scripts/wallet/kaspire-wallet.mjs';
+import {isMobileBrowser,KASPIRE_WAKE_LINK,renderPairingQrDataUrl,triggerAppLink} from '../../scripts/wallet/kaspire-wallet.mjs';
 import {indexerBase} from '../../scripts/round/indexer-client.mjs';
 import {formatTkas,shortHash} from '../ui/format.mjs';
 import {TN10_PROFILE_ID} from '../../scripts/contract/protocol.mjs';
@@ -647,7 +647,6 @@ function openSettings() {
 }
 function openWallet() {
   const x=ctxt(),w=x.wallet;
-  if(!w)warmKaspireClient();
   const tab=activeNet.key==='mainnet'&&S.wtab==='key'?'extension':S.wtab;
   modal('钱包',walletBody(x),w?html`<button class="btn warn" data-act="disconnect">断开钱包</button><button class="btn" data-act="closeModal">关闭</button>`
     :tab==='extension'?html`<button class="btn" data-act="closeModal">关闭</button>`
