@@ -32,13 +32,14 @@ jobs:
       - name: Collect release files
         run: |
           set -euo pipefail
-          node -e "const m=require('./dist/build-manifest.json'); if (m.mode!=='tn10' || !m.capabilities?.tn10Trading) process.exit(1)"
+          node -e "const m=require('./dist/build-manifest.json'); if (!['mainnet','tn10'].includes(m.mode) || !m.capabilities?.tn10Trading) process.exit(1)"
           mkdir release
           cp dist/index.html release/kaswin.html
+          cp dist/kaspire-wc.js release/kaspire-wc.js
           cp dist/build-manifest.json release/build-manifest.json
-          (cd release && sha256sum kaswin.html build-manifest.json > SHA256SUMS)
+          (cd release && sha256sum kaswin.html kaspire-wc.js build-manifest.json > SHA256SUMS)
           {
-            echo '### Kaswin TN10 build'
+            echo '### Kaswin build'
             echo '```text'
             cat release/SHA256SUMS
             echo '```'
@@ -63,7 +64,8 @@ jobs:
 
           | 文件 | 说明 |
           |---|---|
-          | \`kaswin.html\` | Testnet 10 构建（Rolling 单活动片实现，不支持主网） |
+          | \`kaswin.html\` | 主页面（默认主网，可切换 Testnet 10） |
+          | \`kaspire-wc.js\` | Kaspire WalletConnect v2 按需加载模块（仅点击 Kaspire 时请求） |
           | \`build-manifest.json\` | 构建模式、合约 Profile、工具版本、源码与产物哈希 |
           | \`SHA256SUMS\` | 以上文件的 SHA256 |
 
@@ -75,5 +77,5 @@ jobs:
 
           没有第三方安全审计。请只投入你能承受损失的金额。
           EOF
-          gh release create "$TAG" release/kaswin.html release/build-manifest.json release/SHA256SUMS \
+          gh release create "$TAG" release/kaswin.html release/kaspire-wc.js release/build-manifest.json release/SHA256SUMS \
             --verify-tag --title "Kaswin ${TAG#v} · Profile ${profile:0:16}" --notes-file notes.md
