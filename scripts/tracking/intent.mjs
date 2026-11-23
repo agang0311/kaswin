@@ -7,7 +7,7 @@ import {txToRpc,RpcError} from '../chain/nodes.mjs';
 import {jsonText} from '../chain/json.mjs';
 import {verifyInputsLive,searchAccepted,acceptedAt,matchesDraft,mempoolEntry,inputsState,sameInput,REORG_RECHECK_DAA} from '../chain/chain.mjs';
 import {referenceTxId} from '../core/lib/transaction.js';
-import {drawTargetFromOpening,requireConfirmedDrawTarget,assertFreshDrawConfirmation} from '../round/draw-confirmations.mjs';
+import {drawTargetFromOpening,confirmDrawTargetWithRetry,assertFreshDrawConfirmation} from '../round/draw-confirmations.mjs';
 import {quoteMass} from '../core.mjs';
 import {check,hex,unhex} from '../core.mjs';
 import {sha256Hex,TN10_NETWORK_ID,TN10_PROFILE_ID} from '../contract/protocol.mjs';
@@ -68,7 +68,7 @@ export async function submitIntent(rpc,intent,profile,{beforeSend=()=>{},network
     let confirmation=null;
     if(intent.action==='DRAW') {
       check(intent.proof instanceof Uint8Array,'DRAW_PROOF_MISSING');
-      confirmation=await requireConfirmedDrawTarget(rpc,drawTargetFromOpening(intent.proof));
+      confirmation=await confirmDrawTargetWithRetry(rpc,drawTargetFromOpening(intent.proof));
     }
     const digest=intent.wireDigest;
     const result=await rpc.call('submitTransaction',{transaction:wire,allowOrphan:false},30000,{beforeSend:()=>{

@@ -1,7 +1,7 @@
 /** Rolling PASS-A acquisition. Reuses the production verifier assemblePassA, never the old-profile snapshot codec. */
 import {assemblePassA,COINBASE_LANE_KEY} from '../core/lib/pass-a.js';
 import {acceptedAt} from '../chain/chain.mjs';
-import {requireConfirmedDrawTarget,drawTargetFromOpening} from './draw-confirmations.mjs';
+import {confirmDrawTargetWithRetry,drawTargetFromOpening} from './draw-confirmations.mjs';
 import {verifyManager} from '../core.mjs';
 import {uint} from '../chain/json.mjs';
 import {DRAW_DELAY,TIMEOUT_DELAY,check,unhex} from '../core.mjs';
@@ -63,6 +63,6 @@ export async function acquireRollingProof(rpc,manager,profile,accepting) {
  const proof=assemblePassA({boundaryDaa:boundary,parent,target,parentLane:{...parentLane,laneKey:COINBASE_LANE_KEY},targetLane:{...targetLane,laneKey:COINBASE_LANE_KEY},blocks});
  const freshPair=await Promise.all([parent,target].map(b=>block(rpc,b.header.hash)));
  for(let i=0;i<2;i++) {const b=i===0?parent:target,fresh=freshPair[i];check(fresh.header.seqCommit===b.header.seqCommit&&fresh.header.selectedParent===b.header.selectedParent,'PROOF_REORG');}
- const confirmation=await requireConfirmedDrawTarget(rpc,drawTargetFromOpening(proof.opening));
+ const confirmation=await confirmDrawTargetWithRetry(rpc,drawTargetFromOpening(proof.opening));
  return {...proof,confirmation,accessor:{blockHash:proof.target.hash,sequenceCommitment:proof.target.seqCommit}};
 }

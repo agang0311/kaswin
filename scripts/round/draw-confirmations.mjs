@@ -143,3 +143,15 @@ export async function waitForConfirmedDraw(task, scope, {check = () => {}, onWai
     }
   }
 }
+
+/** Retry only transient chain-view / tip-jitter confirmation errors before DRAW preparation or submission. */
+export async function confirmDrawTargetWithRetry(link, target, {retries = 3, delayMs = 250, ...opts} = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await requireConfirmedDrawTarget(link, target, opts); }
+    catch (e) {
+      const code = e?.safeCode ?? e?.code;
+      if (attempt >= retries || (code !== 'DRAW_CONFIRMATION_STALE' && code !== 'READ_VIEW_CHANGED')) throw e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}

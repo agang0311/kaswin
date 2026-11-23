@@ -303,3 +303,64 @@ test('Kaspire WalletConnect adapter pairs, signs ordinary inputs via kaspa_signP
   ctl.close();
   mem.close();
 });
+
+test('extension wallet ping() returns false and invalidates on locked/changed session, and sign() aborts cleanly via signal', async () => {
+  const memA = openMemoryWallet(SECRET_A);
+  const memB = openMemoryWallet(SECRET_B);
+
+  // 1) ping() returns true while authorized, then false + invalidates when accounts become empty (locked)
+  let invalidatedLock = 0;
+  const kwLock = makeMockKasware(memA);
+  const wLock = await openExtensionWallet('kasware', {globals: {kasware: kwLock.provider}, onInvalidate: () => { invalidatedLock++; }});
+  assert.equal(await wLock.ping(), true);
+  assert.equal(wLock.closed, false);
+  kwLock.setAccount(null);
+  assert.equal(await wLock.ping(), false);
+  assert.equal(wLock.closed, true);
+  assert.equal(invalidatedLock, 1);
+
+  // 2) ping() returns false + invalidates when account switches without emitting event
+  let invalidatedSwitch = 0;
+  const kwSwitch = makeMockKasware(memA);
+  const wSwitch = await openExtensionWallet('kasware', {globals: {kasware: kwSwitch.provider}, onInvalidate: () => { invalidatedSwitch++; }});
+  kwSwitch.setAccount(memB.address, memB.key);
+  assert.equal(await wSwitch.ping(), false);
+  assert.equal(wSwitch.closed, true);
+  assert.equal(invalidatedSwitch, 1);
+
+  // 3) ping() returns false + invalidates when session probe times out
+  let invalidatedTimeout = 0;
+  const kwTimeout = makeMockKasware(memA);
+  const origGetAccounts = kwTimeout.provider.getAccounts.bind(kwTimeout.provider);
+  let hangProbe = false;
+  kwTimeout.provider.getAccounts = () => hangProbe ? new Promise(() => {}) : origGetAccounts();
+  const wTimeout = await openExtensionWallet('kasware', {
+    globals: {kasware: kwTimeout.provider},
+    timeoutMs: 80,
+    onInvalidate: () => { invalidatedTimeout++; },
+  });
+  hangProbe = true;
+  assert.equal(await wTimeout.ping(), false);
+  assert.equal(wTimeout.closed, true);
+  assert.equal(invalidatedTimeout, 1);
+
+  // 4) sign(draft, {signal}) aborts with WALLET_SIGN_CANCELLED without adopting late signature or closing session
+  let invalidatedAbort = 0;
+  const kwSlow = makeMockKasware(memA, {delayMs: 200});
+  const wSlow = await openExtensionWallet('kasware', {
+    globals: {kasware: kwSlow.provider},
+    timeoutMs: 5000,
+    onInvalidate: () => { invalidatedAbort++; },
+  });
+  const ac = new AbortController();
+  const d = makeDraft(memA);
+  setTimeout(() => ac.abort(), 20);
+  await assert.rejects(() => wSlow.sign(d, {signal: ac.signal}), /WALLET_SIGN_CANCELLED/);
+  assert.equal(d.transaction.inputs[1].signatureScript, '');
+  assert.equal(wSlow.closed, false);
+  assert.equal(invalidatedAbort, 0);
+
+  wSlow.close();
+  memA.close();
+  memB.close();
+});

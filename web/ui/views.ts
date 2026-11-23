@@ -837,8 +837,8 @@ export function rulesView(x?: Ctx): Raw {
   <div class="panel"><h3>${ic('lock')} 请先了解这些限制</h3>
     <div class="notice warn"><b>${isMainnet?'当前为 Kaspa 主网（Rolling 候选 Profile）':'这是 Testnet 10 实验版'}。</b>合约 Profile 证据状态为 UNVALIDATED，尚未完成全部上线前验证，请谨慎控制金额。</div>
     <ul class="small muted" style="line-height:1.9;margin:0;padding-left:18px">
-      <li>已在 Testnet 10 实测：空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、满额 65,536 笔购买 / 256 个封存分片的完整轮次派奖（含节点裁剪后使用「一键连续派奖」完成剩余 80 片；完整独立节点回放归档基线为 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（分片只按购买笔数计算，单轮最多 256 个封存分片 / 65,536 笔购买）。</li>
-      <li>尚未在实链完全验证：主网实链资金流转、外部浏览器扩展对其余分支的实链签名（目前 KasWare 已在实链完成 TIMEOUT 与 REFUND_SELF；Kastle 及其余分支扩展实链签名尚未覆盖）、高于已测规模的退款（超过 3 个分片）、三人以上同时抢购、节点裁剪后且 KCI 与 REST 均不可用时空白浏览器的恢复，以及超出已观测深度的链重组恢复。</li>
+      <li>已在实链测试：Testnet 10 已实测空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、满额 65,536 笔购买 / 256 个封存分片的完整轮次派奖（含节点裁剪后使用「一键连续派奖」完成剩余 80 片；完整独立节点回放归档基线为 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。主网已使用 KasWare 完成 4 轮小额闭环（空轮、退款、未售罄及售罄派奖），并使用 Kaspire 完成 1 轮小额派奖闭环。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（分片只按购买笔数计算，单轮最多 256 个封存分片 / 65,536 笔购买）。</li>
+      <li>尚未在实链完全验证：主网多冻结分片（>256 笔购买）与主网 TIMEOUT 分支、Kastle 扩展实链签名、高于已测规模的退款（超过 3 个分片）、三人以上同时抢购、节点裁剪后且 KCI 与 REST 均不可用时空白浏览器的恢复，以及超出已观测深度的链重组恢复。</li>
       <li>钱包支持：支持 KasWare / Kastle 的 ${netLabel} Schnorr 账户与 Kaspire 钱包；${isMainnet?'主网已禁用内存明文私钥，':'也可使用测试内存私钥，'}免签动作可使用公开收款地址。</li>
       <li>索引、裁剪恢复与备份：页面默认接入只读 Rolling 索引，并支持在无索引、索引滞后或节点历史已裁剪时按「索引 → 节点虚链追赶 → REST API」自动同步并恢复冻结分片原像；无索引或离线时仍可通过分享链接和文件导入/导出使用，建议定期导出记录备份。</li>
       <li>交易确认基准：交易是否被接受只以 ${netLabel} 节点选中链上的复核结果为准，页面与本地预算公式的离线核对都不等于共识验证。</li></ul></div>`;

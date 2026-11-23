@@ -83,10 +83,12 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
   assert.ok(!/require\(["']node:|from["']node:/.test(js),'OUTPUT_NODE_IMPORT');
   const cssRaw=await fs.readFile(path.join(root,'web/ui/styles.css'),'utf8');
   const css=(await esbuild.transform(cssRaw,{loader:'css',minify:true})).code.trim();
+  const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
+  const appVersion=String(pkg.version||'0.0.0');
   const template=await fs.readFile(path.join(root,'web/ui/index.template.html'),'utf8');
-  for(const m of ['__APPLICATION_HASH__','/* APPLICATION */','/* STYLES */','__PROFILE_ID__'])assert.equal(template.split(m).length,2,`Template marker: ${m}`);
+  for(const m of ['__APPLICATION_HASH__','/* APPLICATION */','/* STYLES */','__PROFILE_ID__','__APP_VERSION__'])assert.equal(template.split(m).length,2,`Template marker: ${m}`);
   const scriptHash=createHash('sha256').update(js).digest('base64');
-  const html=template.replace('__APPLICATION_HASH__',`sha256-${scriptHash}`).replace('__PROFILE_ID__',TN10_PROFILE_ID)
+  const html=template.replace('__APPLICATION_HASH__',`sha256-${scriptHash}`).replace('__PROFILE_ID__',TN10_PROFILE_ID).replace('__APP_VERSION__',appVersion)
     .replace('/* STYLES */',()=>css).replace('/* APPLICATION */',()=>js);
   assert.ok(sources.includes('scripts/core.mjs')&&sources.includes('scripts/core/lib/transactions.js'),'ROLLING_TS_CORE_NOT_WIRED');
   const inputPaths=[...new Set([...sources.filter(f=>!f.startsWith('rolling-profile:')),...wcSources,...coreSources,
@@ -95,7 +97,7 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
     'package.json','package-lock.json','contracts/pins.json','contracts/toolchain.json',
     ...Object.keys(profile.frames).flatMap(m=>[`contracts/artifacts/${m}.json`,`contracts/${m}.sil`])])].sort();
   const inputs=Object.fromEntries(await Promise.all(inputPaths.map(async f=>[f,sha256(await fs.readFile(path.join(root,f)))])));
-  const manifest={formatVersion:1,mode,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
+  const manifest={formatVersion:1,version:appVersion,mode,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
     capabilities:{tn10Trading:true,mainnetTrading:mode==='mainnet',memoryWallet:mode!=='mainnet',networkSwitch:true},
     contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:defaultNet.networkId,genesis:defaultNet.genesis,
     networks:['mainnet','tn10'],profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},

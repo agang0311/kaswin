@@ -9,6 +9,7 @@ import {parseJson,jsonText} from '../chain/json.mjs';
 import {verifyOrdinarySignatures} from './wallet.mjs';
 import {TN10} from '../chain/tn10.mjs';
 const NAMES={kasware:'KasWare',kastle:'Kastle'};
+const SESSION_PROBE_MS=4000;
 export const availableExtensionWallets=(globals=globalThis)=>Object.keys(NAMES).filter(id=>!!globals[id]).map(id=>({id,name:NAMES[id]}));
 const spkText=s=>Number(s.version).toString(16).padStart(4,'0')+s.script;
 const sameSession=(a,b)=>a.address===b.address&&a.key===b.key&&a.network===b.network;
@@ -55,12 +56,18 @@ export function committed(value,auth) {
 export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()=>{},timeoutMs=90000,net=TN10}={}) {
   check(Object.hasOwn(NAMES,id),'WALLET_UNSUPPORTED');const provider=globals[id];check(provider&&typeof provider==='object','WALLET_NOT_INSTALLED');
   check(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=300000,'WALLET_TIMEOUT_CONFIG');
-  const safeCodes=new Set(['WALLET_UNSUPPORTED','WALLET_NOT_AUTHORIZED','WALLET_NETWORK_MISMATCH','WALLET_SCHNORR_REQUIRED','WALLET_PUBLIC_KEY_MISMATCH','WALLET_CONNECT_TIMEOUT','WALLET_SIGN_TIMEOUT','WALLET_CLOSED','WALLET_CHANGED']);
+  const safeCodes=new Set(['WALLET_UNSUPPORTED','WALLET_NOT_AUTHORIZED','WALLET_NETWORK_MISMATCH','WALLET_SCHNORR_REQUIRED','WALLET_PUBLIC_KEY_MISMATCH','WALLET_CONNECT_TIMEOUT','WALLET_SIGN_TIMEOUT','WALLET_SIGN_CANCELLED','WALLET_CLOSED','WALLET_CHANGED']);
   const safeError=e=>{const code=e?.code??e?.message;return new Error(safeCodes.has(code)?code:'WALLET_REQUEST_REJECTED');};
-  const bounded=async(fn,code,deadline=performance.now()+timeoutMs)=>{
+  const bounded=async(fn,code,deadline=performance.now()+timeoutMs,signal=null)=>{
+    if(signal?.aborted)throw new Error('WALLET_SIGN_CANCELLED');
     const remaining=deadline-performance.now();if(remaining<=0)throw new Error(code);let timer;
-    try{return await Promise.race([Promise.resolve().then(fn),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(code)),remaining);})]);}
-    finally{clearTimeout(timer);}
+    let onAbort=null;
+    try{
+      const race=[Promise.resolve().then(fn),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(code)),remaining);})];
+      if(signal)race.push(new Promise((_,reject)=>{onAbort=()=>reject(new Error('WALLET_SIGN_CANCELLED'));signal.addEventListener('abort',onAbort,{once:true});}));
+      return await Promise.race(race);
+    }
+    finally{clearTimeout(timer);if(signal&&onAbort)signal.removeEventListener('abort',onAbort);}
   };
   let owner;
   try{owner=await bounded(()=>session(provider,id,{request:true,net}),'WALLET_CONNECT_TIMEOUT');}catch(e){throw safeError(e);}
@@ -70,14 +77,23 @@ export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()
   if(typeof provider.on==='function')for(const name of ['accountsChanged','networkChanged']){
     try{provider.on(name,invalidate);listeners.push([name,invalidate]);}catch{close();throw new Error('WALLET_EVENTS_UNAVAILABLE');}
   }
-  const assertSession=async deadline=>{
-    check(!closed,'WALLET_CLOSED');check(globals[id]===provider,'WALLET_CHANGED');let current;
-    try{current=await bounded(()=>session(provider,id,{net}),'WALLET_SIGN_TIMEOUT',deadline);}catch(e){throw safeError(e);}
-    check(!closed&&sameSession(current,owner),'WALLET_CHANGED');
+  const assertSession=async(deadline,{probe=false,signal=null}={})=>{
+    check(!closed,'WALLET_CLOSED');
+    if(globals[id]!==provider){invalidate();throw new Error('WALLET_CHANGED');}
+    const probeDeadline=probe?Math.min(deadline,performance.now()+Math.min(timeoutMs,SESSION_PROBE_MS)):deadline;
+    let current;
+    try{current=await bounded(()=>session(provider,id,{net}),'WALLET_SIGN_TIMEOUT',probeDeadline,signal);}
+    catch(e){const err=safeError(e);if(err.message!=='WALLET_SIGN_CANCELLED')invalidate();throw err;}
+    if(closed||!sameSession(current,owner)){invalidate();throw new Error('WALLET_CHANGED');}
   };
   return Object.freeze({kind:'extension',id,name:NAMES[id],canSign:true,...owner,spk:p2pk(owner.key),get closed(){return closed;},close,
-    async sign(draft) {
-      const deadline=performance.now()+timeoutMs;await assertSession(deadline);
+    async ping() {
+      if(closed)return false;
+      try{await assertSession(performance.now()+Math.min(timeoutMs,SESSION_PROBE_MS),{probe:true});return true;}
+      catch{return false;}
+    },
+    async sign(draft,{signal=null}={}) {
+      const deadline=performance.now()+timeoutMs;await assertSession(deadline,{probe:true,signal});
       const auth=new Set(draft.authorizedInputIndices);
       if(!auth.size)return;
       check(typeof draft.fee==='bigint'&&draft.fee>0n&&draft.fee<=FEE_CAP,'SIGNER_FEE_SCOPE');
@@ -91,9 +107,9 @@ export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()
       try {
         response=await bounded(()=>id==='kastle'
           ?provider.signTx(net.networkId,request,[...auth].map(inputIndex=>({inputIndex,signType:'All'})))
-          :provider.signPskt({txJsonString:request,options:{signInputs:[...auth].map(index=>({index,sighashType:1}))}}),'WALLET_SIGN_TIMEOUT',deadline);
+          :provider.signPskt({txJsonString:request,options:{signInputs:[...auth].map(index=>({index,sighashType:1}))}}),'WALLET_SIGN_TIMEOUT',deadline,signal);
       }catch(e){throw safeError(e);}
-      await assertSession(deadline);check(jsonText(draft.transaction)===approved&&jsonText(draft.inputUtxos)===contexts,'WALLET_DRAFT_CHANGED');
+      await assertSession(deadline,{probe:true,signal});check(jsonText(draft.transaction)===approved&&jsonText(draft.inputUtxos)===contexts,'WALLET_DRAFT_CHANGED');
       check(typeof response==='string'&&response.length<=8*1024*1024,'WALLET_RESPONSE_INVALID');
       let back;try{back=parseJson(response);}catch{throw new Error('WALLET_RESPONSE_INVALID');}
       check(committed(back,auth)===committed(parseJson(request),auth),'WALLET_TRANSACTION_CHANGED');

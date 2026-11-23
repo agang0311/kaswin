@@ -464,10 +464,15 @@ function planText(p: Prepared): string {
   return text[p.op.action]??'';
 }
 async function prepareAndConfirm(choice: Record<string,unknown>,cid: string|null) {
+  const act=String(choice.action??'');
+  if(!ACTION_INFO[act]?.free&&ctl.state.wallet?.kind==='extension'){
+    const ping=(ctl.state.wallet as {ping?:()=>Promise<boolean>}).ping;
+    if(ping&&!(await ping())){toast('钱包扩展连接已失效（可能已超时锁屏），请重新连接。','warn');openWallet();await refresh();return;}
+  }
   lockModal(true);
   modal('准备交易',html`<ul class="progress"><li class="run">正在核对链上状态、用脚本引擎测量预算并计算网络费…</li></ul><p class="small muted">通常几秒，最长可能几十秒。请不要关闭页面。</p>`);
   try {await ctl.prepare(choice,cid);}
-  catch(e) {lockModal(false);closeModal();failure(e,String(choice.action??''));await refresh();return;}
+  catch(e) {lockModal(false);closeModal();failure(e,act);await refresh();return;}
   lockModal(false);showConfirm();
 }
 function showConfirm() {
@@ -480,20 +485,41 @@ function showConfirm() {
 async function onSend() {
   const p: Prepared|null=ctl.state.prepared;if(!p){closeModal();toast('报价已失效，请重新核对。','warn');return;}
   const {cid}=p,genesis=p.op.action==='GENESIS',signerKey=ctl.state.wallet?.key??null,creatorKey=genesis?signerKey:null,txid=p.review?.txid??null;
-  lockModal(true);$('mFoot').hidden=true;
-  const isKaspire=ctl.state.wallet?.id==='kaspire',needsSig=p.review.inputs.some(i=>i.kind.includes('需签名'));
-  put($('mBody'),html`<ul class="progress"><li class="run">${ctl.state.wallet?.kind==='extension'&&needsSig?`请在 ${ctl.state.wallet.name??'扩展钱包'} 中确认签名；页面随后验签、检查、保存并提交…`:'正在核对签名、检查已签名交易、保存记录并提交…'}</li></ul>${isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">打开 Kaspire 确认签名</a></div>`:''}<p class="small muted">请不要关闭页面。</p>`);
+  const isExt=ctl.state.wallet?.kind==='extension',isKaspire=ctl.state.wallet?.id==='kaspire',needsSig=p.review.inputs.some(i=>i.kind.includes('需签名'));
+  const extWallet=isExt?ctl.state.wallet as {ping?:()=>Promise<boolean>;name?:string}:null;
+  const signAbort=isExt&&needsSig?new AbortController():null;
+  lockModal(true);
+  if(signAbort){
+    $('mFoot').hidden=false;
+    put($('mFoot'),html`<button type="button" class="btn" id="signCancel">取消等待</button>`);
+    $('signCancel').onclick=()=>{
+      const b=document.getElementById('signCancel') as HTMLButtonElement|null;if(b)b.disabled=true;
+      signAbort.abort();
+      void extWallet?.ping?.();
+    };
+  }else{$('mFoot').hidden=true;}
+  put($('mBody'),html`<ul class="progress"><li class="run">${isExt&&needsSig?`请在 ${ctl.state.wallet?.name??'扩展钱包'} 中确认签名；页面随后验签、检查、保存并提交…`:'正在核对签名、检查已签名交易、保存记录并提交…'}</li></ul>${isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">打开 Kaspire 确认签名</a></div>`:''}<p class="small muted" id="signHint">请不要关闭页面。</p>`);
+  let signed=false;
+  const slowTimer=signAbort?setTimeout(()=>{
+    if(signed||signAbort.signal.aborted)return;
+    const hint=document.getElementById('signHint');
+    if(hint)hint.textContent='未收到扩展响应？可能扩展已锁屏、超时退出或未弹出授权框，可点击「取消等待」后解锁并重连钱包。';
+  },8000):null;
   let status: string;
   try {
-    status=await ctl.signAndSend({onSigned:()=>{
+    status=await ctl.signAndSend({signal:signAbort?.signal??null,onSigned:()=>{
+      signed=true;if(slowTimer)clearTimeout(slowTimer);$('mFoot').hidden=true;
       submission={cid,action:p.op.action,txid};
       lockModal(false);closeModal();go('round',cid);
     }});
   }
   catch(e) {
+    if(slowTimer)clearTimeout(slowTimer);
+    if(signAbort?.signal.aborted&&ctl.state.prepared)ctl.discardPrepared();
     if(submission?.cid===cid)submission={...submission,error:errText(e)};
-    lockModal(false);closeModal();toast(errText(e),'bad');await refresh();return;
+    lockModal(false);closeModal();toast(errText(e),signAbort?.signal.aborted?'warn':'bad');await refresh();return;
   }
+  if(slowTimer)clearTimeout(slowTimer);
   lockModal(false);closeModal();
   if(status==='SUBMITTED')toast('已提交，等待节点确认。确认前页面会自动更新。');
   else if(status==='REJECTED'){
@@ -1006,6 +1032,9 @@ function bind() {
   window.addEventListener('hashchange',route);
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
+      if(ctl.state.wallet?.kind==='extension'&&!ctl.state.busy&&!modalOpen()){
+        void (ctl.state.wallet as {ping?:()=>Promise<boolean>}).ping?.().then(ok=>{if(!ok)void refresh();});
+      }
       if(S.view==='round'&&S.cid){
         detailSyncAt=0;
         void runDetailSync({allowIndexer:true,preferRest:true,immediate:true,rewatch:true});

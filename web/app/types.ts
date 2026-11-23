@@ -126,7 +126,7 @@ export interface Controller {
   syncIndexedRound(input: string, opts?: {lookup?: boolean;allowHalted?: boolean}): Promise<{cid: string;skipped?: string;unchanged?: boolean;terminal?: string|null}>;
   prepare(choice: Record<string, unknown>, cid: string | null): Promise<Prepared>;
   discardPrepared(): void;
-  signAndSend(opts?: {onSigned?: () => void}): Promise<string>;
+  signAndSend(opts?: {onSigned?: () => void; signal?: AbortSignal | null}): Promise<string>;
   track(cid: string, opts?: {recover?: boolean}): Promise<unknown>;
   discard(cid: string, opts?: {force?: boolean}): Promise<unknown>;
   verifyLive(cid: string): Promise<unknown>;

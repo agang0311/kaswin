@@ -531,12 +531,12 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       return c.prepared;});},
     discardPrepared() {c.prepared=null;emit();},
     /** Sign -> signed-engine check -> PERSIST intent -> send. Returns the stored intent status. */
-    async signAndSend({onSigned=()=>{}}={}) {return guard('签名并发送',async()=>{
+    async signAndSend({onSigned=()=>{},signal=null}={}) {return guard('签名并发送',async()=>{
       const p=need(c.prepared,'NOTHING_PREPARED');need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const wallet=c.wallet,epoch=walletEpoch;
       need(wallet&&wallet.address===p.walletAddress&&walletValid(wallet,epoch)&&p.walletEpoch===epoch,'WALLET_REQUIRED');
       log('info',`正在请求 ${wallet.name??'钱包'} 签名 ${p.op.action}…`);
-      const intent=await signAndRecord({rpc:c.rpc,profile,prepared:p,wallet,net,onSigned:()=>{c.prepared=null;log('info','钱包已返回签名并完成本地验签，正在读取链上游标…');onSigned();}});
+      const intent=await signAndRecord({rpc:c.rpc,profile,prepared:p,wallet,net,signal,onSigned:()=>{c.prepared=null;log('info','钱包已返回签名并完成本地验签，正在读取链上游标…');onSigned();}});
       check(walletValid(wallet,epoch),'WALLET_CHANGED');
       c.prepared=null;
       // Durable BEFORE send: from here an unknown outcome can only be reconciled, never replaced.
@@ -548,7 +548,7 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       log('info',`意图已持久化：${intent.txid}；正在提交…`);
       let status;
       try {await submitIntent(c.rpc,intent,profile,{beforeSend:()=>check(walletValid(wallet,epoch),'WALLET_CHANGED'),network:net.networkId});status='SUBMITTED';log('info',`已提交 ${intent.txid}（首次被选中链接受即为候选，可继续下一步；满 100 DAA 复核后才算已接受）`);}
-      catch(e) {status=statusAfterFailure(e);log('error',`提交${status==='UNSENT'?'未发出':status==='REJECTED'?'被节点拒绝':'结果未知'}：${codeOf(e)}（状态 ${status}）`);
+      catch(e) {status=statusAfterFailure(e);const msg=e?.message&&e.message!==codeOf(e)&&!/key|secret|private/i.test(e.message)?` — ${String(e.message).slice(0,160)}`:'';log('error',`提交${status==='UNSENT'?'未发出':status==='REJECTED'?'被节点拒绝':'结果未知'}：${codeOf(e)}（状态 ${status}）${msg}`);
         if(status==='REJECTED') {
           intent.nodeError=String(e.message).slice(0,600); // the full text of a mempool conflict is ~290 chars; classifyRejection needs both outpoint and spender
           const k=classifyRejection(intent);

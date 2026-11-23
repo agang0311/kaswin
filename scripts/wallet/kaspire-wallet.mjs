@@ -222,8 +222,7 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
       const onSent=ev=>{
         if(ev?.topic!==session.topic||ev?.request?.method!=='kaspa_signPskt')return;
         try{if(JSON.stringify(ev.request?.params)!==serializedParams)return;}catch{return;}
-        onLog('Kaspire：签名请求已送达中继，正在拉起 Kaspire…');
-        scheduleWake(700);
+        onLog('Kaspire：签名请求已送达中继');
       };
       const onVisible=()=>{
         if(typeof document==='object'&&document.visibilityState==='visible'){onLog('Kaspire：页面回到前台，刷新中继连接…');void reopenRelay();}
@@ -231,6 +230,8 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
       sc.on?.('session_request_sent',onSent);
       if(typeof document==='object')document.addEventListener('visibilitychange',onVisible);
       onLog(`Kaspire：正在发送签名请求 (${session.topic.slice(0,8)}…)`);
+      // Trigger mobile wake within the user-activation window rather than waiting for relay publish + 700ms.
+      scheduleWake(150);
       try {
         rawRes=await bounded(()=>sc.request({
           topic:session.topic,chainId:chain,

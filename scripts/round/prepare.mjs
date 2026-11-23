@@ -198,12 +198,12 @@ export function reviewOf(draft,wallet=null) {
 }
 
 /** Sign (ordinary inputs, SIGHASH_ALL, locally verified), recompute mass/fee, and return a not-yet-persisted intent. */
-export async function signAndRecord({rpc,profile,prepared,wallet,net=TN10,onSigned=()=>{}}) {
+export async function signAndRecord({rpc,profile,prepared,wallet,net=TN10,onSigned=()=>{},signal=null}) {
   const {draft,op}=prepared;
   // Fetch the acceptance search cursor in parallel with wallet signing so remote wRPC latency doesn't stall post-sign submission.
   const cursorPromise=takeCursor(rpc);
   cursorPromise.catch(()=>{});
-  await wallet.sign(draft);
+  await wallet.sign(draft,{signal});
   await verifyOrdinarySignatures(draft);
   onSigned();
   const mass=quoteMass(draft);
