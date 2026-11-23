@@ -2,7 +2,7 @@
 
 English | [中文](README.zh-CN.md)
 
-Kaswin is a lottery protocol and single-page application on Kaspa L1, built with SilverScript contracts and a JavaScript/TypeScript client. It uses an active shard and frozen shards for ticket history and targets **Testnet 10** (`UNVALIDATED` Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`).
+Kaswin is a lottery protocol and single-page application on Kaspa L1, built with SilverScript contracts and a JavaScript/TypeScript client. It uses an active shard and frozen shards for ticket history, defaults to **Kaspa Mainnet** (switchable to **Testnet 10**), and uses the `UNVALIDATED` Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`.
 
 ## Getting started
 
@@ -13,11 +13,12 @@ npm ci
 npm run build
 ```
 
-`npm run build` (`npm run build:tn10`) builds the Testnet 10 bundle via `build/build.mjs` (`buildKaswin`) and outputs:
+`npm run build` builds the Mainnet-default bundle (`npm run build:tn10` passes `--mode=tn10` for the Testnet 10-default bundle) via `build/build.mjs` (`buildKaswin`) and outputs:
 
 ```text
 dist/
   index.html
+  kaspire-wc.js
   build-manifest.json
 ```
 
@@ -41,7 +42,8 @@ docs/        architecture, development and protocol documentation
 ## Contracts, network and transaction model
 
 - **Contracts**: Uses `sales`, `sealed`, `win`, `refund`, and `frozen` templates under `contracts/` (`contracts/templates/`, `contracts/artifacts/`, `contracts/pins.json`). `build/compile-contracts.mjs` and `build/prepare-sources.mjs` handle explicit contract regeneration separately from HTML bundling.
-- **Network & wallets**: Default TN10 nodes are configured in `scripts/chain/tn10.mjs`; default indexer is `https://indexer.kaspay.top/tn10`. Wallet modules support local memory signing and KasWare, Kastle, and Kaspire extensions.
+- **Network & wallets**: Mainnet and Testnet 10 configurations live in `scripts/chain/mainnet.mjs` and `scripts/chain/tn10.mjs`; default KCI indexers are `https://indexer.kaspay.top/mainnet` and `https://indexer.kaspay.top/tn10`. Wallet modules support KasWare, Kastle, Kaspire (WalletConnect), and receive-only addresses; in-memory plaintext private keys are disabled on Mainnet and retained for testing on TN10.
+- **Payouts, refunds & pruning**: `PAY_OLD` settles up to 16 sealed shards per transaction, and `REFUND_OLD` / `REFUND_SELF` process up to 32 records per batch; the web UI offers sequential batch payout and batch refund. Once past `DRAW`, remaining sealed shards can still be settled after node pruning as long as `redeemScript` preimages are available from local storage, KCI, REST API fallback, or exported/shared snapshots.
 - **Verification**: Block inclusion is not transaction acceptance. Indexer/REST data provides read-only discovery; clients verify accepted transactions and state against their node and protocol rules. Amounts are represented as `bigint` or decimal strings.
 
 See [architecture](docs/ARCHITECTURE.md) and [development guide](docs/DEVELOPMENT.md).

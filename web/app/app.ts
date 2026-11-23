@@ -157,6 +157,8 @@ function rebuild() {
 async function refresh() {
   const seq=++refreshSeq,rs=await ctl.rounds();
   if(seq!==refreshSeq)return;                       // a newer refresh already read newer data; never render an older snapshot over it
+  const prevByCid=new Map(lastRounds.map(r=>[r.cid,r]));
+  const progressed=lastRounds.length>0&&rs.some(r=>{const p=prevByCid.get(r.cid);return p&&(p.step!==r.step||p.terminal!==r.terminal||p.manager?.outpoint.transactionId!==r.manager?.outpoint.transactionId);});
   lastRounds=rs;rebuild();
   if(previewRound&&items.some(i=>i.r.cid===previewRound!.cid))previewRound=null;
   const ls=ctl.state.lastSynced;
@@ -168,6 +170,7 @@ async function refresh() {
     }
   }
   render();
+  if(progressed)void refreshBalance(true);
   void pollDaa();
   if(S.view==='round'&&S.cid){void ctl.watchRound(shouldWatchRound(S.cid)?S.cid:null);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
 }
@@ -506,7 +509,7 @@ async function onSend() {
   submission=null;render();
   if(status==='REJECTED'&&!genesis&&classifyRejection(items.find(i=>i.r.cid===cid)?.r.intent).kind==='ROUND_INPUT')void doVerify(cid,{quiet:true});
   void refreshBalance(true);
-  if(status!=='UNSENT'&&status!=='REJECTED')void ctl.track(cid).then(refresh,()=>{});
+  if(status!=='UNSENT'&&status!=='REJECTED')void ctl.track(cid).then(async()=>{await refresh();void refreshBalance(true);},()=>{});
 }
 async function onAction(a: string) {
   if(modalOpen())return;
@@ -522,6 +525,98 @@ async function onAction(a: string) {
     const readiness=drawReadiness(D,ctxt());if(!readiness.ready){toast(readiness.detail,'warn');void pollDrawProgress();return;}
   }
   await prepareAndConfirm(choice,S.cid);
+}
+async function runBatchSettlement(mode: 'payout' | 'refund') {
+  if(modalOpen())return;
+  const cid=S.cid;if(!cid)return;
+  const cfg=mode==='payout'
+    ?{module:'win',terminal:'PAID',primary:'PAY_OLD',final:'PAY_SELF',title:'一键连续派奖',noun:'派奖',doneTitle:'连续派奖已完成',stopTitle:'连续派奖已停止',abortTitle:'连续派奖已中止',failTitle:'连续派奖未完成'}
+    :{module:'refund',terminal:'REFUNDED',primary:'REFUND_OLD',final:'REFUND_SELF',title:'一键连续退款',noun:'退款',doneTitle:'连续退款已完成',stopTitle:'连续退款已停止',abortTitle:'连续退款已中止',failTitle:'连续退款未完成'};
+  const start=items.find(i=>i.r.cid===cid);
+  if(!start||start.r.terminal||start.r.halted||start.r.intent||start.f.module!==cfg.module){toast(`当前状态无法开始连续${cfg.noun}。`,'warn');return;}
+  if(ctl.state.busy){toast(`正在${ctl.state.busyLabel??'处理上一步'}，请稍候。`,'warn');return;}
+  const g=gate(start.a[cfg.primary]?.ok?cfg.primary:cfg.final);
+  if(!g.ok){toast(g.reason??'当前无法操作','warn');if(g.fix==='wallet')openWallet();else if(g.fix==='settings')openSettings();return;}
+  let stop=false,batch=0;
+  const steps: {cls: string; text: string}[]=[];
+  const paint=(summary: string,extra: unknown='')=>{
+    put($('mBody'),html`<p class="small muted" style="margin-top:0">${summary}</p><ul class="progress">${steps.map(s=>html`<li class="${s.cls}">${s.text}</li>`)}</ul>${extra}`);
+  };
+  lockModal(true);
+  modal(cfg.title,html`<ul class="progress"><li class="run">正在准备第一批${cfg.noun}…</li></ul>`,html`<button type="button" class="btn warn" id="batchStop">停止（完成本批后中止）</button>`);
+  $('batchStop').onclick=()=>{stop=true;const b=$<HTMLButtonElement>('batchStop');b.disabled=true;b.textContent='正在停止…';};
+  const finish=(title: string,ok: boolean)=>{
+    lockModal(false);
+    $('mTitle').textContent=title;
+    put($('mFoot'),html`<button type="button" class="btn ${ok?'pri':''}" data-act="closeModal">${ok?'完成':'关闭'}</button>`);
+    $('mFoot').hidden=false;
+    void refreshBalance(true);
+  };
+  try {
+    while(!stop){
+      const cur=items.find(i=>i.r.cid===cid);
+      if(!cur)throw new Error('ROUND_NOT_FOUND');
+      if(cur.r.terminal===cfg.terminal){paint(`全部${cfg.noun}已完成，共处理 ${batch} 批。`);return finish(cfg.doneTitle,true);}
+      if(cur.r.terminal||cur.r.halted)throw new Error('ROUND_CLOSED');
+      if(cur.r.intent)throw new Error('PENDING_INTENT');
+      const action=cur.a[cfg.primary]?.ok?cfg.primary:cur.a[cfg.final]?.ok?cfg.final:null;
+      if(!action)throw new Error('ACTION_UNAVAILABLE');
+      batch++;
+      const rem=cur.r.frozen.length;
+      const detailLabel=action==='PAY_OLD'?`处理冻结分片，当前剩 ${rem} 片`:action==='PAY_SELF'?'最终派奖结算':action==='REFUND_OLD'?`退封存分片，当前剩 ${rem} 片`:'退当前分片';
+      const label=`第 ${batch} 批（${detailLabel}）`;
+      steps.push({cls:'run',text:`${label}：正在预算与构造交易…`});
+      paint('请保持页面开启；每批被节点接受后将自动进入下一批。');
+      await ctl.prepare({action},cid);
+      const p=ctl.state.prepared;if(!p)throw new Error('PREPARE_FAILED');
+      const needsSig=p.review.inputs.some(i=>i.kind.includes('需签名')),isKaspire=ctl.state.wallet?.id==='kaspire';
+      steps[steps.length-1]={cls:'run',text:`${label}：${needsSig?'请在钱包中确认签名…':'正在提交交易（无需签名）…'}`};
+      paint('请保持页面开启；每批被节点接受后将自动进入下一批。',isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">打开 Kaspire 确认签名</a></div>`:'');
+      const status=await ctl.signAndSend();
+      const signerKey=ctl.state.wallet?.key??null,txid=p.review?.txid??null;
+      if(signerKey&&txid&&status!=='UNSENT'&&status!=='REJECTED')recordMyTx(signerKey,txid);
+      touch(cid);verify.delete(cid);
+      if(status==='UNSENT'||status==='REJECTED'){
+        steps[steps.length-1]={cls:'bad',text:`${label}：${status==='REJECTED'?'交易被节点拒绝':'交易未发出'}，已中止。`};
+        paint('可关闭后查看当前轮次状态或同步最新数据。');
+        await refresh();
+        return finish(cfg.abortTitle,false);
+      }
+      steps[steps.length-1]={cls:'run',text:`${label}：已提交，等待节点接受…`};
+      paint('等待本批被选中链接受后自动接力下一批…');
+      await refresh();
+      let settled=false;
+      for(let t=0;t<30;t++){
+        await new Promise(r=>setTimeout(r,t===0?800:1500));
+        try{await ctl.track(cid);}catch{}
+        await refresh();
+        const latest=items.find(i=>i.r.cid===cid);
+        if(!latest)break;
+        if(latest.r.intent?.status==='REJECTED'){
+          steps[steps.length-1]={cls:'bad',text:`${label}：交易被节点拒绝，已中止。`};
+          paint('可关闭后放弃该待确认交易并同步最新状态。');
+          return finish(cfg.abortTitle,false);
+        }
+        if(!latest.r.intent){settled=true;break;}
+        if(stop)break;
+      }
+      if(!settled){
+        steps[steps.length-1]={cls:'ok',text:`${label}：已提交${stop?'（已按要求停止）':'（仍在等待节点确认，请稍后在轮次页继续）'}`};
+        paint(`已完成 ${batch} 批提交。`);
+        return finish(stop?cfg.stopTitle:'等待节点确认',false);
+      }
+      steps[steps.length-1]={cls:'ok',text:`${label}：已接受 ✓`};
+      void refreshBalance(true);
+    }
+    paint(`已按要求停止，共完成 ${batch} 批。`);
+    finish(cfg.stopTitle,false);
+  } catch(e) {
+    if(ctl.state.prepared)ctl.discardPrepared();
+    steps.push({cls:'bad',text:`第 ${Math.max(1,batch)} 批出错：${errText(e)}`});
+    paint('已保留已完成批次，请关闭后查看轮次状态。');
+    await refresh();
+    finish(cfg.failTitle,false);
+  }
 }
 async function onCreate() {
   const p=parseCreate(S.form,activeNet);if(!p.ok){toast(p.errors[0],'warn');return;}
@@ -583,7 +678,7 @@ let balanceInflight: Promise<void>|null=null;
 async function refreshBalance(force=false) {
   const w=ctl.state.wallet,rpc=ctl.state.rpc;
   if(!w||!canSign(w)||!rpc){balance=null;return;}
-  if(!force&&Date.now()-balanceAt<30000)return;
+  if(!force&&Date.now()-balanceAt<10000)return;
   if(balanceInflight)return balanceInflight;
   balanceAt=Date.now();
   balanceInflight=(async()=>{
@@ -838,7 +933,7 @@ function toggleLiveSync() {
 const ACT: Record<string,()=>unknown>={
   closeModal:()=>closeModal(),create:onCreate,join:()=>onJoin(S.join),send:onSend,connectWallet:onConnectWallet,disconnect:onDisconnect,
   applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,switchNet:switchNetwork,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
-  syncNow:()=>{closeModal();void doVerify(CID(),{quiet:false});},toggleStar:()=>toggleStar(CID()),checkPending:onCheckPending,
+  syncNow:()=>{closeModal();void doVerify(CID(),{quiet:false});},toggleStar:()=>toggleStar(CID()),checkPending:onCheckPending,batchPayout:()=>runBatchSettlement('payout'),batchRefund:()=>runBatchSettlement('refund'),
   moreRound:()=>openRoundTools(CID()),verify:toggleLiveSync,
   track:()=>run(()=>ctl.track(CID())),recover:()=>run(()=>ctl.track(CID(),{recover:true}),{ok:'已核对输入并重发原签名'}),
   discard:()=>onDiscard(false),discardForce:()=>onDiscard(true),pickFile:()=>$<HTMLInputElement>('sFile').click(),
@@ -1053,7 +1148,7 @@ async function main() {
       if(!waiting&&!slow)return;
       if(slow)lastSlow=Date.now();
       const target=waiting??(document.hidden?undefined:rounds.find(r=>r.pending.length>0));
-      if(target&&ctl.state.rpc){try{await ctl.track(target.cid);}catch{}await refresh();}
+      if(target&&ctl.state.rpc){try{await ctl.track(target.cid);}catch{}await refresh();void refreshBalance(true);}
       else if(slow)void pollDaa();
       if(slow)void refreshBalance();
     } catch(e){ctl.log('warn',`后台刷新未完成：${errCode(e)}；稍后重试`);}

@@ -1,6 +1,6 @@
 # 开发说明
 
-当前开发对象是 Rolling 主实现，仅支持 TN10，Profile 保持 **UNVALIDATED**。重组后的统一核心构建、隔离候选页面构建、合约/VM/差分（`58/58`）、单测（`105/105`）及离线浏览器/证据测试（`14/14`）已由 `tester` 验证通过；新的实链运行与线上发布切换仍为 **NOT_RUN**。
+当前开发对象是 Rolling 主实现，支持 **Kaspa 主网（默认）** 与 **Testnet 10** 切换，Profile 保持 **UNVALIDATED**（主网实链资金流转尚未验证）。
 
 ## 工具链与主构建
 
@@ -8,22 +8,22 @@ Node.js 要求 ≥22，代码使用 ESM；TypeScript 5.8.3 编译核心和页面
 
 | 入口 | 用途 |
 |---|---|
-| `npm run build` | 默认 TN10 主页面构建 |
-| `npm run build:tn10` | 同一 TN10 构建目标的别名 |
+| `npm run build` | 默认主网主页面构建（页面可切换 TN10） |
+| `npm run build:tn10` | 默认 TN10 主页面构建（`--mode=tn10`） |
 | `npm run build:core` | 由 `build/core.mjs` 编译统一核心 |
 | `npm run check:core` | 独立比较核心源码与生成物，需要明确验证授权 |
 | `build/build.mjs` / `buildKaswin` | 主构建文件与导出函数 |
 | `build/prepare-sources.mjs` | 显式展开合约模板输入 |
 | `build/compile-contracts.mjs` | 显式重新编译固定合约 |
 
-不再使用 `build:rolling`、`build:rolling-core`、`check:rolling-core` 或旧 `build/rolling-tn10.mjs` 作为独立构建流程；不支持 `mainnet` 构建模式。
+不再使用 `build:rolling`、`build:rolling-core`、`check:rolling-core` 或旧 `build/rolling-tn10.mjs` 作为独立构建流程。
 
 主构建流程为：
 
 1. 编译 `scripts/core/src/`，将 Rolling 协议与通用 primitives 一并生成到 `scripts/core/lib/`。
 2. 从 `contracts/` 加载固定五模板产物和身份信息，通过 `scripts/contract/` 提供浏览器数据。
-3. 以 `web/app/app.ts` 为入口，合入 `web/ui/` 的模板、样式、视图和词典。
-4. 输出自包含 `dist/index.html` 与 `dist/build-manifest.json`。
+3. 以 `web/app/app.ts` 为入口，合入 `web/ui/` 的模板、样式、视图和词典，并打包 Kaspire WalletConnect 模块。
+4. 输出自包含 `dist/index.html`、`dist/kaspire-wc.js` 与 `dist/build-manifest.json`。
 
 manifest 描述构建产物及来源，不包含业务测试通过或部署批准。后续构建会覆盖同名输出，应保留与页面配套的 manifest。本轮没有重新生成现有 `dist/`，不能用现有 HTML 代表迁移后的源码。
 
@@ -39,7 +39,7 @@ manifest 描述构建产物及来源，不包含业务测试通过或部署批�
 
 ## 网络和索引配置
 
-应用固定 TN10。节点默认取原 V2.0.2 的 `TN10.web.nodes`，统一来源为 `scripts/chain/tn10.mjs`；默认索引是 `https://indexer.kaspay.top/tn10`。本轮未发起任何网络调用，未确认公共索引是否提供所需 Rolling API。
+应用支持主网与 TN10 双网切换（主网禁用内存明文私钥）。主网与 TN10 默认节点分别来自 `scripts/chain/mainnet.mjs` 与 `scripts/chain/tn10.mjs`，默认 KCI 索引分别为 `https://indexer.kaspay.top/mainnet` 与 `https://indexer.kaspay.top/tn10`。
 
 只读索引器启动文件为 `scripts/indexer/server.mjs`，模块职责见[索引器说明](../scripts/indexer/README.zh-CN.md)。服务端默认回环监听与网页默认公共索引地址是不同配置；源码迁移不会启动服务、修改 systemd/Caddy 或迁移数据库。当前网页使用本地预算，历史 `tn10-service.mjs`/VM 工具留在测试目录，不是网页运行依赖。
 

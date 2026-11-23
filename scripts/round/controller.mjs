@@ -280,6 +280,7 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher,networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id});
       try {
         const infoPromise=client.info(),roundsPromise=client.rounds();
+        roundsPromise.catch(()=>{});
         const info=await infoPromise;
         if(epoch!==indexerEpoch)return info;
         indexChecks.clear();c.indexer=client;c.indexerInfo=info;emit();

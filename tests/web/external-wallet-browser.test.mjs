@@ -20,7 +20,7 @@ import {referenceTxId} from '../../scripts/core/lib/transaction.js';
 import {schnorrSign, schnorrVerify} from '../../scripts/wallet/schnorr.mjs';
 import {schnorrSighash} from '../../scripts/wallet/sighash.mjs';
 import {unhex, hex} from '../../scripts/core.mjs';
-import {parseSpk, txToRpc} from '../../scripts/chain/nodes.mjs';
+import {parseSpk, txToRpc, txFromRpc} from '../../scripts/chain/nodes.mjs';
 import {jsonText} from '../../scripts/chain/json.mjs';
 import {loadDeploymentProfile} from '../../scripts/contract/bundle.mjs';
 
@@ -333,9 +333,13 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
           }],
         });
       }
+      if (method === 'getSink') {
+        return sendResult({sink: indexed.blockHash});
+      }
       if (method === 'submitTransaction') {
-        submittedTxs.push(params?.transaction ?? params);
-        return sendResult({transactionId: '12'.repeat(32)});
+        const rpcTx = params?.transaction ?? params;
+        submittedTxs.push(rpcTx);
+        return sendResult({transactionId: referenceTxId(txFromRpc(rpcTx))});
       }
       return sendResult({});
     });
@@ -385,22 +389,25 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
   await page.goto(`${origin}/index.html`);
   await page.waitForSelector('#walletBtn');
 
-  // 1. Open wallet modal -> check all 3 tabs and extension options
+  // 1. Open wallet modal -> check extension cards and secondary tabs
   await page.click('#walletBtn');
-  await page.waitForSelector('[data-wtab="extension"]');
-  const optText = await page.locator('#wProvider').innerText();
-  assert.doesNotMatch(optText, /未检测到/);
+  await page.waitForSelector('[data-connect="kasware"]');
+  const kwCard = await page.locator('[data-connect="kasware"]').innerText();
+  const klCard = await page.locator('[data-connect="kastle"]').innerText();
+  assert.match(kwCard, /已检测到/);
+  assert.match(klCard, /已检测到/);
 
   await page.click('[data-wtab="key"]');
   await page.waitForSelector('#wKey');
+  await page.click('[data-wtab="extension"]');
+  await page.waitForSelector('[data-connect="kasware"]');
   await page.click('[data-wtab="addr"]');
   await page.waitForSelector('#wAddr');
   await page.click('[data-wtab="extension"]');
-  await page.waitForSelector('#wProvider');
+  await page.waitForSelector('[data-connect="kasware"]');
 
   // Connect KasWare
-  await page.selectOption('#wProvider', 'kasware');
-  await page.click('[data-act="connectWallet"]');
+  await page.click('[data-connect="kasware"]');
   await page.waitForFunction(() => document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
 
   // 2. Emit accountsChanged -> wallet auto-invalidates
@@ -409,8 +416,8 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
 
   // Reconnect with Kastle
   await page.click('#walletBtn');
-  await page.selectOption('#wProvider', 'kastle');
-  await page.click('[data-act="connectWallet"]');
+  await page.waitForSelector('[data-connect="kastle"]');
+  await page.click('[data-connect="kastle"]');
   await page.waitForFunction(() => document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
 
   // 3. Configure mock Node and Indexer in Settings
@@ -438,7 +445,7 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
     throw new Error(`Create did not open confirm modal: ${JSON.stringify(diag)}`);
   }
   const modalBody = await page.locator('#mBody').innerText();
-  assert.match(modalBody, /在扩展钱包中确认签名/);
+  assert.match(modalBody, /钱包扩展中授权签名/);
 
   await page.click('[data-act="send"]');
   try {
@@ -454,7 +461,8 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
     diag.submitted = submittedTxs.length;
     throw new Error(`Send did not navigate to round: ${JSON.stringify(diag)}`);
   }
-  assert.equal(submittedTxs.length, 1);
+  await page.waitForFunction(() => document.querySelector('#toasts')?.textContent?.includes('已提交'), null, {timeout: 6000});
+  assert.equal(submittedTxs.length, 1, `expected 1 submitted tx, toasts=${await page.locator('#toasts').innerText()}`);
 
   // 5. Explore -> Indexer discovery -> syncIndexedRound
   await page.click('[data-go="explore"]');

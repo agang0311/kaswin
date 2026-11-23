@@ -294,9 +294,9 @@ function actionCard(a: string,D: Detail,x: Ctx): Raw|'' {
   const label=x.busy?'处理中…':draw&&!draw.ready?draw.button:waiting?'暂不可用':g.ok?(draw?draw.button:a==='BUY'?'立即购买':info.verb):g.fix==='wallet'?(a==='BUY'?'连接钱包并购买':'连接钱包'):g.fix==='settings'?'检查连接':'暂不可用';
   const attr=x.busy?'disabled aria-busy="true"':waiting?'disabled':g.ok?`data-act="${a}"`:g.fix?`data-fix="${g.fix}"`:'disabled';
   const primary=(g.ok||g.fix==='wallet')&&!waiting;
-  return html`<div class="act ${a==='BUY'?'act-hero':''} ${waiting||x.busy?'off':''}"><h4>${info.title}${isFree(a)?html`<span class="tag kas">免签领奖</span>`:''}</h4>${a==='BUY'?'':html`<p>${info.desc}</p>`}${extra}
+  return html`<div class="act ${a==='BUY'?'act-hero':''} ${waiting||x.busy?'off':''}"><h4>${info.title}${isFree(a)?html`<span class="tag kas">免签领奖</span>`:''}</h4>${a==='BUY'?'':html`<p>${info.desc.replace(/\bTKAS\b/g,unitOf(x))}</p>`}${extra}
     ${x.busy?html`<div class="why" role="status">${g.reason??'正在处理上一步，请稍候。'}</div>`:waiting?html`<div class="why">${draw&&!draw.ready?draw.label:s.reason}</div>`:g.ok||g.fix==='wallet'?'':html`<div class="why">${g.reason}</div>`}
-    <button ${raw(a==='BUY'?'id="buySubmit"':'')} class="btn ${primary?'pri':''} block" ${raw(attr)} ${raw(quantityError&&!x.busy&&!waiting&&(g.ok||g.fix)?'disabled':'')}>${label}</button></div>`;
+    <button ${raw(a==='BUY'?'id="buySubmit"':'')} class="btn ${primary?'pri':''} block" ${raw(attr)} ${raw(quantityError&&!x.busy&&!waiting&&(g.ok||g.fix)?'disabled':'')}>${label}</button>${a==='PAY_OLD'&&s.ok&&g.ok&&!x.busy&&D.r.frozen.length>0?html`<button type="button" class="btn block" style="margin-top:8px" data-act="batchPayout">一键连续派奖（剩 ${D.r.frozen.length} 片）</button>`:a==='REFUND_OLD'&&s.ok&&g.ok&&!x.busy&&D.r.frozen.length>0?html`<button type="button" class="btn block" style="margin-top:8px" data-act="batchRefund">一键连续退款（剩 ${D.r.frozen.length} 片）</button>`:a==='REFUND_SELF'&&s.ok&&g.ok&&!x.busy&&D.r.frozen.length===0&&f.localRecords>32?html`<button type="button" class="btn block" style="margin-top:8px" data-act="batchRefund">一键连续退款</button>`:''}</div>`;
 }
 export function qtyError(text: string,f: Facts,s?: ActionState): string|null {
   const q=String(text).trim();
@@ -821,7 +821,7 @@ export function rulesView(x?: Ctx): Raw {
       ${item('02','满 256 笔自动封存','每满 256 笔购买，当前分片封存、开一个新分片继续卖。购买笔数不设上限。')}
       ${item('03','封盘','到了最早封盘时间（或票卖满）后任何人可封盘。票数达到最低票数则进入开奖；不足则转入退款；无人购买则退回押金。')}
       ${item('04','开奖','封盘后约 100 DAA（约 10 秒），任何人可开奖。中奖票由链上数据决定，创建者、买家和执行者都无法挑选或预测。')}
-      ${item('05','派奖 · 退款',`任何人都可以推进，无需签名。派奖：奖金付给中奖者，押金退创建者，执行者每个分片拿 1 ${u}。退款：每条购买记录扣 0.02 ${u} 执行费，其余原路退回。`)}
+      ${item('05','派奖 · 退款',`任何人都可以推进，无需签名；多批处理可使用「一键连续派奖」或「一键连续退款」自动分批推进。派奖：奖金付给中奖者，押金退创建者，执行者每个分片拿 1 ${u}。退款：每条购买记录扣 0.02 ${u} 执行费，其余原路退回。`)}
     </ol></div></div>
   <div class="cols">
     <div class="panel"><h3>费用与押金</h3><dl class="kv">
@@ -837,10 +837,10 @@ export function rulesView(x?: Ctx): Raw {
   <div class="panel"><h3>${ic('lock')} 请先了解这些限制</h3>
     <div class="notice warn"><b>${isMainnet?'当前为 Kaspa 主网（Rolling 候选 Profile）':'这是 Testnet 10 实验版'}。</b>合约 Profile 证据状态为 UNVALIDATED，尚未完成全部上线前验证，请谨慎控制金额。</div>
     <ul class="small muted" style="line-height:1.9;margin:0;padding-left:18px">
-      <li>已在 Testnet 10 实测：空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、多批次派奖（最高 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（分片只按购买笔数计算，单轮最多 256 个封存分片 / 65,536 笔购买）。</li>
-      <li>尚未在实链完全验证：外部浏览器扩展对其余分支的实链签名（目前 KasWare 已在实链完成 TIMEOUT 与 REFUND_SELF；Kastle 及其余分支扩展实链签名尚未覆盖）、高于已测规模（超过 17 个分片的派奖、超过 3 个分片的退款、三人以上同时抢购），以及超出已观测深度的链重组恢复。</li>
+      <li>已在 Testnet 10 实测：空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、满额 65,536 笔购买 / 256 个封存分片的完整轮次派奖（含节点裁剪后使用「一键连续派奖」完成剩余 80 片；完整独立节点回放归档基线为 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（分片只按购买笔数计算，单轮最多 256 个封存分片 / 65,536 笔购买）。</li>
+      <li>尚未在实链完全验证：主网实链资金流转、外部浏览器扩展对其余分支的实链签名（目前 KasWare 已在实链完成 TIMEOUT 与 REFUND_SELF；Kastle 及其余分支扩展实链签名尚未覆盖）、高于已测规模的退款（超过 3 个分片）、三人以上同时抢购、节点裁剪后且 KCI 与 REST 均不可用时空白浏览器的恢复，以及超出已观测深度的链重组恢复。</li>
       <li>钱包支持：支持 KasWare / Kastle 的 ${netLabel} Schnorr 账户与 Kaspire 钱包；${isMainnet?'主网已禁用内存明文私钥，':'也可使用测试内存私钥，'}免签动作可使用公开收款地址。</li>
-      <li>索引与备份：页面默认接入只读 Rolling 索引，并支持在无索引或索引滞后时按「索引 → 节点虚链追赶 → REST API」自动同步最新进度；无索引或离线时仍可通过分享链接和文件导入/导出使用，建议定期导出记录备份。</li>
+      <li>索引、裁剪恢复与备份：页面默认接入只读 Rolling 索引，并支持在无索引、索引滞后或节点历史已裁剪时按「索引 → 节点虚链追赶 → REST API」自动同步并恢复冻结分片原像；无索引或离线时仍可通过分享链接和文件导入/导出使用，建议定期导出记录备份。</li>
       <li>交易确认基准：交易是否被接受只以 ${netLabel} 节点选中链上的复核结果为准，页面与本地预算公式的离线核对都不等于共识验证。</li></ul></div>`;
 }
 

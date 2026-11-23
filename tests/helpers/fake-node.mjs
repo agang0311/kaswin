@@ -76,9 +76,15 @@ export class FakeNode {
     const sink=this.chain.at(-1);
     switch(method) {
       case 'getUtxosByAddresses': {
-        const [a]=params.addresses;
-        return {entries:[...this.utxos.values()].filter(u=>spkToAddress(u.spk,'kaspatest')===a).map(u=>({address:a,outpoint:u.outpoint,
-          utxoEntry:{amount:u.value,scriptPublicKey:'0000'+u.spk.script,blockDaaScore:u.daa,isCoinbase:false,covenantId:u.covenantId}}))};
+        const prefix=this.net?.addressPrefix??'kaspatest';
+        const set=new Set(params.addresses??[]);
+        const entries=[];
+        for(const u of this.utxos.values()) {
+          const addr=spkToAddress(u.spk,prefix);
+          if(set.has(addr))entries.push({address:addr,outpoint:u.outpoint,
+            utxoEntry:{amount:u.value,scriptPublicKey:'0000'+u.spk.script,blockDaaScore:u.daa,isCoinbase:false,covenantId:u.covenantId}});
+        }
+        return {entries};
       }
       case 'getFeeEstimate': return {estimate:{priorityBucket:{feerate:2,estimatedSeconds:1},normalBuckets:[{feerate:1.5,estimatedSeconds:5}],lowBuckets:[{feerate:1,estimatedSeconds:50}]}};
       case 'getSink': return {sink:sink.hash};

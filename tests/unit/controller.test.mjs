@@ -433,7 +433,7 @@ test('import cannot overwrite a local unresolved intent and rejects tampered or 
   const {node,ctl,roundStore}=await setup();
   node.failSubmit='lost';await ctl.prepare({action:'GENESIS',settings:settings()});await ctl.signAndSend();
   const cid=(await ctl.rounds())[0].cid,text=await ctl.exportText(cid);
-  assert.match(text,/"status": "UNKNOWN"/);
+  assert.match(text,/"status":"UNKNOWN"/);
   const ok=await ctl.importText(text);assert.equal(ok,cid); // same intent: allowed (idempotent)
   const doc=decodeTagged(text);doc.intent.draft.transaction.inputs[0].signatureScript='41'+'00'.repeat(64)+'01'; // damaged witness
   await assert.rejects(()=>ctl.importText(encodeTagged(doc)),/INTENT_CONTENT_CHANGED|SIGNATURE_INVALID/);

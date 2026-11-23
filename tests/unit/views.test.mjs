@@ -67,8 +67,7 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
     {cid:hex('e'),module:'sales',tickets:0,managerValue:'400000000',source:'rest',updatedAt:1200},
   ]})).s;
   assert.match(restOut,/REST API 备用查询/);
-  assert.match(restOut,/REST 发现/);
-  assert.match(restOut,/REST 备用 1 · 本机 0/);
+  assert.match(restOut,/REST 备用 1/);
   // Local storage cached Plaza renders immediately on reload before live indexer responds, and when indexer is offline
   const cacheOut=exploreView(ctx({conn:{discoveredSource:'cache'},discovered:[
     {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
@@ -273,10 +272,10 @@ test('rejected notice names the cause from the node message: wallet funds held b
 });
 
 test('round view: "创建交易" is the GENESIS receipt, not the output GENESIS spent (that one is the 创世输出 in the technical details)',()=>{
-  const G=hex('e'),O=hex('c'),mk=receipts=>{const r=roundFixture({receipts,origin:{transactionId:O,index:3}});return roundView(ctx({detail:{...item(r,facts(),actions()),mine:null,isWinner:false}})).s;};
+  const G=hex('e'),O=hex('c'),mk=receipts=>{const r=roundFixture({receipts,origin:{transactionId:O,index:3}});return roundView(ctx({S:{...BASE_S,detailTab:'info'},detail:{...item(r,facts(),actions()),mine:null,isWinner:false}})).s;};
   const row=s=>(/<dt>创建交易<\/dt><dd>([\s\S]*?)<\/dd>/.exec(s)??[])[1]??'';
   let s=mk([{action:'GENESIS',txid:G,feeSompi:'1000000',finalized:true},{action:'BUY',txid:hex('d'),feeSompi:'1000000',finalized:true}]);
-  assert.ok(row(s).includes(`data-copy="${G}"`));assert.ok(!row(s).includes(O)); // the row points at the GENESIS transaction
+  assert.ok(row(s).includes(G.slice(0,10))&&row(s).includes(G));assert.ok(!row(s).includes(O)); // the row points at the GENESIS transaction
   assert.match(s,/创世输出/);assert.ok(s.includes(`${O.slice(0,10)}`)&&/:3</.test(s)); // the origin outpoint is still shown, labelled as what it is
   s=mk([]);assert.ok(!row(s).includes(O));assert.match(row(s),/—/); // no GENESIS receipt: nothing is claimed
 });

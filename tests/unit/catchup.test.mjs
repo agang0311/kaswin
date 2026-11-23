@@ -386,14 +386,25 @@ test('syncRound persists incremental catch-up progress to roundStore and emits o
   await ctlB.importText(roundToText(g));
   for(let i=0;i<10;i++)await runStep(ctlA,node,{action:'BUY',quantity:'1'},cid);
   const seenSteps=[];
-  const off=ctlB.onChange(()=>{void storeB.get(cid).then(rec=>{if(rec&&!seenSteps.includes(rec.round.step))seenSteps.push(rec.round.step);});});
+  let changeEvents=0;
+  const origReplace=storeB.replace.bind(storeB);
+  storeB.replace=async(round,expectedRevision)=>{
+    const res=await origReplace(round,expectedRevision);
+    if(!seenSteps.includes(round.step))seenSteps.push(round.step);
+    return res;
+  };
+  const origNow=Date.now;
+  let fakeNow=origNow();
+  Date.now=()=>(fakeNow+=4500);
+  const off=ctlB.onChange(()=>{changeEvents++;});
   try{
     const res=await ctlB.syncRound(cid,{force:true,skipIndexer:true});
     assert.equal(res.steps,10);
     const finalRec=await storeB.get(cid);
     assert.equal(finalRec.round.step,11);
+    assert.ok(changeEvents>=2,`expected onChange to fire multiple times, got ${changeEvents}`);
     assert.ok(seenSteps.some(s=>s>1&&s<11),`expected intermediate step in storeB before final step 11, got ${JSON.stringify(seenSteps)}`);
-  }finally{off();}
+  }finally{off();storeB.replace=origReplace;Date.now=origNow;}
 });
 
 test('syncRound with preferRest=true checks REST before calling node getVirtualChainFromBlockV2',async()=>{
