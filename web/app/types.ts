@@ -2,6 +2,29 @@
  * (their behaviour is what the TN10 runs and offline tests cover); these types describe only the parts the views read. */
 export type Hex = string;
 export type Tone = 'mint' | 'violet' | 'amber' | 'gold' | 'muted';
+export type AssetKind = 'KAS' | 'KCC20';
+export type AssetDeltaRole = 'NET' | 'REFUNDABLE_DEPOSIT' | 'CARRIER' | 'FEE';
+export interface AssetDescriptor {kind: AssetKind; symbol: string; decimals: number; tokenCovenantId: Hex | null}
+export interface AssetDelta {asset: AssetDescriptor; amount: bigint; role: AssetDeltaRole}
+export interface SettlementProgress {done: number; total: number; labelKey?: string}
+export interface ProtocolSummary {
+  protocolId: string; profileId: Hex; roundId: Hex; asset: AssetDescriptor; phase: string; subPhase: string;
+  terminal: string | null; ticketsSold: number; ticketCap: number; ticketPrice: bigint; settlementProgress: SettlementProgress | null;
+}
+export interface ProtocolAdapterLike {
+  id: string; name: string; profileId: Hex;
+  capabilities: {canCreate: boolean; multiShardSelect: boolean; pullRefund: boolean; supportsExecIncentive: boolean; supportsBudgetCalculator?: boolean};
+  assetFor(net?: NetInfo | null): AssetDescriptor;
+  toRoundSummary(round: Round, opts?: {net?: NetInfo | null}): ProtocolSummary;
+}
+export interface ProtocolRegistryLike {
+  list(): ProtocolAdapterLike[];
+  profileIds(): Hex[];
+  has(profileId: string): boolean;
+  get(profileId: string): ProtocolAdapterLike | null;
+  require(profileId: string): ProtocolAdapterLike;
+  defaultForCreate(): ProtocolAdapterLike;
+}
 export interface Outpoint {transactionId: Hex; index: number}
 export interface Receipt {action: string; txid: Hex; feeSompi: string | number | bigint; finalized?: boolean}
 export interface Intent {status: string; action: string; txid?: string; nodeError?: string|null; draft?: {inputUtxos?: {outpoint?: {transactionId: string; index: number|string}; covenantId?: string|null}[]}}
@@ -12,7 +35,7 @@ export interface DrawResult {txid: Hex; shard: number; record: number; ticket: n
 export interface RoundHistoryShard {end: number; hash: Hex; records: TicketRecord[] | null}
 export interface RoundHistory {terminal: 'PAID' | 'REFUNDED'; winnerKey: Hex | null; localRecords: TicketRecord[]; shards: RoundHistoryShard[]}
 export interface Round {
-  cid: Hex; source: string; terminal: string | null; halted: string | null; intent: Intent | null;
+  cid: Hex; profileId?: Hex; source: string; terminal: string | null; halted: string | null; intent: Intent | null;
   manager: ManagerUtxo | null; frozen: FrozenUtxo[]; receipts: Receipt[]; pending: unknown[]; fees: bigint;
   origin: Outpoint | null; accepting?: Hex | null; settings: Settings; bought: number; step: number; history?: RoundHistory | null; draw?: DrawResult | null;
   indexer?: {prunedAtNode?: boolean; base?: string; revision?: string; headTxid?: string; acceptingBlock?: string; checkedAt?: number} | null;
@@ -36,9 +59,13 @@ export interface Holdings {tickets: number; total: number}
 export interface Detail extends Item {mine: Holdings | null; isWinner: boolean; shards?: ShardView[] | null; preview?: boolean}
 export interface MineRound {item: Item; tickets: number; created: boolean; won: boolean}
 export interface MineData {rounds: MineRound[]; txs: {cid: Hex; t: Receipt}[]}
-export interface WalletView {kind: string; address: string; key: Hex; spk: {script: string}; canSign?: boolean; id?: string; name?: string}
+export interface WalletView {
+  kind: string; address: string; key: Hex; spk: {script: string}; canSign?: boolean; id?: string; name?: string;
+  capabilities?: {supportsCovenantTxV1: boolean; selectiveSigning: boolean};
+}
 export interface DiscoveredRound {
-  cid: string; terminal?: string|null; module?: string|null; phase?: string|number;
+  cid: string; profileId?: Hex; terminal?: string|null; module?: string|null; phase?: string|number; subPhase?: string;
+  asset?: AssetDescriptor; settlementProgress?: SettlementProgress;
   tickets?: number; shards?: number; bought?: number; buys?: number;
   managerValue?: string|null; acceptingDaa?: string|number|null; updatedAt?: number|null;
   source?: 'indexer'|'rest'; genesisTxid?: string;
@@ -86,7 +113,7 @@ export interface Ctx {
 export interface ReviewInput {index: number; value: bigint; kind: string}
 export interface ReviewOutput {role: string; value: bigint; script: string; covenant: boolean}
 export interface Prepared {
-  op: {action: string; quantity?: number}; review: {txid: Hex; fee: bigint; inputs: ReviewInput[]; outputs: ReviewOutput[]};
+  op: {action: string; quantity?: number}; review: {txid: Hex; fee: bigint; assetDeltas?: AssetDelta[]; inputs: ReviewInput[]; outputs: ReviewOutput[]};
   fee: bigint | number; feerate: string | number | bigint; mass: {computeMass: unknown; transientMass: unknown; storageMass: unknown}; targetCount: number; cid: Hex;
 }
 export interface ConfirmCtx extends Ctx {prepared: Prepared; planText: string}

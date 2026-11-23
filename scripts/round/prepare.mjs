@@ -5,7 +5,8 @@
 import {probeNode} from '../chain/nodes.mjs';
 import {TN10} from '../chain/tn10.mjs';
 import {checkServerIdentity} from '../chain/node-identity.mjs';
-import {commonUtxos,inputsState,sameInput} from '../chain/chain.mjs';
+import {commonUtxos,filterAssetUtxos,inputsState,sameInput} from '../chain/chain.mjs';
+import {kasAsset} from '../protocols/registry.mjs';
 import {parseFeeEstimate} from '../chain/feetiers.mjs';
 import {outpointKey,referenceTxId} from '../core/lib/transaction.js';
 import {blake2b256} from '../core/lib/hashes.js';
@@ -105,7 +106,7 @@ export async function mempoolSpentOutpoints(rpc,address) {
  * WALLET_FUNDS_PENDING (not INSUFFICIENT) when the wallet would have enough if its unconfirmed spends were confirmed. */
 export async function selectFunds(rpc,wallet,minimum,reserved=new Set()) {
   const [ownRaw,inPool]=await Promise.all([commonUtxos(rpc,wallet.address),mempoolSpentOutpoints(rpc,wallet.address)]);
-  const own=ownRaw.filter(u=>!u.isCoinbase&&!u.covenantId&&!reserved.has(outpointKey(u.outpoint))&&u.spk.script===wallet.spk.script);
+  const own=filterAssetUtxos(ownRaw,{kind:'KAS',tokenCovenantId:null},{spkScript:wallet.spk.script,excludeOutpoints:reserved});
   const pick=list=>{
     const picked=[];let sum=0n;
     for(const u of list.slice().sort((a,b)=>a.value>b.value?-1:a.value<b.value?1:0)){if(picked.length===8)break;picked.push({...u,utxoDaa:u.daa});sum+=u.value;if(sum>=minimum)break;}
@@ -186,11 +187,24 @@ export async function prepareAction({rpc,profile,round,op,wallet,feerate,reserve
   }
   return {op,draft,mass,fee,feerate,budgets,targetCount:targets.length,fundCount:funds.length,
     currentDaa:manager?.currentDaa??null,roundCid:action==='GENESIS'?draft.cid:round.cid,
-    review:reviewOf(draft,wallet)};
+    review:reviewOf(draft,wallet,{net})};
 }
-/** Human review rows computed from the draft (never from the service). */
-export function reviewOf(draft,wallet=null) {
-  return {txid:referenceTxId(draft.transaction),fee:draft.fee,
+/** Human review rows computed from the draft (never from the service).
+ * Includes multi-asset `assetDeltas` so future KCC-20 protocols can show ticket cost, refundable deposit,
+ * carrier KAS, and miner fee without changing the confirmation dialog contract. */
+export function reviewOf(draft,wallet=null,{asset=null,net=null}={}) {
+  const kas=asset??kasAsset(net);
+  const walletSpk=wallet?.spk?.script??null;
+  let walletIn=0n,walletOut=0n;
+  if(walletSpk) {
+    for(const u of draft.inputUtxos)if(!u.covenantId&&u.spk?.script===walletSpk)walletIn+=u.value;
+    for(const o of draft.transaction.outputs)if(!o.covenant&&o.scriptPublicKey?.script===walletSpk)walletOut+=o.value;
+  }
+  const assetDeltas=[];
+  const netFlow=walletOut-walletIn;
+  if(walletSpk&&(walletIn>0n||walletOut>0n)) assetDeltas.push({asset:kas,amount:netFlow,role:'NET'});
+  assetDeltas.push({asset:kas,amount:-draft.fee,role:'FEE'});
+  return {txid:referenceTxId(draft.transaction),fee:draft.fee,assetDeltas,
     inputs:draft.inputUtxos.map((u,i)=>({index:i,outpoint:`${u.outpoint.transactionId}:${u.outpoint.index}`,value:u.value,
       kind:draft.authorizedInputIndices.includes(i)?'普通输入（需签名）':u.covenantId?'covenant 输入':'免签输入',covenantId:u.covenantId??null})),
     outputs:draft.transaction.outputs.map((o,i)=>({index:i,value:o.value,role:draft.roles[i],script:o.scriptPublicKey.script,covenant:!!o.covenant})),
@@ -209,7 +223,7 @@ export async function signAndRecord({rpc,profile,prepared,wallet,net=TN10,onSign
   const mass=quoteMass(draft);
   check(mass.storageMass===draft.transaction.storageMass&&draft.fee>=requiredFee(mass,prepared.feerate),'SIGNED_MASS_FEE');
   const {transition,...plain}=draft;void transition;
-  const intent={v:1,network:net.networkId,profileId:TN10_PROFILE_ID,txid:referenceTxId(draft.transaction),wireDigest:wireDigestOf(draft.transaction),
+  const intent={v:1,network:net.networkId,profileId:profile?.id??TN10_PROFILE_ID,txid:referenceTxId(draft.transaction),wireDigest:wireDigestOf(draft.transaction),
     cursor:await cursorPromise,status:'PREPARED',action:op.action,quantity:op.quantity??0,targetCount:prepared.targetCount,
     accessor:op.accessor??null,proof:op.proof??null,mass,draft:plain,createdAtMs:Date.now(),
     evidence:{budgetModel:'calibrated-vm-model-v1',note:'client-side calibrated script-unit bound; not consensus validation'}};

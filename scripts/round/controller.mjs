@@ -23,11 +23,19 @@ import {discoverRestRollingRounds,syncRoundThreeTier} from './catchup.mjs';
 import {sanitizeDiscoveredRounds} from '../store/round-store.mjs';
 import {TN10} from '../chain/tn10.mjs';
 import {parseTkas,parseUint} from '../../web/ui/format.mjs';
+import {createProtocolRegistry} from '../protocols/registry.mjs';
+import {createRollingV1Adapter} from '../protocols/rolling-v1.mjs';
 const FUNDED=new Set(['GENESIS','BUY','CLOSE','DRAW','TIMEOUT']);
 const LOST_GRACE_MS=180000;
 const codeOf=e=>e?.code??e?.safeCode??(typeof e?.message==='string'&&/^[A-Z0-9_]{3,64}$/.test(e.message)?e.message:'ERROR');
 
-export function createController({profile,roundStore,connect=(urls,opts)=>connectNetwork(urls,opts),now=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),fetcher=globalThis.fetch,net=TN10,discoveryCache=null}) {
+export function createController({profile,registry=null,roundStore,connect=(urls,opts)=>connectNetwork(urls,opts),now=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),fetcher=globalThis.fetch,net=TN10,discoveryCache=null}) {
+  const protocolRegistry=registry??createProtocolRegistry([createRollingV1Adapter({profile})]);
+  const defaultAdapter=protocolRegistry.defaultForCreate();
+  const adapterFor=target=>{
+    const pid=typeof target==='string'?target:(target?.profileId??defaultAdapter.profileId);
+    return protocolRegistry.require(pid);
+  };
   const c={rpc:null,indexer:null,indexerInfo:null,indexerCursor:null,discovered:[],discoveredSource:null,discoveredCachedAt:null,watchedAddress:null,lastSynced:null,wallet:null,prepared:null,busy:false,busyLabel:null,logs:[]},listeners=new Set();
   let cachedOrigin=null,api=null;
   const applyCachedDiscovery=snap=>{
@@ -342,7 +350,7 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       const text=await roundStore.getPreview?.(cid).catch(()=>null);
       if(typeof text!=='string')return null;
       try{
-        const r=roundFromText(text,profile,{network:net.networkId});
+        const r=defaultAdapter.roundFromText(text,{network:net.networkId});
         return r.cid===cid&&!r.intent&&!r.pending?.length?r:null;
       }catch{return null;}
     },
@@ -359,21 +367,22 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
             ?await client.exportRound(cid,{sinceTxid:cached.receipts.at(-1).txid,sinceStep:cached.receipts.length})
             :await client.exportRound(cid);
           if((doc.mode==='unchanged'||doc.mode==='ahead')&&cached)return cached;
+          const adapter=adapterFor(doc.profileId??cached?.profileId);
           let fresh;
           if(doc.mode==='delta'){
-            try{fresh=materializeIndexedDocument(doc,profile,{baseRound:cached,network:net.networkId}).round;}
+            try{fresh=adapter.materializeIndexedDocument(doc,{baseRound:cached,network:net.networkId}).round;}
             catch(e){
               const code=e?.code??e?.safeCode??e?.message??'';
               if(code.startsWith('DELTA_')){
                 doc=await client.exportRound(cid);
-                fresh=roundFromText(doc.roundText,profile,{network:net.networkId});
+                fresh=adapter.roundFromText(doc.roundText,{network:net.networkId});
               }else throw e;
             }
           }else{
-            fresh=roundFromText(doc.roundText,profile,{network:net.networkId});
+            fresh=adapter.roundFromText(doc.roundText,{network:net.networkId});
           }
           if(fresh.cid===cid&&!fresh.intent&&!fresh.pending?.length){
-            void roundStore.savePreview?.(cid,doc.mode==='delta'?roundToText(fresh):doc.roundText);
+            void roundStore.savePreview?.(cid,doc.mode==='delta'?adapter.roundToText(fresh):doc.roundText);
             return fresh;
           }
         }catch{}
@@ -519,14 +528,15 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       // Zero-depth chaining: the node's UTXO view can lag the accepting block for a moment. Only when this round has unverified
       // candidates, wait briefly (never build on guesses); everything else fails immediately.
       const lag=(round?.pending?.length??0)>0;let prepared;
+      const adapter=adapterFor(round?.profileId??op.profileId);
       for(let attempt=0;;attempt++) {
-        try{prepared=await prepareOperation({rpc:c.rpc,profile,round,choice:op,wallet,feerate,reserved,net});break;}
+        try{prepared=await adapter.prepareOperation({rpc:c.rpc,round,choice:op,wallet,feerate,reserved,net});break;}
         catch(e){
           if(codeOf(e)==='STALE_INPUT'&&round&&(!lag||attempt>=40))log('warn','本地 round state 可能已过期（他人已在这一轮操作过）：请导入最新的 round state 后再试');
           if(!lag||attempt>=40||codeOf(e)!=='STALE_INPUT')throw e;await sleep(500);}
       }
       check(walletValid(wallet,epoch),'WALLET_CHANGED');
-      c.prepared={...prepared,walletAddress:wallet.address,walletEpoch:epoch,preparedAt:now(),settings:op.settings??null,cid:prepared.roundCid};
+      c.prepared={...prepared,profileId:adapter.profileId,walletAddress:wallet.address,walletEpoch:epoch,preparedAt:now(),settings:op.settings??null,cid:prepared.roundCid};
       log('info',`草案已生成：${prepared.review.txid}（手续费 ${prepared.fee} sompi，费率 ${feerate} sompi/克）。请复核后再签名发送。`);
       return c.prepared;});},
     discardPrepared() {c.prepared=null;emit();},
@@ -535,19 +545,20 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       const p=need(c.prepared,'NOTHING_PREPARED');need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const wallet=c.wallet,epoch=walletEpoch;
       need(wallet&&wallet.address===p.walletAddress&&walletValid(wallet,epoch)&&p.walletEpoch===epoch,'WALLET_REQUIRED');
+      const adapter=adapterFor(p.profileId);
       log('info',`正在请求 ${wallet.name??'钱包'} 签名 ${p.op.action}…`);
-      const intent=await signAndRecord({rpc:c.rpc,profile,prepared:p,wallet,net,signal,onSigned:()=>{c.prepared=null;log('info','钱包已返回签名并完成本地验签，正在读取链上游标…');onSigned();}});
+      const intent=await adapter.signAndRecord({rpc:c.rpc,prepared:p,wallet,net,signal,onSigned:()=>{c.prepared=null;log('info','钱包已返回签名并完成本地验签，正在读取链上游标…');onSigned();}});
       check(walletValid(wallet,epoch),'WALLET_CHANGED');
       c.prepared=null;
       // Durable BEFORE send: from here an unknown outcome can only be reconciled, never replaced.
       if(intent.action==='GENESIS') {
-        const r=emptyRound({cid:p.cid,origin:p.draft.origin,settings:p.settings,network:net.networkId});r.intent=intent;validateRound(r,profile,{network:net.networkId});await roundStore.create(r);
+        const r=adapter.emptyRound({cid:p.cid,origin:p.draft.origin,settings:p.settings,network:net.networkId});r.intent=intent;adapter.validateRound(r,{network:net.networkId});await roundStore.create(r);
       } else await mutate(p.cid,r=>{check(!r.intent&&r.manager,'INTENT_UNRESOLVED_REPLACEMENT_BLOCKED');
         check(`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`===`${intent.draft.inputUtxos[0].outpoint.transactionId}:${intent.draft.inputUtxos[0].outpoint.index}`,'INTENT_MANAGER');
         r.intent=intent;return r;});
       log('info',`意图已持久化：${intent.txid}；正在提交…`);
       let status;
-      try {await submitIntent(c.rpc,intent,profile,{beforeSend:()=>check(walletValid(wallet,epoch),'WALLET_CHANGED'),network:net.networkId});status='SUBMITTED';log('info',`已提交 ${intent.txid}（首次被选中链接受即为候选，可继续下一步；满 100 DAA 复核后才算已接受）`);}
+      try {await adapter.submitIntent(c.rpc,intent,{beforeSend:()=>check(walletValid(wallet,epoch),'WALLET_CHANGED'),network:net.networkId});status='SUBMITTED';log('info',`已提交 ${intent.txid}（首次被选中链接受即为候选，可继续下一步；满 100 DAA 复核后才算已接受）`);}
       catch(e) {status=statusAfterFailure(e);const msg=e?.message&&e.message!==codeOf(e)&&!/key|secret|private/i.test(e.message)?` — ${String(e.message).slice(0,160)}`:'';log('error',`提交${status==='UNSENT'?'未发出':status==='REJECTED'?'被节点拒绝':'结果未知'}：${codeOf(e)}（状态 ${status}）${msg}`);
         if(status==='REJECTED') {
           intent.nodeError=String(e.message).slice(0,600); // the full text of a mempool conflict is ~290 chars; classifyRejection needs both outpoint and spender
@@ -621,12 +632,15 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       const live=await liveRound(c.rpc,r,profile,{targets:r.frozen});
       log('info',`链上核对通过：manager 与 ${live.targets.length} 个分片均为活跃且一致的 UTXO（阶段 ${live.state.module}）`);
       return {module:live.state.module,frozen:live.targets.length};},{readKey:`verify:${cid}`});},
-    exportText(cid) {return (async()=>roundToText(cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND')))();},
+    protocols:protocolRegistry,
+    summaryOf(round) {return adapterFor(round?.profileId).toRoundSummary(round,{net});},
+    exportText(cid) {return (async()=>{const r=cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND');return adapterFor(r.profileId).roundToText(r);})();},
     /** Import = data only. Never authenticated until prepare() verifies the live UTXOs; a local pending intent is never overwritten. */
     async importText(text) {return guard('导入',async()=>{
-      const r=roundFromText(text,profile,{network:net.networkId});
-      if(r.intent)await authenticateIntent(r.intent,profile,{network:net.networkId});
-      for(const p of r.pending??[])await authenticateIntent(p.intent,profile,{network:net.networkId});   // candidates are re-verified from this record later: authenticate them like the live intent
+      const adapter=defaultAdapter;
+      const r=adapter.roundFromText(text,{network:net.networkId});
+      if(r.intent)await adapter.authenticateIntent(r.intent,{network:net.networkId});
+      for(const p of r.pending??[])await adapter.authenticateIntent(p.intent,{network:net.networkId});   // candidates are re-verified from this record later: authenticate them like the live intent
       const cur=await roundStore.get(r.cid);
       if(cur){check(!cur.round.intent||(r.intent&&cur.round.intent.wireDigest===r.intent.wireDigest),'IMPORT_WOULD_REPLACE_LOCAL_INTENT');await roundStore.replace(r,cur.revision);}
       else await roundStore.create(r);

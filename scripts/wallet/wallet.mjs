@@ -25,6 +25,7 @@ export function openMemoryWallet(privateKeyText,{prefix=PREFIX}={}) {
   let closed=false;const spk=p2pk(key);
   return Object.freeze({
     kind:'key',canSign:true,address,key,spk,
+    capabilities:Object.freeze({supportsCovenantTxV1:true,selectiveSigning:true}),
     get closed(){return closed;},
     close(){secret.fill(0);closed=true;},
     /** SIGHASH_ALL for every authorized (ordinary P2PK) input, each verified locally before it is accepted. */
@@ -50,7 +51,8 @@ export function publicRecipient(address,{prefix=PREFIX}={}) {
   const {version,payload}=decodeAddress(String(address).trim(),prefix);
   check(version===0,'RECIPIENT_P2PK_REQUIRED');
   const key=hex(payload);
-  return Object.freeze({kind:'public',canSign:false,address:pubkeyToAddress(key,prefix),key,spk:p2pk(key),closed:false,close(){},
+  return Object.freeze({kind:'public',canSign:false,address:pubkeyToAddress(key,prefix),key,spk:p2pk(key),
+    capabilities:Object.freeze({supportsCovenantTxV1:false,selectiveSigning:false}),closed:false,close(){},
     async sign(draft){check(draft.authorizedInputIndices.length===0,'PERMISSIONLESS_SIGNATURE_SCOPE');}});
 }
 /** Verify EVERY ordinary-input signature of a signed draft (SIGHASH_ALL, owner key read from the spent P2PK script). */

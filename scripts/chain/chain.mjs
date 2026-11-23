@@ -17,6 +17,31 @@ export async function commonUtxos(link, address) {
   return r.entries.map(utxoFromRpc);
 }
 
+/** Strict asset-scoped UTXO filter: ordinary KAS NEVER includes UTXOs carrying a covenantId (e.g. KCC-20 tokens). */
+export function filterAssetUtxos(utxos, asset = {kind: 'KAS', tokenCovenantId: null}, {spkScript = null, excludeOutpoints = null} = {}) {
+  const kind = asset?.kind ?? 'KAS';
+  const tokenCid = kind === 'KCC20' ? asset.tokenCovenantId : null;
+  if (kind === 'KCC20') hash32(tokenCid);
+  return utxos.filter(u => {
+    if (!u || u.isCoinbase) return false;
+    if (kind === 'KAS') {
+      if (u.covenantId) return false;
+    } else if (kind === 'KCC20') {
+      if (u.covenantId !== tokenCid) return false;
+    } else {
+      return false;
+    }
+    if (spkScript && u.spk?.script !== spkScript) return false;
+    if (excludeOutpoints && excludeOutpoints.has(`${u.outpoint.transactionId}:${u.outpoint.index}`)) return false;
+    return true;
+  });
+}
+
+/** Query live UTXOs for one asset kind (ordinary KAS or a specific KCC-20 tokenCovenantId). */
+export async function getAssetUtxos(link, address, asset = {kind: 'KAS', tokenCovenantId: null}, opts = {}) {
+  return filterAssetUtxos(await commonUtxos(link, address), asset, opts);
+}
+
 /** Every input must still be live and identical (value/script/DAA/covenant) on the node. */
 export async function verifyInputsLive(pair, utxos, {allowDaaDrift = false, addressOf = addressOfLink(pair), readUtxos = commonUtxos} = {}) {
   const states = await inputsState(pair, utxos, {addressOf, readUtxos});

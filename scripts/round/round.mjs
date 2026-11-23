@@ -58,8 +58,8 @@ const outpoint=(o,c)=>{check(o&&typeof o.index==='number'&&Number.isSafeInteger(
 const spkOf=(s,c)=>{check(s&&s.version===0&&typeof s.script==='string'&&/^(?:[0-9a-f]{2}){1,100}$/.test(s.script),c);return {version:0,script:s.script};};
 const big=(v,c,max=S.VALUE_LIMIT)=>{check(typeof v==='bigint'&&v>=0n&&v<=max,c);return v;};
 
-export function emptyRound({cid,origin,settings,source='local',network=TN10_NETWORK_ID}) {
-  return {v:ROUND_VERSION,network,profileId:TN10_PROFILE_ID,cid:hash32(cid,'ROUND_CID'),origin:outpoint(origin,'ROUND_ORIGIN'),
+export function emptyRound({cid,origin,settings,source='local',network=TN10_NETWORK_ID,profileId=TN10_PROFILE_ID}) {
+  return {v:ROUND_VERSION,network,profileId:hash32(profileId,'ROUND_PROFILE_ID'),cid:hash32(cid,'ROUND_CID'),origin:outpoint(origin,'ROUND_ORIGIN'),
     settings:{...settings},manager:null,frozen:[],accepting:null,step:0,buys:0,bought:0,fees:0n,terminal:null,receipts:[],pending:[],halted:null,source,intent:null};
 }
 
@@ -297,8 +297,8 @@ export function moveCandidate(round,txid,{acceptingBlock,acceptingDaa}) {
 }
 
 /** Offline validation of a record (own or imported). Does NOT authenticate against the chain. */
-export function validateRound(r,profile,{allowIntent=true,network=TN10_NETWORK_ID}={}) {
-  check(r&&typeof r==='object'&&r.v===ROUND_VERSION&&r.network===network&&r.profileId===TN10_PROFILE_ID,'ROUND_SCOPE');
+export function validateRound(r,profile,{allowIntent=true,network=TN10_NETWORK_ID,profileId=profile?.id??TN10_PROFILE_ID}={}) {
+  check(r&&typeof r==='object'&&r.v===ROUND_VERSION&&r.network===network&&r.profileId===profileId,'ROUND_SCOPE');
   hash32(r.cid,'ROUND_CID');outpoint(r.origin,'ROUND_ORIGIN');
   const st=r.settings;check(st&&typeof st.ticketCap==='number'&&typeof st.minTickets==='number','ROUND_SETTINGS');
   big(st.ticketPrice,'ROUND_SETTINGS');big(st.closeEligibleDaa,'ROUND_SETTINGS');S.integer(st.ticketCap,3,S.MAX_TICKETS);S.integer(st.minTickets,3,st.ticketCap);
@@ -373,7 +373,7 @@ const unpackReceipt=rc=>{
   return null;
 };
 /** Apply a KCI incremental delta onto a verified local base round, reusing cached frozen redeemScripts and offline-validating the merged result. */
-export function applyRoundDelta(baseRound,document,profile,{network=TN10_NETWORK_ID}={}) {
+export function applyRoundDelta(baseRound,document,profile,{network=TN10_NETWORK_ID,profileId=profile?.id??TN10_PROFILE_ID}={}) {
   check(baseRound&&typeof baseRound==='object'&&!baseRound.pending?.length&&!baseRound.intent,'DELTA_BASE_INVALID');
   check(document&&document.mode==='delta'&&document.cid===baseRound.cid&&document.delta&&typeof document.delta==='object','DELTA_SHAPE');
   const lastRc=baseRound.receipts?.at(-1);
@@ -410,15 +410,15 @@ export function applyRoundDelta(baseRound,document,profile,{network=TN10_NETWORK
   if(d.draw!=null)merged.draw=d.draw;
   else if(baseRound.draw!=null)merged.draw=baseRound.draw;
   check(merged.step===merged.receipts.length&&merged.step>baseRound.step,'DELTA_STEP');
-  validateRound(merged,profile,{network});
+  validateRound(merged,profile,{network,profileId});
   return {round:merged,preimages};
 }
 export const roundToText=round=>encodeTagged(Array.isArray(round?.receipts)?{...round,receipts:round.receipts.map(packReceipt)}:round);
 /** Import: parse + validate. Result is marked imported/unauthenticated and can never carry a trusted live status. */
-export function roundFromText(text,profile,{network=TN10_NETWORK_ID}={}) {
+export function roundFromText(text,profile,{network=TN10_NETWORK_ID,profileId=profile?.id??TN10_PROFILE_ID}={}) {
   const raw=decodeTagged(text);
   check(raw&&typeof raw==='object'&&!Array.isArray(raw),'ROUND_SHAPE');
   const r=Array.isArray(raw.receipts)?{...raw,receipts:raw.receipts.map(unpackReceipt)}:raw;
-  validateRound(r,profile,{network});
+  validateRound(r,profile,{network,profileId});
   return {...r,source:'imported'};
 }

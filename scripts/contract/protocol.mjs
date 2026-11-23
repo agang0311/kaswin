@@ -44,10 +44,10 @@ function spkOf(o,code) {
 }
 
 /** Client side: draft -> canonical wire request. Only fields the engine needs; funds' ownership is NOT conveyed. */
-export function toWire(mode,draft,{accessor=null,network=TN10_NETWORK_ID}={}) {
+export function toWire(mode,draft,{accessor=null,network=TN10_NETWORK_ID,profileId=TN10_PROFILE_ID}={}) {
   check(MODES.includes(mode),'WIRE_MODE');
   const t=draft.transaction,auth=[...draft.authorizedInputIndices].sort((a,b)=>a-b);
-  return {schema:SCHEMA,mode,network,profileId:TN10_PROFILE_ID,
+  return {schema:SCHEMA,mode,network,profileId,
     transaction:{version:t.version,lockTime:t.lockTime.toString(),subnetworkId:t.subnetworkId,gas:t.gas.toString(),payload:t.payload,
       storageMass:(t.storageMass??0n).toString(),
       inputs:t.inputs.map(i=>({txid:i.previousOutpoint.transactionId,index:i.previousOutpoint.index,signatureScript:i.signatureScript,
@@ -62,10 +62,10 @@ export function toWire(mode,draft,{accessor=null,network=TN10_NETWORK_ID}={}) {
 
 /** Strict decoder used by the service (and by tests). Unknown/missing fields, oversized or non-canonical values are rejected.
  * Returns the canonical wire object (re-serialised from the decoded values) and an engine-ready draft. */
-export function parseWire(raw,{network=TN10_NETWORK_ID}={}) {
+export function parseWire(raw,{network=TN10_NETWORK_ID,profileId=TN10_PROFILE_ID}={}) {
   exact(raw,['schema','mode','network','profileId','transaction','inputUtxos','authorizedInputIndices','accessor'],'WIRE_SHAPE');
   check(raw.schema===SCHEMA,'WIRE_SCHEMA');check(MODES.includes(raw.mode),'WIRE_MODE');
-  check(raw.network===network,'WIRE_NETWORK');check(raw.profileId===TN10_PROFILE_ID,'WIRE_PROFILE');
+  check(raw.network===network,'WIRE_NETWORK');check(raw.profileId===profileId,'WIRE_PROFILE');
   const t=exact(raw.transaction,['version','lockTime','subnetworkId','gas','payload','storageMass','inputs','outputs'],'WIRE_TX');
   check(t.version===1,'WIRE_TX_VERSION');
   check(t.subnetworkId==='00'.repeat(20)&&t.gas==='0','WIRE_NATIVE_ONLY');
@@ -108,7 +108,7 @@ export function parseWire(raw,{network=TN10_NETWORK_ID}={}) {
     accessor={blockHash:hash(raw.accessor.blockHash,'WIRE_ACCESSOR'),sequenceCommitment:hash(raw.accessor.sequenceCommitment,'WIRE_ACCESSOR')};}
   const transaction={version:1,lockTime,subnetworkId:t.subnetworkId,gas:0n,payload:t.payload,storageMass,inputs,outputs};
   const draft={transaction,inputUtxos,authorizedInputIndices:auth};
-  const wire=toWire(raw.mode,draft,{accessor});
+  const wire=toWire(raw.mode,draft,{accessor,network,profileId});
   check(stable(wire)===stable(raw),'WIRE_NOT_CANONICAL');
   return {mode:raw.mode,wire,draft,accessor};
 }
@@ -120,11 +120,11 @@ export const draftTxid=draft=>referenceTxId(draft.transaction);
 
 /** Client-side acceptance of a service reply. Throws unless the reply is for EXACTLY this request.
  * Returns per-input measurements. Nothing here makes the reply a safety proof. */
-export function checkServiceReply(wire,reply,{enginePin=null,network=TN10_NETWORK_ID}={}) {
+export function checkServiceReply(wire,reply,{enginePin=null,network=TN10_NETWORK_ID,profileId=TN10_PROFILE_ID}={}) {
   check(reply&&typeof reply==='object'&&reply.schema===SCHEMA&&reply.ok===true,'REPLY_NOT_OK');
-  check(reply.mode===wire.mode&&reply.network===network&&reply.profileId===TN10_PROFILE_ID,'REPLY_SCOPE');
+  check(reply.mode===wire.mode&&reply.network===network&&reply.profileId===profileId,'REPLY_SCOPE');
   check(reply.requestDigest===requestDigest(wire),'REPLY_DIGEST_MISMATCH');
-  const parsed=parseWire(wire);
+  const parsed=parseWire(wire,{network,profileId});
   check(reply.txid===draftTxid(parsed.draft),'REPLY_TXID_MISMATCH');
   check(reply.advisory===true&&reply.offlineScriptCheck===true,'REPLY_NOT_ADVISORY');
   const auth=new Set(parsed.draft.authorizedInputIndices),expected=wire.mode==='measure'

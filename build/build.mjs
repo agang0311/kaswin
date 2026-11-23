@@ -15,6 +15,7 @@ const root=fileURLToPath(new URL('../',import.meta.url));
 const sha256=data=>createHash('sha256').update(data).digest('hex');
 const ALLOWED=[/^web\/(app|ui)\/[a-z0-9-]+\.(mjs|ts)$/,
   /^scripts\/(chain|wallet|round|store|tracking|contract)\/[a-z0-9-]+\.mjs$/,
+  /^scripts\/protocols\/([a-z0-9-]+\/)?[a-z0-9-]+\.mjs$/,
   /^scripts\/core\/lib\/[a-z0-9-]+\.js$/,/^scripts\/(core|errors|release-safety)\.mjs$/,
   /^rolling-profile:/,/^node_modules\//];
 const FORBIDDEN=[/^tests\//,/^experiments\//,/^scripts\/indexer\//,/^scripts\/contract\/bundle\.mjs$/,

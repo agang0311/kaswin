@@ -86,7 +86,8 @@ export async function openExtensionWallet(id,{globals=globalThis,onInvalidate=()
     catch(e){const err=safeError(e);if(err.message!=='WALLET_SIGN_CANCELLED')invalidate();throw err;}
     if(closed||!sameSession(current,owner)){invalidate();throw new Error('WALLET_CHANGED');}
   };
-  return Object.freeze({kind:'extension',id,name:NAMES[id],canSign:true,...owner,spk:p2pk(owner.key),get closed(){return closed;},close,
+  return Object.freeze({kind:'extension',id,name:NAMES[id],canSign:true,...owner,spk:p2pk(owner.key),
+    capabilities:Object.freeze({supportsCovenantTxV1:true,selectiveSigning:true}),get closed(){return closed;},close,
     async ping() {
       if(closed)return false;
       try{await assertSession(performance.now()+Math.min(timeoutMs,SESSION_PROBE_MS),{probe:true});return true;}

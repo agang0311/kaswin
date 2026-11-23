@@ -195,6 +195,7 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
 
   return Object.freeze({
     kind:'extension',id:'kaspire',name:'Kaspire',canSign:true,...owner,spk:p2pk(owner.key),
+    capabilities:Object.freeze({supportsCovenantTxV1:true,selectiveSigning:true}),
     get closed(){return closed;},
     close,
     async disconnectSession(){close();try{await sc.disconnect({topic:session.topic,reason:{code:6000,message:'user_disconnected'}});}catch{}},

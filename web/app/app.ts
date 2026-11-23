@@ -5,7 +5,7 @@ import {DRAW_DELAY,TIMEOUT_DELAY} from '../../scripts/core.mjs';
 import {profileData} from '@kaswin/rolling-profile';
 import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {TN10} from '../../scripts/chain/tn10.mjs';
-import {loadProfile,openStore,makeController,describeRound,availableActions,shardCatalog,verifyDrawReceipt,identify,commonUtxos,pubkeyToAddress,connectNetwork,createIndexerClient,readDrawProgress} from './bridge.ts';
+import {loadProfile,openStore,makeController,createProtocolRegistry,createRollingV1Adapter,describeRound,availableActions,shardCatalog,verifyDrawReceipt,identify,getAssetUtxos,pubkeyToAddress,connectNetwork,createIndexerClient,readDrawProgress} from './bridge.ts';
 import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
 import {chooseLanguage,getLanguage,setLanguage,installLocalization} from '../ui/i18n.mjs';
 import {EN} from '../ui/messages-en.mjs';
@@ -708,7 +708,7 @@ async function refreshBalance(force=false) {
   if(balanceInflight)return balanceInflight;
   balanceAt=Date.now();
   balanceInflight=(async()=>{
-    try {balance=(await commonUtxos(rpc,w.address)).filter(u=>!u.isCoinbase&&!u.covenantId).reduce((n,u)=>n+u.value,0n);}catch{balance=null;}
+    try {balance=(await getAssetUtxos(rpc,w.address,{kind:'KAS',symbol:activeNet.unit,decimals:8,tokenCovenantId:null})).reduce((n,u)=>n+u.value,0n);}catch{balance=null;}
     chrome();if(modalOpen()&&$('mTitle').dataset.sourceTitle==='钱包')openWallet();else render();
   })().finally(()=>{balanceInflight=null;});
   return balanceInflight;
@@ -1158,8 +1158,9 @@ async function main() {
   installPwaManifest();
   profile=loadProfile(profileData);                 // the browser re-derives the Profile id (assertProfile)
   if(profile.id!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
-  store=await openStore({genesis:activeNet.genesis,profileId:profile.id});
-  ctl=makeController(profile,store,activeNet,discoveryCache);
+  const protocols=createProtocolRegistry([createRollingV1Adapter({profile})]);
+  store=await openStore({genesis:activeNet.genesis,profileId:protocols.defaultForCreate().profileId});
+  ctl=makeController(profile,store,activeNet,discoveryCache,protocols);
   await ctl.restoreDiscovery();
   conn.discoveredSource=ctl.state.discoveredSource??null;
   ctl.onChange(schedule);bind();

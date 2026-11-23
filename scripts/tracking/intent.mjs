@@ -20,8 +20,8 @@ const code=e=>e?.code??e?.safeCode??e?.message;
 
 /** Offline integrity of a persisted/imported intent: txid, exact wire bytes, mass, outpoints, ordinary signatures,
  * and an independent re-interpretation of the transaction effects against its input contexts. */
-export async function authenticateIntent(intent,profile,{network=TN10_NETWORK_ID}={}) {
-  check(intent&&intent.network===network&&intent.profileId===TN10_PROFILE_ID,'INTENT_SCOPE');
+export async function authenticateIntent(intent,profile,{network=TN10_NETWORK_ID,profileId=profile?.id??TN10_PROFILE_ID}={}) {
+  check(intent&&intent.network===network&&intent.profileId===profileId,'INTENT_SCOPE');
   const d=intent.draft,tx=d.transaction;
   check(referenceTxId(tx)===intent.txid,'INTENT_TXID');
   const wire=txToRpc(tx);check(sha256Hex(jsonText(wire))===intent.wireDigest,'INTENT_CONTENT_CHANGED');

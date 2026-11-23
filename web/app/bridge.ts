@@ -7,12 +7,14 @@ import {createController as controllerJs} from '../../scripts/round/controller.m
 import {profileFromData as profileJs} from '../../scripts/contract/profile-data.mjs';
 import {openRoundStore as openStoreJs,RoundStore as RoundStoreJs} from '../../scripts/store/round-store.mjs';
 import {identify as identifyJs,MAX_TICKETS as MAX_TICKETS_JS} from '../../scripts/core.mjs';
-import {commonUtxos as utxosJs} from '../../scripts/chain/chain.mjs';
+import {commonUtxos as utxosJs,getAssetUtxos as assetUtxosJs} from '../../scripts/chain/chain.mjs';
+import {createProtocolRegistry as registryJs,formatAssetAmount as formatAssetJs} from '../../scripts/protocols/registry.mjs';
+import {createRollingV1Adapter as rollingV1Js} from '../../scripts/protocols/rolling-v1.mjs';
 import {pubkeyToAddress as addressJs,addressToSpk as addressToSpkJs} from '../../scripts/wallet/address.mjs';
 import {managerBoundUnits as boundUnitsJs,unitsToBudget as unitsToBudgetJs} from '../../scripts/round/budget.mjs';
 import {connectNetwork as connectNetworkJs,connectTN10 as connectTN10Js} from '../../scripts/round/prepare.mjs';
 import {createIndexerClient as indexerClientJs} from '../../scripts/round/indexer-client.mjs';
-import type {ActionState,Controller,DiscoveryCacheLike,DrawProgress,DrawResult,Facts,NetInfo,Profile,Round,RoundStoreLike,RpcLike,ShardView,TicketRecord,Utxo} from './types.ts';
+import type {ActionState,AssetDescriptor,Controller,DiscoveryCacheLike,DrawProgress,DrawResult,Facts,NetInfo,Profile,ProtocolAdapterLike,ProtocolRegistryLike,Round,RoundStoreLike,RpcLike,ShardView,TicketRecord,Utxo} from './types.ts';
 
 export const readDrawProgress = (rpc: RpcLike, round: Round): Promise<DrawProgress> => (readDrawProgressJs as (r: unknown, s: unknown) => Promise<DrawProgress>)(rpc, round);
 export const loadProfile = (data: unknown): Profile => profileJs(data) as Profile;
@@ -23,6 +25,10 @@ export const verifyDrawReceipt = (r: Round, rpc: RpcLike, profile: Profile): Pro
 export const MAX_TICKETS: number = MAX_TICKETS_JS;
 export const identify = (redeemScript: Uint8Array, profile: Profile): {module: string; records: TicketRecord[]} => (identifyJs as (...a: unknown[]) => {module: string; records: TicketRecord[]})(redeemScript, profile);
 export const commonUtxos = (rpc: RpcLike, address: string): Promise<Utxo[]> => (utxosJs as (...a: unknown[]) => Promise<Utxo[]>)(rpc, address);
+export const getAssetUtxos = (rpc: RpcLike, address: string, asset: AssetDescriptor): Promise<Utxo[]> => (assetUtxosJs as (...a: unknown[]) => Promise<Utxo[]>)(rpc, address, asset);
+export const formatAssetAmount = (amount: bigint | string, asset: AssetDescriptor, opts?: {maxFrac?: number}): string => (formatAssetJs as (...a: unknown[]) => string)(amount, asset, opts);
+export const createRollingV1Adapter = (opts: {profile: Profile; canCreate?: boolean}): ProtocolAdapterLike => (rollingV1Js as (o: unknown) => ProtocolAdapterLike)(opts);
+export const createProtocolRegistry = (adapters: ProtocolAdapterLike[], opts?: {defaultCreateProfileId?: string}): ProtocolRegistryLike => (registryJs as (...a: unknown[]) => ProtocolRegistryLike)(adapters, opts);
 export const pubkeyToAddress = (xonly: string, prefix: string): string => (addressJs as (...a: unknown[]) => string)(xonly, prefix);
 export const addressToSpk = (address: string, prefix: string): {version: number; script: string} => (addressToSpkJs as (...a: unknown[]) => {version: number; script: string})(address, prefix);
 export const managerBoundUnits = (action: string, opts: unknown): number => (boundUnitsJs as (...a: unknown[]) => number)(action, opts);
@@ -32,5 +38,5 @@ export const connectTN10 = (urls: string[]): Promise<RpcLike & {close?(): void}>
 export const createIndexerClient = (opts: {baseUrl: string; networkId?: string; genesisHash?: string; profileId?: string}): {info(): Promise<{roundsCount?: number;stale?: boolean}>;rounds(o?: {limit?: number}): Promise<{rounds: unknown[]}>} =>
   (indexerClientJs as (o: unknown) => {info(): Promise<{roundsCount?: number;stale?: boolean}>;rounds(o?: {limit?: number}): Promise<{rounds: unknown[]}>})(opts);
 export const openStore = async (opts: {genesis?: string; profileId?: string} = {}): Promise<RoundStoreLike> => new (RoundStoreJs as new (s: unknown, o?: unknown) => RoundStoreLike)(await openStoreJs(), opts);
-export const makeController = (profile: Profile, roundStore: RoundStoreLike, net?: NetInfo, discoveryCache?: DiscoveryCacheLike | null): Controller =>
-  (controllerJs as (o: unknown) => unknown)({profile, roundStore, net, discoveryCache}) as Controller;
+export const makeController = (profile: Profile, roundStore: RoundStoreLike, net?: NetInfo, discoveryCache?: DiscoveryCacheLike | null, registry?: ProtocolRegistryLike | null): Controller =>
+  (controllerJs as (o: unknown) => unknown)({profile, registry, roundStore, net, discoveryCache}) as Controller;

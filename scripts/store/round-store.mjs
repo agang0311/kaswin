@@ -53,6 +53,20 @@ export function sanitizeDiscoveredRound(raw) {
   out.updatedAt=typeof raw.updatedAt==='number'&&Number.isFinite(raw.updatedAt)&&raw.updatedAt>=0?Math.trunc(raw.updatedAt):null;
   if(raw.source==='rest'||raw.source==='indexer')out.source=raw.source;
   if(typeof raw.genesisTxid==='string'&&HASH64.test(raw.genesisTxid))out.genesisTxid=raw.genesisTxid;
+  if(typeof raw.profileId==='string'&&HASH64.test(raw.profileId))out.profileId=raw.profileId;
+  if(typeof raw.subPhase==='string'&&raw.subPhase.length<=32)out.subPhase=raw.subPhase;
+  if(raw.asset&&typeof raw.asset==='object'&&['KAS','KCC20'].includes(raw.asset.kind)
+    &&typeof raw.asset.symbol==='string'&&raw.asset.symbol.length>=1&&raw.asset.symbol.length<=16
+    &&Number.isInteger(raw.asset.decimals)&&raw.asset.decimals>=0&&raw.asset.decimals<=18) {
+    const tid=raw.asset.kind==='KCC20'&&typeof raw.asset.tokenCovenantId==='string'&&HASH64.test(raw.asset.tokenCovenantId)?raw.asset.tokenCovenantId:null;
+    if(raw.asset.kind==='KAS'||tid) out.asset={kind:raw.asset.kind,symbol:raw.asset.symbol,decimals:raw.asset.decimals,tokenCovenantId:tid};
+  }
+  if(raw.settlementProgress&&typeof raw.settlementProgress==='object'
+    &&Number.isSafeInteger(raw.settlementProgress.done)&&raw.settlementProgress.done>=0
+    &&Number.isSafeInteger(raw.settlementProgress.total)&&raw.settlementProgress.total>=raw.settlementProgress.done) {
+    out.settlementProgress={done:raw.settlementProgress.done,total:raw.settlementProgress.total,
+      ...(typeof raw.settlementProgress.labelKey==='string'&&raw.settlementProgress.labelKey.length<=32?{labelKey:raw.settlementProgress.labelKey}:{})};
+  }
   return out;
 }
 export function sanitizeDiscoveredRounds(list,{limit=500}={}) {
