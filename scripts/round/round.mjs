@@ -203,6 +203,23 @@ export function shardCatalog(round,profile,walletKey=null) {
   return shards;
 }
 
+function buildTerminalHistory(terminal,round,profile) {
+  if(!['PAID','REFUNDED'].includes(terminal)||!round?.manager?.redeemScript)return null;
+  const prev=verifyManager(round.manager,profile);
+  if(!prev.indices.length&&!prev.records.length)return null;
+  const byHash=new Map();
+  for(const f of round.frozen??[]){
+    if(!(f?.redeemScript instanceof Uint8Array))continue;
+    const info=inspectFrozenScript(f,profile);
+    if(info.decoded?.module==='frozen'&&!byHash.has(info.h))byHash.set(info.h,info.decoded.records.map(rec=>({end:rec.end,key:rec.key})));
+  }
+  return {
+    terminal,
+    winnerKey:prev.winnerKey??null,
+    localRecords:prev.records.map(rec=>({end:rec.end,key:rec.key})),
+    shards:prev.indices.map(idx=>({end:idx.end,hash:idx.hash,records:byHash.get(idx.hash)??null})),
+  };
+}
 const cloneRoundShell=round=>({...round,settings:{...round.settings},origin:{...round.origin},
   manager:round.manager?{...round.manager,outpoint:{...round.manager.outpoint},spk:{...round.manager.spk}}:null,
   frozen:(round.frozen??[]).map(f=>({...f,outpoint:{...f.outpoint},spk:{...f.spk}})),
@@ -234,7 +251,11 @@ export function advanceRound(round,intent,accepted,profile) {
     r.manager={outpoint:{transactionId:txid,index:0},origin,cid,value:outs[0].value,spk:outs[0].scriptPublicKey,redeemScript:redeem(t.next,profile),
       utxoDaa:accepted.acceptingDaa,currentDaa:accepted.observedVirtualDaa,daa:accepted.acceptingDaa,covenantId:cid};
     verifyManager(r.manager,profile);
-  } else r.manager=null;
+  } else {
+    const history=buildTerminalHistory(t.terminal,round,profile);
+    if(history)r.history=history;
+    r.manager=null;
+  }
   t.outputs.forEach((o,i)=>{if(o.state?.module==='frozen')r.frozen.push({outpoint:{transactionId:txid,index:i},cid,covenantId:cid,origin,value:outs[i].value,spk:outs[i].scriptPublicKey,
     redeemScript:redeem(o.state,profile),utxoDaa:accepted.acceptingDaa,daa:accepted.acceptingDaa});});
   r.cid=cid;r.origin=origin;r.accepting=accepted.acceptingBlock;r.fees+=accepted.actualFee;

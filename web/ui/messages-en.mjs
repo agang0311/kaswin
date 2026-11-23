@@ -1051,4 +1051,8 @@ export const EN = [
   ['取消等待', 'Cancel wait'],
   ['未收到扩展响应？可能扩展已锁屏、超时退出或未弹出授权框，可点击「取消等待」后解锁并重连钱包。', 'No response from the extension? It may have locked, timed out, or failed to pop up. Click "Cancel wait", unlock it, and reconnect your wallet.'],
   ['节点链视图刚刚发生变化，开奖确认检查未通过，请重试。', 'The node chain view just changed during draw confirmation check; please try again.'],
+  ['已派奖：奖金已派发，押金已退回创建者。', 'Paid: prize sent and deposit returned to creator.'],
+  ['空轮结束：无人购买，押金已退回创建者。', 'Ended empty: no tickets sold; deposit returned to creator.'],
+  ['退款完成：全部购买记录已退款。', 'Refunds complete: all purchase records refunded.'],
+  ['本轮已结束（{0}），', 'This round has ended ({0}), '],
 ];

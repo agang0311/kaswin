@@ -155,3 +155,28 @@ test('shardCatalog decodes frozen + active shards, global ticket ranges, settled
   validateRound({...histR,draw:{txid:'cd'.repeat(32),shard:0,record:10,ticket:10}},profile);
   assert.throws(()=>validateRound({...histR,draw:{txid:'cd'.repeat(32),shard:0,record:256,ticket:0}},profile),/INTEGER_RANGE/);
 });
+test('advanceRound preserves terminal history on PAY_SELF and REFUND_SELF',()=>{
+  const winF=fixture({module:'win',cnt:0,local:3,p:0}),winR=record(winF);
+  const dPay=buildAction(winF.manager,profile,{action:'PAY_SELF',actorKey:w.key},{fee:FEE,budgets:[10]});
+  const payIntent={action:'PAY_SELF',targetCount:0,accessor:null,draft:{...dPay,inputUtxos:dPay.inputUtxos.map(u=>({...u,daa:u.utxoDaa}))},mass:{transientMass:1n}};
+  const payAcc={txid:referenceTxId(dPay.transaction),tx:nodeTx(dPay),acceptingBlock:'ef'.repeat(32),acceptingDaa:2500n,observedVirtualDaa:2700n,actualFee:dPay.fee,nodeComputeMass:5n,storageMass:1n};
+  const paid=advanceRound(winR,payIntent,payAcc,profile);
+  assert.equal(paid.terminal,'PAID');
+  assert.equal(paid.history?.terminal,'PAID');
+  assert.equal(paid.history?.winnerKey,winF.s.winnerKey);
+  assert.equal(paid.history?.localRecords.length,3);
+  assert.equal(paid.history?.shards.length,0);
+  validateRound(paid,profile);
+
+  const refF=fixture({module:'refund',cnt:0,local:2,r:0,c:0}),refR=record(refF);
+  const dRef=buildAction(refF.manager,profile,{action:'REFUND_SELF',actorKey:w.key},{fee:FEE,budgets:[10]});
+  const refIntent={action:'REFUND_SELF',targetCount:0,accessor:null,draft:{...dRef,inputUtxos:dRef.inputUtxos.map(u=>({...u,daa:u.utxoDaa}))},mass:{transientMass:1n}};
+  const refAcc={txid:referenceTxId(dRef.transaction),tx:nodeTx(dRef),acceptingBlock:'f0'.repeat(32),acceptingDaa:2500n,observedVirtualDaa:2700n,actualFee:dRef.fee,nodeComputeMass:5n,storageMass:1n};
+  const refunded=advanceRound(refR,refIntent,refAcc,profile);
+  assert.equal(refunded.terminal,'REFUNDED');
+  assert.equal(refunded.history?.terminal,'REFUNDED');
+  assert.equal(refunded.history?.winnerKey,null);
+  assert.equal(refunded.history?.localRecords.length,2);
+  assert.equal(refunded.history?.shards.length,0);
+  validateRound(refunded,profile);
+});

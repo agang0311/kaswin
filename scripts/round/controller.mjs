@@ -385,7 +385,7 @@ export function createController({profile,roundStore,connect=(urls,opts)=>connec
       try{
       const rpc=need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const initial=await roundStore.get(input);
-      if(initial?.round.terminal)return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
+      if(initial?.round.terminal&&(initial.round.terminal==='EMPTY'||initial.round.history))return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
       if(c.prepared?.cid===input||initial&&(initial.round.intent||(!allowHalted&&initial.round.halted)))return {cid:input,skipped:'LOCAL_PENDING'};
       const client=c.indexer;
       const markSynced=r=>{

@@ -188,7 +188,7 @@ test('mine / rules / dialogs render, never claim full validation, and show no ke
   assert.match(connMine,/我 2 张/);
   assert.match(connMine,/确认中/);
   assert.match(connMine,/data-act="checkPending"/);
-  const rules=rulesView(ctx({S:{...BASE_S,budgetPc:64}})).s;assert.match(rules,/UNVALIDATED/);assert.match(rules,/4,355 张票、17 个封存分片/);assert.match(rules,/TIMEOUT → REFUND_SELF/);assert.match(rules,/KasWare 已在实链完成 TIMEOUT 与 REFUND_SELF/);assert.doesNotMatch(rules,/515 张票|超过 2 个封存分片/);assert.doesNotMatch(rules,/已全部验证|已通过全部验证|fully validated/i);
+  const rules=rulesView(ctx({S:{...BASE_S,budgetPc:64}})).s;assert.match(rules,/UNVALIDATED/);assert.match(rules,/4,355 张票、17 个封存分片/);assert.match(rules,/TIMEOUT → REFUND_SELF/);assert.match(rules,/主网已使用 KasWare 完成 4 轮小额闭环/);assert.doesNotMatch(rules,/515 张票|超过 2 个封存分片/);assert.doesNotMatch(rules,/已全部验证|已通过全部验证|fully validated/i);
   assert.match(rules,/id="budgetPc"/);assert.match(rules,/value="64"/);assert.match(rules,/<svg class="chart"/);
   assert.match(walletBody(ctx()).s,/type="password"/);
   assert.match(walletBody(ctx({S:{...BASE_S,wtab:'extension'}})).s,/data-connect="kaspire"/);
