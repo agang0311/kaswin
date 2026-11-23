@@ -834,14 +834,13 @@ export function rulesView(x?: Ctx): Raw {
       <dt>多人参与</dt><dd>用「复制分享链接」把一轮发给朋友，对方在「加入轮次」粘贴。别人操作后你的本机记录会过期，需要重新获取最新链接。</dd></dl></div>
   </div>
   <div class="panel"><h3>${ic('gauge')} 费用与算力预算计算器</h3>${budgetPanel(pc,u)}</div>
-  <div class="panel"><h3>${ic('lock')} 请先了解这些限制</h3>
-    <div class="notice warn"><b>${isMainnet?'当前为 Kaspa 主网（Rolling 候选 Profile）':'这是 Testnet 10 实验版'}。</b>合约 Profile 证据状态为 UNVALIDATED，尚未完成全部上线前验证，请谨慎控制金额。</div>
+  <div class="panel"><h3>${ic('lock')} 安全与使用须知</h3>
+    <div class="notice warn"><b>${isMainnet?'当前为 Kaspa 主网（Rolling 候选 Profile）':'这是 Testnet 10 实验版'}。</b>未经第三方安全审计，请谨慎控制投入金额。</div>
     <ul class="small muted" style="line-height:1.9;margin:0;padding-left:18px">
-      <li>已在实链测试：Testnet 10 已实测空轮、售罄提前封盘、超时转退款（TIMEOUT → REFUND_SELF）、满额 65,536 笔购买 / 256 个封存分片的完整轮次派奖（含节点裁剪后使用「一键连续派奖」完成剩余 80 片；完整独立节点回放归档基线为 ${VERIFIED_TICKET_CAP.toLocaleString()} 张票、17 个封存分片）、批量退款（最高 771 张票、3 个封存分片），以及同钱包并发避让与跨节点并发抢购冲突恢复。主网已使用 KasWare 完成 4 轮小额闭环（空轮、退款、未售罄及售罄派奖），并使用 Kaspire 完成 1 轮小额派奖闭环。创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张（分片只按购买笔数计算，单轮最多 256 个封存分片 / 65,536 笔购买）。</li>
-      <li>尚未在实链完全验证：主网多冻结分片（>256 笔购买）与主网 TIMEOUT 分支、Kastle 扩展实链签名、高于已测规模的退款（超过 3 个分片）、三人以上同时抢购、节点裁剪后且 KCI 与 REST 均不可用时空白浏览器的恢复，以及超出已观测深度的链重组恢复。</li>
+      <li>轮次规模上限：创建时票数上限可到 ${MAX_TICKET_CAP.toLocaleString()} 张；分片按购买笔数计算，单轮最多 256 个封存分片（65,536 笔购买）。</li>
       <li>钱包支持：支持 KasWare / Kastle 的 ${netLabel} Schnorr 账户与 Kaspire 钱包；${isMainnet?'主网已禁用内存明文私钥，':'也可使用测试内存私钥，'}免签动作可使用公开收款地址。</li>
-      <li>索引、裁剪恢复与备份：页面默认接入只读 Rolling 索引，并支持在无索引、索引滞后或节点历史已裁剪时按「索引 → 节点虚链追赶 → REST API」自动同步并恢复冻结分片原像；无索引或离线时仍可通过分享链接和文件导入/导出使用，建议定期导出记录备份。</li>
-      <li>交易确认基准：交易是否被接受只以 ${netLabel} 节点选中链上的复核结果为准，页面与本地预算公式的离线核对都不等于共识验证。</li></ul></div>`;
+      <li>索引与恢复：页面默认接入只读 Rolling 索引，并支持在节点历史已裁剪时经由「索引 → 节点虚链追赶 → REST API」自动同步并恢复冻结分片原像；无索引时也可通过分享链接或文件导入/导出备份。</li>
+      <li>交易确认基准：交易是否被接受只以 ${netLabel} 节点选中链上的复核结果为准；主网多冻结分片与 TIMEOUT 等极端场景仍建议小额先行验证。</li></ul></div>`;
 }
 
 /* ------------------------------------------------------------------ dialogs */

@@ -1055,4 +1055,9 @@ export const EN = [
   ['空轮结束：无人购买，押金已退回创建者。', 'Ended empty: no tickets sold; deposit returned to creator.'],
   ['退款完成：全部购买记录已退款。', 'Refunds complete: all purchase records refunded.'],
   ['本轮已结束（{0}），', 'This round has ended ({0}), '],
+  ['安全与使用须知', 'Safety & usage notes'],
+  ['未经第三方安全审计，请谨慎控制投入金额。', 'No third-party security audit; keep amounts cautious.'],
+  ['轮次规模上限：创建时票数上限可到 {0} 张；分片按购买笔数计算，单轮最多 256 个封存分片（65,536 笔购买）。', 'Round capacity limits: ticket caps up to {0} are supported; shards scale by purchase count, up to 256 sealed shards (65,536 purchases) per round.'],
+  ['索引与恢复：页面默认接入只读 Rolling 索引，并支持在节点历史已裁剪时经由「索引 → 节点虚链追赶 → REST API」自动同步并恢复冻结分片原像；无索引时也可通过分享链接或文件导入/导出备份。', 'Index & recovery: the page connects to a read-only Rolling index by default and recovers state and sealed shard preimages across Index → Node virtual-chain catch-up → REST API when node history is pruned; share links and file import/export also work without an index.'],
+  ['交易确认基准：交易是否被接受只以 {0} 节点选中链上的复核结果为准；主网多冻结分片与 TIMEOUT 等极端场景仍建议小额先行验证。', 'Confirmation source of truth: transaction acceptance is determined solely by selected-chain verification on your {0} node; start with small amounts for edge cases such as mainnet multi-shard or TIMEOUT flows.'],
 ];
