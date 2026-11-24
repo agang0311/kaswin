@@ -78,7 +78,9 @@ for (const m of ORDER) {
   );
   await rm(ctorPath, {force: true});
 
-  const artifact = JSON.parse(await readFile(join(artifacts, m + '.json'), 'utf8'));
+  const srcBytes = await readFile(join(outDir, m + '.sil'));
+  const artBytes = await readFile(join(artifacts, m + '.json'));
+  const artifact = JSON.parse(artBytes.toString('utf8'));
   const [contractName, contractObj] = Object.entries(artifact.contracts)[0];
   const compiled = contractObj.compiled;
   const tailBytes = compiled.bytecode.length - 1 - compiled.state_span.len;
@@ -90,6 +92,8 @@ for (const m of ORDER) {
     stateSpanLen: compiled.state_span.len,
     tailBytes,
     templateHash,
+    sourceSha256: createHash('sha256').update(srcBytes).digest('hex'),
+    artifactSha256: createHash('sha256').update(artBytes).digest('hex'),
   };
 
   const payload = {

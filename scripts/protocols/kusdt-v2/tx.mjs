@@ -20,6 +20,7 @@ import {
   unhex,
 } from '../../core.mjs';
 import {
+  CLOSE_DAA_MAX,
   DECISION,
   DRAW_DELAY_DAA,
   EXECUTOR_REWARD,
@@ -32,6 +33,8 @@ import {
   MAX_RECORDS_PER_SHARD,
   MAX_SHARDS,
   MIN_DRAW_TICKETS,
+  PRICE_MAX,
+  PRICE_MIN,
   REROLL_TIMEOUT_DAA,
   SHARD_LEDGER_DEPOSIT,
   SHARD_VAULT_DEPOSIT,
@@ -116,11 +119,13 @@ function normKcc20Utxo(u, kusdtCid) {
 
 function finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee, rawScriptInputs = []) {
   const utxos = inputUtxos.map(u => ({value: u.value, spk: u.spk}));
+  const actualFee = inputUtxos.reduce((s, u) => s + BigInt(u.value), 0n) - transaction.outputs.reduce((s, o) => s + BigInt(o.value), 0n);
+  check(actualFee >= fee && actualFee <= FEE_CAP, 'KUSDT_V2_FEE_CAP');
   const scriptInputs = rawScriptInputs.map(si => ({
     ...si,
     expectedSighash: hex(schnorrSighash(transaction, utxos, si.inputIndex)),
   }));
-  const draft = {transaction, inputUtxos, authorizedInputIndices, fee, ...(scriptInputs.length ? {scriptInputs} : {})};
+  const draft = {transaction, inputUtxos, authorizedInputIndices, fee: actualFee, ...(scriptInputs.length ? {scriptInputs} : {})};
   const mass = massOf(draft);
   transaction.storageMass = mass.storageMass;
   return {
@@ -129,7 +134,7 @@ function finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee, raw
     inputUtxos,
     authorizedInputIndices,
     scriptInputs,
-    fee,
+    fee: actualFee,
     mass,
     txid: referenceTxId(transaction),
   };
@@ -168,6 +173,8 @@ function u32Le(n) {
   return le(BigInt(n), 4);
 }
 
+const DUST_CHANGE_MIN = 2_500_000n; // 0.025 KAS: below this, KIP-0009 storage mass (1e12 / change) risks > 500,000
+
 function addKasFundingAndChange({fundingUtxos, neededSompi, changeAddressSpk, baseInputs, baseInputUtxos = [], baseOutputs, fee, maxInputs = 16}) {
   const inputs = [...baseInputs];
   const inputUtxos = [...baseInputUtxos];
@@ -175,7 +182,8 @@ function addKasFundingAndChange({fundingUtxos, neededSompi, changeAddressSpk, ba
   const outputs = [...baseOutputs];
   let funded = 0n;
   for (const u of fundingUtxos) {
-    if (funded >= neededSompi + fee) break;
+    const curChange = funded - neededSompi - fee;
+    if (funded >= neededSompi + fee && (curChange === 0n || curChange >= DUST_CHANGE_MIN)) break;
     if (inputs.length >= maxInputs) break;
     check(!u.covenantId, 'KUSDT_V2_FUNDING_COVENANT_UTXO');
     const idx = inputs.length;
@@ -191,7 +199,10 @@ function addKasFundingAndChange({fundingUtxos, neededSompi, changeAddressSpk, ba
   }
   check(funded >= neededSompi + fee, 'KUSDT_V2_INSUFFICIENT_KAS');
   const change = funded - neededSompi - fee;
-  if (change > 0n) {
+  if (change >= DUST_CHANGE_MIN) {
+    check(changeAddressSpk, 'KUSDT_V2_CHANGE_SPK');
+    outputs.push({value: change, scriptPublicKey: changeAddressSpk, covenant: null});
+  } else if (change > 0n && fee + change > FEE_CAP) {
     check(changeAddressSpk, 'KUSDT_V2_CHANGE_SPK');
     outputs.push({value: change, scriptPublicKey: changeAddressSpk, covenant: null});
   }
@@ -225,12 +236,15 @@ function checkRegistrySpkLocal(spk) {
 export function buildCreateRoundTx({creatorPk, price, closeDaa, fundingUtxos, changeSpk, registrySpk = null, fee = 10_000n, profile}) {
   check(fee > 0n && fee <= FEE_CAP, 'KUSDT_V2_FEE_CAP');
   check(fundingUtxos.length >= 1, 'KUSDT_V2_NO_FUNDING');
+  const p = BigInt(price), c = BigInt(closeDaa);
+  check(p >= PRICE_MIN && p <= PRICE_MAX, 'KUSDT_V2_PRICE_RANGE');
+  check(c > 0n && c < CLOSE_DAA_MAX, 'KUSDT_V2_CLOSE_DAA');
   const mgrState = {
     stage: STAGE.M_OPEN,
     version: KUSDT_V2_VERSION,
     creatorPk,
-    price: BigInt(price),
-    closeDaa: BigInt(closeDaa),
+    price: p,
+    closeDaa: c,
     openedCount: 0,
     cursor: 0,
     totalTickets: 0,
@@ -263,9 +277,17 @@ export function buildCreateRoundTx({creatorPk, price, closeDaa, fundingUtxos, ch
   return {...finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee), cid, managerState: mgrState, managerRedeem};
 }
 
+function parseOriginArg(origin) {
+  check(origin && typeof origin.transactionId === 'string' && /^[0-9a-f]{64}$/i.test(origin.transactionId), 'KUSDT_V2_GENESIS_ORIGIN');
+  const idx = Number(origin.index);
+  check(Number.isInteger(idx) && idx >= 0 && idx <= 0xffffffff, 'KUSDT_V2_GENESIS_ORIGIN');
+  return {txidBytes: unhex(origin.transactionId.toLowerCase(), 32), index: BigInt(idx)};
+}
+
 export function buildOpenShardTx({
   managerUtxo,
   managerCid,
+  origin,
   buyerPk,
   qty,
   buyerKasUtxos,
@@ -276,6 +298,7 @@ export function buildOpenShardTx({
   profile,
 }) {
   check(fee > 0n && fee <= FEE_CAP, 'KUSDT_V2_FEE_CAP');
+  const orig = parseOriginArg(origin);
   check(Number.isInteger(qty) && qty >= 1, 'KUSDT_V2_QTY');
   check(buyerKasUtxos.length >= 1, 'KUSDT_V2_NO_FUNDING');
   const mgrRedeem = typeof managerUtxo.redeem === 'string' ? unhex(managerUtxo.redeem) : managerUtxo.redeem;
@@ -393,7 +416,8 @@ export function buildOpenShardTx({
   const inputs = [...baseInputs];
   let kasIn = BigInt(authKas.value);
   for (const u of buyerKasUtxos.slice(1)) {
-    if (kasIn >= neededFromExtraKas + fee) break;
+    const curChange = kasIn - neededFromExtraKas - fee;
+    if (kasIn >= neededFromExtraKas + fee && (curChange === 0n || curChange >= DUST_CHANGE_MIN)) break;
     if (inputs.length >= 8) break;
     check(!u.covenantId, 'KUSDT_V2_FUNDING_COVENANT_UTXO');
     authorizedInputIndices.push(inputs.length);
@@ -403,11 +427,13 @@ export function buildOpenShardTx({
   }
   check(kasIn >= neededFromExtraKas + fee, 'KUSDT_V2_INSUFFICIENT_KAS');
   const kasChange = kasIn - neededFromExtraKas - fee;
-  if (kasChange > 0n) outputs.push({value: kasChange, scriptPublicKey: changeSpk, covenant: null});
+  if (kasChange >= DUST_CHANGE_MIN || (kasChange > 0n && fee + kasChange > FEE_CAP)) {
+    outputs.push({value: kasChange, scriptPublicKey: changeSpk, covenant: null});
+  }
 
   const data = cat(u32Le(qty), unhex(buyerPk, 32));
   inputs[0].signatureScript = buildWitness(
-    [1n, BigInt(profile.frames.m_open.tail.length), profile.frames.s_open.tail, kcc20Suffix, data],
+    [1n, orig.txidBytes, orig.index, BigInt(profile.frames.m_open.tail.length), profile.frames.s_open.tail, kcc20Suffix, data],
     'm_open',
     mgrRedeem,
     profile,
@@ -544,8 +570,9 @@ export function buildBuyTx({
   return {...finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee, scriptInputs), shardState: newShard, kcc20ChangeSpk};
 }
 
-export function buildEmptyCloseTx({managerUtxo, managerCid = null, fundingUtxos, changeSpk, fee = 10_000n, profile}) {
+export function buildEmptyCloseTx({managerUtxo, managerCid = null, origin, fundingUtxos, changeSpk, fee = 10_000n, profile}) {
   check(fee > 0n && fee <= FEE_CAP, 'KUSDT_V2_FEE_CAP');
+  const orig = parseOriginArg(origin);
   const mgrRedeem = typeof managerUtxo.redeem === 'string' ? unhex(managerUtxo.redeem) : managerUtxo.redeem;
   const oldMgr = decodeManagerOpenOrSealedState(unhexOrSliceState(mgrRedeem, profile.frames.m_open.tail));
   check(oldMgr.stage === STAGE.M_OPEN && oldMgr.openedCount === 0, 'KUSDT_V2_NOT_EMPTY');
@@ -554,13 +581,14 @@ export function buildEmptyCloseTx({managerUtxo, managerCid = null, fundingUtxos,
     fundingUtxos,
     neededSompi: 0n,
     changeAddressSpk: changeSpk,
-    baseInputs: [{previousOutpoint: managerUtxo.outpoint, signatureScript: '', sequence: 0n, computeBudget: 10}],
+    baseInputs: [{previousOutpoint: managerUtxo.outpoint, signatureScript: '', sequence: 0n, computeBudget: 50}],
     baseInputUtxos: [normCovenantUtxo(managerUtxo, {defaultValue: MANAGER_DEPOSIT, redeem: mgrRedeem, covenantId: managerCid})],
     baseOutputs: [{value: MANAGER_DEPOSIT, scriptPublicKey: p2pk(oldMgr.creatorPk), covenant: null}],
     fee,
+    maxInputs: 9,
   });
   inputs[0].signatureScript = buildWitness(
-    [2n, 0n, new Uint8Array(), new Uint8Array(), new Uint8Array()],
+    [2n, orig.txidBytes, orig.index, BigInt(profile.frames.m_open.tail.length), new Uint8Array(), new Uint8Array(), new Uint8Array()],
     'm_open',
     mgrRedeem,
     profile,
@@ -569,8 +597,9 @@ export function buildEmptyCloseTx({managerUtxo, managerCid = null, fundingUtxos,
   return finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee);
 }
 
-export function buildCollectBatchTx({managerUtxo, managerCid, shardUtxos, fundingUtxos, changeSpk, fee = 40_000n, profile}) {
+export function buildCollectBatchTx({managerUtxo, managerCid, origin, shardUtxos, fundingUtxos, changeSpk, fee = 40_000n, profile}) {
   check(fee > 0n && fee <= FEE_CAP, 'KUSDT_V2_FEE_CAP');
+  const orig = parseOriginArg(origin);
   const k = shardUtxos.length;
   check(k >= 1 && k <= MAX_BATCH, 'KUSDT_V2_BATCH_SIZE');
   const mgrRedeem = typeof managerUtxo.redeem === 'string' ? unhex(managerUtxo.redeem) : managerUtxo.redeem;
@@ -627,12 +656,11 @@ export function buildCollectBatchTx({managerUtxo, managerCid, shardUtxos, fundin
   const done = nextCursor === oldMgr.openedCount;
   let nextMgrState;
   let extraBytes = new Uint8Array();
-  let ownTailBytes = BigInt(profile.frames.m_open.tail.length);
+  const ownTailBytes = BigInt(profile.frames.m_open.tail.length);
 
   if (!done) {
     nextMgrState = {...oldMgr, cursor: nextCursor, totalTickets, entries};
   } else if (totalTickets < MIN_DRAW_TICKETS) {
-    ownTailBytes = 0n;
     extraBytes = profile.frames.m_dispatch.tail;
     nextMgrState = {
       stage: STAGE.M_DISPATCH,
@@ -649,7 +677,6 @@ export function buildCollectBatchTx({managerUtxo, managerCid, shardUtxos, fundin
       shardCids: entries.map(e => e.shardCid),
     };
   } else {
-    ownTailBytes = 0n;
     extraBytes = profile.frames.m_sealed.tail;
     nextMgrState = {
       ...oldMgr,
@@ -673,10 +700,11 @@ export function buildCollectBatchTx({managerUtxo, managerCid, shardUtxos, fundin
     baseInputUtxos,
     baseOutputs: [mgrOut, ...shardOutputs],
     fee,
+    maxInputs: Math.min(16, baseInputs.length + 8),
   });
   const data = cat(u16Le(k), u32Le(profile.frames.s_open.tail.length), ...redeemLens);
   inputs[0].signatureScript = buildWitness(
-    [3n, ownTailBytes, profile.frames.s_frozen.tail, extraBytes, data],
+    [3n, orig.txidBytes, orig.index, ownTailBytes, profile.frames.s_frozen.tail, extraBytes, data],
     'm_open',
     mgrRedeem,
     profile,
@@ -714,6 +742,7 @@ export function buildDrawTx({managerUtxo, managerCid, passAProof, shardIndex, re
     baseInputUtxos: [normCovenantUtxo(managerUtxo, {defaultValue: MANAGER_DEPOSIT, redeem: mgrRedeem, covenantId: managerCid})],
     baseOutputs: [{value: MANAGER_DEPOSIT, scriptPublicKey: scriptPubKeyForState(nextMgr, profile), covenant: {covenantId: managerCid, authorizingInput: 0}}],
     fee,
+    maxInputs: 9,
   });
   const frozenBytes = encodeKusdtV2State(frozenShardState);
   const data = cat(passAProof, u16Le(shardIndex), u16Le(recordIndex), frozenBytes);
@@ -735,6 +764,7 @@ export function buildRerollTx({managerUtxo, managerCid, fundingUtxos, changeSpk,
     baseInputUtxos: [normCovenantUtxo(managerUtxo, {defaultValue: MANAGER_DEPOSIT, redeem: mgrRedeem, covenantId: managerCid})],
     baseOutputs: [{value: MANAGER_DEPOSIT, scriptPublicKey: scriptPubKeyForState(oldMgr, profile), covenant: {covenantId: managerCid, authorizingInput: 0}}],
     fee,
+    maxInputs: 9,
   });
   inputs[0].signatureScript = buildWitness(
     [2n, BigInt(profile.frames.m_sealed.tail.length), new Uint8Array(), new Uint8Array()],
@@ -839,6 +869,7 @@ export function buildDispatchBatchTx({managerUtxo, managerCid, frozenShardUtxos,
     baseInputUtxos,
     baseOutputs: [mgrOut, ...shardOutputs],
     fee,
+    maxInputs: Math.min(16, baseInputs.length + 8),
   });
   inputs[0].signatureScript = buildWitness(
     [BigInt(k), ownTailBytes, nextTail, cat(...metaParts)],
@@ -906,6 +937,7 @@ export function buildPayoutTx({shardUtxo, shardCid = null, vaultUtxo, executorPk
     baseInputUtxos,
     baseOutputs: outputs,
     fee,
+    maxInputs: 8,
   });
   const transaction = makeTx({inputs, outputs: finalOutputs});
   return finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee);
@@ -987,6 +1019,7 @@ export function buildClaimRefundTx({shardUtxo, shardCid, vaultUtxo, recIdx, fund
     baseInputUtxos,
     baseOutputs: outputs,
     fee,
+    maxInputs: 8,
   });
   const transaction = makeTx({inputs, outputs: finalOutputs});
   return {...finalizeDraft(transaction, inputUtxos, authorizedInputIndices, fee), shardState: nextShardState};

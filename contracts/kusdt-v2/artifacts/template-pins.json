@@ -21,49 +21,63 @@
       "bytecodeBytes": 2343,
       "stateSpanLen": 112,
       "tailBytes": 2230,
-      "templateHash": "d9c495e42d7730616441e05335ab8e30a742e7004e67f467ad4498111452e950"
+      "templateHash": "d9c495e42d7730616441e05335ab8e30a742e7004e67f467ad4498111452e950",
+      "sourceSha256": "0f8ee6517cae2570aa61e747c11f876bf7eca80108dc907fe209a1837961e19d",
+      "artifactSha256": "64fc940ab9cbe0e07e3f7cbbd0a4533b0e82f269abb84b55d62f77969826e27a"
     },
     "s_refund": {
       "contract": "KusdtShardRefund",
-      "bytecodeBytes": 3128,
+      "bytecodeBytes": 3136,
       "stateSpanLen": 82,
-      "tailBytes": 3045,
-      "templateHash": "63f0f28aee985e1b3393c3722de1cbf1c4bec8eb565de75ee5125165c9a79983"
+      "tailBytes": 3053,
+      "templateHash": "adf4eb35939f240a77de7f7ac0700b9116dca627452056523b8c63e2fd63cf16",
+      "sourceSha256": "625e00ad0944aa2a89aa425d6ac6929e5b1b879218a74943d3a9cddc11662579",
+      "artifactSha256": "9d8562c323aeb7d65921ffca2479a5a078fdb5f94466222b1f2508d137cb9c80"
     },
     "s_frozen": {
       "contract": "KusdtShardFrozen",
       "bytecodeBytes": 810,
       "stateSpanLen": 114,
       "tailBytes": 695,
-      "templateHash": "5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a"
+      "templateHash": "dce727e1cb4a6d9ddc421d65d87af54becaff2234861ea3d356894e5d7456c62",
+      "sourceSha256": "0200395b56511f6dad0dfd53b439b638bb823cf6ac3cb12e7f480360462a8907",
+      "artifactSha256": "06e8ddbcc138c7b818b60accdab58db6fd9db9d8aa3190c78407582f72333d7e"
     },
     "s_open": {
       "contract": "KusdtShardOpen",
       "bytecodeBytes": 2678,
       "stateSpanLen": 114,
       "tailBytes": 2563,
-      "templateHash": "30213f2234df0b1f67794ef5b8fd6e91f144a3d745ffa282d679218ac52165fc"
+      "templateHash": "3d5ce67b7a302d18a63a824e16056b27ec549350db9a50c7f7d00587416a256f",
+      "sourceSha256": "68d431c2bd88e143a76098f5b24e0981fd4019139fac4847e675ff39b9d902ef",
+      "artifactSha256": "6f0767282146b846bd29fb481e3f1713df32b47bd6efb26b4bbae594ae7c1817"
     },
     "m_dispatch": {
       "contract": "KusdtManagerDispatch",
       "bytecodeBytes": 4063,
       "stateSpanLen": 126,
       "tailBytes": 3936,
-      "templateHash": "c19b021080e31fd1408bd7aa7455cf11cfd4324d1cae0d94dd8ce6139db00050"
+      "templateHash": "529a66a41b1a277e57162d9dadaf3ffe49538b83cfff9adcd874286ed6ba3fba",
+      "sourceSha256": "949f39a37b5778d01c10d7c4db6e7b70580cc31eb4f3d3c3e1792482836b8266",
+      "artifactSha256": "fdc30027dffc1450a21291b2edb649c5d60e77aef20cde01d4606b4b9e148a62"
     },
     "m_sealed": {
       "contract": "KusdtManagerSealed",
       "bytecodeBytes": 15608,
       "stateSpanLen": 130,
       "tailBytes": 15477,
-      "templateHash": "e987429ff1ee8d5905fe6dc7c7a01ea5747f7e036d26d2a2e37e35c6d031f20f"
+      "templateHash": "3e07af22007701e0c41d42f5a6bef38eb999c5079d5c3673f9617e04dc1b770c",
+      "sourceSha256": "73c7e62b2072cdf9e07c4175ec58020554d53ca9be207489131f0dbe52e28f0a",
+      "artifactSha256": "080d02cf4c520ce72030c3d0ee6ddce3530ef3e7c397928b13acc5f6c586117d"
     },
     "m_open": {
       "contract": "KusdtManagerOpen",
-      "bytecodeBytes": 8750,
+      "bytecodeBytes": 8858,
       "stateSpanLen": 61,
-      "tailBytes": 8688,
-      "templateHash": "559e67acf808e5d48283421e01ac7dc3134d91109f09ac1257324fa85feb8f2a"
+      "tailBytes": 8796,
+      "templateHash": "39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445",
+      "sourceSha256": "4f3fca681ec0f970b5c2aee74b8186bb5fe527505aeda34000f5faeb7fa37d2f",
+      "artifactSha256": "2085386d05d97f72305b54b5b8ff51de0c86a25ad9bca0674d1f905e9ca8a5dc"
     }
   }
 }

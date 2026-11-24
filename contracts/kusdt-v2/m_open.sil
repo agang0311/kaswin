@@ -8,10 +8,10 @@ contract KusdtManagerOpen(byte[] initialState) {
     byte[] state = initialState;
     int constant FEE_INPUTS = 17;
     int constant FEE_OUTPUTS = 10;
-    byte[32] constant S_OPEN_HASH = byte[32](0x30213f2234df0b1f67794ef5b8fd6e91f144a3d745ffa282d679218ac52165fc);
-    byte[32] constant S_FROZEN_HASH = byte[32](0x5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a);
-    byte[32] constant M_SEALED_HASH = byte[32](0xe987429ff1ee8d5905fe6dc7c7a01ea5747f7e036d26d2a2e37e35c6d031f20f);
-    byte[32] constant M_DISPATCH_HASH = byte[32](0xc19b021080e31fd1408bd7aa7455cf11cfd4324d1cae0d94dd8ce6139db00050);
+    byte[32] constant S_OPEN_HASH = byte[32](0x3d5ce67b7a302d18a63a824e16056b27ec549350db9a50c7f7d00587416a256f);
+    byte[32] constant S_FROZEN_HASH = byte[32](0xdce727e1cb4a6d9ddc421d65d87af54becaff2234861ea3d356894e5d7456c62);
+    byte[32] constant M_SEALED_HASH = byte[32](0x3e07af22007701e0c41d42f5a6bef38eb999c5079d5c3673f9617e04dc1b770c);
+    byte[32] constant M_DISPATCH_HASH = byte[32](0x529a66a41b1a277e57162d9dadaf3ffe49538b83cfff9adcd874286ed6ba3fba);
     // Shared constants and stack-conscious helpers for Kaswin kUSDT v2 (256 parallel shards).
     // SilverScript 1.0.1 inlines every function and retains locals until the enclosing block ends (244-item stack limit).
     // Call multi-local helpers inside dedicated `{ }` blocks and avoid helper calls inside unrolled loops.
@@ -107,7 +107,18 @@ contract KusdtManagerOpen(byte[] initialState) {
         require(vi > vo && vi - vo <= cap);
     }
 
-    entry spend(int action, int ownTailBytes, byte[] shardTail, byte[] extraBytes, byte[] data) {
+    function checkRoot(byte[32] originTxId, int originIndex, byte[] tail) {
+        require(originTxId != ZERO && originIndex >= 0 && originIndex <= 4294967295);
+        byte[] genesis = state.slice(0, 50) + byte[](0x00000000000000000000);
+        byte[] spk = byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(genesis, tail)));
+        byte[] preimage = byte[](originTxId) + byte[](originIndex as byte[8]).slice(0, 4)
+            + byte[](0x0100000000000000) + byte[](0x00000000)
+            + byte[](MANAGER_DEPOSIT as byte[8]) + spk.slice(0, 2)
+            + byte[](0x2300000000000000) + spk.slice(2, 37);
+        require(blake2bWithKey(preimage, byte[]("CovenantID")) == OpInputCovenantId(0));
+    }
+
+    entry spend(int action, byte[32] originTxId, int originIndex, int ownTailBytes, byte[] shardTail, byte[] extraBytes, byte[] data) {
         require(tx.version == 1 && this.activeInputIndex == 0);
         require(length(state) >= 60 && length(state) <= MAX_STATE_BYTES);
         require(state.slice(0, 2) == byte[](0x0101) && state.slice(58, 60) == byte[](0x0000));
@@ -117,7 +128,7 @@ contract KusdtManagerOpen(byte[] initialState) {
         int openedCount = OpBin2Num(state.slice(50, (50) + 2) + byte[](0x00));
         int cursor = OpBin2Num(state.slice(52, (52) + 2) + byte[](0x00));
         int totalTickets = OpBin2Num(state.slice(54, (54) + 4) + byte[](0x00));
-        require(price >= PRICE_MIN && price <= TOKEN_AMOUNT_LIMIT);
+        require(price >= PRICE_MIN && price <= TOKEN_AMOUNT_LIMIT / 2);
         require(closeDaa > 0 && closeDaa < DAA_LIMIT - REROLL_TIMEOUT_DAA);
         require(openedCount <= MAX_SHARDS && cursor <= openedCount && length(state) == 60 + 68 * openedCount);
 
@@ -128,6 +139,9 @@ contract KusdtManagerOpen(byte[] initialState) {
         require(OpCovInputCount(managerCid) == 1 && OpCovInputIdx(managerCid, 0) == 0);
         require(tx.inputs[0].value == MANAGER_DEPOSIT);
         { checkFee(FEE_CAP); }
+        byte[] tail = byte[](0x00);
+        { tail = selfTail(0, ownTailBytes); }
+        { checkRoot(originTxId, originIndex, tail); }
 
         if (action == 1) {
             // OPEN_SHARD: shardTail = sOpenTail, extraBytes = kcc20Suffix (3885B), data = qty(u32) || buyerPk(32B).
@@ -146,8 +160,6 @@ contract KusdtManagerOpen(byte[] initialState) {
                 require(c == zero || c == kusdtCid);
             }
 
-            byte[] tail = byte[](0x00);
-            { tail = selfTail(0, ownTailBytes); }
             require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
             require(OpCovOutputCount(managerCid) == 1 && OpCovOutputIdx(managerCid, 0) == 0);
 
@@ -190,7 +202,7 @@ contract KusdtManagerOpen(byte[] initialState) {
             // EMPTY_CLOSE: 0-ticket round settlement after closeDaa.
             require(tx.daa >= closeDaa);
             require(openedCount == 0 && cursor == 0 && totalTickets == 0);
-            require(ownTailBytes == 0 && length(shardTail) == 0 && length(extraBytes) == 0 && length(data) == 0);
+            require(length(shardTail) == 0 && length(extraBytes) == 0 && length(data) == 0);
             require(tx.inputs.length >= 1 && tx.inputs.length <= 9 && (tx.outputs.length == 1 || tx.outputs.length == 2));
             for (ii, 1, tx.inputs.length, 8) {
                 require(OpInputCovenantId(ii) == zero);
@@ -273,8 +285,6 @@ contract KusdtManagerOpen(byte[] initialState) {
             int newCursor = cursor + k;
             if (newCursor < openedCount) {
                 require(length(extraBytes) == 0);
-                byte[] tail = byte[](0x00);
-                { tail = selfTail(0, ownTailBytes); }
                 byte[] nextState = state.slice(0, 52)
                     + byte[](newCursor as byte[2])
                     + byte[](runningTotal as byte[4])
@@ -285,7 +295,6 @@ contract KusdtManagerOpen(byte[] initialState) {
                 require(tx.outputs[0].value == MANAGER_DEPOSIT);
                 require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, tail))));
             } else {
-                require(ownTailBytes == 0);
                 byte[] fullEntries = state.slice(60, 60 + 68 * cursor) + updatedEntries;
                 if (runningTotal >= MIN_DRAW_TICKETS) {
                     require(templateHash(byte[](0x6b), extraBytes) == M_SEALED_HASH);

@@ -64,16 +64,27 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',
   assert.equal(data.id,TN10_PROFILE_ID);assert.equal(data.status,'UNVALIDATED');
   const kusdtPinsRaw=JSON.parse(await fs.readFile(path.join(root,'contracts/kusdt-v2/artifacts/template-pins.json'),'utf8'));
   const kusdtKcc20SuffixRaw=JSON.parse(await fs.readFile(path.join(root,'contracts/kusdt-v2/artifacts/kcc20-suffix.json'),'utf8'));
+  const {verifyKcc20Suffix}=await import('../scripts/protocols/kusdt-v2/codec.mjs');
+  const {unhex}=await import('../scripts/core.mjs');
+  verifyKcc20Suffix(unhex(kusdtKcc20SuffixRaw.suffixHex));
   const kusdtArtifacts={};
   const kusdtExpectedHashes={};
   for(const name of kusdtPinsRaw.order) {
     kusdtArtifacts[name]=JSON.parse(await fs.readFile(path.join(root,`contracts/kusdt-v2/artifacts/${name}.json`),'utf8'));
     kusdtExpectedHashes[name]=kusdtPinsRaw.templates[name].templateHash;
   }
+  const wcResult=await esbuild.build({
+    absWorkingDir:root,entryPoints:['scripts/wallet/kaspire-wc-entry.mjs'],bundle:true,metafile:true,write:false,
+    platform:'browser',format:'iife',globalName:'__KASWIN_KASPIRE_WC__',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
+  });
+  const wcSources=checkGraph(wcResult.metafile);
+  const wcJs=wcResult.outputFiles[0].text;
+  assert.ok(!/require\(["']node:|from["']node:/.test(wcJs),'WC_OUTPUT_NODE_IMPORT');
+  const wcIntegrity=`sha256-${createHash('sha256').update(wcJs).digest('base64')}`;
   const result=await esbuild.build({
     absWorkingDir:root,entryPoints:['web/app/app.ts'],bundle:true,metafile:true,write:false,
     platform:'browser',format:'iife',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
-    define:{__KASWIN_DEFAULT_NET__:JSON.stringify(mode),__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:JSON.stringify(mode==='mainnet'),__KASWIN_BROWSER_TEST_WALLET__:'false',__KASWIN_CD311__:JSON.stringify(!!cd311)},
+    define:{__KASWIN_DEFAULT_NET__:JSON.stringify(mode),__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:JSON.stringify(mode==='mainnet'),__KASWIN_BROWSER_TEST_WALLET__:'false',__KASWIN_CD311__:JSON.stringify(!!cd311),__KASWIN_KASPIRE_WC_INTEGRITY__:JSON.stringify(wcIntegrity)},
     plugins:[
       {name:'rolling-profile',setup(build){
         build.onResolve({filter:/^@kaswin\/rolling-profile$/},()=>({path:'data',namespace:'rolling-profile'}));
@@ -87,13 +98,6 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',
   });
   const sources=checkGraph(result.metafile);
   assert.ok(!sources.some(f=>f.includes('@walletconnect/sign-client')||f.includes('node_modules/qrcode/')),'KASPIRE_WC_STILL_IN_MAIN_BUNDLE');
-  const wcResult=await esbuild.build({
-    absWorkingDir:root,entryPoints:['scripts/wallet/kaspire-wc-entry.mjs'],bundle:true,metafile:true,write:false,
-    platform:'browser',format:'iife',globalName:'__KASWIN_KASPIRE_WC__',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
-  });
-  const wcSources=checkGraph(wcResult.metafile);
-  const wcJs=wcResult.outputFiles[0].text;
-  assert.ok(!/require\(["']node:|from["']node:/.test(wcJs),'WC_OUTPUT_NODE_IMPORT');
   const js=result.outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
   assert.ok(!/require\(["']node:|from["']node:/.test(js),'OUTPUT_NODE_IMPORT');
   const cssRaw=await fs.readFile(path.join(root,'web/ui/styles.css'),'utf8');
@@ -111,10 +115,12 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',
     'web/ui/index.template.html','web/ui/styles.css','web/app/tsconfig.json','web/app/globals.d.ts','web/app/types.ts',
     'package.json','package-lock.json','contracts/pins.json','contracts/toolchain.json',
     'contracts/kusdt-v2/artifacts/template-pins.json',
-    ...kusdtPinsRaw.order.map(n=>`contracts/kusdt-v2/artifacts/${n}.json`),
+    'contracts/kusdt-v2/artifacts/kcc20-suffix.json',
+    ...kusdtPinsRaw.order.flatMap(n=>[`contracts/kusdt-v2/artifacts/${n}.json`,`contracts/kusdt-v2/${n}.sil`]),
     ...Object.keys(profile.frames).flatMap(m=>[`contracts/artifacts/${m}.json`,`contracts/${m}.sil`])])].sort();
   const inputs=Object.fromEntries(await Promise.all(inputPaths.map(async f=>[f,sha256(await fs.readFile(path.join(root,f)))])));
   const manifest={formatVersion:1,version:appVersion,mode,cd311:!!cd311,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
+    kaspireWc:{file:'kaspire-wc.js',bytes:Buffer.byteLength(wcJs),sha256:sha256(wcJs),integrity:wcIntegrity},
     capabilities:{tn10Trading:true,mainnetTrading:mode==='mainnet',memoryWallet:mode!=='mainnet',networkSwitch:true},
     contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:defaultNet.networkId,genesis:defaultNet.genesis,
     networks:['mainnet','tn10'],profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},
@@ -123,6 +129,15 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',
   await fs.writeFile(path.join(outDir,'index.html'),html);
   await fs.writeFile(path.join(outDir,'kaspire-wc.js'),wcJs);
   await fs.writeFile(path.join(outDir,'build-manifest.json'),JSON.stringify(manifest,null,2)+'\n');
+  await fs.writeFile(path.join(outDir,'_headers'),[
+    '/*',
+    "  Content-Security-Policy: frame-ancestors 'none'",
+    '  X-Frame-Options: DENY',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: no-referrer',
+    '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
+    '',
+  ].join('\n'));
   return {html,wcJs,manifest,outDir};
 }
 

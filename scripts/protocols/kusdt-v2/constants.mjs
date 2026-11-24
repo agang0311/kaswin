@@ -15,7 +15,9 @@ export const SHARD_VAULT_DEPOSIT = 200_000_000n;
 export const SHARD_TOTAL_DEPOSIT = SHARD_LEDGER_DEPOSIT + SHARD_VAULT_DEPOSIT;
 export const WINNER_CARRIER_MIN = 150_000_000n;
 
+export const TOKEN_AMOUNT_LIMIT = 1_000_000_000_000_000_000n;
 export const PRICE_MIN = 1_000_000n;
+export const PRICE_MAX = TOKEN_AMOUNT_LIMIT / 2n; // 500,000,000,000 kUSDT (matches s_refund.sil TOKEN_AMOUNT_LIMIT / 2)
 export const EXECUTOR_REWARD = 500_000n;
 export const MAX_SHARDS = 256;
 export const MAX_RECORDS_PER_SHARD = 256;
@@ -24,6 +26,8 @@ export const MAX_BATCH = 8;
 export const MIN_DRAW_TICKETS = 3;
 export const DRAW_DELAY_DAA = 100n;
 export const REROLL_TIMEOUT_DAA = 432_000n;
+export const DAA_LIMIT = 500_000_000_000n;
+export const CLOSE_DAA_MAX = DAA_LIMIT - REROLL_TIMEOUT_DAA; // 499,999,568,000 (matches m_open.sil)
 export const FEE_CAP = 50_000_000n;
 
 export const STAGE = Object.freeze({
@@ -59,12 +63,12 @@ export const KUSDT_V2_TEMPLATE_ORDER = Object.freeze([
 
 export const FROZEN_MAINNET_TEMPLATE_HASHES = Object.freeze({
   s_payout: 'd9c495e42d7730616441e05335ab8e30a742e7004e67f467ad4498111452e950',
-  s_refund: '63f0f28aee985e1b3393c3722de1cbf1c4bec8eb565de75ee5125165c9a79983',
-  s_frozen: '5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a',
-  s_open: '30213f2234df0b1f67794ef5b8fd6e91f144a3d745ffa282d679218ac52165fc',
-  m_dispatch: 'c19b021080e31fd1408bd7aa7455cf11cfd4324d1cae0d94dd8ce6139db00050',
-  m_sealed: 'e987429ff1ee8d5905fe6dc7c7a01ea5747f7e036d26d2a2e37e35c6d031f20f',
-  m_open: '559e67acf808e5d48283421e01ac7dc3134d91109f09ac1257324fa85feb8f2a',
+  s_refund: 'adf4eb35939f240a77de7f7ac0700b9116dca627452056523b8c63e2fd63cf16',
+  s_frozen: 'dce727e1cb4a6d9ddc421d65d87af54becaff2234861ea3d356894e5d7456c62',
+  s_open: '3d5ce67b7a302d18a63a824e16056b27ec549350db9a50c7f7d00587416a256f',
+  m_dispatch: '529a66a41b1a277e57162d9dadaf3ffe49538b83cfff9adcd874286ed6ba3fba',
+  m_sealed: '3e07af22007701e0c41d42f5a6bef38eb999c5079d5c3673f9617e04dc1b770c',
+  m_open: '39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445',
 });
 
 export function kusdtAsset(kusdtCid = MAINNET_KUSDT_CID) {

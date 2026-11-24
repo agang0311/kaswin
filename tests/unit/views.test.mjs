@@ -753,9 +753,46 @@ test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding
   };
   const claimOtherHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:claimOtherPrepared,planText:'代领退款'}).s;
   assert.ok(!claimOtherHtml.includes('你的 kUSDT 到账'));
+  assert.match(claimOtherHtml,/合约退回给买家[\s\S]*?1 kUSDT/);
+  assert.match(claimOtherHtml,/分片金库票款退回原买家（非你钱包）/);
   assert.match(claimOtherHtml,/你的 KAS 净变动[\s\S]*?-1\.523 KAS/);
   assert.match(claimOtherHtml,/其中 · 不可退支出[\s\S]*?-1\.5 KAS/);
   assert.match(claimOtherHtml,/买家退款代币细胞载体/);
+
+  // 6) PAYOUT_SELF triggered by non-winner (e.g. first buyer recovering 4 KAS deposit): MUST show winner kUSDT destination & 1.5 KAS winner carrier
+  const selfOtherPrepared={
+    op:{action:'PAYOUT_SELF'},kusdtAction:'PAYOUT_SELF',fee:2_863_800n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    review:{
+      txid:hex('e'),fee:2_863_800n,
+      assetDeltas:[{asset:kusdtAsset,amount:3_000_000n,role:'NET'},{asset:kasAsset,amount:-150_000_000n,role:'CARRIER'},{asset:kasAsset,amount:-2_863_800n,role:'FEE'}],
+      inputs:[{index:0,value:200_000_000n,kind:'合约 UTXO'},{index:1,value:200_000_000n,kind:'合约 UTXO'},{index:2,value:1_000_000_000n,kind:'需签名（你的钱包）'}],
+      outputs:[
+        {role:'SHARD_DEPOSIT',value:400_000_000n,script:mine,covenant:false,mine:true,rollover:true,note:'合约退回你的 4 KAS 分片押金'},
+        {role:'WINNER',value:150_000_000n,script:'win',covenant:true,mine:false,rollover:false,tokenAmount:3_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'发给中奖者的 3 kUSDT 奖金（含你垫付的 1.5 KAS 载体，不可退）'},
+        {role:'CHANGE',value:847_136_200n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const selfOtherHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:selfOtherPrepared,planText:'赢家自推派奖'}).s;
+  assert.ok(!selfOtherHtml.includes('你的 kUSDT 到账'));
+  assert.match(selfOtherHtml,/合约派发给中奖者[\s\S]*?3 kUSDT/);
+  assert.match(selfOtherHtml,/分片金库奖金发给中奖者（非你钱包）/);
+  assert.match(selfOtherHtml,/中奖者代币细胞载体（1\.5 KAS）/);
+  assert.ok(!selfOtherHtml.includes('外部接收方'));
+});
+
+test('kusdt-v2 payout actions hide PAYOUT_SELF for non-winners and show it for the winner',()=>{
+  const wallet={kind:'extension',address:'kaspa:qa',key:hex('1'),spk:{script:'20'+'ab'.repeat(32)+'ac'}};
+  const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
+  const rPay=roundFixture({manager:null,kusdt:{cid:hex('a'),loading:false,stage:3,price:1_000_000n,closeDaa:100n,openedCount:1,cursor:1,totalTickets:3,decision:1,creatorPk:hex('1'),winnerPk:hex('2'),nodeVerified:true,shards:[{shardCid:hex('3'),stage:0x13,terminal:false,tickets:3,recordCount:3}]}});
+  const nonWinHtml=roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rPay.cid},detail:{...item(rPay,facts({module:'win',ticketPrice:1_000_000n,tickets:3,shards:1,winnerKey:hex('2')}),actions()),mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:rPay.kusdt}})).s;
+  assert.ok(!nonWinHtml.includes('data-kusdt-act="PAYOUT_SELF"'));
+  assert.ok(nonWinHtml.includes('data-kusdt-act="PAYOUT_EXECUTOR"'));
+
+  const winHtml=roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rPay.cid},detail:{...item(rPay,facts({module:'win',ticketPrice:1_000_000n,tickets:3,shards:1,winnerKey:hex('1')}),actions()),mine:null,isWinner:true,shards:[],asset:kusdtAsset,kusdt:rPay.kusdt}})).s;
+  assert.ok(winHtml.includes('data-kusdt-act="PAYOUT_SELF"'));
+  assert.ok(winHtml.includes('赢家自推（领全额奖金'));
+  assert.ok(winHtml.includes('data-kusdt-act="PAYOUT_EXECUTOR"'));
 });
 
 test('English i18n translates all kUSDT v2 create, round detail, and confirmBody text nodes without leftover Chinese',()=>{

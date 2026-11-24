@@ -1116,6 +1116,8 @@ export const EN = [
   ['待退款', 'Ready for refund'],
   ['代推派奖（赚 0.5 {0}）', 'Execute payout (+0.5 {0})'],
   ['赢家自推', 'Winner self-claim'],
+  ['赢家自推（领全额奖金）', 'Winner self-claim (full prize)'],
+  ['赢家自推（领全额奖金 · #{0}）', 'Winner self-claim (full prize · #{0})'],
   ['#{0}（{1} · {2} 张 · {3} {4}）', '#{0} ({1} · {2} tickets · {3} {4})'],
   ['已领取', 'Claimed'],
   ['自助退款', 'Claim refund'],
@@ -1131,6 +1133,10 @@ export const EN = [
   // Confirmation modal summary, breakdown, roles, notes, and inputs.
   ['你的 kUSDT 支出', 'Your kUSDT spent'],
   ['你的 kUSDT 到账', 'Your kUSDT received'],
+  ['合约派发给中奖者', 'Contract sends to winner'],
+  ['合约退回给买家', 'Contract refunds to buyer'],
+  ['去向：分片金库奖金发给中奖者（非你钱包）', 'Destination: shard vault prize sent to winner (not your wallet)'],
+  ['去向：分片金库票款退回原买家（非你钱包）', 'Destination: shard vault ticket refund sent to original buyer (not your wallet)'],
   ['去向：存入新分片金库（中奖后派发给赢家）', 'Destination: new shard vault (paid to winner after draw)'],
   ['去向：存入已有分片金库（中奖后派发给赢家）', 'Destination: existing shard vault (paid to winner after draw)'],
   ['来源：分片金库全额奖金 → 归你钱包', 'Source: full shard vault prize → your wallet'],
@@ -1230,4 +1236,8 @@ export const EN = [
   ['当前钱包 kUSDT 分散在过多小额 UTXO 中（单笔最多合并 {0} 个 kUSDT 输入，最多凑出 {1} kUSDT），请先在钱包内合并一笔后再试。', 'Your kUSDT is split across too many small UTXOs (max {0} kUSDT inputs per tx, covering up to {1} kUSDT). Consolidate in your wallet first.'],
   ['当前钱包可用 KAS 余额不足以支付网络费与找零承载押金。', 'Insufficient KAS balance to cover the network fee and change carrier deposit.'],
   ['当前钱包可用 KAS 余额不足：开新分片需锁定 4 KAS 可退押金（结算后全额退还）及网络费。', 'Insufficient KAS balance: opening a new shard requires a 4 KAS refundable deposit (returned in full after settlement) plus network fee.'],
+  ['票价不能超过 500,000,000,000 {0}', 'Ticket price cannot exceed 500,000,000,000 {0}'],
+  ['该轮次未通过规范创世校验，已禁止参与。', 'This round failed canonical genesis root verification and cannot be joined.'],
+  ['该分片不属于本轮官方目录，已禁止购买。', 'This shard is not in the round’s canonical directory and cannot be purchased.'],
+  ['TN10 测试网不包含主网 kUSDT 代币，请切换到 Rolling v1（TKAS）创建测试轮次。', 'Testnet 10 does not include mainnet kUSDT tokens; switch to Rolling v1 (TKAS) to create a test round.'],
 ];

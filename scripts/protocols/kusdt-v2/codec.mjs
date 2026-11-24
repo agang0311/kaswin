@@ -9,6 +9,7 @@ const u63 = n => {
   return v;
 };
 import {
+  CLOSE_DAA_MAX,
   DECISION,
   KCC20_EXT_TEMPLATE_HASH,
   KCC20_OWNER_SCHEME,
@@ -17,6 +18,7 @@ import {
   KUSDT_V2_VERSION,
   MAX_RECORDS_PER_SHARD,
   MAX_SHARDS,
+  PRICE_MAX,
   PRICE_MIN,
   STAGE,
 } from './constants.mjs';
@@ -28,7 +30,9 @@ function encodeMHeader(h) {
   const creatorPk = unhex(h.creatorPk, 32);
   const price = u63(h.price);
   check(price >= PRICE_MIN, 'KUSDT_V2_PRICE_MIN');
+  check(price <= PRICE_MAX, 'KUSDT_V2_PRICE_MAX');
   const closeDaa = u63(h.closeDaa);
+  check(closeDaa > 0n && closeDaa < CLOSE_DAA_MAX, 'KUSDT_V2_CLOSE_DAA');
   check(Number.isInteger(h.openedCount) && h.openedCount >= 0 && h.openedCount <= MAX_SHARDS, 'KUSDT_V2_OPENED_COUNT');
   check(Number.isInteger(h.cursor) && h.cursor >= 0 && h.cursor <= h.openedCount, 'KUSDT_V2_CURSOR');
   check(Number.isInteger(h.totalTickets) && h.totalTickets >= 0, 'KUSDT_V2_TOTAL_TICKETS');

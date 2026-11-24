@@ -5,6 +5,7 @@ import {commonUtxos, commonUtxosByAddresses, getAssetUtxos} from '../chain/chain
 import {txToRpc} from '../chain/nodes.mjs';
 import {mempoolSpentOutpoints} from '../round/prepare.mjs';
 import {acquirePassAProof} from '../round/draw-proof.mjs';
+import {assertFreshDrawConfirmation, confirmDrawTargetWithRetry, drawTargetFromOpening} from '../round/draw-confirmations.mjs';
 import {addressToSpk, spkToAddress} from '../wallet/address.mjs';
 import {kasAsset} from './registry.mjs';
 import {
@@ -22,6 +23,7 @@ import {
   MAX_SHARDS,
   MIN_DRAW_TICKETS,
   SHARD_TOTAL_DEPOSIT,
+  SHARD_VAULT_DEPOSIT,
   STAGE,
   WINNER_CARRIER_MIN,
   kusdtAsset,
@@ -40,6 +42,7 @@ import {
   kusdtV2Summary,
   kusdtV2UiActions,
   validateKusdtV2Round,
+  verifyKusdtV2GenesisRoot,
 } from './kusdt-v2/round.mjs';
 import {
   buildBuyTx,
@@ -439,9 +442,9 @@ async function catchupKusdtManagerViaRest({rpc, manager, cid, shards = [], profi
     let out0 = outAt(0);
 
     if (curState.stage === STAGE.M_OPEN && action === 1n) {
-      // OPEN_SHARD
-      if (pushes.length < 7) break;
-      const data = pushes[4];
+      // OPEN_SHARD: 7-arg spend(action, originTxId, originIndex, ownTailBytes, shardTail, extraBytes, data)
+      if (pushes.length < 9) break;
+      const data = pushes[6];
       if (!(data instanceof Uint8Array) || data.length !== 36) break;
       const qty = Number(fromLe(data.slice(0, 4)));
       if (!Number.isInteger(qty) || qty < 1) break;
@@ -465,8 +468,10 @@ async function catchupKusdtManagerViaRest({rpc, manager, cid, shards = [], profi
       const shardSpk = p2sh(hex(blake2b256(shardRedeem)));
       if (String(out1.script_public_key ?? '').toLowerCase() !== shardSpk.script) break;
       const shardValue = BigInt(String(out1.amount));
-      const expectedShardCid = covenantId({transactionId: authTxid, index: authIdx}, [{index: 1, value: shardValue, spk: shardSpk}]);
-      if (out1.covenant_id != null && String(out1.covenant_id).toLowerCase() !== expectedShardCid) break;
+      const out1Cid = typeof out1.covenant_id === 'string' && HASH64.test(out1.covenant_id.toLowerCase())
+        ? out1.covenant_id.toLowerCase()
+        : null;
+      const expectedShardCid = out1Cid ?? covenantId({transactionId: authTxid, index: authIdx}, [{index: 1, value: shardValue, spk: shardSpk}]);
 
       nextMgrState = {
         ...curState,
@@ -496,9 +501,9 @@ async function catchupKusdtManagerViaRest({rpc, manager, cid, shards = [], profi
       caughtReceipts.push({action: 'EMPTY_CLOSE', txid, feeSompi: restTxFee(spendTx), finalized: true});
       return {advanced: true, manager: null, state: null, shards: [...shardMap.values()], terminal: 'EMPTY', nodeVerified: true, receipts: caughtReceipts};
     } else if (curState.stage === STAGE.M_OPEN && action === 3n) {
-      // COLLECT_BATCH
-      if (pushes.length < 7 || !out0) break;
-      const data = pushes[4];
+      // COLLECT_BATCH: 7-arg spend(action, originTxId, originIndex, ownTailBytes, shardTail, extraBytes, data)
+      if (pushes.length < 9 || !out0) break;
+      const data = pushes[6];
       if (!(data instanceof Uint8Array) || data.length < 6) break;
       const k = Number(fromLe(data.slice(0, 2)));
       if (!Number.isInteger(k) || k < 1 || k > 8 || curState.cursor + k > curState.openedCount) break;
@@ -1117,7 +1122,7 @@ async function findLiveVaultUtxo({rpc, shardCid, amount, kusdtCid, kcc20Suffix, 
     kcc20Suffix,
   );
   const utxos = await commonUtxos(rpc, spkToAddress(spk, prefix));
-  const hit = utxos.find(u => !u.isCoinbase && u.covenantId === kusdtCid && u.spk?.script === spk.script && u.outpoint);
+  const hit = utxos.find(u => !u.isCoinbase && u.covenantId === kusdtCid && u.spk?.script === spk.script && u.value === SHARD_VAULT_DEPOSIT && u.outpoint);
   check(hit, 'STALE_INPUT');
   const d = hit.daa ?? hit.utxoDaa ?? 0n;
   return {outpoint: hit.outpoint, value: hit.value, spk: hit.spk ?? spk, daa: d, utxoDaa: d, covenantId: kusdtCid, amount, redeem};
@@ -1155,17 +1160,21 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
   const profileId = profile.id;
   const defaultSuffix = kcc20Suffix instanceof Uint8Array ? kcc20Suffix : (typeof kcc20Suffix === 'string' ? unhex(kcc20Suffix) : null);
 
-  async function selectKasFunding(rpc, wallet) {
+  async function selectKasFunding(rpc, wallet, reserved = new Set()) {
     const kasDesc = {kind: 'KAS', symbol: 'KAS', decimals: 8, tokenCovenantId: null};
     const [raw, inPool] = await Promise.all([
       getAssetUtxos(rpc, wallet.address, kasDesc),
       mempoolSpentOutpoints(rpc, wallet.address),
     ]);
     const live = raw
-      .filter(u => u.outpoint && !inPool.has(`${u.outpoint.transactionId}:${u.outpoint.index}`))
+      .filter(u => {
+        if (!u.outpoint) return false;
+        const k = `${u.outpoint.transactionId}:${u.outpoint.index}`;
+        return !inPool.has(k) && !reserved.has(k);
+      })
       .sort((a, b) => (a.value > b.value ? -1 : a.value < b.value ? 1 : 0))
       .map(u => ({...u, utxoDaa: u.utxoDaa ?? u.daa ?? 0n}));
-    if (!live.length && raw.length && inPool.size) {
+    if (!live.length && raw.length && (inPool.size || reserved.size)) {
       throw Object.assign(new Error('WALLET_FUNDS_PENDING'), {code: 'WALLET_FUNDS_PENDING'});
     }
     return live;
@@ -1280,10 +1289,6 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
       check(!intent.profileId || intent.profileId === profileId, 'KUSDT_V2_PROFILE_MISMATCH');
       return intent;
     },
-    async submitIntent(rpc, intent) {
-      check(rpc && intent, 'KUSDT_V2_SUBMIT_INTENT');
-      return intent;
-    },
     verifyIndexedSnapshot(doc) {
       check(doc && typeof doc === 'object' && doc.cid, 'KUSDT_V2_INDEXED_DOC');
       if (doc.profileId) check(doc.profileId === profileId, 'KUSDT_V2_PROFILE_MISMATCH');
@@ -1366,6 +1371,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
       }
 
       let detMatchesFinal = false;
+      let detCandidateTerminal = null;
       let detHeadTxid = null;
       let detHeadAccepting = null;
       let detDrawHint = null;
@@ -1430,7 +1436,8 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
               genesisTxid = det.head.txid;
             }
           }
-          const detTerminal = det.terminal ?? det.summary?.terminal ?? null;
+          const rawDetTerminal = det.terminal ?? det.summary?.terminal ?? null;
+          const detTerminal = (rawDetTerminal === 'EMPTY' || rawDetTerminal === 'PAID' || rawDetTerminal === 'REFUNDED') ? rawDetTerminal : null;
 
           const parseDetMgr = m => {
             if (!m?.redeemHex || !m?.outpoint || m?.value == null || !m?.spk) return null;
@@ -1483,7 +1490,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
             : detMgrMatchesLocal;
 
           if (detNotBehind) {
-            if (detTerminal != null) terminal = detTerminal;
+            if (detTerminal != null && !localMgrLive) detCandidateTerminal = detTerminal;
             if (typeof det.summary?.ticketsSold === 'number') detTicketsSold = det.summary.ticketsSold;
             if (pd.openedCount != null) openedCount = Math.max(openedCount, Number(pd.openedCount));
             if (pd.cursor != null) cursor = Number(pd.cursor);
@@ -1495,10 +1502,13 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
             if (pd.closeDaa) {
               try { closeDaa = BigInt(String(pd.closeDaa)); } catch {}
             }
-            if (terminal) {
-              manager = null;
-              stage = null;
-              nodeVerified = false;
+            if (detCandidateTerminal) {
+              // H-03: do not blindly trust KCI terminal before probing live shard UTXOs on node
+              if (!localMgrLive) {
+                manager = null;
+                stage = null;
+                nodeVerified = false;
+              }
             } else if (detParsed) {
               const mgrSt = detParsed.state;
               if (!localMgrLive) manager = detParsed.manager;
@@ -1688,10 +1698,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         } catch {}
       }
       const shards = canonicalShardOrder?.length
-        ? [
-            ...canonicalShardOrder.map(scid => shardMap.get(scid)).filter(Boolean),
-            ...[...shardMap.values()].filter(s => s && !canonicalShardOrder.includes(s.shardCid)),
-          ]
+        ? canonicalShardOrder.map(scid => shardMap.get(scid)).filter(Boolean)
         : [...shardMap.values()];
       let nonTerminalShards = 0;
       let liveNonTerminalShards = 0;
@@ -1744,6 +1751,77 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         }
       }
 
+      // H-03: verify KCI-claimed terminal against live manager/shard UTXOs on node before accepting it
+      if (!terminal && detCandidateTerminal && !localMgrLive) {
+        let anyLiveOnNode = false;
+        let mgrConfirmedGone = !!round?.manager && !localMgrLive;
+        let probedTerminalShards = 0;
+        if (rpc) {
+          // Probe canonical empty M_OPEN on node if genesis params are known (prevents KCI lying terminal while M_OPEN is still live)
+          if (!mgrConfirmedGone && price > 0n && closeDaa > 0n && creatorPk && HASH64.test(creatorPk)) {
+            try {
+              const emptyMgrRedeem = redeemForState({
+                stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk, price, closeDaa,
+                openedCount: 0, cursor: 0, totalTickets: 0, decision: DECISION.UNDECIDED, reserved: 0, entries: [],
+              }, profile);
+              const emptyMgrSpk = p2sh(hex(blake2b256(emptyMgrRedeem)));
+              const mProbe = await probeLiveOutpoint(rpc, emptyMgrSpk, null, targetCid, prefix);
+              if (mProbe.ok) {
+                if (mProbe.hit) {
+                  anyLiveOnNode = true;
+                  const d = mProbe.hit.daa ?? mProbe.hit.utxoDaa ?? 0n;
+                  manager = {outpoint: mProbe.hit.outpoint, value: mProbe.hit.value, spk: mProbe.hit.spk ?? emptyMgrSpk, utxoDaa: d, daaScore: d, daa: d, covenantId: targetCid, redeemScript: emptyMgrRedeem};
+                  stage = STAGE.M_OPEN;
+                  nodeVerified = true;
+                } else {
+                  mgrConfirmedGone = true;
+                }
+              }
+            } catch {}
+          }
+          if (!anyLiveOnNode && shards.length > 0) {
+            const termProbes = [];
+            for (let i = 0; i < shards.length; i++) {
+              const sh = shards[i];
+              if (sh?.spk) termProbes.push({index: i, spk: sh.spk, outpoint: sh.outpoint ?? null, expectedCid: sh.shardCid});
+            }
+            if (termProbes.length) {
+              const termProbeMap = await batchProbeLiveOutpoints(rpc, termProbes, prefix, {chunkSize: 64});
+              for (const p of termProbes) {
+                const res = termProbeMap.get(p.index);
+                if (res?.ok) {
+                  probedTerminalShards++;
+                  if (res.hit) {
+                    anyLiveOnNode = true;
+                    const sh = shards[p.index];
+                    shards[p.index] = {
+                      ...sh,
+                      terminal: false,
+                      outpoint: res.hit.outpoint,
+                      value: res.hit.value,
+                      daaScore: res.hit.daa ?? res.hit.utxoDaa ?? sh.daaScore ?? 0n,
+                    };
+                    nonTerminalShards++;
+                    liveNonTerminalShards++;
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (!anyLiveOnNode) {
+          const hasNodeProof = detCandidateTerminal === 'EMPTY'
+            ? mgrConfirmedGone
+            : (probedTerminalShards > 0 && mgrConfirmedGone);
+          if (hasNodeProof || detCandidateTerminal === 'EMPTY' || !rpc) {
+            terminal = detCandidateTerminal;
+            manager = null;
+            stage = null;
+            nodeVerified = hasNodeProof;
+          }
+        }
+      }
+
       // Post-DISPATCH_BATCH: manager was intentionally destroyed; verify liveness/terminality from shards
       if (!terminal && !manager && shards.length > 0) {
         if (shards.every(s => s && s.terminal)) {
@@ -1762,6 +1840,23 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           }
           if (nonTerminalShards > 0 && liveNonTerminalShards === nonTerminalShards) {
             nodeVerified = true;
+          }
+        }
+      }
+
+      // C-01 off-chain defense: verify canonical empty M_OPEN genesis root whenever origin & settings are known
+      let genesisRootVerified = !!round?.kusdt?.genesisRootVerified;
+      let genesisRootInvalid = !!round?.kusdt?.genesisRootInvalid;
+      if (origin?.transactionId && price > 0n && closeDaa > 0n && creatorPk && HASH64.test(creatorPk)) {
+        try {
+          verifyKusdtV2GenesisRoot({cid: targetCid, origin, price, closeDaa, creatorPk, profile});
+          genesisRootVerified = true;
+          genesisRootInvalid = false;
+        } catch (e) {
+          if (e?.message === 'KUSDT_V2_GENESIS_ROOT_MISMATCH' || e?.code === 'KUSDT_V2_GENESIS_ROOT_MISMATCH') {
+            genesisRootInvalid = true;
+            genesisRootVerified = false;
+            nodeVerified = false;
           }
         }
       }
@@ -1801,7 +1896,8 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
       } else if (typeof round?.accepting === 'string' && HASH64.test(round.accepting)) {
         accepting = round.accepting;
       }
-      const nextDraw = round?.draw ?? detDrawHint ?? null;
+      // H-03: never write unverified KCI det.draw into round.draw (which would short-circuit app.ts verifyKusdtDrawReceipt)
+      const nextDraw = round?.draw ?? null;
       const nextStep = round?.intent?.action === 'GENESIS' && !nodeVerified && !terminal
         ? 0
         : Math.max(1, Number(round?.step ?? 0), mergedReceipts.length);
@@ -1820,6 +1916,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         origin,
         accepting,
         ...(nextDraw ? {draw: nextDraw} : {}),
+        ...(detDrawHint ? {drawHint: detDrawHint} : {}),
         settings: {
           ticketPrice: price,
           ticketCap: 65536,
@@ -1841,6 +1938,8 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           creatorPk,
           winnerPk,
           nodeVerified,
+          genesisRootVerified,
+          genesisRootInvalid,
           shards,
         },
       };
@@ -1863,13 +1962,13 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
     watchTargets(r, prefix) {
       return kusdtV2WatchTargets(r, prefix);
     },
-    async prepareForController({rpc, indexer = null, round = null, choice, wallet, feerate, net = null, fetcher = globalThis.fetch}) {
+    async prepareForController({rpc, indexer = null, round = null, choice, wallet, feerate, reserved = new Set(), net = null, fetcher = globalThis.fetch}) {
       const prefix = net?.addressPrefix ?? 'kaspatest';
       const suffix = defaultSuffix;
       const uiAction = choice.action;
       if (uiAction === 'GENESIS') {
         const st = choice.settings;
-        const kasUtxos = await selectKasFunding(rpc, wallet);
+        const kasUtxos = await selectKasFunding(rpc, wallet, reserved);
         const registrySpk = choice.registry === true
           ? net?.registry?.spk ?? null
           : (typeof choice.registry === 'string' ? addressToSpk(choice.registry, prefix) : null);
@@ -1976,7 +2075,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           redeem: round.manager.redeemScript,
         };
       }
-      const kasUtxos = await selectKasFunding(rpc, wallet);
+      const kasUtxos = await selectKasFunding(rpc, wallet, reserved);
       let kusdtAction = uiAction;
       let prepared;
       let refundBuyerPk = null;
@@ -1990,16 +2089,73 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         winnerTokenAmount: 0n,
         execTokenAmount: 0n,
       };
+      const resolveOrigin = async () => {
+        if (round.origin?.transactionId) return round.origin;
+        if (indexer) {
+          try {
+            const det = await indexer.roundDetail(round.cid);
+            if (det?.origin?.transactionId) return det.origin;
+          } catch {}
+        }
+        const genTxid = (round.receipts ?? []).find(rc => rc.action === 'GENESIS' && HASH64.test(String(rc.txid ?? '')))?.txid;
+        if (genTxid) {
+          const restBase = restBaseOf(net);
+          if (restBase) {
+            try {
+              const gtx = await fetchJson(`${restBase}/transactions/${genTxid}?inputs=true&outputs=false`, fetcher);
+              const in0 = gtx?.inputs?.[0];
+              if (in0 && HASH64.test(String(in0.previous_outpoint_hash ?? '').toLowerCase())) {
+                return {transactionId: String(in0.previous_outpoint_hash).toLowerCase(), index: Number(in0.previous_outpoint_index ?? 0)};
+              }
+            } catch {}
+          }
+        }
+        check(false, 'KUSDT_V2_GENESIS_ORIGIN');
+      };
       if (uiAction === 'BUY') {
+        // C-01 fail-closed off-chain defense: ALWAYS verify canonical empty M_OPEN genesis root before BUY/OPEN_SHARD
+        if (k.genesisRootInvalid) {
+          throw Object.assign(new Error('该轮次未通过规范创世校验，已禁止参与。'), {code: 'USER', safeCode: 'KUSDT_V2_GENESIS_ROOT_MISMATCH'});
+        }
+        try {
+          const buyOrigin = await resolveOrigin();
+          verifyKusdtV2GenesisRoot({
+            cid: round.cid,
+            origin: buyOrigin,
+            price,
+            closeDaa: BigInt(k.closeDaa ?? round.settings?.closeDaa ?? 0n),
+            creatorPk: k.creatorPk ?? round.settings?.creatorPk,
+            profile,
+          });
+        } catch {
+          throw Object.assign(new Error('该轮次未通过规范创世校验，已禁止参与。'), {code: 'USER', safeCode: 'KUSDT_V2_GENESIS_ROOT_MISMATCH'});
+        }
+        // C-01 shard directory defense: when buying into an existing shard, verify targetCid belongs to live M_OPEN.entries on node!
+        if (targetCid) {
+          check(round.manager?.spk && round.manager?.redeemScript, 'STALE_INPUT');
+          let mgrStForDir = null;
+          const dirProbe = await probeLiveOutpoint(rpc, round.manager.spk, round.manager.outpoint, round.cid, prefix);
+          if (dirProbe.ok && dirProbe.hit) {
+            mgrStForDir = verifyKusdtV2Redeem(round.manager.redeemScript, profile, 'manager').state;
+          } else {
+            const caught = await catchupKusdtManagerViaRest({rpc, cid: round.cid, manager: round.manager, profile, net, fetcher, shardMap: new Map()});
+            if (caught.advanced && caught.state) mgrStForDir = caught.state;
+          }
+          check(mgrStForDir && mgrStForDir.stage === STAGE.M_OPEN, 'STALE_INPUT');
+          if (!(mgrStForDir.entries ?? []).some(e => e.shardCid === targetCid)) {
+            throw Object.assign(new Error('该分片不属于本轮官方目录，已禁止购买。'), {code: 'USER', safeCode: 'KUSDT_V2_SHARD_NOT_IN_DIRECTORY'});
+          }
+        }
         check(suffix, 'KUSDT_V2_KCC20_SUFFIX_REQUIRED');
         const qty = Number(choice.quantity);
         check(Number.isInteger(qty) && qty >= 1, 'QUANTITY');
         const cost = BigInt(qty) * price;
         const maxKcc20Inputs = targetCid ? 2 : 3;
         const discovered = await discoverOwnerKcc20Utxos({rpc, ownerPk: wallet.key, kusdtCid: effectiveCid, kcc20Suffix: suffix, net, fetcher});
-        let kcc20Utxos = discovered.cells;
+        let kcc20Utxos = (discovered.cells ?? []).filter(u => !u?.outpoint || !reserved.has(`${u.outpoint.transactionId}:${u.outpoint.index}`));
         if (!kcc20Utxos.length && net?.key !== 'mainnet') {
-          kcc20Utxos = await getAssetUtxos(rpc, wallet.address, kusdtAsset(effectiveCid));
+          kcc20Utxos = (await getAssetUtxos(rpc, wallet.address, kusdtAsset(effectiveCid)))
+            .filter(u => !u?.outpoint || !reserved.has(`${u.outpoint.transactionId}:${u.outpoint.index}`));
         }
         if (!kcc20Utxos.length) {
           if (net?.key === 'tn10') {
@@ -2028,6 +2184,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
               action: 'OPEN_SHARD',
               managerUtxo: mgrArg,
               managerCid: round.cid,
+              origin: await resolveOrigin(),
               buyerPk: wallet.key,
               qty,
               price,
@@ -2076,23 +2233,53 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         }
       } else if (uiAction === 'CLOSE') {
         kusdtAction = Number(k.openedCount ?? 0) === 0 ? 'EMPTY_CLOSE' : 'COLLECT_BATCH';
+        const roundOrigin = await resolveOrigin();
         if (kusdtAction === 'EMPTY_CLOSE') {
-          prepared = this.prepareOperation({action: 'EMPTY_CLOSE', managerUtxo: mgrArg, managerCid: round.cid, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net});
+          prepared = this.prepareOperation({action: 'EMPTY_CLOSE', managerUtxo: mgrArg, managerCid: round.cid, origin: roundOrigin, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net});
         } else {
-          const batch = shards.slice(Number(k.cursor ?? 0), Number(k.cursor ?? 0) + MAX_BATCH)
-            .filter(s => s.outpoint && s.redeem)
-            .map(s => ({outpoint: s.outpoint, value: s.value, spk: s.spk, daa: s.daaScore, covenantId: s.shardCid, redeem: s.redeem}));
+          // H-06: strictly contiguous prefix from cursor (never skip missing shard[cursor]), and verify live on node
+          const curIdx = Number(k.cursor ?? 0);
+          const rawSlice = shards.slice(curIdx, curIdx + MAX_BATCH);
+          const contiguous = [];
+          for (const s of rawSlice) {
+            if (!s?.outpoint || !s?.redeem || !s?.spk) break;
+            contiguous.push(s);
+          }
+          check(contiguous.length > 0, 'STALE_INPUT');
+          const probeRes = await batchProbeLiveOutpoints(rpc, contiguous.map((s, i) => ({index: i, spk: s.spk, outpoint: s.outpoint, expectedCid: s.shardCid})), prefix);
+          const batch = [];
+          for (let i = 0; i < contiguous.length; i++) {
+            const hit = probeRes.get(i)?.hit;
+            if (!hit) break;
+            const s = contiguous[i];
+            batch.push({outpoint: hit.outpoint, value: hit.value, spk: s.spk, daa: hit.daa ?? hit.utxoDaa ?? s.daaScore, covenantId: s.shardCid, redeem: s.redeem});
+          }
+          check(batch.length > 0, 'STALE_INPUT');
           prepared = prepareBatchWithStepDown(batch, slice =>
-            this.prepareOperation({action: 'COLLECT_BATCH', managerUtxo: mgrArg, managerCid: round.cid, shardUtxos: slice, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net}));
+            this.prepareOperation({action: 'COLLECT_BATCH', managerUtxo: mgrArg, managerCid: round.cid, origin: roundOrigin, shardUtxos: slice, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net}));
         }
       } else if (uiAction === 'TIMEOUT') {
         kusdtAction = 'REROLL';
         prepared = this.prepareOperation({action: 'REROLL', managerUtxo: mgrArg, managerCid: round.cid, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net});
       } else if (uiAction === 'PAY_OLD' || uiAction === 'REFUND_OLD') {
         kusdtAction = 'DISPATCH_BATCH';
-        const batch = shards.slice(Number(k.cursor ?? 0), Number(k.cursor ?? 0) + MAX_BATCH)
-          .filter(s => s.outpoint && s.redeem)
-          .map(s => ({outpoint: s.outpoint, value: s.value, spk: s.spk, daa: s.daaScore, covenantId: s.shardCid, redeem: s.redeem}));
+        const curIdx = Number(k.cursor ?? 0);
+        const rawSlice = shards.slice(curIdx, curIdx + MAX_BATCH);
+        const contiguous = [];
+        for (const s of rawSlice) {
+          if (!s?.outpoint || !s?.redeem || !s?.spk) break;
+          contiguous.push(s);
+        }
+        check(contiguous.length > 0, 'STALE_INPUT');
+        const probeRes = await batchProbeLiveOutpoints(rpc, contiguous.map((s, i) => ({index: i, spk: s.spk, outpoint: s.outpoint, expectedCid: s.shardCid})), prefix);
+        const batch = [];
+        for (let i = 0; i < contiguous.length; i++) {
+          const hit = probeRes.get(i)?.hit;
+          if (!hit) break;
+          const s = contiguous[i];
+          batch.push({outpoint: hit.outpoint, value: hit.value, spk: s.spk, daa: hit.daa ?? hit.utxoDaa ?? s.daaScore, covenantId: s.shardCid, redeem: s.redeem});
+        }
+        check(batch.length > 0, 'STALE_INPUT');
         prepared = prepareBatchWithStepDown(batch, slice =>
           this.prepareOperation({action: 'DISPATCH_BATCH', managerUtxo: mgrArg, managerCid: round.cid, frozenShardUtxos: slice, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net}));
       } else if (uiAction === 'DRAW') {
@@ -2164,6 +2351,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           net,
         });
         prepared.drawConfirmation = proofObj.confirmation;
+        prepared.passAProof = proofObj.opening;
         prepared.drawResult = {txid: prepared.txid, shard: win.shardIndex, record: win.recordIndex, ticket: sample.ticket};
       } else if (uiAction === 'PAYOUT_EXECUTOR' || uiAction === 'PAYOUT_SELF' || uiAction === 'CLAIM_REFUND') {
         check(suffix, 'KUSDT_V2_KCC20_SUFFIX_REQUIRED');
@@ -2333,32 +2521,48 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         },
       };
     },
+    /** Send persisted kusdt-v2 intent bytes with beforeSend submissionAttempted barrier (C-02)
+     * and fresh PASS-A 100 blue-score confirmation gate for DRAW (H-04). */
+    async submitIntent(rpc, intent, {beforeSend = () => {}} = {}) {
+      let sent = false;
+      try {
+        check(intent?.draft?.transaction, 'INTENT_DRAFT_MISSING');
+        const tx = intent.draft.transaction;
+        const now = typeof rpc.currentDaa === 'function' ? await rpc.currentDaa() : null;
+        if (now != null && tx.lockTime != null && BigInt(tx.lockTime) > 0n) {
+          check(BigInt(tx.lockTime) < BigInt(now), 'SUBMIT_LOCK_MATURITY');
+        }
+        let confirmation = null;
+        if (intent.action === 'DRAW') {
+          const proofBytes = intent.proof instanceof Uint8Array
+            ? intent.proof
+            : (typeof intent.proof === 'string' && intent.proof.length > 0 ? unhex(intent.proof) : null);
+          check(proofBytes instanceof Uint8Array, 'DRAW_PROOF_MISSING');
+          confirmation = await confirmDrawTargetWithRetry(rpc, drawTargetFromOpening(proofBytes));
+        }
+        const wire = txToRpc(tx);
+        const result = await rpc.call('submitTransaction', {transaction: wire, allowOrphan: false}, 30000, {
+          beforeSend: () => {
+            if (confirmation) assertFreshDrawConfirmation(confirmation, confirmation, Date.now(), rpc);
+            beforeSend();
+            sent = true;
+          },
+        });
+        const resTxid = typeof result === 'string' ? result : (result?.transactionId ?? result?.txid ?? intent.txid);
+        check(resTxid === intent.txid, 'SUBMIT_TXID');
+        return {result};
+      } catch (e) {
+        if (e && typeof e === 'object') e.submissionAttempted = sent;
+        throw e;
+      }
+    },
     async trackRoundIntent({rpc, indexer = null, round, recover = false, net = null, fetcher = globalThis.fetch}) {
       const intent = round?.intent;
       if (!intent) return {accepted: false, round};
       const prefix = net?.addressPrefix ?? 'kaspatest';
       const txid = intent.txid;
-      if (recover && intent.draft?.transaction) {
-        const inputs = intent.draft.inputUtxos ?? [];
-        const spent = [];
-        for (const inp of inputs) {
-          if (!inp?.spk || !inp?.outpoint) continue;
-          const live = await commonUtxos(rpc, spkToAddress(inp.spk, prefix));
-          if (!live.some(u => u.outpoint?.transactionId === inp.outpoint.transactionId && u.outpoint?.index === inp.outpoint.index)) {
-            spent.push(`${inp.outpoint.transactionId}:${inp.outpoint.index}`);
-          }
-        }
-        if (spent.length) {
-          const next = {
-            ...round,
-            intent: {...intent, status: 'REJECTED', nodeError: `UTXO ${spent[0]} already spent`},
-          };
-          return {accepted: false, round: next};
-        }
-        await rpc.call('submitTransaction', {transaction: txToRpc(intent.draft.transaction), allowOrphan: false});
-        return {accepted: false, round: {...round, intent: {...intent, status: 'SUBMITTED'}}};
-      }
 
+      // H-02: ALWAYS check whether the transaction was already accepted BEFORE probing inputs for recover!
       let confirmed = false;
       const hitsByIndex = new Map();
       const outputs = intent.draft?.transaction?.outputs ?? [];
@@ -2381,8 +2585,32 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         else if (synced.round.terminal && (intent.action === 'CLOSE' || intent.action === 'EMPTY_CLOSE')) confirmed = true;
         else if (synced.round.kusdt?.shards?.some(s => s.outpoint?.transactionId === txid)) confirmed = true;
         else if (intent.action === 'OPEN_SHARD' && intent.shardCid && synced.round.kusdt?.shards?.some(s => s.shardCid === intent.shardCid)) confirmed = true;
-        if (!confirmed) return {accepted: false, round: synced.round};
-        round = synced.round;
+        else if (synced.round.receipts?.some(r => r.txid === txid && r.finalized === true)) confirmed = true;
+        if (confirmed) {
+          round = synced.round;
+        } else {
+          if (recover && intent.draft?.transaction) {
+            const inputs = intent.draft.inputUtxos ?? [];
+            const spent = [];
+            for (const inp of inputs) {
+              if (!inp?.spk || !inp?.outpoint) continue;
+              const live = await commonUtxos(rpc, spkToAddress(inp.spk, prefix));
+              if (!live.some(u => u.outpoint?.transactionId === inp.outpoint.transactionId && u.outpoint?.index === inp.outpoint.index)) {
+                spent.push(`${inp.outpoint.transactionId}:${inp.outpoint.index}`);
+              }
+            }
+            if (spent.length) {
+              const next = {
+                ...synced.round,
+                intent: {...intent, status: 'REJECTED', nodeError: `UTXO ${spent[0]} already spent`},
+              };
+              return {accepted: false, round: next};
+            }
+            await this.submitIntent(rpc, intent, {network: net?.networkId});
+            return {accepted: false, round: {...synced.round, intent: {...intent, status: 'SUBMITTED'}}};
+          }
+          return {accepted: false, round: synced.round};
+        }
       }
 
       const localRecIndex = intent.action === 'OPEN_SHARD'

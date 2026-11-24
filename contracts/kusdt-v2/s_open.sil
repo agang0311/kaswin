@@ -7,7 +7,7 @@ contract KusdtShardOpen(byte[] initialState) {
     byte[] state = initialState;
     int constant FEE_INPUTS = 8;
     int constant FEE_OUTPUTS = 4;
-    byte[32] constant S_FROZEN_HASH = byte[32](0x5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a);
+    byte[32] constant S_FROZEN_HASH = byte[32](0xdce727e1cb4a6d9ddc421d65d87af54becaff2234861ea3d356894e5d7456c62);
     // Shared constants and stack-conscious helpers for Kaswin kUSDT v2 (256 parallel shards).
     // SilverScript 1.0.1 inlines every function and retains locals until the enclosing block ends (244-item stack limit).
     // Call multi-local helpers inside dedicated `{ }` blocks and avoid helper calls inside unrolled loops.

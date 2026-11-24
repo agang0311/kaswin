@@ -45,6 +45,10 @@ async function loadKaspireDeps() {
         const script=document.createElement('script');
         const timer=setTimeout(()=>{script.remove();reject(new Error('KASPIRE_SDK_TIMEOUT'));},20000);
         script.src='./kaspire-wc.js';
+        if(typeof __KASWIN_KASPIRE_WC_INTEGRITY__==='string'&&__KASWIN_KASPIRE_WC_INTEGRITY__){
+          script.integrity=__KASWIN_KASPIRE_WC_INTEGRITY__;
+          script.crossOrigin='anonymous';
+        }
         script.async=true;
         script.onload=()=>{clearTimeout(timer);resolve();};
         script.onerror=()=>{clearTimeout(timer);script.remove();reject(new Error('KASPIRE_SDK_LOAD_FAILED'));};
@@ -243,8 +247,9 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
     get closed(){return closed;},
     close,
     async disconnectSession(){close();try{await sc.disconnect({topic:session.topic,reason:{code:6000,message:'user_disconnected'}});}catch{}},
-    async sign(draft) {
+    async sign(draft,{signal=null}={}) {
       check(!closed,'WALLET_CLOSED');
+      if(signal?.aborted)throw Object.assign(new Error('WALLET_SIGN_CANCELLED'),{code:'WALLET_SIGN_CANCELLED'});
       const auth=new Set(draft.authorizedInputIndices);
       const scriptInputs=Array.isArray(draft.scriptInputs)?draft.scriptInputs:[];
       if(!auth.size&&!scriptInputs.length)return;
@@ -303,18 +308,31 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
       onLog(`Kaspire：正在发送签名请求 (${session.topic.slice(0,8)}…)`);
       // Trigger mobile wake within the user-activation window rather than waiting for relay publish + 700ms.
       scheduleWake(150);
+      let onAbort=null;
       try {
-        rawRes=await bounded(()=>sc.request({
+        const reqP=bounded(()=>sc.request({
           topic:session.topic,chainId:chain,
           request:{method:'kaspa_signPskt',params},
         }),'WALLET_SIGN_TIMEOUT',timeoutMs);
+        rawRes=signal?await new Promise((resolve,reject)=>{
+          if(signal.aborted){reject(Object.assign(new Error('WALLET_SIGN_CANCELLED'),{code:'WALLET_SIGN_CANCELLED'}));return;}
+          onAbort=()=>reject(Object.assign(new Error('WALLET_SIGN_CANCELLED'),{code:'WALLET_SIGN_CANCELLED'}));
+          signal.addEventListener('abort',onAbort,{once:true});
+          reqP.then(resolve,reject);
+        }):await reqP;
+        if(signal?.aborted)throw Object.assign(new Error('WALLET_SIGN_CANCELLED'),{code:'WALLET_SIGN_CANCELLED'});
         onLog('Kaspire：已收到签名响应，正在本地验签…');
       } catch(e){
+        if(signal?.aborted||e?.code==='WALLET_SIGN_CANCELLED'){
+          onLog('Kaspire：已取消等待签名');
+          throw Object.assign(new Error('WALLET_SIGN_CANCELLED'),{code:'WALLET_SIGN_CANCELLED'});
+        }
         onLog(`Kaspire：签名异常 (${String(e?.code??e?.message??e).slice(0,120)})`);
         throw safeError(e,'WALLET_SIGN_TIMEOUT');
       }
       finally {
         settled=true;
+        if(onAbort&&signal)signal.removeEventListener('abort',onAbort);
         if(wakeTimer)clearTimeout(wakeTimer);
         sc.off?.('session_request_sent',onSent);
         if(typeof document==='object')document.removeEventListener('visibilitychange',onVisible);

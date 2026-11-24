@@ -460,7 +460,7 @@ function failure(e: unknown,action='') {
 /** A verification result only counts for the node and round state it was obtained for: importing different data over the same CID (file or link), a state
  * change, or switching node makes the fingerprint differ, so a stale green tick can never describe data it did not check. */
 const fpOf=(r: Round): string=>[conn.nodeUrl??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.step,r.frozen.length,r.intent?.status??''].join('|');
-const isNodeVerified=(r: Round): boolean=>!!r.terminal||(r.kusdt?!!r.kusdt.nodeVerified:!!r.manager);
+const isNodeVerified=(r: Round): boolean=>r.kusdt?!!r.kusdt.nodeVerified:(!!r.terminal||!!r.manager);
 function verifyFor(cid: string|null): VerifyState|null {
   const v=cid?verify.get(cid):undefined,it=cid?items.find(i=>i.r.cid===cid):undefined;
   if(!it)return v?.fp==='loading'?v:null;

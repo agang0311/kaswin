@@ -6,6 +6,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 
 import {
+  CLOSE_DAA_MAX,
   DECISION,
   FEE_CAP,
   FROZEN_MAINNET_TEMPLATE_HASHES,
@@ -16,8 +17,13 @@ import {
   MAINNET_KUSDT_CID,
   MAX_ACTIVE_OPEN_SHARDS,
   MAX_RECORDS_PER_SHARD,
+  PRICE_MAX,
   STAGE,
 } from '../../scripts/protocols/kusdt-v2/constants.mjs';
+import {verifyKusdtV2GenesisRoot} from '../../scripts/protocols/kusdt-v2/round.mjs';
+import {statusAfterFailure} from '../../scripts/tracking/intent.mjs';
+import {RpcError} from '../../scripts/chain/nodes.mjs';
+import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
 import {
   decodeKcc20State,
   decodeManagerState,
@@ -63,7 +69,7 @@ import {openMemoryWallet, verifyOrdinarySignatures} from '../../scripts/wallet/w
 import {extensionSafeJson, openExtensionWallet} from '../../scripts/wallet/extension-wallet.mjs';
 import {openKaspireWallet} from '../../scripts/wallet/kaspire-wallet.mjs';
 import {parseJson, jsonText} from '../../scripts/chain/json.mjs';
-import {blake2b256, hex, p2pk, p2sh} from '../../scripts/core.mjs';
+import {blake2b256, covenantId, hex, p2pk, p2sh} from '../../scripts/core.mjs';
 import {spkToAddress} from '../../scripts/wallet/address.mjs';
 import {profile as rollingProfile} from '../contracts/fixtures.mjs';
 import {runEngine} from '../contracts/engine-gate.mjs';
@@ -278,10 +284,12 @@ test('prepareOperation builds all 11 kusdt-v2 actions with tx.version=1 and sema
     stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: CREATOR_PK,
     price, closeDaa: 5000n, openedCount: 0, cursor: 0, totalTickets: 0, entries: [],
   }, v2Profile);
+  const testOrigin = {transactionId: keyHex('unit-origin'), index: 0};
   const openOp = adapter.prepareOperation({
     action: 'OPEN_SHARD',
     managerUtxo: {outpoint: {transactionId: keyHex('m-open'), index: 0}, redeem: mOpenRedeem},
     managerCid: MGR_CID,
+    origin: testOrigin,
     buyerPk: BUYER1_PK,
     qty: 2,
     price,
@@ -322,6 +330,7 @@ test('prepareOperation builds all 11 kusdt-v2 actions with tx.version=1 and sema
   const emptyCloseOp = adapter.prepareOperation({
     action: 'EMPTY_CLOSE',
     managerUtxo: {outpoint: {transactionId: keyHex('m-ec'), index: 0}, redeem: mOpenRedeem},
+    origin: testOrigin,
     fundingUtxos: [kasFund('ec-kas')],
     changeSpk,
   });
@@ -342,6 +351,7 @@ test('prepareOperation builds all 11 kusdt-v2 actions with tx.version=1 and sema
     action: 'COLLECT_BATCH',
     managerUtxo: {outpoint: {transactionId: keyHex('m-cb'), index: 0}, redeem: mOpen1Redeem},
     managerCid: MGR_CID,
+    origin: testOrigin,
     shardUtxos: [{outpoint: {transactionId: keyHex('s-cb'), index: 0}, shardCid: SHARD_CID, redeem: sOpen3Redeem}],
     fundingUtxos: [kasFund('cb-kas')],
     changeSpk,
@@ -851,6 +861,7 @@ test('discoverOwnerKcc20Utxos authenticates Kascov/Kasvio cells on live node and
     action: 'OPEN_SHARD',
     managerUtxo: {outpoint: {transactionId: keyHex('mgr-live'), index: 0}, value: 400_000_000n, daa: 600000050n, redeem: mOpenRedeem},
     managerCid: MGR_CID,
+    origin: {transactionId: keyHex('sig-origin'), index: 0},
     buyerPk: mem.key,
     qty: 1,
     price: 1_000_000n,
@@ -934,16 +945,19 @@ test('real kaspa-txscript 2.1.0 VM executes kusdt-v2 OPEN_SHARD, BUY, PAYOUT, an
   const price = 1_000_000n;
 
   // 1. OPEN_SHARD with 2 buyer KCC-20 inputs (leader borrowScheme=1 + delegate borrowScheme=0) + kUSDT change
+  const vmOrigin = {transactionId: keyHex('vm-origin'), index: 0};
   const mOpenRedeem = redeemForState({
     stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: CREATOR_PK,
     price, closeDaa: 5000n, openedCount: 0, cursor: 0, totalTickets: 0, entries: [],
   }, v2Profile);
+  const vmMgrCid = covenantId(vmOrigin, [{index: 0, value: 400_000_000n, spk: p2sh(hex(blake2b256(mOpenRedeem)))}]);
   const b1c1 = kcc20RedeemAndSpk({amount: 1_200_000n, owner: w1.key, ownerScheme: 0, borrowScheme: 1}, KCC20_SUFFIX);
   const b1c2 = kcc20RedeemAndSpk({amount: 1_300_000n, owner: w1.key, ownerScheme: 0, borrowScheme: 0}, KCC20_SUFFIX);
   const openOp = adapter.prepareOperation({
     action: 'OPEN_SHARD',
     managerUtxo: {outpoint: {transactionId: keyHex('vm-mgr'), index: 0}, value: 400_000_000n, daa: 4000n, redeem: mOpenRedeem},
-    managerCid: MGR_CID,
+    managerCid: vmMgrCid,
+    origin: vmOrigin,
     buyerPk: w1.key,
     qty: 2,
     price,
@@ -959,6 +973,32 @@ test('real kaspa-txscript 2.1.0 VM executes kusdt-v2 OPEN_SHARD, BUY, PAYOUT, an
   await w1.sign(openOp.draft);
   await verifyOrdinarySignatures(openOp.draft);
   runEngine(openOp.draft, {limited: true});
+
+  // 1b. C-01 on-chain checkRoot defense: pre-seeded evil M_OPEN (openedCount=1 at genesis) MUST FAIL in real VM!
+  const evilVmRedeem = redeemForState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: CREATOR_PK,
+    price, closeDaa: 5000n, openedCount: 1, cursor: 0, totalTickets: 0,
+    entries: [{shardCid: keyHex('evil-vm-sh'), ledgerHash: ZERO32, cumTickets: 0}],
+  }, v2Profile);
+  const evilVmCid = covenantId(vmOrigin, [{index: 0, value: 400_000_000n, spk: p2sh(hex(blake2b256(evilVmRedeem)))}]);
+  const evilOpenOp = adapter.prepareOperation({
+    action: 'OPEN_SHARD',
+    managerUtxo: {outpoint: {transactionId: keyHex('vm-evil-mgr'), index: 0}, value: 400_000_000n, daa: 4000n, redeem: evilVmRedeem},
+    managerCid: evilVmCid,
+    origin: vmOrigin,
+    buyerPk: w1.key,
+    qty: 1,
+    price,
+    buyerKasUtxos: [{outpoint: {transactionId: keyHex('vm-kas1'), index: 0}, value: 1_000_000_000n, spk: w1.spk, daa: 4000n, utxoDaa: 4000n, covenantId: null}],
+    buyerKcc20Utxos: [
+      {outpoint: {transactionId: keyHex('vm-k1'), index: 0}, value: 300_000_000n, spk: b1c1.scriptPubKey, daa: 4000n, utxoDaa: 4000n, covenantId: MAINNET_KUSDT_CID, amount: 1_200_000n, redeem: b1c1.redeem},
+    ],
+    kcc20Suffix: KCC20_SUFFIX,
+    changeSpk: w1.spk,
+    feerate: '100',
+  });
+  await w1.sign(evilOpenOp.draft);
+  assert.throws(() => runEngine(evilOpenOp.draft, {limited: true}), 'evil pre-seeded M_OPEN must be rejected by on-chain checkRoot');
 
   // 2. BUY on that shard (input 0: s_open, input 1: vault OWNER_COVENANT_ID leader, input 2: buyer2 P2PK_SCHNORR delegate)
   const shardRedeem1 = redeemForState(openOp.shardState, v2Profile);
@@ -1107,6 +1147,7 @@ test('kusdt-v2 trackRoundIntent advances OPEN_SHARD & BUY immediately and syncRo
     action: 'OPEN_SHARD',
     managerUtxo: {outpoint: {transactionId: genesisTxid, index: 0}, value: 400_000_000n, daa: 700000010n, redeem: mOpenRedeem},
     managerCid: MGR_CID,
+    origin: {transactionId: keyHex('lag-origin'), index: 0},
     buyerPk: w1.key,
     qty: 1,
     price,
@@ -1867,7 +1908,8 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
   });
   assert.equal(synced.round.terminal, 'PAID');
   assert.equal(synced.round.accepting, headAcc);
-  assert.deepEqual(synced.round.draw, {txid: drawTx, shard: 0, record: 1, ticket: 2});
+  assert.equal(synced.round.draw, undefined, 'unverified KCI det.draw must not populate round.draw');
+  assert.deepEqual(synced.round.drawHint, {txid: drawTx, shard: 0, record: 1, ticket: 2});
   assert.equal(synced.round.kusdt.shards[0].records?.length, 2);
   assert.equal(synced.round.kusdt.shards[0].records?.[1]?.buyerPk, buyer2);
   const catalog = adapter.shardCatalog(synced.round, buyer2);
@@ -1948,7 +1990,8 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
   const stored = await ctl.rounds();
   assert.equal(stored.length, 1);
   assert.equal(stored[0].cid, MGR_CID);
-  assert.deepEqual(stored[0].draw, {txid: drawTx, shard: 0, record: 1, ticket: 2});
+  assert.equal(stored[0].draw, undefined);
+  assert.deepEqual(stored[0].drawHint, {txid: drawTx, shard: 0, record: 1, ticket: 2});
   assert.equal(stored[0].kusdt.shards[0].records?.length, 2);
   ctl.close();
 });
@@ -2002,8 +2045,15 @@ test('kusdt-v2 caps active buyable S_OPEN shards at MAX_ACTIVE_OPEN_SHARDS (8) a
   }, v2Profile);
   const mgrSpk = p2sh(hex(blake2b256(mgrRedeem)));
   const mgrOutpoint = {transactionId: keyHex('cap-mgr-tx'), index: 0};
+  const capOrigin = {transactionId: keyHex('cap-origin'), index: 0};
+  const capEmptyRedeem = redeemForState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: CREATOR_PK,
+    price, closeDaa: 700_005_000n, openedCount: 0, cursor: 0, totalTickets: 0, entries: [],
+  }, v2Profile);
+  const capCid = covenantId(capOrigin, [{index: 0, value: 400_000_000n, spk: p2sh(hex(blake2b256(capEmptyRedeem)))}]);
   const baseRound = {
-    cid: MGR_CID,
+    cid: capCid,
+    origin: capOrigin,
     profileId: v2Profile.id,
     terminal: null,
     halted: null,
@@ -2026,7 +2076,7 @@ test('kusdt-v2 caps active buyable S_OPEN shards at MAX_ACTIVE_OPEN_SHARDS (8) a
             entries.push({
               address: a,
               outpoint: mgrOutpoint,
-              utxoEntry: {amount: '400000000', scriptPublicKey: `0000${mgrSpk.script}`, blockDaaScore: '700000000', isCoinbase: false, covenantId: MGR_CID},
+              utxoEntry: {amount: '400000000', scriptPublicKey: `0000${mgrSpk.script}`, blockDaaScore: '700000000', isCoinbase: false, covenantId: capCid},
             });
           } else if (a === wallet.address) {
             entries.push({
@@ -2375,6 +2425,7 @@ test('kusdt-v2 COLLECT_BATCH and DISPATCH_BATCH automatically step down k (8..1)
   const mgrDispSpk = p2sh(hex(blake2b256(mgrDispRedeem)));
   const mgrDispOut = {transactionId: keyHex('sd-mgr-disp'), index: 0};
 
+  const allMockShards = new Map([...openShards, ...frozenShards].map(s => [spkToAddress(s.spk, prefix), s]));
   const makeRpc = (mgrSpk, mgrOut) => ({
     url: 'ws://mainnet.test',
     async currentDaa() { return 700_006_000n; },
@@ -2386,6 +2437,9 @@ test('kusdt-v2 COLLECT_BATCH and DISPATCH_BATCH automatically step down k (8..1)
             entries.push({address: a, outpoint: mgrOut, utxoEntry: {amount: '400000000', scriptPublicKey: `0000${mgrSpk.script}`, blockDaaScore: '700000000', isCoinbase: false, covenantId: MGR_CID}});
           } else if (a === wallet.address) {
             entries.push({address: a, outpoint: {transactionId: keyHex('sd-kas'), index: 0}, utxoEntry: {amount: '5000000000', scriptPublicKey: `0000${wallet.spk.script}`, blockDaaScore: '700000000', isCoinbase: false}});
+          } else if (allMockShards.has(a)) {
+            const s = allMockShards.get(a);
+            entries.push({address: a, outpoint: s.outpoint, utxoEntry: {amount: String(s.value), scriptPublicKey: `0000${s.spk.script}`, blockDaaScore: String(s.daaScore), isCoinbase: false, covenantId: s.shardCid}});
           }
         }
         return {entries};
@@ -2396,7 +2450,7 @@ test('kusdt-v2 COLLECT_BATCH and DISPATCH_BATCH automatically step down k (8..1)
   });
 
   const roundOpen = {
-    cid: MGR_CID, profileId: v2Profile.id, terminal: null, halted: null, intent: null,
+    cid: MGR_CID, origin: {transactionId: keyHex('sd-origin'), index: 0}, profileId: v2Profile.id, terminal: null, halted: null, intent: null,
     manager: {outpoint: mgrOpenOut, value: 400_000_000n, spk: mgrOpenSpk, utxoDaa: 700_000_000n, redeemScript: mgrOpenRedeem},
     settings: {ticketPrice: price, closeEligibleDaa: 700_005_000n, closeDaa: 700_005_000n, creatorPk: CREATOR_PK},
     kusdt: {stage: STAGE.M_OPEN, price, closeDaa: 700_005_000n, openedCount: 8, cursor: 0, totalTickets: 0, decision: 0, creatorPk: CREATOR_PK, winnerPk: null, nodeVerified: true, shards: openShards},
@@ -2444,6 +2498,249 @@ test('kusdt-v2 COLLECT_BATCH and DISPATCH_BATCH automatically step down k (8..1)
     /KUSDT_V2_INSUFFICIENT_KAS/,
   );
   assert.equal(attempts, 1);
+
+  wallet.close();
+});
+
+test('Batch-1 audit fixes: C-01 off-chain genesis root, C-02 submissionAttempted, H-01 bounds, H-02 recover order, H-03 KCI terminal guard, H-05 round schema, H-06 conflict & contiguous batch', async () => {
+  const v2Profile = loadKusdtV2Profile(loadArtifacts());
+  const adapter = createKusdtV2Adapter({profile: v2Profile, kcc20Suffix: KCC20_SUFFIX});
+  const prefix = MAINNET.addressPrefix;
+  const wallet = openMemoryWallet('22'.repeat(32), {prefix});
+  const price = 1_000_000n;
+  const closeDaa = 700_005_000n;
+
+  // 1) H-01: price > PRICE_MAX and closeDaa >= CLOSE_DAA_MAX rejected in codec & builder
+  assert.throws(() => encodeManagerOpenOrSealedState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: wallet.key,
+    price: PRICE_MAX + 1n, closeDaa, openedCount: 0, cursor: 0, totalTickets: 0, decision: 0, reserved: 0, entries: [],
+  }), /KUSDT_V2_PRICE_MAX/);
+  assert.throws(() => encodeManagerOpenOrSealedState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: wallet.key,
+    price, closeDaa: CLOSE_DAA_MAX, openedCount: 0, cursor: 0, totalTickets: 0, decision: 0, reserved: 0, entries: [],
+  }), /KUSDT_V2_CLOSE_DAA/);
+
+  // 2) C-01 off-chain: canonical empty M_OPEN genesis root passes, pre-seeded evil shard genesis M_OPEN fails & blocks BUY
+  const origin = {transactionId: keyHex('audit-gen-in'), index: 0};
+  const emptyRedeem = redeemForState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: wallet.key,
+    price, closeDaa, openedCount: 0, cursor: 0, totalTickets: 0, decision: 0, reserved: 0, entries: [],
+  }, v2Profile);
+  const emptySpk = p2sh(hex(blake2b256(emptyRedeem)));
+  const canonicalCid = covenantId(origin, [{index: 0, value: 400_000_000n, spk: emptySpk}]);
+  assert.equal(verifyKusdtV2GenesisRoot({cid: canonicalCid, origin, price, closeDaa, creatorPk: wallet.key, profile: v2Profile}), true);
+
+  const evilShardCid = keyHex('evil-shard');
+  const evilRedeem = redeemForState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: wallet.key,
+    price, closeDaa, openedCount: 1, cursor: 0, totalTickets: 0, decision: 0, reserved: 0,
+    entries: [{shardCid: evilShardCid, hash: '00'.repeat(32), cumTickets: 0}],
+  }, v2Profile);
+  const evilSpk = p2sh(hex(blake2b256(evilRedeem)));
+  const evilCid = covenantId(origin, [{index: 0, value: 400_000_000n, spk: evilSpk}]);
+  assert.throws(
+    () => verifyKusdtV2GenesisRoot({cid: evilCid, origin, price, closeDaa, creatorPk: wallet.key, profile: v2Profile}),
+    /KUSDT_V2_GENESIS_ROOT_MISMATCH/,
+  );
+
+  const evilRound = {
+    cid: evilCid, profileId: v2Profile.id, origin, terminal: null, halted: null, intent: null,
+    manager: {outpoint: {transactionId: keyHex('evil-mgr-tx'), index: 0}, value: 400_000_000n, spk: evilSpk, utxoDaa: 700_000_000n, redeemScript: evilRedeem},
+    settings: {ticketPrice: price, closeDaa, closeEligibleDaa: closeDaa, creatorPk: wallet.key},
+    kusdt: {stage: STAGE.M_OPEN, price, closeDaa, openedCount: 1, cursor: 0, totalTickets: 0, decision: 0, creatorPk: wallet.key, winnerPk: null, nodeVerified: false, shards: []},
+  };
+  const evilRpc = {
+    async currentDaa() { return 700_000_100n; },
+    async call(method, params) {
+      if (method === 'getUtxosByAddresses') {
+        const entries = [];
+        for (const a of params.addresses ?? []) {
+          if (a === spkToAddress(evilSpk, prefix)) entries.push({address: a, outpoint: evilRound.manager.outpoint, utxoEntry: {amount: '400000000', scriptPublicKey: `0000${evilSpk.script}`, blockDaaScore: '700000000', isCoinbase: false, covenantId: evilCid}});
+          else if (a === wallet.address) entries.push({address: a, outpoint: {transactionId: keyHex('audit-kas'), index: 0}, utxoEntry: {amount: '1000000000', scriptPublicKey: `0000${wallet.spk.script}`, blockDaaScore: '700000000', isCoinbase: false}});
+        }
+        return {entries};
+      }
+      if (method === 'getMempoolEntriesByAddresses') return {entries: []};
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+  await assert.rejects(
+    () => adapter.prepareForController({rpc: evilRpc, round: evilRound, choice: {action: 'BUY', quantity: 1}, wallet, feerate: 1, net: MAINNET}),
+    e => e?.code === 'USER' && e?.safeCode === 'KUSDT_V2_GENESIS_ROOT_MISMATCH',
+  );
+
+  // 3) C-02: submitIntent sets submissionAttempted=true via beforeSend barrier (timeout -> UNKNOWN, RpcError -> REJECTED, pre-send -> UNSENT)
+  const dummyIntent = {
+    action: 'BUY',
+    txid: keyHex('sub-tx'),
+    draft: {transaction: {version: 1, inputs: [], outputs: [], lockTime: 0n, subnetworkId: '00'.repeat(20), gas: 0n, payload: new Uint8Array()}},
+  };
+  const rpcTimeout = {
+    async currentDaa() { return 700_000_100n; },
+    async call(_m, _p, _t, opts) {
+      opts?.beforeSend?.();
+      throw Object.assign(new Error('RPC_TIMEOUT'), {code: 'RPC_TIMEOUT'});
+    },
+  };
+  await assert.rejects(() => adapter.submitIntent(rpcTimeout, dummyIntent), e => e?.submissionAttempted === true && statusAfterFailure(e) === 'UNKNOWN');
+
+  const rpcReject = {
+    async currentDaa() { return 700_000_100n; },
+    async call(_m, _p, _t, opts) {
+      opts?.beforeSend?.();
+      throw new RpcError('submitTransaction', 'Rejected transaction: double spend');
+    },
+  };
+  await assert.rejects(() => adapter.submitIntent(rpcReject, dummyIntent), e => e?.submissionAttempted === true && statusAfterFailure(e) === 'REJECTED');
+
+  await assert.rejects(
+    () => adapter.submitIntent(rpcTimeout, dummyIntent, {beforeSend: () => { throw new Error('WALLET_CHANGED'); }}),
+    e => e?.submissionAttempted === false && statusAfterFailure(e) === 'UNSENT',
+  );
+
+  // 4) H-02: trackRoundIntent({recover: true}) checks output confirmation BEFORE probing inputs
+  const confTxid = keyHex('conf-gen-tx');
+  const confRound = {
+    cid: canonicalCid, profileId: v2Profile.id, origin, terminal: null, halted: null,
+    manager: {outpoint: {transactionId: confTxid, index: 0}, value: 400_000_000n, spk: emptySpk, utxoDaa: 0n, redeemScript: emptyRedeem},
+    receipts: [{action: 'GENESIS', txid: confTxid, feeSompi: '10000', finalized: false}],
+    settings: {ticketPrice: price, closeDaa, closeEligibleDaa: closeDaa, creatorPk: wallet.key},
+    kusdt: {stage: STAGE.M_OPEN, price, closeDaa, openedCount: 0, cursor: 0, totalTickets: 0, decision: 0, creatorPk: wallet.key, winnerPk: null, nodeVerified: false, shards: []},
+    intent: {
+      status: 'UNKNOWN', action: 'GENESIS', txid: confTxid, profileId: v2Profile.id,
+      draft: {
+        fee: 10000n,
+        inputUtxos: [{outpoint: origin, spk: wallet.spk, value: 500_000_000n}],
+        transaction: {version: 1, inputs: [], outputs: [{value: 400_000_000n, scriptPublicKey: emptySpk}], lockTime: 0n, subnetworkId: '00'.repeat(20), gas: 0n, payload: new Uint8Array()},
+      },
+    },
+  };
+  const confRpc = {
+    async call(method, params) {
+      if (method === 'getUtxosByAddresses') {
+        const entries = [];
+        for (const a of params.addresses ?? []) {
+          if (a === spkToAddress(emptySpk, prefix)) {
+            entries.push({address: a, outpoint: {transactionId: confTxid, index: 0}, utxoEntry: {amount: '400000000', scriptPublicKey: `0000${emptySpk.script}`, blockDaaScore: '700000100', isCoinbase: false, covenantId: canonicalCid}});
+          }
+          // Notice wallet origin input is already SPENT (empty) — old recover code wrongly marked REJECTED!
+        }
+        return {entries};
+      }
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+  const recovRes = await adapter.trackRoundIntent({rpc: confRpc, round: confRound, recover: true, net: MAINNET});
+  assert.equal(recovRes.accepted, true);
+  assert.equal(recovRes.round.intent, null);
+  assert.equal(recovRes.round.kusdt.nodeVerified, true);
+
+  // 5) H-03: syncRound refuses lying KCI det.terminal='PAID' when shard UTXO is still live on node
+  const liveShCid = keyHex('h03-shard');
+  const liveShRedeem = redeemForState({
+    stage: STAGE.S_PAYOUT, version: KUSDT_V2_VERSION, managerCid: canonicalCid,
+    firstBuyerPk: wallet.key, winnerPk: wallet.key, shardTickets: 3, vaultAmount: 3_000_000n,
+  }, v2Profile);
+  const liveShSpk = p2sh(hex(blake2b256(liveShRedeem)));
+  const liveShOut = {transactionId: keyHex('h03-sh-tx'), index: 0};
+  const lyingIndexer = {
+    async roundDetail() {
+      return {
+        cid: canonicalCid, terminal: 'PAID', origin,
+        shards: {[liveShCid]: {shardCid: liveShCid, stage: 'S_PAYOUT', outpoint: liveShOut, value: '200000000', spk: liveShSpk, utxoDaa: '700000500', redeemHex: hex(liveShRedeem), terminal: true}},
+        summary: {protocolId: 'kusdt-v2', profileId: v2Profile.id, phase: 'DONE', subPhase: 'PAID', terminal: 'PAID', ticketsSold: 3, ticketPrice: '1000000',
+          protocolData: {openedCount: 1, cursor: 1, closeDaa: String(closeDaa), creatorPk: wallet.key, winnerPk: wallet.key, shards: [{shardCid: liveShCid, terminal: true, tickets: 3}]}},
+      };
+    },
+  };
+  const liveShardRpc = {
+    async call(method, params) {
+      if (method === 'getUtxosByAddresses') {
+        const entries = [];
+        for (const a of params.addresses ?? []) {
+          if (a === spkToAddress(liveShSpk, prefix)) {
+            entries.push({address: a, outpoint: liveShOut, utxoEntry: {amount: '200000000', scriptPublicKey: `0000${liveShSpk.script}`, blockDaaScore: '700000500', isCoinbase: false, covenantId: liveShCid}});
+          }
+        }
+        return {entries};
+      }
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+  const syncedH03 = await adapter.syncRound({rpc: liveShardRpc, indexer: lyingIndexer, cid: canonicalCid, net: MAINNET});
+  assert.equal(syncedH03.round.terminal, null, 'must reject KCI terminal when shard is still live on node');
+  assert.equal(syncedH03.round.kusdt.shards[0].terminal, false);
+
+  // 6) H-05: runtime kusdt-v2 round (manager.redeemScript + kusdt.shards) round-trips via roundToText/roundFromText (stripping intent/pending) & toRoundSummary/availableActions
+  const rtRound = {
+    cid: canonicalCid, profileId: v2Profile.id, origin, terminal: null, halted: null,
+    intent: {status: 'SUBMITTED', action: 'BUY', txid: keyHex('fake-int')},
+    pending: [{txid: keyHex('fake-pend')}],
+    manager: {outpoint: {transactionId: confTxid, index: 0}, value: 400_000_000n, spk: emptySpk, utxoDaa: 700_000_000n, redeemScript: emptyRedeem},
+    receipts: [], fees: 10_000n,
+    settings: {ticketPrice: price, closeDaa, closeEligibleDaa: closeDaa, creatorPk: wallet.key},
+    kusdt: {stage: STAGE.M_OPEN, price, closeDaa, openedCount: 0, cursor: 0, totalTickets: 0, decision: 0, creatorPk: wallet.key, winnerPk: null, nodeVerified: true, shards: []},
+  };
+  const parsedRt = adapter.roundFromText(adapter.roundToText(rtRound));
+  assert.equal(parsedRt.cid, canonicalCid);
+  assert.equal(parsedRt.intent, null, 'share/import must strip transient intent');
+  assert.deepEqual(parsedRt.pending, []);
+  assert.equal(parsedRt.settings.ticketPrice, price);
+  assert.ok(parsedRt.manager.redeemScript instanceof Uint8Array);
+  assert.ok(adapter.availableActions(parsedRt, 700_000_100n).includes('OPEN_SHARD'));
+  assert.equal(adapter.toRoundSummary(parsedRt).phase, 'OPEN');
+
+  // 6b) C-01 rogue shard injection: BUY targeting a shardCid NOT in live M_OPEN.entries MUST be rejected!
+  const rogueShardCid = keyHex('rogue-shard');
+  const rogueShRedeem = redeemForState({
+    stage: STAGE.S_OPEN, version: KUSDT_V2_VERSION, managerCid: canonicalCid,
+    firstBuyerPk: wallet.key, price, records: [{cumTickets: 1, buyerPk: wallet.key}],
+  }, v2Profile);
+  const rogueShSpk = p2sh(hex(blake2b256(rogueShRedeem)));
+  const rogueRound = {
+    ...rtRound,
+    intent: null,
+    pending: [],
+    kusdt: {
+      ...rtRound.kusdt,
+      shards: [{shardCid: rogueShardCid, stage: STAGE.S_OPEN, terminal: false, outpoint: {transactionId: keyHex('rogue-tx'), index: 0}, value: 200_000_000n, spk: rogueShSpk, daaScore: 700_000_050n, redeem: rogueShRedeem, recordCount: 1, tickets: 1}],
+    },
+  };
+  const rogueRpc = {
+    async currentDaa() { return 700_000_100n; },
+    async call(method, params) {
+      if (method === 'getUtxosByAddresses') {
+        const entries = [];
+        for (const a of params.addresses ?? []) {
+          if (a === spkToAddress(emptySpk, prefix)) entries.push({address: a, outpoint: rtRound.manager.outpoint, utxoEntry: {amount: '400000000', scriptPublicKey: `0000${emptySpk.script}`, blockDaaScore: '700000000', isCoinbase: false, covenantId: canonicalCid}});
+          else if (a === wallet.address) entries.push({address: a, outpoint: {transactionId: keyHex('rogue-kas'), index: 0}, utxoEntry: {amount: '1000000000', scriptPublicKey: `0000${wallet.spk.script}`, blockDaaScore: '700000000', isCoinbase: false}});
+        }
+        return {entries};
+      }
+      if (method === 'getMempoolEntriesByAddresses') return {entries: []};
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+  await assert.rejects(
+    () => adapter.prepareForController({rpc: rogueRpc, round: rogueRound, choice: {action: 'BUY', quantity: 1, shardCid: rogueShardCid}, wallet, feerate: 1, net: MAINNET}),
+    e => e?.code === 'USER' && e?.safeCode === 'KUSDT_V2_SHARD_NOT_IN_DIRECTORY',
+  );
+
+  // 7) H-06: real OPEN_SHARD/BUY draft puts KCC-20 wallet token input in scriptInputs (not authorizedInputIndices) -> MUST still classify as FUNDS_INPUT!
+  const tokTx = keyHex('tok-in'), spTx = keyHex('tok-sp');
+  const rej = classifyRejection({
+    nodeError: `submitTransaction: Rejected transaction ${keyHex('tx')}: output (${tokTx}, 0) already spent by transaction ${spTx} in the mempool`,
+    draft: {
+      inputUtxos: [
+        {outpoint: {transactionId: keyHex('mgr'), index: 0}, covenantId: canonicalCid},
+        {outpoint: {transactionId: keyHex('kas'), index: 0}, covenantId: null},
+        {outpoint: {transactionId: tokTx, index: 0}, covenantId: MAINNET_KUSDT_CID},
+      ],
+      authorizedInputIndices: [1],
+      scriptInputs: [{inputIndex: 2, ownerKey: wallet.key}],
+    },
+  });
+  assert.equal(rej.kind, 'FUNDS_INPUT');
 
   wallet.close();
 });

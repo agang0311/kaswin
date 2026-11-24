@@ -5,7 +5,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {blake2b256, convergeFee, hex, massOf, p2sh, unhex} from '../../scripts/core.mjs';
+import {blake2b256, convergeFee, covenantId, hex, massOf, p2sh, unhex} from '../../scripts/core.mjs';
 import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {openMemoryWallet, verifyOrdinarySignatures} from '../../scripts/wallet/wallet.mjs';
 import {
@@ -31,9 +31,9 @@ const KCC20_SUFFIX = Uint8Array.from(
 );
 
 const keyHex = label => createHash('sha256').update(`kusdt-v2-vm-audit:${label}`).digest('hex');
-const MGR_CID = keyHex('mgr-cid');
 const PRICE = 1_000_000n;
 const ZERO32 = '00'.repeat(32);
+const AUDIT_ORIGIN = {transactionId: keyHex('audit-origin'), index: 0};
 
 const artifacts = {};
 for (const name of KUSDT_V2_TEMPLATE_ORDER) {
@@ -45,6 +45,15 @@ const adapter = createKusdtV2Adapter({profile, kcc20Suffix: KCC20_SUFFIX});
 const w1 = openMemoryWallet('33'.repeat(32), {prefix: MAINNET.addressPrefix});
 const w2 = openMemoryWallet('44'.repeat(32), {prefix: MAINNET.addressPrefix});
 const w3 = openMemoryWallet('55'.repeat(32), {prefix: MAINNET.addressPrefix});
+
+const MGR_CID = covenantId(AUDIT_ORIGIN, [{
+  index: 0,
+  value: 400_000_000n,
+  spk: p2sh(hex(blake2b256(redeemForState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: w1.key,
+    price: PRICE, closeDaa: 700_005_000n, openedCount: 0, cursor: 0, totalTickets: 0, entries: [],
+  }, profile)))),
+}]);
 
 function kasUtxo(label, wallet, value = 2_000_000_000n, daa = 700_000_000n) {
   return {
@@ -317,7 +326,7 @@ for (const [label, opened, kCount] of [
     return {outpoint: {transactionId: keyHex(`os-k-${opened}-${kCount}-${j}`), index: 0}, value: 200_000_000n, spk: cell.scriptPubKey, daa: 700_000_000n, utxoDaa: 700_000_000n, covenantId: MAINNET_KUSDT_CID, amount: perCell, redeem: cell.redeem};
   });
   rows.push(await auditCase(label, fee => adapter.prepareOperation({
-    action: 'OPEN_SHARD', managerUtxo: mgr, managerCid: MGR_CID, buyerPk: w1.key, qty: 1, price: PRICE,
+    action: 'OPEN_SHARD', managerUtxo: mgr, managerCid: MGR_CID, origin: AUDIT_ORIGIN, buyerPk: w1.key, qty: 1, price: PRICE,
     buyerKasUtxos: [kasUtxo(`os-kas-${opened}-${kCount}`, w1)], buyerKcc20Utxos: kUtxos, kcc20Suffix: KCC20_SUFFIX, changeSpk: w1.spk, fee,
   })));
 }
@@ -347,7 +356,7 @@ for (const [label, rc, kCount] of [
 {
   const mgr0 = makeManagerOpen(0, 0, []);
   rows.push(await auditCase('EMPTY_CLOSE', fee => adapter.prepareOperation({
-    action: 'EMPTY_CLOSE', managerUtxo: mgr0, managerCid: MGR_CID,
+    action: 'EMPTY_CLOSE', managerUtxo: mgr0, managerCid: MGR_CID, origin: AUDIT_ORIGIN,
     fundingUtxos: [kasUtxo('ec-kas', w1)], changeSpk: w1.spk, fee,
   })));
 }
@@ -368,7 +377,7 @@ for (const [label, opened, cursor, k, rc] of [
   const mgr = makeManagerOpen(opened, cursor, openShards);
   const batch = openShards.slice(cursor, cursor + k);
   rows.push(await auditCase(label, fee => adapter.prepareOperation({
-    action: 'COLLECT_BATCH', managerUtxo: mgr, managerCid: MGR_CID, shardUtxos: batch,
+    action: 'COLLECT_BATCH', managerUtxo: mgr, managerCid: MGR_CID, origin: AUDIT_ORIGIN, shardUtxos: batch,
     fundingUtxos: [kasUtxo(`cb-${opened}-${cursor}-${k}-${rc}`, w1)], changeSpk: w1.spk, fee,
   })));
 }

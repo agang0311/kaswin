@@ -224,8 +224,10 @@ export function parseCreate(form: CreateForm,net?: Pick<NetInfo,'addressPrefix'|
     const min=isKusdt?3:(/^[0-9]{1,8}$/.test(form.min)?Number(form.min):NaN);
     const mins=form.dur==='custom'?(/^[0-9]{1,5}$/.test(form.custom)?Number(form.custom):NaN):Number(form.dur);
     const errors: string[]=[];
+    if(isKusdt&&addrPrefix==='kaspatest')errors.push('TN10 测试网不包含主网 kUSDT 代币，请切换到 Rolling v1（TKAS）创建测试轮次。');
     if(price==null)errors.push(`票价需为正整数 ${unit}（不含小数）`);
     else if(isKusdt?price<1_000_000n:price<100000000n)errors.push(`票价至少 1 ${unit}`);
+    else if(isKusdt&&price>500_000_000_000_000_000n)errors.push(`票价不能超过 500,000,000,000 ${unit}`);
     if(!isKusdt&&!(cap>=3&&cap<=MAX_TICKET_CAP))errors.push(`票数上限需在 3 – ${MAX_TICKET_CAP.toLocaleString()} 之间`);
     if(!isKusdt&&!(min>=3&&min<=cap))errors.push('最低票数需 ≥ 3 且不超过票数上限');
     if(!(mins>=1&&mins<=10080))errors.push('封盘等待时间需在 1 分钟 – 7 天之间');
@@ -702,8 +704,8 @@ function kusdtShardActions(live: KusdtLiveState,D: Detail,x: Ctx): Raw|'' {
     <div class="card" style="padding:10px">
       <div class="row small"><strong>分片 #${shortHash(s.shardCid,8,6)}</strong><span class="spacer"></span><span class="badge">${s.stage===0x13?'待派奖':'待退款'}</span></div>
       ${s.stage===0x13?html`<div class="btnrow" style="margin-top:8px">
-        <button type="button" class="btn sm pri" data-kusdt-act="PAYOUT_EXECUTOR" data-shard-cid="${s.shardCid}" ${busy?'disabled':''}>代推派奖（赚 0.5 ${u}）</button>
-        <button type="button" class="btn sm" data-kusdt-act="PAYOUT_SELF" data-shard-cid="${s.shardCid}" ${busy?'disabled':''}>赢家自推</button>
+        ${D.isWinner?html`<button type="button" class="btn sm pri" data-kusdt-act="PAYOUT_SELF" data-shard-cid="${s.shardCid}" ${busy?'disabled':''}>赢家自推（领全额奖金）</button>`:''}
+        <button type="button" class="btn sm ${D.isWinner?'':'pri'}" data-kusdt-act="PAYOUT_EXECUTOR" data-shard-cid="${s.shardCid}" ${busy?'disabled':''}>代推派奖（赚 0.5 ${u}）</button>
       </div>`:''}
       ${s.stage===0x14&&s.records?html`<div style="margin-top:8px;display:grid;gap:6px">${s.records.map((rec,idx)=>{
         const prev=idx===0?0:s.records![idx-1]!.cumTickets,qty=rec.cumTickets-prev,claimed=((s.claimedMask??0)&(1<<idx))!==0;
@@ -731,8 +733,8 @@ function kusdtShardTopAction(live: KusdtLiveState,D: Detail,x: Ctx): Raw|'' {
           return claimed?'':html`<button type="button" class="btn pri block" data-kusdt-act="CLAIM_REFUND" data-shard-cid="${s.shardCid}" data-rec-idx="${idx}" ${canAct?'':'disabled'}>${x.busy?'处理中…':`自助退款 · 领回 ${amt} ${u}（分片 #${shortHash(s.shardCid,6,4)} #${idx+1}）`}</button>`;
         })}
       `:html`<div class="btnrow">
-        <button type="button" class="btn pri" data-kusdt-act="PAYOUT_EXECUTOR" data-shard-cid="${s.shardCid}" ${canAct?'':'disabled'}>${x.busy?'处理中…':`代推派奖（赚 0.5 ${u} · #${shortHash(s.shardCid,6,4)}）`}</button>
-        <button type="button" class="btn" data-kusdt-act="PAYOUT_SELF" data-shard-cid="${s.shardCid}" ${canAct?'':'disabled'}>赢家自推</button>
+        ${D.isWinner?html`<button type="button" class="btn pri" data-kusdt-act="PAYOUT_SELF" data-shard-cid="${s.shardCid}" ${canAct?'':'disabled'}>${x.busy?'处理中…':`赢家自推（领全额奖金 · #${shortHash(s.shardCid,6,4)}）`}</button>`:''}
+        <button type="button" class="btn ${D.isWinner?'':'pri'}" data-kusdt-act="PAYOUT_EXECUTOR" data-shard-cid="${s.shardCid}" ${canAct?'':'disabled'}>${x.busy?'处理中…':`代推派奖（赚 0.5 ${u} · #${shortHash(s.shardCid,6,4)}）`}</button>
       </div>`)}</div>`}
   </div>`;
 }
@@ -1045,6 +1047,7 @@ export function confirmBody(x: ConfirmCtx): Raw {
   const isRefundForOther=p.kusdtAction==='CLAIM_REFUND'&&rv.outputs.some(o=>o.role==='BUYER_REFUND'&&!o.mine);
   const isPayoutSelfForOther=p.kusdtAction==='PAYOUT_SELF'&&rv.outputs.some(o=>o.role==='WINNER'&&!o.mine);
   const winnerOut=p.kusdtAction==='PAYOUT_EXECUTOR'?rv.outputs.find(o=>o.role==='WINNER'&&o.mine&&o.tokenAmount!=null&&o.tokenAmount>0n):undefined;
+  const otherTokenOut=rv.outputs.find(o=>!o.mine&&o.tokenAmount!=null&&o.tokenAmount>0n&&(o.role==='WINNER'||o.role==='BUYER_REFUND'))??null;
   const tokenDelta=(isRefundForOther||isPayoutSelfForOther)?null
     :(rawTokenDelta&&winnerOut?{...rawTokenDelta,amount:rawTokenDelta.amount+(winnerOut.tokenAmount??0n)}:rawTokenDelta);
   const depositDelta=(rv.assetDeltas??[]).find(d=>d.asset.kind==='KAS'&&d.role==='REFUNDABLE_DEPOSIT'&&d.amount<0n)??null;
@@ -1063,7 +1066,7 @@ export function confirmBody(x: ConfirmCtx): Raw {
   };
   const depositHint=p.kusdtAction==='OPEN_SHARD'?'去向：分片账本 2 + 分片金库 2，本片结清全额退回':'去向：轮次总管合约，结算后全额退回';
   const nonRefundHint=p.kusdtAction==='GENESIS'?'去向：索引登记输出（供列表发现）'
-    :p.kusdtAction==='PAYOUT_EXECUTOR'?'去向：中奖者代币细胞载体（1.5 KAS）'
+    :(p.kusdtAction==='PAYOUT_EXECUTOR'||p.kusdtAction==='PAYOUT_SELF')?'去向：中奖者代币细胞载体（1.5 KAS）'
     :p.kusdtAction==='CLAIM_REFUND'?'去向：买家退款代币细胞载体（1.5 KAS）'
     :'去向：外部接收方（不可退）';
   const roleLabelFor=(o: typeof rv.outputs[number]): string=>{
@@ -1088,7 +1091,8 @@ export function confirmBody(x: ConfirmCtx): Raw {
   return html`<p style="margin:0 0 12px;font-weight:600">${x.planText}</p>
     <div class="confirm-summary">
       ${tokenDelta?html`<div class="sum" style="border-top:0"><span class="sum-label"><span>${tokenDelta.amount<0n?'你的 kUSDT 支出':'你的 kUSDT 到账'}</span>${p.kusdtAction&&tokenDest[p.kusdtAction]?html`<span class="sum-hint">${tokenDest[p.kusdtAction]}</span>`:''}</span><span class="mono" style="font-size:16px;color:${tokenDelta.amount<0n?'var(--text)':'var(--kas-ink)'}">${tokenDelta.amount<0n?'-':'+'}${formatKcc20(tokenDelta.amount<0n?-tokenDelta.amount:tokenDelta.amount,tokenDelta.asset.decimals)} ${tokenDelta.asset.symbol}</span></div>`:''}
-      <div class="sum"${tokenDelta?'':html` style="border-top:0"`}><span class="sum-label"><span>${isKusdtTx?`你的 ${u} 净变动`:(pay?'你将支付（含网络费）':'你预计收到')}</span>${isKusdtTx?html`<span class="sum-hint">仅计算你钱包的实际进出，不含合约原有押金滚存</span>`:''}</span><span class="mono" style="font-size:16px;color:${pay?'var(--text)':'var(--kas-ink)'}">${isKusdtTx?netSign:''}${pay?kas(-net):kas(net)} ${u}</span></div>
+      ${otherTokenOut?html`<div class="sum ${tokenDelta?'sum-sub':''}"${tokenDelta?'':html` style="border-top:0"`}><span class="sum-label"><span>${otherTokenOut.role==='WINNER'?'合约派发给中奖者':'合约退回给买家'}</span><span class="sum-hint">${otherTokenOut.role==='WINNER'?'去向：分片金库奖金发给中奖者（非你钱包）':'去向：分片金库票款退回原买家（非你钱包）'}</span></span><span class="mono" style="${tokenDelta?'':'font-size:16px;color:var(--muted)'}">${formatKcc20(otherTokenOut.tokenAmount!,otherTokenOut.tokenDecimals??6)} ${otherTokenOut.tokenSymbol??'kUSDT'}</span></div>`:''}
+      <div class="sum"${tokenDelta||otherTokenOut?'':html` style="border-top:0"`}><span class="sum-label"><span>${isKusdtTx?`你的 ${u} 净变动`:(pay?'你将支付（含网络费）':'你预计收到')}</span>${isKusdtTx?html`<span class="sum-hint">仅计算你钱包的实际进出，不含合约原有押金滚存</span>`:''}</span><span class="mono" style="font-size:16px;color:${pay?'var(--text)':'var(--kas-ink)'}">${isKusdtTx?netSign:''}${pay?kas(-net):kas(net)} ${u}</span></div>
       ${depositDelta?html`<div class="sum sum-sub"><span class="sum-label"><span>其中 · 暂锁可退押金</span><span class="sum-hint">${depositHint}</span></span><span class="mono">-${kas(-depositDelta.amount)} ${u}</span></div>`:''}
       ${returnedDeposit>0n?html`<div class="sum sum-sub"><span class="sum-label"><span>其中 · 合约退回押金</span><span class="sum-hint">去向：原路退回你的钱包</span></span><span class="mono" style="color:var(--kas-ink)">+${kas(returnedDeposit)} ${u}</span></div>`:''}
       ${paidNonRefundable>0n?html`<div class="sum sum-sub"><span class="sum-label"><span>其中 · 不可退支出</span><span class="sum-hint">${nonRefundHint}</span></span><span class="mono">-${kas(paidNonRefundable)} ${u}</span></div>`:''}

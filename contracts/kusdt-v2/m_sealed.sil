@@ -7,7 +7,7 @@ contract KusdtManagerSealed(byte[] initialState) {
     byte[] state = initialState;
     int constant FEE_INPUTS = 9;
     int constant FEE_OUTPUTS = 2;
-    byte[32] constant M_DISPATCH_HASH = byte[32](0xc19b021080e31fd1408bd7aa7455cf11cfd4324d1cae0d94dd8ce6139db00050);
+    byte[32] constant M_DISPATCH_HASH = byte[32](0x529a66a41b1a277e57162d9dadaf3ffe49538b83cfff9adcd874286ed6ba3fba);
     byte[32] constant KEY_CTX = byte[32](0x536571436f6d6d69744d65726765736574436f6e746578740000000000000000);
     byte[32] constant KEY_BRANCH = byte[32](0x536571436f6d6d69746d656e744d65726b6c654272616e636848617368000000);
     // Shared constants and stack-conscious helpers for Kaswin kUSDT v2 (256 parallel shards).

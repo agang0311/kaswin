@@ -9,3 +9,4 @@ declare module '@kaswin/kusdt-v2-profile' {
 }
 declare const __KASWIN_DEFAULT_NET__: 'mainnet' | 'tn10';
 declare const __KASWIN_CD311__: boolean;
+declare const __KASWIN_KASPIRE_WC_INTEGRITY__: string;

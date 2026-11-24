@@ -179,7 +179,7 @@ contract KusdtShardRefund(byte[] initialState) {
             require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, tail))));
             require(OpCovOutputCount(KUSDT_CID) == 2);
             { checkKcc20Output(1, remAmt, selfCid, byte[](0x04), kcc20Suffix, SHARD_VAULT_DEPOSIT, true); }
-            { checkKcc20Output(2, refundAmt, buyerPk, byte[](0x00), kcc20Suffix, 1, false); }
+            { checkKcc20Output(2, refundAmt, buyerPk, byte[](0x00), kcc20Suffix, WINNER_CARRIER_MIN, false); }
             if (tx.outputs.length == 4) {
                 require(OpOutputCovenantId(3) == zero && tx.outputs[3].value > 0 && tx.outputs[3].value <= VALUE_LIMIT);
             }
@@ -190,7 +190,7 @@ contract KusdtShardRefund(byte[] initialState) {
             require(OpAuthOutputCount(0) == 0 && OpCovOutputCount(selfCid) == 0);
             { ordinaryP2PK(0, SHARD_TOTAL_DEPOSIT, pubkey(state.slice(2, 34))); }
             require(OpCovOutputCount(KUSDT_CID) == 1);
-            { checkKcc20Output(1, refundAmt, buyerPk, byte[](0x00), kcc20Suffix, 1, false); }
+            { checkKcc20Output(1, refundAmt, buyerPk, byte[](0x00), kcc20Suffix, WINNER_CARRIER_MIN, false); }
             if (tx.outputs.length == 3) {
                 require(OpOutputCovenantId(2) == zero && tx.outputs[2].value > 0 && tx.outputs[2].value <= VALUE_LIMIT);
             }

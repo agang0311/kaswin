@@ -6,7 +6,7 @@ contract KusdtManagerDispatch(byte[] initialState) {
     int constant FEE_INPUTS = 17;
     int constant FEE_OUTPUTS = 10;
     byte[32] constant S_PAYOUT_HASH = byte[32](0xd9c495e42d7730616441e05335ab8e30a742e7004e67f467ad4498111452e950);
-    byte[32] constant S_REFUND_HASH = byte[32](0x63f0f28aee985e1b3393c3722de1cbf1c4bec8eb565de75ee5125165c9a79983);
+    byte[32] constant S_REFUND_HASH = byte[32](0xadf4eb35939f240a77de7f7ac0700b9116dca627452056523b8c63e2fd63cf16);
     // Shared constants and stack-conscious helpers for Kaswin kUSDT v2 (256 parallel shards).
     // SilverScript 1.0.1 inlines every function and retains locals until the enclosing block ends (244-item stack limit).
     // Call multi-local helpers inside dedicated `{ }` blocks and avoid helper calls inside unrolled loops.

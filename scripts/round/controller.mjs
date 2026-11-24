@@ -387,7 +387,13 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       const text=await roundStore.getPreview?.(cid).catch(()=>null);
       if(typeof text!=='string')return null;
       try{
-        const r=defaultAdapter.roundFromText(text,{network:net.networkId});
+        let adapter=defaultAdapter;
+        try{
+          const peek=JSON.parse(text);
+          if(peek?.profileId&&protocolRegistry.get(peek.profileId))adapter=protocolRegistry.get(peek.profileId);
+          else if(peek?.protocol==='kusdt-v2'||peek?.kusdt)adapter=protocolRegistry.getById('kusdt-v2')??defaultAdapter;
+        }catch{}
+        const r=adapter.roundFromText(text,{network:net.networkId});
         return r.cid===cid&&!r.intent&&!r.pending?.length?r:null;
       }catch{return null;}
     },
@@ -602,8 +608,8 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       }
       const adapter=adapterFor(round?.profileId??op.profileId);
       if(typeof adapter.prepareForController==='function'){
-        const feerate=await nodeFeeRate(c.rpc);
-        const prepared=await adapter.prepareForController({rpc:c.rpc,indexer:c.indexer,round,choice:op,wallet,feerate,net,fetcher});
+        const [reserved,feerate]=await Promise.all([roundStore.reserved(),nodeFeeRate(c.rpc)]);
+        const prepared=await adapter.prepareForController({rpc:c.rpc,indexer:c.indexer,round,choice:op,wallet,feerate,reserved,net,fetcher});
         check(walletValid(wallet,epoch),'WALLET_CHANGED');
         c.prepared={...prepared,op,profileId:adapter.profileId,walletAddress:wallet.address,walletEpoch:epoch,preparedAt:now(),settings:op.settings??null,cid:prepared.roundCid};
         log('info',`草案已生成：${prepared.review.txid}（手续费 ${prepared.fee} sompi，费率 ${feerate} sompi/克）。请复核后再签名发送。`);
@@ -650,6 +656,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
           shardCid:p.shardCid??p.op?.shardCid??null,
           recordIndex:kusdtAct==='OPEN_SHARD'?0:(kusdtAct==='BUY'&&Array.isArray(p.shardState?.records)?p.shardState.records.length-1:null),
           recIdx:kusdtAct==='CLAIM_REFUND'&&p.op?.recIdx!=null?Number(p.op.recIdx):null,
+          proof:p.passAProof??null,
           drawResult:p.drawResult??null,
         };
         if(p.op.action==='GENESIS'){
@@ -666,13 +673,26 @@ export function createController({profile,registry=null,roundStore,connect=(urls
         }else await mutate(p.cid,r=>{check(!r.intent&&(r.manager||['PAYOUT_EXECUTOR','PAYOUT_SELF','CLAIM_REFUND'].includes(intent.action)),'INTENT_UNRESOLVED_REPLACEMENT_BLOCKED');r.intent=intent;return r;});
         let status;
         try{
-          await c.rpc.call('submitTransaction',{transaction:txToRpc(signed.transaction),allowOrphan:false});
+          if(typeof adapter.submitIntent==='function'){
+            await adapter.submitIntent(c.rpc,intent,{beforeSend:()=>check(walletValid(wallet,epoch),'WALLET_CHANGED'),network:net.networkId});
+          }else{
+            let sent=false;
+            try{
+              await c.rpc.call('submitTransaction',{transaction:txToRpc(signed.transaction),allowOrphan:false},30000,{beforeSend:()=>{check(walletValid(wallet,epoch),'WALLET_CHANGED');sent=true;}});
+            }catch(e){if(e&&typeof e==='object')e.submissionAttempted=sent;throw e;}
+          }
           status='SUBMITTED';log('info',`已提交 ${intent.txid}`);
         }catch(e){
           status=statusAfterFailure(e);
-          if(status==='REJECTED')intent.nodeError=String(e?.message??'').slice(0,600);
+          if(status==='REJECTED'){
+            intent.nodeError=String(e?.message??'').slice(0,600);
+            const k=classifyRejection(intent);
+            if(k.kind==='FUNDS_INPUT')log('warn',`钱包的资金/代币输入 ${k.outpoint.slice(0,12)}… 已被节点内存池里的另一笔交易 ${k.spender.slice(0,12)}… 占用；这笔没有被节点收下`);
+            else if(k.kind==='ROUND_INPUT')log('warn',`这一轮的合约输出已被另一笔未确认交易 ${k.spender.slice(0,12)}… 占用（别人先操作了这一轮）；这笔没有被节点收下`);
+            else if(k.kind==='ORPHAN')log('warn','节点找不到这笔交易依赖的上一笔交易（尚未传到该节点）；这笔没有被节点收下');
+          }
           intent.errorCode=codeOf(e);
-          log('error',`提交失败：${codeOf(e)}（状态 ${status}）`);
+          log('error',`提交${status==='UNSENT'?'未发出':status==='REJECTED'?'被节点拒绝':'结果未知'}：${codeOf(e)}（状态 ${status}）`);
         }
         await setIntentStatus(p.cid,intent,status);
         return status;
@@ -745,7 +765,27 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     async discard(cid,{force=false}={}) {return guard('放弃意图',async()=>{
       need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),i=need(cur.round.intent,'NO_PENDING_INTENT');
       if(adapterFor(cur.round.profileId).id!=='rolling-v1'){
+        const settled=['REJECTED','UNSENT'].includes(i.status);
+        check(settled||['SUBMITTED','UNKNOWN','PREPARED'].includes(i.status),'DISCARD_NOT_ALLOWED');
+        const probe=(i.draft?.inputUtxos??[]).map(u=>({...u,daa:u.utxoDaa??u.daa}));
+        const states=probe.length?await inputsState(c.rpc,probe):[];
+        let gone=0;
+        states.forEach(({utxo:u},n)=>{
+          if(!u){gone++;return;}
+          if(!sameInput(u,probe[n],{allowDaaDrift:true}))throw Object.assign(new Error('STALE_INPUT'),{code:'STALE_INPUT',safeCode:'STALE_INPUT'});
+        });
+        check(!await mempoolEntry(c.rpc,i.txid),'INTENT_IN_MEMPOOL');
+        if(!settled){
+          const adapter=adapterFor(cur.round.profileId);
+          if(typeof adapter.trackRoundIntent==='function'){
+            const chk=await adapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover:false,net,fetcher});
+            check(!chk.accepted,'INTENT_ACCEPTANCE_UNRESOLVED');
+          }
+          check(gone>0,'INTENT_INPUTS_STILL_LIVE');
+          check(now()-(i.createdAtMs??now())>=LOST_GRACE_MS,'INTENT_TOO_RECENT');
+        }
         await mutate(cid,x=>(!x.kusdt?.nodeVerified&&x.receipts?.length<=1&&i.action==='GENESIS')?null:{...x,intent:null});
+        log(gone?'warn':'info',gone?'已放弃：有输入已被其他交易花费，本地状态已过期，请刷新状态。':'已放弃被拒绝/未发送的意图');
         return;
       }
       const settled=['REJECTED','UNSENT'].includes(i.status);
@@ -869,12 +909,17 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     exportText(cid) {return (async()=>{const r=cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND');return adapterFor(r.profileId).roundToText(r);})();},
     /** Import = data only. Never authenticated until prepare() verifies the live UTXOs; a local pending intent is never overwritten. */
     async importText(text) {return guard('导入',async()=>{
-      const adapter=defaultAdapter;
+      let adapter=defaultAdapter;
+      try{
+        const peek=JSON.parse(text);
+        if(peek?.profileId&&protocolRegistry.get(peek.profileId))adapter=protocolRegistry.get(peek.profileId);
+        else if(peek?.protocol==='kusdt-v2'||peek?.kusdt)adapter=protocolRegistry.getById('kusdt-v2')??defaultAdapter;
+      }catch{}
       const r=adapter.roundFromText(text,{network:net.networkId});
-      if(r.intent)await adapter.authenticateIntent(r.intent,{network:net.networkId});
-      for(const p of r.pending??[])await adapter.authenticateIntent(p.intent,{network:net.networkId});   // candidates are re-verified from this record later: authenticate them like the live intent
+      if(r.intent&&typeof adapter.authenticateIntent==='function')await adapter.authenticateIntent(r.intent,{network:net.networkId});
+      for(const p of r.pending??[])if(typeof adapter.authenticateIntent==='function')await adapter.authenticateIntent(p.intent,{network:net.networkId});   // candidates are re-verified from this record later: authenticate them like the live intent
       const cur=await roundStore.get(r.cid);
-      if(cur){check(!cur.round.intent||(r.intent&&cur.round.intent.wireDigest===r.intent.wireDigest),'IMPORT_WOULD_REPLACE_LOCAL_INTENT');await roundStore.replace(r,cur.revision);}
+      if(cur){check(!cur.round.intent||(r.intent&&cur.round.intent.wireDigest&&cur.round.intent.wireDigest===r.intent.wireDigest),'IMPORT_WOULD_REPLACE_LOCAL_INTENT');await roundStore.replace(r,cur.revision);}
       else await roundStore.create(r);
       log('info',`已导入 round ${r.cid.slice(0,16)}…（未认证：准备交易前会核对链上 UTXO）`);return r.cid;});},
     close() {watchedCid=null;teardownWatch({unsubscribe:false});c.rpc?.close();replaceWallet(null);c.rpc=null;c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discovered=[];c.discoveredSource=null;indexChecks.clear();},
