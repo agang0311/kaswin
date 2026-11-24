@@ -8,6 +8,7 @@
  *    selected chain, same draft). A reorg that moves it is recorded (same signed bytes re-accepted); a candidate that is neither accepted nor in the
  *    mempool halts the round (fail closed). */
 import {mempoolEntry,inputsState,sameInput} from '../chain/chain.mjs';
+import {txToRpc} from '../chain/nodes.mjs';
 import {check} from '../core.mjs';
 import {outpointKey} from '../core/lib/transaction.js';
 import {emptyRound,advanceRound,settleCandidate,moveCandidate,availableActions,describeRound,roundToText,roundFromText,validateRound} from './round.mjs';
@@ -15,7 +16,7 @@ import {authenticateIntent,submitIntent,statusAfterFailure,checkAcceptance,reche
 import {prepareOperation,nodeFeeRate,liveRound,connectNetwork,signAndRecord} from './prepare.mjs';
 import {classifyRejection} from '../tracking/conflict.mjs';
 import {spkToAddress} from '../wallet/address.mjs';
-import {openMemoryWallet,publicRecipient} from '../wallet/wallet.mjs';
+import {openMemoryWallet,publicRecipient,verifyOrdinarySignatures} from '../wallet/wallet.mjs';
 import {openExtensionWallet} from '../wallet/extension-wallet.mjs';
 import {openKaspireWallet} from '../wallet/kaspire-wallet.mjs';
 import {createIndexerClient,materializeIndexedDocument} from './indexer-client.mjs';
@@ -36,7 +37,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     const pid=typeof target==='string'?target:(target?.profileId??defaultAdapter.profileId);
     return protocolRegistry.require(pid);
   };
-  const c={rpc:null,indexer:null,indexerInfo:null,indexerCursor:null,discovered:[],discoveredSource:null,discoveredCachedAt:null,watchedAddress:null,lastSynced:null,wallet:null,prepared:null,busy:false,busyLabel:null,logs:[]},listeners=new Set();
+  const c={rpc:null,indexer:null,indexerInfo:null,indexerCursor:null,discovered:[],discoveredSource:null,discoveredCachedAt:null,watchedAddress:null,watchedAddresses:[],lastSynced:null,wallet:null,prepared:null,busy:false,busyLabel:null,logs:[]},listeners=new Set();
   let cachedOrigin=null,api=null;
   const applyCachedDiscovery=snap=>{
     if(!snap||typeof snap!=='object')return false;
@@ -47,8 +48,14 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     cachedOrigin=snap.origin==='rest'?'rest':'indexer';
     return true;
   };
+  const mergeLocalDiscovered=rounds=>{
+    const seen=new Set(rounds.map(r=>r.cid));
+    const cutoff=now()-180_000;
+    const recentLocal=c.discovered.filter(r=>!seen.has(r.cid)&&r.protocolId==='kusdt-v2'&&typeof r.updatedAt==='number'&&r.updatedAt>=cutoff);
+    return recentLocal.length?[...recentLocal,...rounds]:rounds;
+  };
   const persistDiscovery=(rounds,origin,base='',{temporaryFallback=false}={})=>{
-    const clean=sanitizeDiscoveredRounds(rounds),savedAt=now();
+    const clean=sanitizeDiscoveredRounds(mergeLocalDiscovered(rounds)),savedAt=now();
     if(!(temporaryFallback&&cachedOrigin==='indexer')){
       cachedOrigin=origin==='rest'?'rest':'indexer';
       void roundStore.writeDiscovery?.({rounds:clean,origin:cachedOrigin,base,savedAt});
@@ -62,17 +69,18 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     return op&&typeof op.transactionId==='string'&&op.index!=null?`${op.transactionId}:${Number(op.index)}`:null;
   };
   let watchedCid=null,watchSeq=0,watchTimer=null,watchQueue=Promise.resolve();
-  let activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+  let activeWatch={rpc:null,addresses:[],tipKeys:new Set(),mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
   const wakeRetries=new Map();
   const teardownWatch=({unsubscribe=true}={})=>{
     if(watchTimer){clearTimeout(watchTimer);watchTimer=null;}
     const prev=activeWatch;
-    activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+    activeWatch={rpc:null,addresses:[],tipKeys:new Set(),mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
     c.watchedAddress=null;
+    c.watchedAddresses=[];
     try{prev.offUtxos?.();}catch{}
     try{prev.offDisconnect?.();}catch{}
-    if(unsubscribe&&prev.rpc&&prev.address&&typeof prev.rpc.subscribe==='function'){
-      void prev.rpc.subscribe([prev.address],false).catch(()=>{});
+    if(unsubscribe&&prev.rpc&&prev.addresses.length&&typeof prev.rpc.subscribe==='function'){
+      void prev.rpc.subscribe(prev.addresses,false).catch(()=>{});
     }
   };
   const activeRoundSyncs=new Set();
@@ -115,71 +123,100 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     const cur=await roundStore.get(cid).catch(()=>null);
     if(seq!==watchSeq||watchedCid!==cid||c.rpc!==rpc)return;
     if(!cur||cur.round.terminal||cur.round.halted){teardownWatch();return;}
-    let targetAddr=null,targetTipKey=null,mode=null;
-    if(cur.round.manager){
-      targetAddr=spkToAddress(cur.round.manager.spk,net.addressPrefix);
-      targetTipKey=outpointKey(cur.round.manager.outpoint);
-      mode='manager';
-    }else if(cur.round.step===0&&cur.round.intent?.draft?.transaction?.outputs?.[0]?.scriptPublicKey){
-      targetAddr=spkToAddress(cur.round.intent.draft.transaction.outputs[0].scriptPublicKey,net.addressPrefix);
-      mode='genesis';
+    const adapter=adapterFor(cur.round.profileId);
+    let target=null;
+    if(typeof adapter.watchTargets==='function'){
+      target=adapter.watchTargets(cur.round,net.addressPrefix);
+    }else if(cur.round.manager&&cur.round.intent?.action!=='GENESIS'){
+      const addr=spkToAddress(cur.round.manager.spk,net.addressPrefix);
+      const tk=outpointKey(cur.round.manager.outpoint);
+      target={mode:'manager',addresses:[addr],tipKeys:tk?[tk]:[]};
+    }else if((cur.round.step===0||cur.round.intent?.action==='GENESIS')&&(cur.round.manager?.spk||cur.round.intent?.draft?.transaction?.outputs?.[0]?.scriptPublicKey)){
+      const addr=spkToAddress(cur.round.manager?.spk??cur.round.intent.draft.transaction.outputs[0].scriptPublicKey,net.addressPrefix);
+      target={mode:'genesis',addresses:[addr],tipKeys:[]};
     }
-    if(!targetAddr){teardownWatch();return;}
-    if(activeWatch.rpc===rpc&&activeWatch.address===targetAddr){
-      activeWatch.tipKey=targetTipKey;activeWatch.mode=mode;
+    const nextAddrs=[...new Set((target?.addresses??[]).filter(Boolean))];
+    if(!nextAddrs.length){teardownWatch();return;}
+    const nextTipKeys=new Set((target?.tipKeys??[]).filter(Boolean));
+    const mode=target.mode;
+    const primaryAddr=nextAddrs[0];
+    const primaryTipKey=target.tipKeys?.[0]??null;
+    const sameAddrs=activeWatch.rpc===rpc
+      &&activeWatch.addresses.length===nextAddrs.length
+      &&activeWatch.addresses.every((a,i)=>a===nextAddrs[i]);
+    if(sameAddrs){
+      activeWatch.tipKeys=nextTipKeys;activeWatch.mode=mode;
       if(activeWatch.pendingWake&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy){
         activeWatch.pendingWake=false;
-        wakeWatchedRound(cid,targetTipKey??targetAddr,20);
+        wakeWatchedRound(cid,primaryTipKey??primaryAddr,20);
       }
       return;
     }
     const prev=activeWatch;
+    const prevSet=prev.rpc===rpc?new Set(prev.addresses):new Set();
+    const nextSet=new Set(nextAddrs);
+    const toAdd=nextAddrs.filter(a=>!prevSet.has(a));
+    const toRemove=prev.rpc===rpc?prev.addresses.filter(a=>!nextSet.has(a)):[];
     try{prev.offUtxos?.();}catch{}
     try{prev.offDisconnect?.();}catch{}
+    if(prev.rpc&&prev.rpc!==rpc&&prev.addresses.length&&typeof prev.rpc.subscribe==='function'){
+      void prev.rpc.subscribe(prev.addresses,false).catch(()=>{});
+    }
     const offUtxos=rpc.on('utxos',({added=[],removed=[]}={})=>{
       if(activeWatch.rpc!==rpc||watchedCid!==cid)return;
       if(activeWatch.mode==='manager'){
-        const hit=removed.some(e=>outpointFromEntry(e)===activeWatch.tipKey||e?.address===activeWatch.address);
-        if(hit)wakeWatchedRound(cid,activeWatch.tipKey??activeWatch.address);
+        const addrSet=new Set(activeWatch.addresses);
+        const matched=removed.find(e=>{
+          const op=outpointFromEntry(e);
+          return (op&&activeWatch.tipKeys.has(op))||(e?.address&&addrSet.has(e.address));
+        });
+        if(matched){
+          const key=outpointFromEntry(matched)??matched?.address??activeWatch.addresses[0];
+          wakeWatchedRound(cid,key);
+        }
       }else if(activeWatch.mode==='genesis'){
-        const hit=added.some(e=>e?.address===activeWatch.address||!e?.address);
-        if(hit)wakeWatchedRound(cid,`genesis:${activeWatch.address}`);
+        const addrSet=new Set(activeWatch.addresses);
+        const hit=added.some(e=>(e?.address&&addrSet.has(e.address))||!e?.address);
+        if(hit)wakeWatchedRound(cid,`genesis:${activeWatch.addresses[0]}`);
       }
     });
     const offDisconnect=rpc.on('disconnect',()=>{
       if(activeWatch.rpc===rpc)teardownWatch({unsubscribe:false});
     });
     try{
-      await rpc.subscribe([targetAddr],true);
+      if(toAdd.length)await rpc.subscribe(toAdd,true);
     }catch{
       try{offUtxos?.();}catch{}
       try{offDisconnect?.();}catch{}
-      if(prev.rpc===rpc&&prev.address)void prev.rpc.subscribe([prev.address],false).catch(()=>{});
-      activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+      if(prev.rpc===rpc&&prev.addresses.length)void prev.rpc.subscribe(prev.addresses,false).catch(()=>{});
+      activeWatch={rpc:null,addresses:[],tipKeys:new Set(),mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
       c.watchedAddress=null;
+      c.watchedAddresses=[];
       return;
     }
     if(seq!==watchSeq||watchedCid!==cid||c.rpc!==rpc){
       try{offUtxos?.();}catch{}
       try{offDisconnect?.();}catch{}
-      void rpc.subscribe([targetAddr],false).catch(()=>{});
-      if(prev.rpc===rpc&&prev.address&&prev.address!==targetAddr)void prev.rpc.subscribe([prev.address],false).catch(()=>{});
-      activeWatch={rpc:null,address:null,tipKey:null,mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
+      if(toAdd.length)void rpc.subscribe(toAdd,false).catch(()=>{});
+      if(prev.rpc===rpc&&prev.addresses.length)void prev.rpc.subscribe(prev.addresses,false).catch(()=>{});
+      activeWatch={rpc:null,addresses:[],tipKeys:new Set(),mode:null,pendingWake:false,offUtxos:null,offDisconnect:null};
       c.watchedAddress=null;
+      c.watchedAddresses=[];
       return;
     }
-    activeWatch={rpc,address:targetAddr,tipKey:targetTipKey,mode,pendingWake:false,offUtxos,offDisconnect};
-    c.watchedAddress=targetAddr;
-    if(prev.rpc===rpc&&prev.address&&prev.address!==targetAddr){
-      void prev.rpc.subscribe([prev.address],false).catch(()=>{});
+    activeWatch={rpc,addresses:nextAddrs,tipKeys:nextTipKeys,mode,pendingWake:false,offUtxos,offDisconnect};
+    c.watchedAddress=primaryAddr;
+    c.watchedAddresses=[...nextAddrs];
+    if(toRemove.length){
+      void rpc.subscribe(toRemove,false).catch(()=>{});
     }
     // KCI subscribe-first gap check: verify the manager UTXO is still live AFTER the subscription took effect.
-    if(mode==='manager'&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy){
+    if(mode==='manager'&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy&&adapter.id==='rolling-v1'){
       try{
         await liveRound(rpc,cur.round,profile,{targets:[]});
       }catch(e){
-        if(codeOf(e)==='STALE_INPUT'&&watchedCid===cid&&c.rpc===rpc&&activeWatch.address===targetAddr){
-          wakeWatchedRound(cid,targetTipKey??targetAddr,20);
+        if(codeOf(e)==='STALE_INPUT'&&watchedCid===cid&&c.rpc===rpc&&activeWatch.addresses[0]===primaryAddr){
+          wakeWatchedRound(cid,primaryTipKey??primaryAddr,20);
         }
       }
     }
@@ -225,7 +262,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
   }
   async function setIntentStatus(cid,intent,status) {
     if(status==='UNSENT') { // never handed to the transport: safe to drop; the next prepare starts from scratch
-      await mutate(cid,r=>(r.step===0&&!r.manager)?null:{...r,intent:null});return;}
+      await mutate(cid,r=>(r.step===0&&(!r.manager||(r.kusdt&&!r.kusdt.nodeVerified&&r.intent?.action==='GENESIS')))?null:{...r,intent:null});return;}
     await mutate(cid,r=>({...r,intent:{...r.intent,status,errorCode:intent.errorCode??null,nodeError:intent.nodeError??null}}));
   }
   /** One pass over a round's candidates: promote (>=100 DAA deep), follow a reorg, or halt the round when one was lost. */
@@ -285,9 +322,9 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     async checkIndexer(base) {
       const epoch=++indexerEpoch;
       if(!String(base).trim()){indexChecks.clear();c.indexer=null;c.indexerInfo=null;c.indexerCursor=null;c.discoveredSource=c.discovered.length?'cache':null;emit();return null;}
-      const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher,networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id});
+      const client=createIndexerClient({baseUrl:base,fetchImpl:fetcher,networkId:net.networkId,genesisHash:net.genesis,profileId:profile.id,profileIds:protocolRegistry.profileIds()});
       try {
-        const infoPromise=client.info(),roundsPromise=client.rounds();
+        const infoPromise=client.info(),roundsPromise=client.rounds({limit:100});
         roundsPromise.catch(()=>{});
         const info=await infoPromise;
         if(epoch!==indexerEpoch)return info;
@@ -309,7 +346,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       const client=c.indexer;
       if(client){
         try{
-          const [info,page]=await Promise.all([c.indexerInfo?Promise.resolve(c.indexerInfo):client.info(),client.rounds()]);
+          const [info,page]=await Promise.all([c.indexerInfo?Promise.resolve(c.indexerInfo):client.info(),client.rounds({limit:100})]);
           return await guard('更新索引列表',async()=>{check(c.indexer===client,'INDEXER_CONNECTION_CHANGED');const rounds=persistDiscovery(page.rounds,'indexer',client.base);c.indexerInfo=info;c.indexerCursor=page.nextCursor;c.discovered=rounds;c.discoveredSource='indexer';c.discoveredCachedAt=null;emit();return page;},{readKey:'indexer:list:apply'});
         }catch(e){
           if(c.indexer===client)c.indexerInfo={...c.indexerInfo,stale:true};
@@ -394,9 +431,37 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       try{
       const rpc=need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const initial=await roundStore.get(input);
-      if(initial?.round.terminal&&(initial.round.terminal==='EMPTY'||initial.round.history))return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
+      if(initial?.round.terminal&&!initial.round.kusdt&&(initial.round.terminal==='EMPTY'||initial.round.history))return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
       if(c.prepared?.cid===input||initial&&(initial.round.intent||(!allowHalted&&initial.round.halted)))return {cid:input,skipped:'LOCAL_PENDING'};
       const client=c.indexer;
+      const discEntry=c.discovered.find(d=>d.cid===input);
+      let protoAdapter=initial?.round.profileId
+        ?adapterFor(initial.round.profileId)
+        :(initial?.round.kusdt
+          ?protocolRegistry.getById('kusdt-v2')
+          :(discEntry?.profileId
+            ?adapterFor(discEntry.profileId)
+            :(discEntry?.protocolId?protocolRegistry.getById(discEntry.protocolId):null)));
+      if((!protoAdapter||protoAdapter.id==='rolling-v1')&&!initial&&!discEntry&&client&&/^[0-9a-f]{64}$/.test(input)){
+        try{const det=await client.roundDetail(input);if(det?.profileId&&protocolRegistry.has(det.profileId))protoAdapter=adapterFor(det.profileId);}catch{}
+      }
+      if(protoAdapter&&protoAdapter.id!=='rolling-v1'&&typeof protoAdapter.syncRound==='function'){
+        const synced=await protoAdapter.syncRound({rpc,indexer:client,round:initial?.round??null,cid:input,net,fetcher});
+        const nextRound=synced.round;
+        const sigOfProto=r=>r?`${r.terminal??''}|${r.manager?.outpoint?.transactionId??''}:${r.manager?.outpoint?.index??''}|${r.accepting??''}|${r.draw?`${r.draw.txid}:${r.draw.shard}:${r.draw.record}:${r.draw.ticket}`:''}|${r.kusdt?.stage??''}|${r.kusdt?.totalTickets??0}|${r.kusdt?.openedCount??0}|${r.kusdt?.cursor??0}|${(r.receipts??[]).map(t=>`${t.txid}:${t.action}:${t.finalized===false?0:1}:${t.feeSompi??''}:${t.shardCid??''}:${t.recordIndex??''}:${t.recIdx??''}:${t.acceptingBlock??''}`).join(';')}|${!!r.kusdt?.nodeVerified}|${(r.kusdt?.shards??[]).map(s=>`${s.shardCid}:${s.outpoint?.transactionId??''}:${s.outpoint?.index??''}:${s.stage??0}:${s.tickets??0}:${s.terminal?1:0}:${s.claimedMask??0}:${s.records?.length??0}:${s.frozenRedeem?1:0}`).join(',')}`:'';
+        const prevSig=sigOfProto(initial?.round??null);
+        const nextSig=sigOfProto(nextRound);
+        const unchanged=!!initial&&prevSig===nextSig;
+        if(!unchanged){
+          if(initial)await roundStore.replace(nextRound,initial.revision);
+          else await roundStore.create(nextRound);
+        }
+        if(nextRound.terminal||nextRound.kusdt?.nodeVerified){
+          c.lastSynced={cid:nextRound.cid,nodeUrl:rpc.url??'',managerOutpoint:nextRound.manager?`${nextRound.manager.outpoint.transactionId}:${nextRound.manager.outpoint.index}`:'-',step:nextRound.step,frozen:0,at:now()};
+        }
+        if(!unchanged)emit();
+        return {cid:nextRound.cid,unchanged,partial:!!synced.partial,source:synced.source??'node',steps:0,terminal:nextRound.terminal};
+      }
       const markSynced=r=>{
         c.lastSynced={cid:r.cid,nodeUrl:rpc.url??'',managerOutpoint:r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',step:r.step,frozen:r.frozen.length,at:now()};
       };
@@ -494,7 +559,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       };
       wallet=id==='kaspire'
         ?await openKaspireWallet({...opts,net,onInvalidate,onLog:msg=>log('info',msg)})
-        :await openExtensionWallet(id,{globals:opts.globals??globalThis,net,onInvalidate});
+        :await openExtensionWallet(id,{globals:opts.globals??globalThis,net,onInvalidate,signal:opts.signal??null,...(opts.connectTimeoutMs!=null?{connectTimeoutMs:opts.connectTimeoutMs}:{})});
       check(!wallet.closed,'WALLET_CHANGED');replaceWallet(wallet);
       log('info',`${wallet.name} 已连接：${wallet.address}（${net.networkId}）`);return wallet.address;
     });},
@@ -503,6 +568,10 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     async describe(cid) {
       const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),r=cur.round;
       const daa=c.rpc?await c.rpc.currentDaa().catch(()=>null):null;
+      const adapter=adapterFor(r.profileId);
+      if(adapter.id!=='rolling-v1'&&typeof adapter.describeRound==='function'&&typeof adapter.uiActions==='function'){
+        return {round:r,facts:adapter.describeRound(r,daa),actions:adapter.uiActions(r,daa),daa};
+      }
       return {round:r,facts:describeRound(r,profile,daa??undefined),actions:availableActions(r,profile,daa??r.manager?.currentDaa??0n),daa};
     },
     /** choice: {action, quantity?:string|number, settings?:{ticketPrice:'1',ticketCap,minTickets,closeMinutes}} */
@@ -512,9 +581,16 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       const wallet=c.wallet,epoch=walletEpoch;
       if(FUNDED.has(choice.action))check(wallet.kind==='key'||wallet.kind==='extension','WALLET_KEY_REQUIRED');
       let round=null,op={...choice};
+      const initAdapter=choice.action==='GENESIS'?adapterFor(op.profileId):null;
       if(choice.action==='GENESIS') {
         const st=choice.settings,daa=await c.rpc.currentDaa();
-        op.settings={ticketPrice:parseTkas(String(st.ticketPrice)),ticketCap:Number(st.ticketCap),minTickets:Number(st.minTickets),
+        const decimals=initAdapter?.id==='kusdt-v2'?6:8;
+        const rawPrice=String(st.ticketPrice).trim();
+        const priceVal=decimals===8?parseTkas(rawPrice):(()=>{
+          const [w='0',f='']=rawPrice.split('.');
+          return BigInt(w)*(10n**BigInt(decimals))+BigInt((f+'0'.repeat(decimals)).slice(0,decimals));
+        })();
+        op.settings={ticketPrice:priceVal,ticketCap:Number(st.ticketCap),minTickets:Number(st.minTickets),
           closeEligibleDaa:daa+parseUint(String(st.closeMinutes))*600n};
         check(Number.isSafeInteger(op.settings.ticketCap)&&Number.isSafeInteger(op.settings.minTickets),'SETTINGS');
       } else {
@@ -524,11 +600,19 @@ export function createController({profile,registry=null,roundStore,connect=(urls
         check(!round.halted,'ROUND_HALTED');
         if(choice.action==='BUY'){const q=Number(choice.quantity);check(Number.isSafeInteger(q)&&q>=1,'QUANTITY');op.quantity=q;}
       }
+      const adapter=adapterFor(round?.profileId??op.profileId);
+      if(typeof adapter.prepareForController==='function'){
+        const feerate=await nodeFeeRate(c.rpc);
+        const prepared=await adapter.prepareForController({rpc:c.rpc,indexer:c.indexer,round,choice:op,wallet,feerate,net,fetcher});
+        check(walletValid(wallet,epoch),'WALLET_CHANGED');
+        c.prepared={...prepared,op,profileId:adapter.profileId,walletAddress:wallet.address,walletEpoch:epoch,preparedAt:now(),settings:op.settings??null,cid:prepared.roundCid};
+        log('info',`草案已生成：${prepared.review.txid}（手续费 ${prepared.fee} sompi，费率 ${feerate} sompi/克）。请复核后再签名发送。`);
+        return c.prepared;
+      }
       const [reserved,feerate]=await Promise.all([roundStore.reserved(),nodeFeeRate(c.rpc)]);
       // Zero-depth chaining: the node's UTXO view can lag the accepting block for a moment. Only when this round has unverified
       // candidates, wait briefly (never build on guesses); everything else fails immediately.
       const lag=(round?.pending?.length??0)>0;let prepared;
-      const adapter=adapterFor(round?.profileId??op.profileId);
       for(let attempt=0;;attempt++) {
         try{prepared=await adapter.prepareOperation({rpc:c.rpc,round,choice:op,wallet,feerate,reserved,net});break;}
         catch(e){
@@ -547,6 +631,52 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       need(wallet&&wallet.address===p.walletAddress&&walletValid(wallet,epoch)&&p.walletEpoch===epoch,'WALLET_REQUIRED');
       const adapter=adapterFor(p.profileId);
       log('info',`正在请求 ${wallet.name??'钱包'} 签名 ${p.op.action}…`);
+      if(adapter.id!=='rolling-v1'){
+        const signed=await adapter.signAndRecord({wallet,prepared:p,signal});
+        c.prepared=null;
+        check(walletValid(wallet,epoch),'WALLET_CHANGED');
+        onSigned();
+        const kusdtAct=p.kusdtAction??p.op.action;
+        const intent={
+          status:'PREPARED',
+          action:kusdtAct,
+          txid:signed.txid,
+          profileId:adapter.profileId,
+          draft:signed.draft,
+          createdAtMs:now(),
+          nextManagerState:p.managerState??null,
+          nextShardState:p.shardState??null,
+          nextShardStates:p.shardStates??null,
+          shardCid:p.shardCid??p.op?.shardCid??null,
+          recordIndex:kusdtAct==='OPEN_SHARD'?0:(kusdtAct==='BUY'&&Array.isArray(p.shardState?.records)?p.shardState.records.length-1:null),
+          recIdx:kusdtAct==='CLAIM_REFUND'&&p.op?.recIdx!=null?Number(p.op.recIdx):null,
+          drawResult:p.drawResult??null,
+        };
+        if(p.op.action==='GENESIS'){
+          const mgrSpk=p.transaction?.outputs?.[0]?.scriptPublicKey??null;
+          const r={
+            cid:p.cid,profileId:adapter.profileId,source:'created',terminal:null,halted:null,intent,
+            manager:p.managerRedeem&&mgrSpk?{outpoint:{transactionId:signed.txid,index:0},value:400_000_000n,spk:mgrSpk,utxoDaa:0n,daaScore:0n,covenantId:p.cid,redeemScript:p.managerRedeem}:null,
+            frozen:[],receipts:[{action:'GENESIS',txid:signed.txid,feeSompi:String(p.fee??0),finalized:false}],pending:[],fees:BigInt(p.fee??0),
+            origin:p.transaction?.inputs?.[0]?.previousOutpoint??null,
+            settings:{...p.settings,closeDaa:p.settings.closeEligibleDaa,creatorPk:wallet.key},bought:0,step:0,
+            kusdt:{stage:1,price:p.settings.ticketPrice,closeDaa:p.settings.closeEligibleDaa,openedCount:0,cursor:0,totalTickets:0,decision:0,creatorPk:wallet.key,winnerPk:null,nodeVerified:false,shards:[]},
+          };
+          await roundStore.create(r);
+        }else await mutate(p.cid,r=>{check(!r.intent&&(r.manager||['PAYOUT_EXECUTOR','PAYOUT_SELF','CLAIM_REFUND'].includes(intent.action)),'INTENT_UNRESOLVED_REPLACEMENT_BLOCKED');r.intent=intent;return r;});
+        let status;
+        try{
+          await c.rpc.call('submitTransaction',{transaction:txToRpc(signed.transaction),allowOrphan:false});
+          status='SUBMITTED';log('info',`已提交 ${intent.txid}`);
+        }catch(e){
+          status=statusAfterFailure(e);
+          if(status==='REJECTED')intent.nodeError=String(e?.message??'').slice(0,600);
+          intent.errorCode=codeOf(e);
+          log('error',`提交失败：${codeOf(e)}（状态 ${status}）`);
+        }
+        await setIntentStatus(p.cid,intent,status);
+        return status;
+      }
       const intent=await adapter.signAndRecord({rpc:c.rpc,prepared:p,wallet,net,signal,onSigned:()=>{c.prepared=null;log('info','钱包已返回签名并完成本地验签，正在读取链上游标…');onSigned();}});
       check(walletValid(wallet,epoch),'WALLET_CHANGED');
       c.prepared=null;
@@ -575,6 +705,16 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     async track(cid,{recover=false}={}) {return guard(recover?'恢复':'查询接受状态',async()=>{
       need(c.rpc,'NODE_REQUIRED');let cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND');
       need(cur.round.intent||cur.round.pending?.length,'NO_PENDING_INTENT');
+      const adapter=adapterFor(cur.round.profileId);
+      if(typeof adapter.trackRoundIntent==='function'){
+        const res=await adapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover,net,fetcher});
+        await roundStore.replace(res.round,cur.revision);
+        if(res.accepted&&(res.round.terminal||res.round.kusdt?.nodeVerified)){
+          c.lastSynced={cid:res.round.cid,nodeUrl:c.rpc.url??'',managerOutpoint:res.round.manager?`${res.round.manager.outpoint.transactionId}:${res.round.manager.outpoint.index}`:'-',step:res.round.step,frozen:0,at:now()};
+        }
+        emit();
+        return {accepted:!!res.accepted};
+      }
       let result={accepted:false};
       if(cur.round.intent) {
         const intent=structuredClone(cur.round.intent);
@@ -604,6 +744,10 @@ export function createController({profile,registry=null,roundStore,connect=(urls
      * gone and prepare() always re-reads live UTXOs); the only thing lost is the local record of whether our own transaction was the one that spent them. */
     async discard(cid,{force=false}={}) {return guard('放弃意图',async()=>{
       need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),i=need(cur.round.intent,'NO_PENDING_INTENT');
+      if(adapterFor(cur.round.profileId).id!=='rolling-v1'){
+        await mutate(cid,x=>(!x.kusdt?.nodeVerified&&x.receipts?.length<=1&&i.action==='GENESIS')?null:{...x,intent:null});
+        return;
+      }
       const settled=['REJECTED','UNSENT'].includes(i.status);
       check(settled||['SUBMITTED','UNKNOWN','PREPARED'].includes(i.status),'DISCARD_NOT_ALLOWED');
       const probe=i.draft.inputUtxos.map(u=>({...u,daa:u.utxoDaa??u.daa})),states=await inputsState(c.rpc,probe);let gone=0;
@@ -628,11 +772,99 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       if(unprovable)log('warn','已按你的确认强制放弃：所有输入都已被花掉，但节点无法再回溯查询这笔交易是否被接受。请导入最新的 round state。');
       else log(gone?'warn':'info',gone?'已放弃：有输入已被其他交易花费（他人抢先操作了同一个 manager），本地 round state 已过期。请导入最新的 round state（例如抢先者导出的）后再继续。':'已放弃被拒绝/未发送的意图');});},
     async verifyLive(cid) {return guard('核对链上状态',async()=>{
-      need(c.rpc,'NODE_REQUIRED');const r=need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND');
+      need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),r=cur.round;
+      const adapter=adapterFor(r.profileId);
+      if(adapter.id!=='rolling-v1'&&typeof adapter.syncRound==='function'){
+        const synced=await adapter.syncRound({rpc:c.rpc,indexer:c.indexer,round:r,cid,net,fetcher});
+        await roundStore.replace(synced.round,cur.revision);emit();
+        const mod=adapter.describeRound(synced.round).module??(synced.round.terminal?'terminal':'unknown');
+        return {module:mod,frozen:synced.round.kusdt?.openedCount??0};
+      }
       const live=await liveRound(c.rpc,r,profile,{targets:r.frozen});
       log('info',`链上核对通过：manager 与 ${live.targets.length} 个分片均为活跃且一致的 UTXO（阶段 ${live.state.module}）`);
       return {module:live.state.module,frozen:live.targets.length};},{readKey:`verify:${cid}`});},
+    noteDiscoveredRound(entry) {
+      const clean=sanitizeDiscoveredRounds([entry,...c.discovered]);
+      if(!clean.length)return;
+      c.discovered=clean;
+      if(!c.discoveredSource)c.discoveredSource='cache';
+      void roundStore.writeDiscovery?.({rounds:clean,origin:cachedOrigin??'indexer',base:c.indexer?.base??'',savedAt:now()});
+      if(discoveryCache?.write){try{discoveryCache.write({rounds:clean.slice(0,200),origin:cachedOrigin??'indexer',base:c.indexer?.base??'',savedAt:now()});}catch{}}
+      emit();
+    },
+    async syncWalletActivity(pk,{limit=20}={}) {
+      const client=c.indexer;
+      if(!client||typeof client.walletActivity!=='function'||typeof pk!=='string'||!/^[0-9a-f]{64}$/.test(pk))return {activities:[],synced:[]};
+      const res=await client.walletActivity(pk);
+      const activities=Array.isArray(res?.activities)?res.activities:[];
+      if(!activities.length)return {activities:[],synced:[]};
+      // Merge newly discovered kUSDT v2 rounds without clobbering richer fields already present in c.discovered
+      const existingByCid=new Map(c.discovered.map(d=>[d.cid,d]));
+      const merged=[...c.discovered];
+      let added=false;
+      for(const a of activities){
+        if(!a||typeof a.cid!=='string'||existingByCid.has(a.cid))continue;
+        const entry={
+          cid:a.cid,
+          protocolId:a.protocolId??'kusdt-v2',
+          profileId:a.profileId,
+          phase:a.phase,
+          subPhase:a.subPhase,
+          terminal:a.terminal??null,
+          asset:a.asset,
+          settlementProgress:a.settlementProgress,
+          protocolData:a.protocolData,
+          updatedAt:a.updatedAt??Date.now(),
+          source:'indexer',
+        };
+        merged.push(entry);
+        existingByCid.set(a.cid,entry);
+        added=true;
+      }
+      if(added){
+        const clean=sanitizeDiscoveredRounds(merged);
+        c.discovered=clean;
+        if(!c.discoveredSource)c.discoveredSource='indexer';
+        emit();
+      }
+      const synced=[];
+      if(c.rpc&&roundStore.persistent){
+        const localRounds=await roundStore.list();
+        const localCids=new Set(localRounds.map(r=>r.cid));
+        const missing=[...activities]
+          .sort((a,b)=>Number(b?.updatedAt??0)-Number(a?.updatedAt??0))
+          .map(a=>a?.cid)
+          .filter(cid=>typeof cid==='string'&&/^[0-9a-f]{64}$/.test(cid)&&!localCids.has(cid))
+          .slice(0,Math.max(0,limit));
+        for(let i=0;i<missing.length;i+=2){
+          const batch=missing.slice(i,i+2);
+          await Promise.all(batch.map(async cid=>{
+            try{
+              const r=await api.syncRound(cid);
+              if(r&&!r.skipped)synced.push(cid);
+            }catch{}
+          }));
+        }
+      }
+      return {activities,synced};
+    },
     protocols:protocolRegistry,
+    async submitProtocolTx(preparedOrDraft) {
+      return guard('提交交易',async()=>{
+        need(c.rpc,'NODE_REQUIRED');
+        need(c.wallet&&typeof c.wallet.sign==='function','SIGNING_WALLET_REQUIRED');
+        const draft=preparedOrDraft?.draft??preparedOrDraft;
+        check(draft&&draft.transaction&&Array.isArray(draft.inputUtxos)&&Array.isArray(draft.authorizedInputIndices)&&typeof draft.fee==='bigint','PROTOCOL_DRAFT_INVALID');
+        for(const u of draft.inputUtxos)if(u&&u.utxoDaa===undefined)u.utxoDaa=u.daa??0n;
+        await c.wallet.sign(draft);
+        await verifyOrdinarySignatures(draft);
+        const wire=txToRpc(draft.transaction);
+        const res=await c.rpc.call('submitTransaction',{transaction:wire,allowOrphan:false});
+        const txid=typeof res==='string'?res:(res?.transactionId??res?.txid??'');
+        log('info',`交易已提交：${txid}`);
+        return txid;
+      });
+    },
     summaryOf(round) {return adapterFor(round?.profileId).toRoundSummary(round,{net});},
     exportText(cid) {return (async()=>{const r=cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND');return adapterFor(r.profileId).roundToText(r);})();},
     /** Import = data only. Never authenticated until prepare() verifies the live UTXOs; a local pending intent is never overwritten. */

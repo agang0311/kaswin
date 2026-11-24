@@ -3,9 +3,10 @@
  * read, and everything is wiped on disconnect / pagehide. localStorage holds only non-sensitive preferences. */
 import {DRAW_DELAY,TIMEOUT_DELAY} from '../../scripts/core.mjs';
 import {profileData} from '@kaswin/rolling-profile';
+import {kusdtV2Artifacts,kusdtV2Pins,kusdtV2Kcc20SuffixHex} from '@kaswin/kusdt-v2-profile';
 import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {TN10} from '../../scripts/chain/tn10.mjs';
-import {loadProfile,openStore,makeController,createProtocolRegistry,createRollingV1Adapter,describeRound,availableActions,shardCatalog,verifyDrawReceipt,identify,getAssetUtxos,pubkeyToAddress,connectNetwork,createIndexerClient,readDrawProgress} from './bridge.ts';
+import {loadProfile,loadKusdtV2Profile,openStore,makeController,createProtocolRegistry,createRollingV1Adapter,createKusdtV2Adapter,describeRound,availableActions,shardCatalog,verifyDrawReceipt,verifyKusdtDrawReceipt,identify,commonUtxos,getAssetUtxos,pubkeyToAddress,addressToSpk,spkToAddress,connectNetwork,nodeFeeRate,mempoolSpentOutpoints,createIndexerClient,readDrawProgress,hexBytes,unhexBytes,decodeKusdtManager,decodeKusdtShard,locateDrawTarget,targetSeqOf} from './bridge.ts';
 import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
 import {chooseLanguage,getLanguage,setLanguage,installLocalization} from '../ui/i18n.mjs';
 import {EN} from '../ui/messages-en.mjs';
@@ -17,12 +18,12 @@ import {indexerBase} from '../../scripts/round/indexer-client.mjs';
 import {formatTkas,shortHash} from '../ui/format.mjs';
 import {TN10_PROFILE_ID} from '../../scripts/contract/protocol.mjs';
 import {$,put,html,ic,toast,copyText,download,modal,closeModal,lockModal,initModal,modalOpen} from '../ui/ui.ts';
-import {ACTION_INFO,errText,errCode,phaseOf} from '../ui/messages.ts';
-import {exploreView,createView,roundView,roundToolsBody,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,qtyError,paintShardCanvases} from '../ui/views.ts';
+import {ACTION_INFO,actionTitle,errText,errCode,phaseOf} from '../ui/messages.ts';
+import {exploreView,createView,roundView,roundToolsBody,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,qtyError,paintShardCanvases,buyReceiptForRound,refundReceiptForRound} from '../ui/views.ts';
 import {drawReadiness} from '../ui/draw-readiness.ts';
 import type {Raw} from '../ui/ui.ts';
 import {makeShare,parseShare} from './share.ts';
-import type {Ctx,ConfirmCtx,Conn,Controller,Detail,DiscoveryCacheLike,DiscoveryCacheSnapshot,DrawProgress,DrawResult,Explorer,Facts,Gate,Hex,Holdings,Item,MineData,NetInfo,Prepared,Profile,Receipt,Round,RoundStoreLike,RpcLike,ShardView,SubmissionProgress,UiState,VerifyState,WalletView} from './types.ts';
+import type {ActionState,Ctx,ConfirmCtx,Conn,Controller,Detail,DiscoveryCacheLike,DiscoveryCacheSnapshot,DrawProgress,DrawResult,Explorer,Facts,Gate,Hex,Holdings,Item,KusdtLiveShard,KusdtLiveState,MineData,NetInfo,Prepared,Profile,Receipt,Round,RoundStoreLike,RpcLike,ShardView,SubmissionProgress,UiState,VerifyState,WalletView} from './types.ts';
 
 const NET_KEY_STORAGE='kaswin-rolling:net';
 const resolveInitialNet=(): NetInfo=>{
@@ -61,12 +62,23 @@ const refreshLanguage=installLocalization(document,{
     ?{en:'Kaswin Rolling: lottery rounds with rolling purchase shards on Kaspa mainnet. Review tickets, fees and each step before approving a transaction.','zh-CN':'Kaswin Rolling：Kaspa 主网不限购买笔数的抽奖轮次。查看票款、费用和每一步，再确认你的交易。'}
     :{en:'Kaswin Rolling (Testnet 10 experiment): lottery rounds with rolling purchase shards. Review tickets, fees and each step before approving a Kaspa testnet transaction.','zh-CN':'Kaswin Rolling（Testnet 10 实验版）：不限购买笔数的抽奖轮次。查看票款、费用和每一步，再确认你的 Kaspa 测试网交易。'},
 });
-const defaultNode=activeNet.web.nodes.join('\n');
-const defaultIndexer=activeNet.web.indexer;
+const defaultNode=__KASWIN_CD311__&&activeNet.key==='tn10'
+  ?'wss://cd311.cn:888/www/rolling-tn10/node'
+  :activeNet.web.nodes.join('\n');
+const defaultIndexer=__KASWIN_CD311__
+  ?(activeNet.key==='mainnet'?'https://cd311.cn:888/indexer/mainnet':'https://cd311.cn:888/indexer/tn10')
+  :activeNet.web.indexer;
+const initialNodes=((): string=>{
+  const saved=LS.get<string|null>('nodes',null);
+  if(saved===null)return defaultNode;
+  if(activeNet.key==='mainnet'&&saved.trim()==='wss://cd311.cn:888/wrpc')return defaultNode;
+  if(__KASWIN_CD311__&&activeNet.key==='tn10'&&saved===activeNet.web.nodes.join('\n'))return defaultNode;
+  return saved;
+})();
 const initialIndexer=((): string=>{
   const saved=LS.get<string|null>('indexer',null);
   if(saved===null)return defaultIndexer;
-  if(activeNet.key==='mainnet'&&saved.replace(/\/+$/,'')==='https://indexer.kaspay.top/mainnet')return defaultIndexer;
+  if(saved.replace(/\/+$/,'').startsWith('https://indexer.kaspay.top/'))return defaultIndexer;
   // Migrate the previous Profile-qualified API on the same host; preserve explicitly configured hosts and empty opt-out.
   return saved.replace(/\/+$/,'').replace(`/rolling/v1/${TN10_PROFILE_ID}`,'');
 })();
@@ -76,16 +88,18 @@ const ex: Explorer={
   addrOfScript:(s: string)=>{const m=/^20([0-9a-f]{64})ac$/.exec(s);return m?pubkeyToAddress(m[1] as string,ADDR_PREFIX):shortHash(s,10,6);},
 };
 const S: UiState={view:'explore',cid:null,filter:'open',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),detailTab:'map',txLimit:20,budgetPc:32,
-  form:{price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:LS.get('nodes',defaultNode),indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
+  form:{protocol:'kusdt-v2',price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:initialNodes,indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
 const conn: Conn={node:null,nodeUrl:null,indexer:null,indexerUrl:null,indexerStale:false,discoveredSource:null};
 const verify=new Map<string,VerifyState>(),initialSyncDone=new Set<string>();
 let savedCids=new Set<string>(LS.get<string[]>('saved',[]));
 let checkProgress: string|null=null,roundTimer: ReturnType<typeof setInterval>|null=null,daaObservedAt=0;
 let drawObservation: {rpc: RpcLike; key: string; value: DrawProgress}|null=null,drawReading=false,drawReadAt=0;
-let profile: Profile,store: RoundStoreLike,ctl: Controller,items: Item[]=[],daa: bigint|null=null,balance: bigint|null=null,balanceAt=0,renderQueued=false,lastBusy=false,lastHtml='',lastCanvasKey='',refreshSeq=0,daaPolling=false,lastRounds: Round[]=[],settingsOpened={nodes:'',indexer:''};
+let profile: Profile,kusdtProfile: Profile,store: RoundStoreLike,ctl: Controller,items: Item[]=[],daa: bigint|null=null,balance: bigint|null=null,balanceAt=0,renderQueued=false,lastBusy=false,lastHtml='',lastCanvasKey='',refreshSeq=0,daaPolling=false,lastRounds: Round[]=[],settingsOpened={nodes:'',indexer:''};
 let shardCache: {key: string;shards: ShardView[]|null}={key:'',shards:null};
 const itemCache=new Map<string,{fp: string;item: Item}>();
 const drawCache=new Map<string,DrawResult>(),drawTried=new Set<string>();
+const walletActivityAt=new Map<string,number>();
+let walletActivityInFlight: string|null=null;
 const canSign=(wallet: WalletView|null): boolean=>!!wallet&&(wallet.kind==='key'||wallet.kind==='extension');
 let submission: SubmissionProgress|null=null;
 let lastWallet: WalletView|null=null;
@@ -111,11 +125,21 @@ const recordMyTx=(walletKey: string,txid: string)=>{
 };
 function buildItem(r: Round,d: bigint|null,t: Record<string,number>,own: Record<string,string>): Item {
   const daaKey=r.terminal?'':(d??'');
-  const fp=[r.step,r.terminal??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.frozen.length,r.intent?.status??'',r.halted??'',r.pending?.length??0,daaKey,t[r.cid]??0,own[r.cid]??''].join('|');
+  const kKey=r.kusdt?`${r.kusdt.stage??''}:${r.kusdt.openedCount}:${r.kusdt.cursor}:${r.kusdt.totalTickets}:${r.kusdt.decision}:${r.kusdt.nodeVerified?1:0}:${(r.kusdt.shards??[]).map(s=>`${s.shardCid.slice(0,8)}:${s.outpoint?.transactionId?.slice(0,8)??''}:${s.stage??0}:${s.tickets??0}:${s.terminal?1:0}:${s.claimedMask??0}:${s.records?.length??0}`).join(',')}`:'';
+  const fp=[r.step,r.terminal??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.frozen.length,r.intent?.status??'',r.halted??'',r.pending?.length??0,daaKey,t[r.cid]??0,own[r.cid]??'',kKey].join('|');
   const cached=itemCache.get(r.cid);
   if(cached&&cached.fp===fp&&cached.item.r===r)return cached.item;
+  const adapter=r.profileId?ctl?.protocols?.get(r.profileId):(r.kusdt?ctl?.protocols?.getById('kusdt-v2'):null);
   let f: Partial<Facts>,a: Item['a'];
-  try {f=describeRound(r,profile,d);a=availableActions(r,profile,d??0n);}
+  try {
+    if(adapter&&adapter.id!=='rolling-v1'&&adapter.describeRound&&adapter.uiActions){
+      f=adapter.describeRound(r,d);
+      a=adapter.uiActions(r,d);
+    }else{
+      f=describeRound(r,profile,d);
+      a=availableActions(r,profile,d??0n);
+    }
+  }
   catch {f={module:null};a=Object.fromEntries(Object.keys(ACTION_INFO).map(k=>[k,{ok:false,reason:'本机记录无法按固定 Profile 解析'}]));}
   const st=r.settings;
   // Rules come from the creation settings; a finished round has no manager UTXO any more, so its total comes from the recorded buys.
@@ -130,7 +154,13 @@ function buildItem(r: Round,d: bigint|null,t: Record<string,number>,own: Record<
 /** Tickets the connected wallet holds in the open shards (sales / sealed only; finished shards no longer exist as UTXOs). */
 function holdings(it: Item,shards: ShardView[]|null=null): Holdings|null {
   const key=ctl.state.wallet?.key,{r,f}=it;
-  if(!key||!r.manager||!['sales','sealed'].includes(f.module??''))return null;
+  if(!key)return null;
+  if(r.kusdt&&!r.terminal&&shards&&['sales','sealed','win','refund'].includes(f.module??'')){
+    let mine=0,total=0;
+    for(const s of shards){mine+=s.mineCount;total+=s.tickets;}
+    return {tickets:mine,total};
+  }
+  if(!r.manager||!['sales','sealed'].includes(f.module??''))return null;
   if(shards){
     let mine=0,total=0;
     for(const s of shards){mine+=s.mineCount;total+=s.tickets;}
@@ -196,20 +226,26 @@ async function pollDrawProgress() {
   } finally {drawReading=false;}
 }
 function gate(a: string): Gate {
-  const c=ctl.state,free=!!ACTION_INFO[a]?.free;
+  const c=ctl.state,it=S.view==='round'&&S.cid?items.find(i=>i.r.cid===S.cid):null;
+  const isKusdt=!!it&&ctl.protocols.get(it.r.profileId??'')?.id==='kusdt-v2';
+  const free=!!ACTION_INFO[a]?.free&&!isKusdt;
   if(!store.persistent)return {ok:false,reason:'这个浏览器没有可用的本地存储，无法安全发送。请换用普通（非隐私）窗口。'};
   if(!c.rpc)return {ok:false,reason:'节点未连接。',fix:'settings'};
-  if(S.view==='round'&&S.cid&&!items.some(i=>i.r.cid===S.cid))return {ok:false,reason:'正在向节点核对链上状态，核对完成后即可操作。'};
+  if(S.view==='round'&&S.cid&&!it)return {ok:false,reason:'正在向节点核对链上状态，核对完成后即可操作。'};
   if(!c.wallet)return {ok:false,reason:free?'需要一个收款地址来领取奖励。':'需要先连接钱包。',fix:'wallet'};
   if(!free&&!canSign(c.wallet))return {ok:false,reason:'这一步需要能签名的钱包支付手续费。',fix:'wallet'};
   if(c.busy)return {ok:false,reason:`正在${c.busyLabel??'处理上一步'}，请稍候。`};
   return {ok:true};
 }
 const shardsFor=(it: Item): ShardView[]|null=>{
-  const wk=ctl.state.wallet?.key??'',key=[it.r.cid,it.r.terminal??'',it.r.manager?`${it.r.manager.outpoint.transactionId}:${it.r.manager.outpoint.index}`:'-',it.r.step,it.r.frozen.length,it.r.history?'h':'',wk].join('|');
+  const wk=ctl.state.wallet?.key??'',kShardKey=it.r.kusdt?(it.r.kusdt.shards??[]).map(s=>`${s.shardCid.slice(0,8)}:${s.outpoint?.transactionId?.slice(0,8)??''}:${s.stage??0}:${s.tickets??0}:${s.terminal?1:0}:${s.claimedMask??0}:${s.records?.length??0}`).join(','):'',key=[it.r.cid,it.r.terminal??'',it.r.manager?`${it.r.manager.outpoint.transactionId}:${it.r.manager.outpoint.index}`:'-',it.r.step,it.r.frozen.length,it.r.history?'h':'',it.r.kusdt?.openedCount??0,it.r.kusdt?.totalTickets??0,kShardKey,wk].join('|');
   if(shardCache.key===key)return shardCache.shards;
   let shards: ShardView[]|null=null;
-  try{shards=shardCatalog(it.r,profile,wk||null);}catch{shards=null;}
+  const adapter=it.r.profileId?ctl?.protocols?.get(it.r.profileId):null;
+  try{
+    if(adapter&&adapter.id!=='rolling-v1'&&adapter.shardCatalog)shards=adapter.shardCatalog(it.r,wk||null);
+    else shards=shardCatalog(it.r,profile,wk||null);
+  }catch{shards=null;}
   shardCache={key,shards};
   return shards;
 };
@@ -223,7 +259,10 @@ const detail=(): Detail|null=>{
   const cachedDraw=it.r.draw??drawCache.get(it.r.cid)??null;
   const r=cachedDraw&&!it.r.draw?{...it.r,draw:cachedDraw}:it.r;
   const shards=shardsFor(it);
-  return {...it,r,preview:isPreview,mine:holdings(it,shards),isWinner:!!it.f.winnerKey&&it.f.winnerKey===ctl.state.wallet?.key,shards};
+  const adapter=it.r.profileId?ctl?.protocols?.get(it.r.profileId):null;
+  const asset=adapter?.assetFor(activeNet);
+  const kusdt=it.r.kusdt?{...it.r.kusdt,cid:it.r.cid,loading:false}:null;
+  return {...it,r,preview:isPreview,mine:holdings(it,shards),isWinner:!!it.f.winnerKey&&it.f.winnerKey===ctl.state.wallet?.key,shards,asset,kusdt};
 };
 async function hydrateRoundPreview(cid: string) {
   if(items.some(i=>i.r.cid===cid))return;
@@ -242,25 +281,28 @@ function mineData(): MineData|null {
   const rounds: MineData['rounds']=[],txs: {cid: Hex; t: Receipt}[]=[];
   for(const i of items){
     const created=i.f.owner===w.key,won=!!i.f.winnerKey&&i.f.winnerKey===w.key;
-    let shards: ShardView[]|null=null;
-    try{shards=shardCatalog(i.r,profile,w.key);}catch{shards=null;}
+    const shards=shardsFor(i);
     const tickets=shards?shards.reduce((n,s)=>n+s.mineCount,0):0;
     const hasMyTx=i.r.receipts.some(t=>myTxSet.has(t.txid))||(!!i.r.intent?.txid&&myTxSet.has(i.r.intent.txid));
     if(created||won||tickets>0||hasMyTx)rounds.push({item:i,tickets,created,won});
-    const myBuyTxids=new Set<string>();
+    const myBuyTxids=new Set<string>(),myRefundTxids=new Set<string>();
     if(shards){
-      const buys=i.r.receipts.filter(t=>t.action==='BUY');
-      let offset=0,total=0,ok=true;
-      for(const s of shards){if(s.recordCount==null){ok=false;break;}total+=s.recordCount;}
-      if(ok&&buys.length===total){
-        for(const s of shards){
-          if(s.records)for(const rec of s.records)if(rec.mine){const rc=buys[offset+rec.index];if(rc)myBuyTxids.add(rc.txid);}
-          offset+=s.recordCount??0;
+      const isKusdt=!!i.r.kusdt;
+      for(const s of shards){
+        if(!s.records)continue;
+        for(const rec of s.records){
+          if(!rec.mine)continue;
+          const brc=buyReceiptForRound(s,rec,i.r,shards,isKusdt);
+          if(brc)myBuyTxids.add(brc.txid);
+          if(rec.refunded){
+            const rrc=refundReceiptForRound(s,rec,i.r,shards,isKusdt);
+            if(rrc)myRefundTxids.add(rrc.txid);
+          }
         }
       }
     }
     for(const t of i.r.receipts){
-      if(myTxSet.has(t.txid)||(t.action==='GENESIS'&&created)||(t.action==='BUY'&&myBuyTxids.has(t.txid)))txs.push({cid:i.r.cid,t});
+      if(myTxSet.has(t.txid)||(t.action==='GENESIS'&&created)||((t.action==='BUY'||t.action==='OPEN_SHARD')&&myBuyTxids.has(t.txid))||(t.action==='CLAIM_REFUND'&&myRefundTxids.has(t.txid)))txs.push({cid:i.r.cid,t});
     }
   }
   return {rounds,txs:txs.reverse().slice(0,100)};
@@ -269,7 +311,26 @@ async function resolveDrawHint(cid: string) {
   const it=items.find(i=>i.r.cid===cid);const rpc=ctl.state.rpc;
   if(!it||!rpc||it.r.draw||drawCache.has(cid)||drawTried.has(cid)||!it.r.receipts.some(t=>t.action==='DRAW'))return;
   drawTried.add(cid);
-  try{const d=await verifyDrawReceipt(it.r,rpc,profile);if(d){drawCache.set(cid,d);if(S.view==='round'&&S.cid===cid)render();}}catch{}
+  try{
+    const d=it.r.kusdt&&kusdtProfile
+      ?await verifyKusdtDrawReceipt(it.r,rpc,kusdtProfile)
+      :await verifyDrawReceipt(it.r,rpc,profile);
+    if(d){drawCache.set(cid,d);if(S.view==='round'&&S.cid===cid)render();}
+  }catch{}
+}
+async function syncWalletActivityIfNeeded(force=false) {
+  const w=ctl?.state.wallet;
+  if(!w?.key||!ctl?.state.indexer||!ctl?.syncWalletActivity)return;
+  const cacheKey=`${w.key}|${conn.indexerUrl??''}`;
+  const nowMs=Date.now();
+  if(walletActivityInFlight===cacheKey)return;
+  if(!force&&nowMs-(walletActivityAt.get(cacheKey)??0)<30_000)return;
+  walletActivityInFlight=cacheKey;
+  walletActivityAt.set(cacheKey,nowMs);
+  try{
+    const res=await ctl.syncWalletActivity(w.key);
+    if(res.synced.length||res.activities.length)await refresh();
+  }catch{}finally{if(walletActivityInFlight===cacheKey)walletActivityInFlight=null;}
 }
 const observedDrawProgress=(): DrawProgress|null=>{
   const r=items.find(i=>i.r.cid===S.cid)?.r;
@@ -291,7 +352,7 @@ function chrome() {
   const netBtn=document.getElementById('netBtn');
   if(netBtn)netBtn.textContent=`${activeNet.key==='mainnet'?'Mainnet':'Testnet 10'} ⇄`;
   const footerNet=document.getElementById('footerNet'),fk=`${activeNet.key}|${profile?.id??TN10_PROFILE_ID}`;
-  if(footerNet&&fk!==lastFooterKey){lastFooterKey=fk;put(footerNet,html`${activeNet.label} · ${UNIT} · 节点核对共识 · Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);}
+  if(footerNet&&fk!==lastFooterKey){lastFooterKey=fk;put(footerNet,html`${activeNet.label} · ${UNIT} + kUSDT v2 · Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>`);}
   const w=ctl?.state.wallet,b=$('walletBtn');
   b.className='wbtn'+(w?' on':'');
   b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?' · 仅收款':''}`:'连接钱包';
@@ -348,10 +409,12 @@ const schedule=()=>{
     conn.indexer=true;conn.indexerUrl=S.indexer.trim()||null;conn.indexerStale=false;
     if(indexWaitTimer){clearTimeout(indexWaitTimer);indexWaitTimer=null;}
     indexInitPending=false;
+    if(ctl.state.wallet?.key)void syncWalletActivityIfNeeded();
   }
   if(lastWallet!==ctl.state.wallet){
     const had=!!lastWallet;lastWallet=ctl.state.wallet;balance=null;
     if(had&&!lastWallet&&!ctl.state.busy&&modalOpen()&&$('mTitle').dataset.sourceTitle?.startsWith('确认交易')){closeModal();toast('钱包连接已变化，请重新连接并报价。','warn');}
+    if(lastWallet?.key&&ctl.state.indexer)void syncWalletActivityIfNeeded();
   }
   // Button availability comes from controller state, not the next asynchronous IndexedDB snapshot.
   // Paint foreground busy transitions now; reconcile round data separately. Background checks never set busy.
@@ -370,6 +433,7 @@ function route() {
   if(S.view!=='round')previewRound=null;
   void ctl.watchRound(S.view==='round'&&shouldWatchRound(S.cid)?S.cid:null);
   if(S.view==='round'&&S.cid){touch(S.cid);void hydrateRoundPreview(S.cid);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
+  if(S.view==='mine')void syncWalletActivityIfNeeded();
   render();
 }
 function go(view: string,cid: string|null=null) {
@@ -396,6 +460,7 @@ function failure(e: unknown,action='') {
 /** A verification result only counts for the node and round state it was obtained for: importing different data over the same CID (file or link), a state
  * change, or switching node makes the fingerprint differ, so a stale green tick can never describe data it did not check. */
 const fpOf=(r: Round): string=>[conn.nodeUrl??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.step,r.frozen.length,r.intent?.status??''].join('|');
+const isNodeVerified=(r: Round): boolean=>!!r.terminal||(r.kusdt?!!r.kusdt.nodeVerified:!!r.manager);
 function verifyFor(cid: string|null): VerifyState|null {
   const v=cid?verify.get(cid):undefined,it=cid?items.find(i=>i.r.cid===cid):undefined;
   if(!it)return v?.fp==='loading'?v:null;
@@ -412,6 +477,7 @@ async function autoVerify(cid: string) {
   initialSyncDone.add(cid);
   await doVerify(cid);
 }
+const userErr=(msg: string)=>Object.assign(new Error(msg),{code:'USER'});
 async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
   const it=items.find(i=>i.r.cid===cid);
   const fp=it?fpOf(it.r):'loading';
@@ -430,10 +496,14 @@ async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
       if(res.partial){detailSyncAt=0;setTimeout(()=>{void runDetailSync({immediate:true});},120);}
       if(!quiet)toast(`已先同步 ${res.steps??0} 步最新状态，后台将继续追赶`);
     }else{
-      lastDetailOkAt=Date.now();
-      verify.set(res.cid,{state:'ok',at:Date.now(),fp:after?fpOf(after.r):fp});
+      if(after&&isNodeVerified(after.r)){
+        lastDetailOkAt=Date.now();
+        verify.set(res.cid,{state:'ok',at:Date.now(),fp:fpOf(after.r)});
+      }else{
+        verify.delete(res.cid);
+      }
       if(res.cid!==cid&&S.view==='round'&&S.cid===cid){touch(res.cid);go('round',res.cid);return;}
-      if(!quiet)toast(res.steps&&res.steps>0?`已向节点核对并追赶 ${res.steps} 步最新状态`:'已向节点核对：状态与链上一致');
+      if(!quiet)toast(after&&!isNodeVerified(after.r)?'尚未在节点确认最新状态，请稍后重试':(res.steps&&res.steps>0?`已向节点核对并追赶 ${res.steps} 步最新状态`:'已向节点核对：状态与链上一致'));
     }
   } catch(e) {
     if(errCode(e)==='BUSY'){verify.delete(cid);if(!quiet)toast(errText(e),'warn');}   // another operation is running: not a verdict
@@ -450,6 +520,22 @@ function saveCreateForm() {
 }
 function planText(p: Prepared): string {
   const fee=formatTkas(p.review.fee),n=p.targetCount,hasReg=p.review.outputs.some(o=>o.role==='REGISTRATION');
+  if(p.kusdtAction){
+    const kText: Record<string,string>={
+      GENESIS:`创建 kUSDT 轮次：锁定 4 ${UNIT} 押金${hasReg?`并附带 0.2 ${UNIT} 索引登记输出`:'（不附带索引登记输出）'}，规则创建后不可修改。网络费 ${fee} ${UNIT}。`,
+      OPEN_SHARD:`购买 ${p.op.quantity} 张票（首购开新分片需暂锁 4 ${UNIT} 可退押金，结算后全额退还），另付网络费 ${fee} ${UNIT}。如果别人抢先操作了这一轮，这笔交易会被节点拒绝，不会扣款。`,
+      BUY:`购买 ${p.op.quantity} 张票（追加到已有分片，免 4 ${UNIT} 分片押金），另付网络费 ${fee} ${UNIT}。如果别人抢先操作了同一分片，这笔交易会被节点拒绝，不会扣款。`,
+      EMPTY_CLOSE:`空轮封盘：本轮无人购票，结束轮次并退回 4 ${UNIT} 创建者押金。网络费 ${fee} ${UNIT}。`,
+      COLLECT_BATCH:`封盘汇总：本批冻结 ${n>0?`${n} 个`:''}开放分片（每批最多 8 片）；达 3 张进开奖，不足 3 张转退款。网络费 ${fee} ${UNIT}。`,
+      DRAW:`开奖：按链上 Pass-A 证明抽出中奖票，结果由合约校验。网络费 ${fee} ${UNIT}。`,
+      REROLL:`超时重掷：封盘逾约 12 小时未开奖，重置开奖等待窗口。网络费 ${fee} ${UNIT}。`,
+      DISPATCH_BATCH:`下发结算许可：本批将 ${n>0?`${n} 个`:''}已封存分片转为可领款状态；最后一批同时退回创建者 4 ${UNIT} 押金（网络费 ${fee} ${UNIT}）。完成后请在分片点击领取 kUSDT 与分片押金。`,
+      PAYOUT_EXECUTOR:`代推派奖：将分片奖金发给中奖者，你获得 0.5 kUSDT 执行激励，同时退回 4 ${UNIT} 分片押金。网络费 ${fee} ${UNIT}。`,
+      PAYOUT_SELF:`赢家自推派奖：将分片全额奖金发给中奖者（无执行激励），同时退回 4 ${UNIT} 分片押金。网络费 ${fee} ${UNIT}。`,
+      CLAIM_REFUND:`自助退款：从分片金库领回你的 kUSDT 票款，最后一条记录领取时自动退回 4 ${UNIT} 分片与金库押金（网络费 ${fee} ${UNIT}）。`,
+    };
+    if(kText[p.kusdtAction])return kText[p.kusdtAction];
+  }
   const text: Record<string,string>={
     GENESIS:`创建新轮次：锁定 4 ${UNIT} 押金${hasReg?`并附带 0.2 ${UNIT} 索引登记输出`:'（不附带索引登记输出）'}，规则创建后不可修改。网络费 ${fee} ${UNIT}。`,
     BUY:`购买 ${p.op.quantity} 张票，票款进入合约，另付网络费 ${fee} ${UNIT}。如果别人抢先操作了这一轮，这笔交易会被节点拒绝，不会扣款。`,
@@ -471,14 +557,17 @@ async function prepareAndConfirm(choice: Record<string,unknown>,cid: string|null
   }
   lockModal(true);
   modal('准备交易',html`<ul class="progress"><li class="run">正在核对链上状态、用脚本引擎测量预算并计算网络费…</li></ul><p class="small muted">通常几秒，最长可能几十秒。请不要关闭页面。</p>`);
-  try {await ctl.prepare(choice,cid);}
-  catch(e) {lockModal(false);closeModal();failure(e,act);await refresh();return;}
-  lockModal(false);showConfirm();
+  try {
+    await ctl.prepare(choice,cid);
+    lockModal(false);
+    showConfirm();
+  }
+  catch(e) {lockModal(false);closeModal();ctl.log('error',`准备交易失败：${(e as Error)?.message??String(e)}`);failure(e,act);await refresh();return;}
 }
 function showConfirm() {
   const p: Prepared|null=ctl.state.prepared,w=ctl.state.wallet;if(!p||!w)return;
   const x: ConfirmCtx={...ctxt(),prepared:p,planText:planText(p)};
-  modal(`确认交易 · ${ACTION_INFO[p.op.action]?.title??p.op.action}`,confirmBody(x),
+  modal(`确认交易 · ${actionTitle(p.op.action)}`,confirmBody(x),
     html`<button class="btn" data-act="closeModal">取消</button><button class="btn pri" data-act="send">${p.review.inputs.some(i=>i.kind.includes('需签名'))?'确认并签名发送':'确认发送（无需签名）'}</button>`,
     {onClose:()=>{if(ctl.state.prepared){ctl.discardPrepared();render();}}});
 }
@@ -545,10 +634,14 @@ async function onAction(a: string) {
     const D=detail();if(!D){toast('没有找到这一轮。','warn');return;}
     const error=qtyError(S.qty,D.f,D.a.BUY);if(error){toast(error,'warn');return;}
     choice.quantity=S.qty.trim();
+    const sel=($('kShardCid') as HTMLSelectElement|null)?.value||'';
+    if(sel)choice.shardCid=sel;
   }
   if(a==='DRAW'){
     const D=detail();if(!D)return;
-    const readiness=drawReadiness(D,ctxt());if(!readiness.ready){toast(readiness.detail,'warn');void pollDrawProgress();return;}
+    if(!D.kusdt){
+      const readiness=drawReadiness(D,ctxt());if(!readiness.ready){toast(readiness.detail,'warn');void pollDrawProgress();return;}
+    }
   }
   await prepareAndConfirm(choice,S.cid);
 }
@@ -647,8 +740,9 @@ async function runBatchSettlement(mode: 'payout' | 'refund') {
 async function onCreate() {
   const p=parseCreate(S.form,activeNet);if(!p.ok){toast(p.errors[0],'warn');return;}
   const w=ctl.state.wallet;
-  if(!canSign(w)){if(w)toast('当前是「仅收款地址」，创建轮次需要能签名的钱包。','warn');openWallet();return;}
-  await prepareAndConfirm({action:'GENESIS',registry:p.registry,settings:{ticketPrice:S.form.price.trim(),ticketCap:S.form.cap.trim(),minTickets:S.form.min.trim(),closeMinutes:String(p.mins)}},null);
+  if(!w||!canSign(w)){if(w)toast('当前是「仅收款地址」，创建轮次需要能签名的钱包。','warn');openWallet();return;}
+  const proto=S.form.protocol==='kusdt-v2'?ctl.protocols.getById('kusdt-v2'):ctl.protocols.getById('rolling-v1');
+  await prepareAndConfirm({action:'GENESIS',profileId:proto?.profileId,registry:p.registry,settings:{ticketPrice:S.form.price.trim(),ticketCap:p.cap?S.form.cap.trim():S.form.cap.trim(),minTickets:S.form.min.trim(),closeMinutes:String(p.mins)}},null);
 }
 async function onJoin(input: unknown) {
   if(typeof input==='string'&&/^[0-9a-f]{64}$/i.test(input.trim())){
@@ -815,7 +909,20 @@ async function connectExternalProvider(id: string) {
         return;
       } finally {lockModal(false);}
     } else {
-      lockModal(true);try{await ctl.connectExternalWallet(id);}finally{lockModal(false);}
+      const name=id==='kastle'?'Kastle':'KasWare';
+      const abort=new AbortController();
+      lockModal(true);
+      put($('mBody'),html`<ul class="progress"><li class="run">正在等待 ${name} 扩展响应授权…</li></ul><p class="small muted">如果 ${name} 已超时锁屏，请先在扩展中解锁；解锁后返回本页会自动完成连接，或点击下方取消后重试。</p>`);
+      put($('mFoot'),html`<button class="btn" id="extConnectCancel">取消</button>`);
+      $('extConnectCancel').onclick=()=>abort.abort();
+      try {
+        await ctl.connectExternalWallet(id,{signal:abort.signal});
+      } catch(e) {
+        lockModal(false);
+        openWallet();
+        if(!abort.signal.aborted)inlineError('wErr',errText(e));
+        return;
+      } finally {lockModal(false);}
     }
     S.walletProvider=id;LS.set('walletProvider',id);
   } catch(e) {inlineError('wErr',errText(e));return;}
@@ -866,7 +973,7 @@ async function onTestConn() {
     const raw=$<HTMLInputElement>('sIndexer').value.trim();
     if(!raw)parts.push(html`<div class="notice">索引：未配置，将使用 REST API 备用查询。</div>`);
     else {
-      const baseUrl=indexerBase(raw),client=createIndexerClient({baseUrl,networkId:activeNet.networkId,genesisHash:activeNet.genesis,profileId:profile.id}),info=await client.info();
+      const baseUrl=indexerBase(raw),client=createIndexerClient({baseUrl,networkId:activeNet.networkId,genesisHash:activeNet.genesis,profileId:profile.id,profileIds:ctl.protocols.profileIds()}),info=await client.info();
       const cnt=info.roundsCount??(await client.rounds({limit:100})).rounds.length;
       parts.push(html`<div class="notice ok">索引可用：共 ${cnt} 个轮次${info.stale?'（索引正在追赶）':''}。</div>`);
     }
@@ -966,13 +1073,15 @@ const ACT: Record<string,()=>unknown>={
   pasteLatest:()=>{closeModal();go('explore');setTimeout(()=>$('joinText')?.focus(),50);},
 };
 function onClick(ev: Event) {
-  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-fix],[data-filter],[data-sort],[data-dur],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
+  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-kusdt-act],[data-fix],[data-filter],[data-sort],[data-proto],[data-dur],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
   if(!t)return;const d=t.dataset;
+  if(d.kusdtAct){void prepareAndConfirm({action:d.kusdtAct,shardCid:d.shardCid??null,recIdx:d.recIdx!=null?Number(d.recIdx):null},S.cid);return;}
   if(d.go2)return go(d.go2);
   if(d.open)return go('round',d.open);
   if(d.indexed)return go('round',d.indexed);
   if(d.filter){S.filter=d.filter;return render();}
   if(d.sort){S.sort=d.sort;return render();}
+  if(d.proto==='rolling-v1'||d.proto==='kusdt-v2'){const proto=d.proto as 'rolling-v1'|'kusdt-v2';S.form.protocol=proto;saveCreateForm();return render();}
   if(d.dur){S.form.dur=d.dur;saveCreateForm();return render();}
   if(d.qty){S.qty=d.qty;return render();}
   if(d.wtab){S.wtab=d.wtab;return openWallet();}
@@ -999,11 +1108,12 @@ function onInput(ev: Event) {
   if(id==='cReg'){S.form.registry=el.checked;saveCreateForm();return render();}
   if(id==='cRegAddr'){S.form.registryAddr=v;saveCreateForm();return render();}
   const key=({cPrice:'price',cCap:'cap',cMin:'min',cCustom:'custom'} as Record<string,keyof UiState['form']|undefined>)[id];
-  if(key&&key!=='registry'){S.form[key]=v;saveCreateForm();return render();}
+  if(key&&key!=='registry'&&key!=='protocol'){S.form[key]=v;saveCreateForm();return render();}
   if(id==='qty'){
     S.qty=v;const D=detail();if(!D)return;
     const error=qtyError(v,D.f,D.a.BUY),hint=$('qtyCost'),button=$<HTMLButtonElement>('buySubmit'),g=gate('BUY');
-    hint.textContent=qtyCost(v,D.f,D.a.BUY,UNIT);hint.className=`small ${error?'err':'muted'}`;
+    const tu=D.asset?.kind==='KCC20'?D.asset.symbol:UNIT;
+    hint.textContent=qtyCost(v,D.f,D.a.BUY,tu,D.asset);hint.className=`small ${error?'err':'muted'}`;
     el.setAttribute('aria-invalid',error?'true':'false');
     button.disabled=!!error||ctl.state.busy||!D.a.BUY?.ok||(!g.ok&&!g.fix);
   }
@@ -1090,7 +1200,7 @@ async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=fa
           if(result.partial||result.source==='rest')verify.set(targetCid,{state:'partial',at:Date.now(),fp:`${conn.nodeUrl??''}|`});
           await refresh();
           const after=items.find(i=>i.r.cid===targetCid);
-          if(after)verify.set(targetCid,{state:result.partial||result.source==='rest'?'partial':'ok',at:Date.now(),fp:fpOf(after.r)});
+          if(after&&isNodeVerified(after.r))verify.set(targetCid,{state:result.partial||result.source==='rest'?'partial':'ok',at:Date.now(),fp:fpOf(after.r)});
           else if(prevVerify)verify.delete(targetCid);
           render();
         }
@@ -1099,6 +1209,15 @@ async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=fa
           setTimeout(()=>{void runDetailSync({preferRest,immediate:true,rewatch});},120);
         }else if(rewatch&&S.view==='round'&&S.cid===targetCid){
           void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);
+        }
+      }else if(cur.r.intent&&ctl.state.rpc&&!ctl.state.prepared&&['SUBMITTED','UNKNOWN','PREPARED'].includes(cur.r.intent.status)&&ctl.protocols.get(cur.r.profileId??'')?.id==='kusdt-v2'){
+        const tr=await ctl.track(targetCid) as {accepted?: boolean}|undefined;
+        if(tr?.accepted){
+          await refresh();
+          const after=items.find(i=>i.r.cid===targetCid);
+          if(after&&isNodeVerified(after.r))verify.set(targetCid,{state:'ok',at:Date.now(),fp:fpOf(after.r)});
+          void refreshBalance(true);
+          render();
         }
       }else if(rewatch){
         void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);
@@ -1158,7 +1277,9 @@ async function main() {
   installPwaManifest();
   profile=loadProfile(profileData);                 // the browser re-derives the Profile id (assertProfile)
   if(profile.id!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
-  const protocols=createProtocolRegistry([createRollingV1Adapter({profile})]);
+  const kusdtV2Profile=loadKusdtV2Profile(kusdtV2Artifacts,{kusdtCid:kusdtV2Pins.kusdtCid,expectedHashes:kusdtV2Pins.templates});
+  kusdtProfile=kusdtV2Profile;
+  const protocols=createProtocolRegistry([createRollingV1Adapter({profile}),createKusdtV2Adapter({profile:kusdtV2Profile,kusdtCid:kusdtV2Pins.kusdtCid,kcc20Suffix:unhexBytes(kusdtV2Kcc20SuffixHex)})],{defaultCreateProfileId:profile.id});
   store=await openStore({genesis:activeNet.genesis,profileId:protocols.defaultForCreate().profileId});
   ctl=makeController(profile,store,activeNet,discoveryCache,protocols);
   await ctl.restoreDiscovery();

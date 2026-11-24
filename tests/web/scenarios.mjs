@@ -40,9 +40,20 @@ try {
     log(`=== scenario ${id}: ${sc.title}, buys=${buys}, role=${ROLE} ===`);
     try {
       await page.open();await page.setNode(NODE);await page.connect(ROLE);
-      const cursor=previousResults.find(r=>r.id===id)?.cursor??await stableCursor(rpc);result.cursor=cursor;
+      const prevEntry=previousResults.find(r=>r.id===id);
+      const cursor=prevEntry?.cursor??await stableCursor(rpc);result.cursor=cursor;
       let round;
-      if(resume&&await page.p.locator('[data-open]').count()) {
+      if(resume) {
+        if(!await page.p.locator('[data-open]').count()&&await page.p.locator('[data-filter="all"]').count()) {
+          await page.p.locator('[data-filter="all"]').first().click().catch(()=>{});
+          await pause(600);
+        }
+        if(prevEntry?.cid&&await page.p.locator(`[data-open="${prevEntry.cid}"]`).count()) {
+          await page.p.locator(`[data-open="${prevEntry.cid}"]`).first().click().catch(()=>{});
+          await pause(600);
+        }
+      }
+      if(resume&&(await page.p.locator('[data-open]').count()||await page.p.locator('#view [data-act=moreRound]:not([disabled]), #view [data-act=export]').count())) {
         round=await roundReady(page);result.resumedFromBuys=round.buys;
         log(`RESUME scenario ${id}: cid=${round.cid}, already bought=${round.buys}`);
       } else {
@@ -65,7 +76,7 @@ try {
         result.closedBeforeDeadline=(await rpc.currentDaa())<round.settings.closeEligibleDaa;
         if(!result.closedBeforeDeadline)throw new Error('EARLY_CLOSE_WINDOW_MISSED');
       }
-      ({round}=await executeAction(page,'CLOSE',{log,timeout:360000}));
+      if(!round.terminal&&!round.receipts.some(r=>r.action==='CLOSE'))({round}=await executeAction(page,'CLOSE',{log,timeout:360000}));
       while(!round.terminal) {
         if(Date.now()-started>budgetMs)throw new Error('SCENARIO_TIME_BUDGET_REACHED');
         const phase=round.manager?await page.state():null;

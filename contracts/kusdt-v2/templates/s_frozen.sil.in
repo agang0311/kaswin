@@ -1,0 +1,58 @@
+pragma silverscript ^0.1.0;
+// Kaswin kUSDT v2 — S_FROZEN (Depends on S_PAYOUT_HASH, S_REFUND_HASH).
+// Co-executed with M_DISPATCH in DISPATCH_BATCH: authenticates managerCid at input 0 and transitions output `own`
+// into S_PAYOUT (decision=1) or S_REFUND (decision=2). Fee & batch sequencing are enforced by M_DISPATCH.
+contract KusdtShardFrozen(byte[] initialState) {
+    byte[] state = initialState;
+    int constant FEE_INPUTS = 1;
+    int constant FEE_OUTPUTS = 1;
+    byte[32] constant S_PAYOUT_HASH = byte[32](0x{{S_PAYOUT_HASH}});
+    byte[32] constant S_REFUND_HASH = byte[32](0x{{S_REFUND_HASH}});
+{{COMMON}}
+    entry spend(int decision, byte[32] winnerPk, byte[] nextTail) {
+        int own = this.activeInputIndex;
+        require(tx.version == 1 && own >= 1 && own <= MAX_BATCH);
+        require(length(state) >= 112 && state.slice(0, 2) == byte[](0x1201));
+
+        int rc = U16(state, 74);
+        require(rc >= 1 && rc <= MAX_RECORDS_PER_SHARD && length(state) == 76 + 36 * rc);
+
+        int price = U63(state, 66);
+        int shardTickets = U32(state, 76 + 36 * (rc - 1));
+        require(price >= PRICE_MIN && shardTickets >= 1 && price <= TOKEN_AMOUNT_LIMIT / shardTickets);
+
+        byte[32] managerCid = byte[32](state.slice(2, 34));
+        byte[32] selfCid = OpInputCovenantId(own);
+        byte[32] zero = ZERO;
+        require(managerCid != zero && selfCid != zero && selfCid != managerCid && selfCid != KUSDT_CID);
+        require(OpInputCovenantId(0) == managerCid);
+        require(OpCovInputCount(selfCid) == 1 && OpCovInputIdx(selfCid, 0) == own);
+        require(OpAuthOutputCount(own) == 1 && OpAuthOutputIdx(own, 0) == own);
+        require(OpCovOutputCount(selfCid) == 1 && OpCovOutputIdx(selfCid, 0) == own);
+        require(tx.inputs[own].value == SHARD_LEDGER_DEPOSIT && tx.outputs[own].value == SHARD_LEDGER_DEPOSIT);
+
+        byte[] nextState = state.slice(0, 0);
+        if (decision == 1) {
+            require(winnerPk != zero);
+            require(templateHash(byte[](0x6b), nextTail) == S_PAYOUT_HASH);
+            int vaultAmount = shardTickets * price;
+            nextState = byte[](0x1301)
+                + state.slice(34, 66)
+                + byte[](winnerPk)
+                + byte[](vaultAmount as byte[8])
+                + byte[](managerCid)
+                + byte[](shardTickets as byte[4]);
+        } else if (decision == 2) {
+            require(winnerPk == zero && rc <= 2 && shardTickets <= 2);
+            require(templateHash(byte[](0x6b), nextTail) == S_REFUND_HASH);
+            nextState = byte[](0x1401)
+                + state.slice(34, 74)
+                + byte[](rc as byte[1])
+                + byte[](0x00)
+                + state.slice(76, length(state));
+        } else {
+            require(false);
+        }
+        require(tx.outputs[own].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, nextTail))));
+    }
+}

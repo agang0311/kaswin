@@ -33,11 +33,11 @@ export class RollingPage {
     const args = ['--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'];
     if (this.o.profileDir) {
       fs.mkdirSync(this.o.profileDir, {recursive: true});
-      this.ctx = await chromium.launchPersistentContext(this.o.profileDir, {viewport: {width: 1280, height: 1100}, args});
+      this.ctx = await chromium.launchPersistentContext(this.o.profileDir, {viewport: {width: 1280, height: 1100}, locale: 'zh-CN', args});
       this.p = this.ctx.pages()[0] ?? await this.ctx.newPage();
     } else {
       this.browser = await chromium.launch({args});
-      this.ctx = await this.browser.newContext({viewport: {width: 1280, height: 1100}});
+      this.ctx = await this.browser.newContext({viewport: {width: 1280, height: 1100}, locale: 'zh-CN'});
       this.p = await this.ctx.newPage();
     }
     if (this.o.wsTap || this.o.submitGate) {
@@ -77,6 +77,11 @@ export class RollingPage {
     await this.p.goto(this.o.url, {waitUntil: 'domcontentloaded'});
     await this.p.bringToFront().catch(() => {});
     await this.p.waitForTimeout(2500);
+    const langBtn = this.p.locator('#languageBtn');
+    if (await langBtn.count()) {
+      const lbl = (await langBtn.innerText().catch(() => '')).trim();
+      if (lbl === '中文') { await langBtn.click().catch(() => {}); await this.p.waitForTimeout(400); }
+    }
     return this;
   }
 
@@ -204,11 +209,13 @@ export class RollingPage {
   }
 
   async create({price, cap, min, minutes}) {
-    await this.p.getByRole('button', {name: '创建', exact: true}).first().click();
+    await this.p.locator('button[data-go="create"]').first().click();
     await this.p.waitForTimeout(500);
+    const protoBtn = this.p.locator('[data-proto="rolling-v1"]').first();
+    if (await protoBtn.count()) { await protoBtn.click(); await this.p.waitForTimeout(250); }
     const set = async (sel, v) => { const e = this.p.locator(sel); await e.fill(''); await e.fill(String(v)); await this.p.waitForTimeout(120); };
     await set('#cPrice', price); await set('#cCap', cap); await set('#cMin', min);
-    await this.p.getByRole('button', {name: '自定义', exact: true}).click();
+    await this.p.locator('button[data-dur="custom"]').first().click();
     await this.p.waitForTimeout(300);
     await this.p.locator('#cCustom').fill(String(minutes));
     await this.p.waitForTimeout(300);
@@ -235,7 +242,7 @@ export class RollingPage {
         await this.p.waitForTimeout(3000);
       }
       if (await this.enabled('BUY') || await this.enabled('CLOSE')) return true;
-      await this.p.getByRole('button', {name: '创建', exact: true}).first().click().catch(() => {});
+      await this.p.locator('button[data-go="create"]').first().click().catch(() => {});
       await this.p.waitForTimeout(1500);
     }
     return false;
@@ -327,11 +334,13 @@ export class RollingPage {
 
   /** 填写创建表单但不点“创建”（双页测试要在同一时刻才点）。 */
   async fillCreate({price, cap, min, minutes}) {
-    await this.p.getByRole('button', {name: '创建', exact: true}).first().click();
+    await this.p.locator('button[data-go="create"]').first().click();
     await this.p.waitForTimeout(500);
+    const protoBtn = this.p.locator('[data-proto="rolling-v1"]').first();
+    if (await protoBtn.count()) { await protoBtn.click(); await this.p.waitForTimeout(250); }
     const set = async (sel, v) => { const e = this.p.locator(sel); await e.fill(''); await e.fill(String(v)); await this.p.waitForTimeout(120); };
     await set('#cPrice', price); await set('#cCap', cap); await set('#cMin', min);
-    await this.p.getByRole('button', {name: '自定义', exact: true}).click();
+    await this.p.locator('button[data-dur="custom"]').first().click();
     await this.p.waitForTimeout(300);
     await this.p.locator('#cCustom').fill(String(minutes));
     await this.p.waitForTimeout(300);
@@ -406,15 +415,30 @@ export class RollingPage {
     // Blur before the real UI click; retry detached/invisible targets without accumulating timed-out download promises.
     await this.p.evaluate(()=>document.activeElement?.blur());
     const downloads=[],receive=download=>downloads.push(download);
+    const visibleExportSel='#view [data-act=export], #modal[open] [data-act=export]';
+    let openedTools=false;
     this.p.on('download',receive);
     try {
       for(let attempt=0;attempt<6;attempt++) {
-        await this.p.locator('[data-act=export]').first().click({force:true,timeout:2000}).catch(()=>{});
-        for(let n=0;n<10&&!downloads.length;n++)await this.p.waitForTimeout(50);
+        if(!(await this.p.locator(visibleExportSel).count())&&(await this.p.locator('#view [data-act=moreRound]:not([disabled])').count())) {
+          await this.p.locator('#view [data-act=moreRound]').first().click({force:true,timeout:2000}).catch(()=>{});
+          openedTools=true;
+          await this.p.waitForTimeout(250);
+        }
+        if(await this.p.locator(visibleExportSel).count()) {
+          await this.p.locator(visibleExportSel).first().click({force:true,timeout:2000}).catch(()=>{});
+        }
+        for(let n=0;n<12&&!downloads.length;n++)await this.p.waitForTimeout(50);
         if(downloads.length)return fs.readFileSync(await downloads[0].path(),'utf8');
       }
       throw new Error('ROUND_EXPORT_UI_RETRY_EXHAUSTED');
-    } finally{this.p.off('download',receive);}
+    } finally{
+      this.p.off('download',receive);
+      if(openedTools&&await this.p.locator('#modal[open]').count().catch(()=>0)) {
+        await this.p.locator('#modal[open] [data-act=closeModal]').first().click({force:true,timeout:1500}).catch(()=>this.p.keyboard.press('Escape').catch(()=>{}));
+        await this.p.waitForTimeout(200);
+      }
+    }
   }
 
   /** Fill quantity before a real button click; an existing preparing modal means the first request is still running. */
@@ -441,7 +465,7 @@ export class RollingPage {
   }
   /** “加入轮次”：把轮次文本（分享链接或导出的轮次数据）填进广场页的输入框并加入，页面会自动进入这一轮。 */
   async joinText(text) {
-    await this.p.getByRole('button', {name: '广场', exact: true}).first().click().catch(() => {});
+    await this.p.locator('button[data-go="explore"]').first().click().catch(() => {});
     await this.p.waitForTimeout(600);
     await this.p.locator('#joinText').fill(text);
     await this.p.waitForTimeout(300);

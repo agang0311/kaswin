@@ -1,0 +1,108 @@
+pragma silverscript ^0.1.0;
+// Kaswin kUSDT v2 — M_DISPATCH (Depends on S_PAYOUT_HASH, S_REFUND_HASH + self-continuation).
+// Action: DISPATCH_BATCH (1 <= k <= MAX_BATCH). Final batch destroys manager and refunds 4 KAS to creatorPk.
+contract KusdtManagerDispatch(byte[] initialState) {
+    byte[] state = initialState;
+    int constant FEE_INPUTS = {{BATCH_FEE_INPUTS}};
+    int constant FEE_OUTPUTS = {{BATCH_FEE_OUTPUTS}};
+    byte[32] constant S_PAYOUT_HASH = byte[32](0x{{S_PAYOUT_HASH}});
+    byte[32] constant S_REFUND_HASH = byte[32](0x{{S_REFUND_HASH}});
+{{COMMON}}
+    entry spend(int k, int ownTailBytes, byte[] shardTail, byte[] shardMeta) {
+        require(tx.version == 1 && this.activeInputIndex == 0);
+        require(length(state) >= 124 && state.slice(0, 2) == byte[](0x0301) && state.slice(59, 60) == byte[](0x00));
+
+        int openedCount = U16(state, 50);
+        int cursor = U16(state, 52);
+        int totalTickets = U32(state, 54);
+        int decision = unsigned(state[58]);
+        require(openedCount >= 1 && openedCount <= MAX_SHARDS && length(state) == 92 + 32 * openedCount);
+        require(k >= 1 && k <= MAX_BATCH && cursor + k <= openedCount);
+        require(tx.inputs.length >= 1 + k && tx.inputs.length <= {{BATCH_FEE_INPUTS}});
+        require(tx.outputs.length == 1 + k || tx.outputs.length == 2 + k);
+
+        byte[32] zero = ZERO;
+        byte[32] managerCid = OpInputCovenantId(0);
+        byte[32] winnerPk = byte[32](state.slice(60, 92));
+        require(managerCid != zero && managerCid != KUSDT_CID);
+        require(OpCovInputCount(managerCid) == 1 && OpCovInputIdx(managerCid, 0) == 0);
+        require(tx.inputs[0].value == MANAGER_DEPOSIT);
+        for (ii, 1 + k, tx.inputs.length, 8) {
+            require(OpInputCovenantId(ii) == zero);
+        }
+
+        require(length(shardTail) > 0 && shardTail.slice(0, 1) == byte[](0x6c));
+        if (decision == 1) {
+            // PAYOUT dispatch: each shardMeta entry is 44B = firstBuyerPk(32) || vaultAmount(8) || shardTickets(4).
+            // S_FROZEN independently binds firstBuyerPk, vaultAmount, shardTickets, and managerCid on output `i`,
+            // while M_DISPATCH binds shardCid, decision=PAYOUT, winnerPk, and S_PAYOUT_HASH on the same output `i`.
+            require(totalTickets >= MIN_DRAW_TICKETS && winnerPk != zero);
+            require(templateHash(byte[](0x6b), shardTail) == S_PAYOUT_HASH);
+            require(length(shardMeta) == 44 * k);
+            for (j, 0, k, {{MAX_BATCH}}) {
+                int i = j + 1;
+                int off = 92 + 32 * (cursor + j);
+                byte[32] shardCid = byte[32](state.slice(off, off + 32));
+                require(OpInputCovenantId(i) == shardCid && OpOutputCovenantId(i) == shardCid);
+                require(tx.outputs[i].value == SHARD_LEDGER_DEPOSIT);
+                int mOff = 44 * j;
+                // S_PAYOUT state is always 110 bytes -> 0x6b || 0x4c 0x6e || state(110B) || shardTail.
+                byte[] redeem = byte[](0x6b4c6e1301)
+                    + shardMeta.slice(mOff, mOff + 32)
+                    + byte[](winnerPk)
+                    + shardMeta.slice(mOff + 32, mOff + 40)
+                    + byte[](managerCid)
+                    + shardMeta.slice(mOff + 40, mOff + 44)
+                    + shardTail;
+                require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(redeem)));
+            }
+        } else if (decision == 2) {
+            // REFUND dispatch (1~2 ticket rounds => openedCount <= 2, k <= 2).
+            // shardMeta packs k entries of: len(u16: 80 or 116) || sRefundState(80B or 116B).
+            require(totalTickets >= 1 && totalTickets < MIN_DRAW_TICKETS && openedCount <= 2 && k <= 2 && winnerPk == zero);
+            require(templateHash(byte[](0x6b), shardTail) == S_REFUND_HASH);
+            byte[] priceBytes = state.slice(34, 42);
+            int pos = 0;
+            for (j, 0, k, 2) {
+                int i = j + 1;
+                int off = 92 + 32 * (cursor + j);
+                byte[32] shardCid = byte[32](state.slice(off, off + 32));
+                require(OpInputCovenantId(i) == shardCid && OpOutputCovenantId(i) == shardCid);
+                require(tx.outputs[i].value == SHARD_LEDGER_DEPOSIT);
+                require(pos + 2 <= length(shardMeta));
+                int rLen = U16(shardMeta, pos);
+                require((rLen == 80 || rLen == 116) && pos + 2 + rLen <= length(shardMeta));
+                byte[] sRef = shardMeta.slice(pos + 2, pos + 2 + rLen);
+                pos = pos + 2 + rLen;
+                require(sRef.slice(0, 2) == byte[](0x1401) && sRef.slice(34, 42) == priceBytes && sRef.slice(43, 44) == byte[](0x00));
+                byte[] pfx = byte[](0x6b4c50);
+                if (rLen == 116) { pfx = byte[](0x6b4c74); }
+                require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(pfx + sRef + shardTail)));
+            }
+            require(pos == length(shardMeta));
+        } else {
+            require(false);
+        }
+
+        if (cursor + k < openedCount) {
+            // Continue M_DISPATCH with incremented cursor.
+            byte[] tail = byte[](0x00);
+            { tail = selfTail(0, ownTailBytes); }
+            byte[] nextState = state.slice(0, 52) + byte[]((cursor + k) as byte[2]) + state.slice(54, length(state));
+            require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
+            require(OpCovOutputCount(managerCid) == 1 && OpCovOutputIdx(managerCid, 0) == 0);
+            require(tx.outputs[0].value == MANAGER_DEPOSIT);
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, tail))));
+        } else {
+            // Final dispatch batch: destroy manager and refund 4 KAS deposit to creatorPk.
+            require(ownTailBytes == 0);
+            require(OpAuthOutputCount(0) == 0 && OpCovOutputCount(managerCid) == 0);
+            { ordinaryP2PK(0, MANAGER_DEPOSIT, pubkey(state.slice(2, 34))); }
+        }
+
+        if (tx.outputs.length == 2 + k) {
+            require(OpOutputCovenantId(1 + k) == zero && tx.outputs[1 + k].value > 0 && tx.outputs[1 + k].value <= VALUE_LIMIT);
+        }
+        { checkFee(FEE_CAP); }
+    }
+}

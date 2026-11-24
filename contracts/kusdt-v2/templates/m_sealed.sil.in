@@ -1,0 +1,139 @@
+pragma silverscript ^0.1.0;
+// Kaswin kUSDT v2 — M_SEALED (Depends on M_DISPATCH_HASH + self-continuation).
+// Actions:
+//   1 = DRAW (PASS-A 240B proof at d + 100, rejection-free 56-bit modulo draw, winner extraction from S_FROZEN raw)
+//   2 = REROLL (after 12h / 432,000 DAA timeout, self-update with identical state bytes for fresh anchor)
+contract KusdtManagerSealed(byte[] initialState) {
+    byte[] state = initialState;
+    int constant FEE_INPUTS = 9;
+    int constant FEE_OUTPUTS = 2;
+    byte[32] constant M_DISPATCH_HASH = byte[32](0x{{M_DISPATCH_HASH}});
+    byte[32] constant KEY_CTX = byte[32](0x536571436f6d6d69744d65726765736574436f6e746578740000000000000000);
+    byte[32] constant KEY_BRANCH = byte[32](0x536571436f6d6d69746d656e744d65726b6c654272616e636848617368000000);
+{{COMMON}}
+    function openSeq(byte[] proof, int base, byte[32] parent): byte[32] {
+        byte[32] ctx = blake3WithKey(proof.slice(base + 64, base + 88), KEY_CTX);
+        byte[32] pc = blake3WithKey(byte[](ctx) + proof.slice(base + 32, base + 64), KEY_BRANCH);
+        byte[32] root = blake3WithKey(proof.slice(base, base + 32) + byte[](pc), KEY_BRANCH);
+        return blake3WithKey(byte[](parent) + byte[](root), KEY_BRANCH);
+    }
+
+    function drawTicket(byte[] proof, int total): int {
+        require(length(proof) == 240);
+        require(this.ageDaa >= DRAW_DELAY_DAA);
+        int d = OpTxInputDaaScore(0);
+        require(d >= 0 && d < DAA_LIMIT - REROLL_TIMEOUT_DAA);
+        int boundary = d + DRAW_DELAY_DAA;
+        require(U63(proof, 224) >= 0 && U63(proof, 224) < boundary);
+        require(U63(proof, 104) >= boundary && U63(proof, 104) < DAA_LIMIT);
+        require(U63(proof, 232) >= 0 && U63(proof, 112) > U63(proof, 232));
+        require(U63(proof, 96) >= 0 && U63(proof, 216) >= 0);
+
+        byte[32] pseq = openSeq(proof, 152, byte[32](proof.slice(120, 152)));
+        byte[32] tseq = openSeq(proof, 32, pseq);
+        byte[32] thash = byte[32](proof.slice(0, 32));
+        require(tseq == OpChainblockSeqCommit(thash));
+
+        byte[32] seed = blake2b(byte[]("KASWIN_KUSDT_DRAW_V1") + byte[](OpInputCovenantId(0))
+            + byte[](tx.inputs[0].outpointTxId) + byte[](tx.inputs[0].outpointIndex as byte[8]).slice(0, 4)
+            + byte[](boundary as byte[8]) + byte[](thash) + byte[](tseq));
+        byte[32] digest = blake2b(byte[]("KASWIN_KUSDT_SAMPLE_V1") + byte[](seed) + byte[](0x0000000000000000));
+        int sample = OpBin2Num(byte[](digest).slice(0, 7) + byte[](0x00));
+        return sample % total;
+    }
+
+    entry spend(int action, int ownTailBytes, byte[] nextTail, byte[] data) {
+        require(tx.version == 1 && this.activeInputIndex == 0);
+        require(tx.inputs.length >= 1 && tx.inputs.length <= 9);
+        require(tx.outputs.length == 1 || tx.outputs.length == 2);
+        require(length(state) >= 128 && state.slice(0, 2) == byte[](0x0201) && state.slice(58, 60) == byte[](0x0000));
+
+        int openedCount = U16(state, 50);
+        int cursor = U16(state, 52);
+        int totalTickets = U32(state, 54);
+        require(openedCount >= 1 && openedCount <= MAX_SHARDS && cursor == 0 && totalTickets >= MIN_DRAW_TICKETS);
+        require(length(state) == 60 + 68 * openedCount);
+        require(U32(state, 60 + 68 * (openedCount - 1) + 64) == totalTickets);
+
+        byte[32] zero = ZERO;
+        byte[32] managerCid = OpInputCovenantId(0);
+        require(managerCid != zero && managerCid != KUSDT_CID);
+        require(OpCovInputCount(managerCid) == 1 && OpCovInputIdx(managerCid, 0) == 0);
+        for (ii, 1, tx.inputs.length, 8) {
+            require(OpInputCovenantId(ii) == zero);
+        }
+        require(tx.inputs[0].value == MANAGER_DEPOSIT);
+
+        require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
+        require(OpCovOutputCount(managerCid) == 1 && OpCovOutputIdx(managerCid, 0) == 0);
+        require(tx.outputs[0].value == MANAGER_DEPOSIT);
+        if (tx.outputs.length == 2) {
+            require(OpOutputCovenantId(1) == zero && tx.outputs[1].value > 0 && tx.outputs[1].value <= VALUE_LIMIT);
+        }
+        { checkFee(FEE_CAP); }
+
+        if (action == 1) {
+            // DRAW: data = proof(240B) || j(u16) || i(u16) || frozenState(112..9292B).
+            require(ownTailBytes == 0 && length(data) >= 356 && length(data) <= 9536);
+            require(templateHash(byte[](0x6b), nextTail) == M_DISPATCH_HASH);
+
+            int t = 0;
+            { t = drawTicket(data.slice(0, 240), totalTickets); }
+
+            int j = U16(data, 240);
+            int i = U16(data, 242);
+            require(j < openedCount);
+
+            int start = 0;
+            if (j > 0) { start = U32(state, 60 + 68 * (j - 1) + 64); }
+            int end = U32(state, 60 + 68 * j + 64);
+            require(end > start && start <= t && t < end);
+
+            byte[] frozen = data.slice(244, length(data));
+            require(byte[](blake2b(frozen)) == state.slice(60 + 68 * j + 32, 60 + 68 * j + 64));
+            require(frozen.slice(0, 2) == byte[](0x1201));
+
+            int rc = U16(frozen, 74);
+            require(rc >= 1 && rc <= MAX_RECORDS_PER_SHARD && length(frozen) == 76 + 36 * rc && i < rc);
+            int shardTickets = U32(frozen, 76 + 36 * (rc - 1));
+            require(shardTickets == end - start);
+
+            int localT = t - start;
+            int before = 0;
+            if (i > 0) { before = U32(frozen, 76 + 36 * (i - 1)); }
+            int after = U32(frozen, 76 + 36 * i);
+            require(before <= localT && localT < after && after <= shardTickets);
+
+            byte[] winnerPk = frozen.slice(76 + 36 * i + 4, 76 + 36 * i + 36);
+            require(byte[32](winnerPk) != zero);
+
+            // Compact directory from 68B/shard to 32B/shard (shardCid[] only).
+            byte[] cids = state.slice(0, 0);
+            int pos = 60;
+            for (e, 0, openedCount, 256) {
+                cids = cids + state.slice(pos, pos + 32);
+                pos = pos + 68;
+            }
+
+            byte[] nextState = byte[](0x03)
+                + state.slice(1, 52)
+                + byte[](0x0000)
+                + state.slice(54, 58)
+                + byte[](0x0100)
+                + winnerPk
+                + cids;
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, nextTail))));
+        } else if (action == 2) {
+            // REROLL: after 12h timeout, refresh outpoint & DAA anchor with 100% identical state bytes.
+            require(length(nextTail) == 0 && length(data) == 0);
+            int d = OpTxInputDaaScore(0);
+            require(d >= 0 && d < DAA_LIMIT - REROLL_TIMEOUT_DAA);
+            require(this.ageDaa >= REROLL_TIMEOUT_DAA);
+            byte[] tail = byte[](0x00);
+            { tail = selfTail(0, ownTailBytes); }
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(state, tail))));
+        } else {
+            require(false);
+        }
+    }
+}

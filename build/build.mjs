@@ -17,7 +17,7 @@ const ALLOWED=[/^web\/(app|ui)\/[a-z0-9-]+\.(mjs|ts)$/,
   /^scripts\/(chain|wallet|round|store|tracking|contract)\/[a-z0-9-]+\.mjs$/,
   /^scripts\/protocols\/([a-z0-9-]+\/)?[a-z0-9-]+\.mjs$/,
   /^scripts\/core\/lib\/[a-z0-9-]+\.js$/,/^scripts\/(core|errors|release-safety)\.mjs$/,
-  /^rolling-profile:/,/^node_modules\//];
+  /^rolling-profile:/,/^kusdt-v2-profile:/,/^node_modules\//];
 const FORBIDDEN=[/^tests\//,/^experiments\//,/^scripts\/indexer\//,/^scripts\/contract\/bundle\.mjs$/,
   /(^|\/)(fixtures|test-signer|engine-gate|tn10-run|tn10-service|tn10-replay|service-client|fake-node)\.mjs$/,
   /\.test\.(mjs|ts)$/,/^scripts\/wallet\/(kasware|kastle|browser-test)\.mjs$/];
@@ -47,7 +47,7 @@ export function typeCheckPage() {
   fail(ts.getPreEmitDiagnostics(ts.createProgram(parsed.fileNames,parsed.options)));
 }
 
-export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}={}) {
+export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',cd311=false}={}) {
   assert.ok(mode==='mainnet'||mode==='tn10','Rolling supports --mode=mainnet or --mode=tn10');
   assert.equal(esbuild.version,'0.28.2','esbuild 0.28.2 is required');
   const coreSources=await buildCore();
@@ -62,14 +62,28 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
   assert.equal(TN10_GENESIS,TN10.genesis,'client TN10 genesis differs from the network table');
   const profile=await loadDeploymentProfile(),data=profileToData(profile);
   assert.equal(data.id,TN10_PROFILE_ID);assert.equal(data.status,'UNVALIDATED');
+  const kusdtPinsRaw=JSON.parse(await fs.readFile(path.join(root,'contracts/kusdt-v2/artifacts/template-pins.json'),'utf8'));
+  const kusdtKcc20SuffixRaw=JSON.parse(await fs.readFile(path.join(root,'contracts/kusdt-v2/artifacts/kcc20-suffix.json'),'utf8'));
+  const kusdtArtifacts={};
+  const kusdtExpectedHashes={};
+  for(const name of kusdtPinsRaw.order) {
+    kusdtArtifacts[name]=JSON.parse(await fs.readFile(path.join(root,`contracts/kusdt-v2/artifacts/${name}.json`),'utf8'));
+    kusdtExpectedHashes[name]=kusdtPinsRaw.templates[name].templateHash;
+  }
   const result=await esbuild.build({
     absWorkingDir:root,entryPoints:['web/app/app.ts'],bundle:true,metafile:true,write:false,
     platform:'browser',format:'iife',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
-    define:{__KASWIN_DEFAULT_NET__:JSON.stringify(mode),__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:JSON.stringify(mode==='mainnet'),__KASWIN_BROWSER_TEST_WALLET__:'false'},
-    plugins:[{name:'rolling-profile',setup(build){
-      build.onResolve({filter:/^@kaswin\/rolling-profile$/},()=>({path:'data',namespace:'rolling-profile'}));
-      build.onLoad({filter:/.*/,namespace:'rolling-profile'},()=>({loader:'js',contents:`export const profileData=${JSON.stringify(data)};`}));
-    }}],
+    define:{__KASWIN_DEFAULT_NET__:JSON.stringify(mode),__KASWIN_RELEASE_TRADING__:'true',__KASWIN_MAINNET_TRADING__:JSON.stringify(mode==='mainnet'),__KASWIN_BROWSER_TEST_WALLET__:'false',__KASWIN_CD311__:JSON.stringify(!!cd311)},
+    plugins:[
+      {name:'rolling-profile',setup(build){
+        build.onResolve({filter:/^@kaswin\/rolling-profile$/},()=>({path:'data',namespace:'rolling-profile'}));
+        build.onLoad({filter:/.*/,namespace:'rolling-profile'},()=>({loader:'js',contents:`export const profileData=${JSON.stringify(data)};`}));
+      }},
+      {name:'kusdt-v2-profile',setup(build){
+        build.onResolve({filter:/^@kaswin\/kusdt-v2-profile$/},()=>({path:'data',namespace:'kusdt-v2-profile'}));
+        build.onLoad({filter:/.*/,namespace:'kusdt-v2-profile'},()=>({loader:'js',contents:`export const kusdtV2Artifacts=${JSON.stringify(kusdtArtifacts)};export const kusdtV2Pins=${JSON.stringify({kusdtCid:kusdtPinsRaw.kusdtCid,templates:kusdtExpectedHashes})};export const kusdtV2Kcc20SuffixHex=${JSON.stringify(kusdtKcc20SuffixRaw.suffixHex)};`}));
+      }},
+    ],
   });
   const sources=checkGraph(result.metafile);
   assert.ok(!sources.some(f=>f.includes('@walletconnect/sign-client')||f.includes('node_modules/qrcode/')),'KASPIRE_WC_STILL_IN_MAIN_BUNDLE');
@@ -92,13 +106,15 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
   const html=template.replace('__APPLICATION_HASH__',`sha256-${scriptHash}`).replace('__PROFILE_ID__',TN10_PROFILE_ID).replace('__APP_VERSION__',appVersion)
     .replace('/* STYLES */',()=>css).replace('/* APPLICATION */',()=>js);
   assert.ok(sources.includes('scripts/core.mjs')&&sources.includes('scripts/core/lib/transactions.js'),'ROLLING_TS_CORE_NOT_WIRED');
-  const inputPaths=[...new Set([...sources.filter(f=>!f.startsWith('rolling-profile:')),...wcSources,...coreSources,
+  const inputPaths=[...new Set([...sources.filter(f=>!f.startsWith('rolling-profile:')&&!f.startsWith('kusdt-v2-profile:')),...wcSources,...coreSources,
     'build/core.mjs','build/build.mjs','scripts/core/tsconfig.json','scripts/core/package.json',
     'web/ui/index.template.html','web/ui/styles.css','web/app/tsconfig.json','web/app/globals.d.ts','web/app/types.ts',
     'package.json','package-lock.json','contracts/pins.json','contracts/toolchain.json',
+    'contracts/kusdt-v2/artifacts/template-pins.json',
+    ...kusdtPinsRaw.order.map(n=>`contracts/kusdt-v2/artifacts/${n}.json`),
     ...Object.keys(profile.frames).flatMap(m=>[`contracts/artifacts/${m}.json`,`contracts/${m}.sil`])])].sort();
   const inputs=Object.fromEntries(await Promise.all(inputPaths.map(async f=>[f,sha256(await fs.readFile(path.join(root,f)))])));
-  const manifest={formatVersion:1,version:appVersion,mode,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
+  const manifest={formatVersion:1,version:appVersion,mode,cd311:!!cd311,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
     capabilities:{tn10Trading:true,mainnetTrading:mode==='mainnet',memoryWallet:mode!=='mainnet',networkSwitch:true},
     contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:defaultNet.networkId,genesis:defaultNet.genesis,
     networks:['mainnet','tn10'],profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},
@@ -111,8 +127,8 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet'}
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
-  const args=process.argv.slice(2),out=args.find(a=>a.startsWith('--out-dir=')),mode=args.find(a=>a.startsWith('--mode='));
-  assert.ok(args.every(a=>a.startsWith('--out-dir=')||a==='--mode=mainnet'||a==='--mode=tn10'),'Usage: node build/build.mjs [--mode=mainnet|tn10] [--out-dir=<dir>]');
-  const {manifest,outDir}=await buildKaswin({outDir:out?path.resolve(out.slice(10)):undefined,mode:mode?mode.slice(7):'mainnet'});
+  const args=process.argv.slice(2),out=args.find(a=>a.startsWith('--out-dir=')),mode=args.find(a=>a.startsWith('--mode=')),cd311=args.includes('--cd311');
+  assert.ok(args.every(a=>a.startsWith('--out-dir=')||a==='--mode=mainnet'||a==='--mode=tn10'||a==='--cd311'),'Usage: node build/build.mjs [--mode=mainnet|tn10] [--out-dir=<dir>] [--cd311]');
+  const {manifest,outDir}=await buildKaswin({outDir:out?path.resolve(out.slice(10)):undefined,mode:mode?mode.slice(7):'mainnet',cd311});
   console.log(`Built ${path.join(outDir,'index.html')} (${manifest.artifact.bytes} bytes, sha256=${manifest.artifact.sha256}, profile=${manifest.profileId}, ${manifest.graph.files} source files)`);
 }

@@ -12,7 +12,13 @@ export const ACTION_INFO: Record<string,{title:string;verb:string;free:boolean;d
   REFUND_OLD:{title:'退款：已封存的分片',verb:'退款',free:true,desc:'每批退最多 32 条（每条扣 0.02 TKAS 归执行者）。'},
   REFUND_SELF:{title:'退款：当前分片',verb:'退款',free:true,desc:'退还当前分片剩余记录并退回创建者押金。'},
 };
-export const ROLE_LABEL: Record<string,string>={MANAGER:'轮次状态（合约）',FROZEN:'已封存分片（合约）',WINNER:'中奖者',CREATOR:'创建者（押金退回）',EXECUTOR:'执行者奖励',
+const EXTRA_ACTION_TITLE: Record<string,string>={
+  GENESIS:'发起轮次',OPEN_SHARD:'购买票',EMPTY_CLOSE:'封盘（空轮）',COLLECT_BATCH:'封盘汇总',
+  DISPATCH_BATCH:'下发结算',REROLL:'超时转退款',PAYOUT_EXECUTOR:'派奖：代领结算',
+  PAYOUT_SELF:'派奖：领取奖金',CLAIM_REFUND:'领取退款',
+};
+export const actionTitle=(action: string): string=>ACTION_INFO[action]?.title??EXTRA_ACTION_TITLE[action]??action;
+export const ROLE_LABEL: Record<string,string>={MANAGER:'轮次状态（合约）',FROZEN:'已封存分片（合约）',SHARD_DEPOSIT:'分片账本（可退押金）',VAULT_DEPOSIT:'分片金库（可退押金）',TOKEN_CHANGE:'kUSDT 找零（归你）',WINNER:'中奖者',CREATOR:'创建者（押金退回）',EXECUTOR:'执行者奖励',
   BUYER_REFUND:'买家退款',CHANGE:'找零',REGISTRATION:'登记输出'};
 export const TERMINAL_LABEL: Record<string,string>={PAID:'已派奖',EMPTY:'空轮结束',REFUNDED:'退款完成'};
 
@@ -31,11 +37,18 @@ const ERR: Record<string,string>={
   MAINNET_MEMORY_KEY_DISABLED:'主网已禁用内存明文私钥，请使用 KasWare、Kastle 或 Kaspire 钱包。',
   WALLET_NOT_INSTALLED:'没有检测到所选钱包扩展，请安装或启用后刷新页面。',WALLET_UNSUPPORTED:'当前扩展版本缺少所需签名接口，请升级钱包后重试。',
   WALLET_NOT_AUTHORIZED:'钱包尚未授权本页访问账户。',WALLET_PUBLIC_KEY_MISMATCH:'钱包返回的公钥与账户地址不一致，已停止。',WALLET_SCHNORR_REQUIRED:'此协议需要 Schnorr 账户，请在钱包中换用 Schnorr 地址。',
-  WALLET_CONNECT_TIMEOUT:'等待扩展钱包连接超时，请先在扩展中完成或拒绝原请求，再重试。',
+  WALLET_CONNECT_TIMEOUT:'等待扩展钱包连接超时，请先在扩展中解锁并完成或拒绝原请求，再重试。',
+  WALLET_CONNECT_CANCELLED:'已取消连接钱包；如扩展已超时锁屏，请先在扩展中解锁后再重新连接。',
   WALLET_REQUEST_REJECTED:'钱包没有完成授权或签名，请在扩展中确认后重试。',WALLET_SIGN_TIMEOUT:'等待扩展钱包签名超时，请先在扩展中完成或拒绝原请求，再重新操作。',WALLET_SIGN_CANCELLED:'已取消等待钱包签名；如扩展已锁屏或无响应，请解锁后重新连接钱包。',
   WALLET_TRANSACTION_CHANGED:'钱包返回的交易内容与确认报价不一致，已拒绝发送。',WALLET_DRAFT_CHANGED:'签名期间报价发生变化，已停止发送，请重新报价。',
   WALLET_RESPONSE_INVALID:'钱包返回的交易数据格式不正确，已拒绝发送。',WALLET_EVENTS_UNAVAILABLE:'钱包状态通知不可用，请重新连接或升级扩展。',
   WALLET_FUNDS_INSUFFICIENT:'钱包里的余额不够支付这一笔（含网络费）。',
+  KUSDT_V2_NO_FUNDING:'钱包里没有可用的普通 KAS 资金 UTXO。',
+  KUSDT_V2_INSUFFICIENT_KAS:'钱包里的普通 KAS 余额不足以支付押金与网络费。',
+  KUSDT_V2_INSUFFICIENT_KUSDT:'钱包里的 kUSDT 余额不足以支付本次购票。',
+  PROTOCOL_DRAFT_INVALID:'协议交易草稿不完整，已拒绝签名提交。',
+  STORAGE_MASS_LIMIT:'交易找零或输出结构触发存储质量上限（STORAGE_MASS_LIMIT），请先整理钱包 UTXO 或稍后重试。',
+  FEE_CAP:'当前估算的网络费用超过协议上限，已停止构建。',
   WALLET_FUNDS_PENDING:'钱包里的资金正被另一笔还没确认的交易占用（可能是同一个钱包在别的页面、标签页或脚本里发出的）。等那笔确认后再试，一般几秒到一分钟。',
   KEY_FORMAT:'私钥格式不正确：需要 64 位十六进制。',KEY_INVALID:'这不是有效的私钥。',
   RECIPIENT_P2PK_REQUIRED:'收款地址必须是当前网络有效的 Schnorr 地址（kaspa:q… 或 kaspatest:q…）。',
@@ -87,10 +100,14 @@ export const errCode=(e: unknown): string=>{const c=codeOf(e);return typeof c===
 const TERMINAL_PHASE: Record<string,Phase>={PAID:{key:'paid',label:'已派奖',tone:'gold'},EMPTY:{key:'empty',label:'空轮结束',tone:'muted'},REFUNDED:{key:'refunded',label:'退款完成',tone:'muted'}};
 const MODULE_PHASE: Record<string,Phase>={sales:{key:'open',label:'售票中',tone:'mint'},sealed:{key:'sealed',label:'待开奖',tone:'violet'},win:{key:'paying',label:'派奖中',tone:'gold'},
   refund:{key:'refund',label:'退款中',tone:'amber'}};
-export function phaseOf(r: Pick<Round,'halted'|'terminal'|'manager'>,f: Pick<Facts,'module'>|null|undefined): Phase {
+export function phaseOf(r: Pick<Round,'halted'|'terminal'|'manager'|'intent'|'kusdt'>,f: Pick<Facts,'module'>|null|undefined): Phase {
   if(r.halted)return {key:'halted',label:'已停止',tone:'amber'};
   if(r.terminal)return TERMINAL_PHASE[r.terminal]??{key:'done',label:String(r.terminal),tone:'muted'};
-  if(!r.manager)return {key:'new',label:'等待创建确认',tone:'amber'};
+  if(r.intent?.action==='GENESIS')return {key:'new',label:'等待创建确认',tone:'amber'};
+  if(!r.manager){
+    if(r.kusdt&&(f?.module==='refund'||f?.module==='win'))return MODULE_PHASE[f.module]!;
+    return {key:'new',label:'等待创建确认',tone:'amber'};
+  }
   return MODULE_PHASE[f?.module??'']??{key:'new',label:'读取中',tone:'amber'};
 }
 export const CLOSE_PRESETS: [string,string][]=[['10','10 分钟'],['30','30 分钟'],['60','1 小时'],['360','6 小时'],['1440','24 小时'],['custom','自定义']];

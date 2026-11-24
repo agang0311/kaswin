@@ -17,6 +17,21 @@ export async function commonUtxos(link, address) {
   return r.entries.map(utxoFromRpc);
 }
 
+/** Batched live UTXOs across multiple addresses (chunked to keep each RPC bounded). */
+export async function commonUtxosByAddresses(link, addresses, {chunkSize = 64} = {}) {
+  const uniq = [...new Set((addresses ?? []).filter(a => typeof a === 'string' && a.length > 0))];
+  if (!uniq.length) return [];
+  const step = Math.max(1, Math.min(256, Number(chunkSize) || 64));
+  const out = [];
+  for (let i = 0; i < uniq.length; i += step) {
+    const batch = uniq.slice(i, i + step);
+    const r = await link.call('getUtxosByAddresses', {addresses: batch});
+    ensure(Array.isArray(r?.entries) && r.entries.length <= 5000, '地址 UTXO 过多（>5000），超出本页有界读取范围');
+    for (const e of r.entries) out.push(utxoFromRpc(e));
+  }
+  return out;
+}
+
 /** Strict asset-scoped UTXO filter: ordinary KAS NEVER includes UTXOs carrying a covenantId (e.g. KCC-20 tokens). */
 export function filterAssetUtxos(utxos, asset = {kind: 'KAS', tokenCovenantId: null}, {spkScript = null, excludeOutpoints = null} = {}) {
   const kind = asset?.kind ?? 'KAS';

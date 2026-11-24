@@ -5,11 +5,14 @@ import {errText,errCode,phaseOf,ACTION_INFO} from '../../web/ui/messages.ts';
 import {makeShare,parseShare,MAX_SHARE_TEXT} from '../../web/app/share.ts';
 import {ACTIONS} from '../../scripts/round/round.mjs';
 import {drawReadiness} from '../../web/ui/draw-readiness.ts';
-import {exploreView,createView,roundView,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,MAX_TICKET_CAP,VERIFIED_TICKET_CAP} from '../../web/ui/views.ts';
+import {exploreView,createView,roundView,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,buyReceiptForRound,refundReceiptForRound,MAX_TICKET_CAP,VERIFIED_TICKET_CAP} from '../../web/ui/views.ts';
 import {TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
 import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {TN10} from '../../scripts/chain/tn10.mjs';
 import {parseNodeList} from '../../web/app/settings.ts';
+import {normalize} from '../../web/ui/i18n.mjs';
+import {EN as EN_COMMON} from '../../web/ui/messages-common-en.mjs';
+import {EN as EN_ROLLING} from '../../web/ui/messages-en.mjs';
 
 /* The views are pure (data in, HTML string out): no DOM, controller, node or wallet is needed. */
 const hex=c=>c.repeat(64),price=100000000n;
@@ -80,11 +83,22 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
     {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
   ]})).s;
   assert.match(offlineCacheOut,/索引暂不可用，当前显示本地缓存列表/);
-  // Starred filter & collapsed incompatible rounds
-  const savedOut=exploreView(ctx({S:{...BASE_S,filter:'saved'},saved:new Set([r.cid]),items:[item(r,facts(),actions()),item({...r,cid:hex('9')},{module:null},actions())]})).s;
+  // Starred filter & collapsed incompatible rounds (pending GENESIS and valid kUSDT rounds must NOT collapse into 不适用轮次)
+  const pendingGenesis={...r,cid:hex('8'),manager:null,intent:{status:'SUBMITTED',action:'GENESIS',txid:hex('7')}};
+  const kusdtLocal={...r,cid:hex('7'),kusdt:{stage:1,price:1_000_000n,closeDaa:900n,openedCount:0,cursor:0,totalTickets:2,decision:0,creatorPk:hex('2'),winnerPk:null,nodeVerified:true,shards:[]}};
+  const savedOut=exploreView(ctx({S:{...BASE_S,filter:'saved'},saved:new Set([r.cid]),items:[
+    item(r,facts(),actions()),
+    item(pendingGenesis,{module:null},actions()),
+    item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions()),
+    item({...r,cid:hex('9')},{module:null},actions()),
+  ]})).s;
   assert.match(savedOut,/★ 关注/);
   assert.ok(savedOut.includes(`data-open="${r.cid}"`));
   assert.match(savedOut,/不适用轮次 \(1\)/);
+  const kusdtAllOut=exploreView(ctx({S:{...BASE_S,filter:'all'},items:[item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions())]})).s;
+  assert.match(kusdtAllOut,/kUSDT/);
+  assert.match(kusdtAllOut,/1 kUSDT\/张/);
+  assert.doesNotMatch(kusdtAllOut,/不适用轮次/);
 });
 
 test('create form: bounds are enforced, bad input never throws, and values are escaped in the page',()=>{
@@ -465,3 +479,350 @@ test('round countdown: sales close countdown and two-stage sealed draw readiness
   assert.match(readyHtml,/data-act="DRAW"/);
   assert.match(readyHtml,/核验并开奖/);
 });
+
+test('kusdt-v2 purchaseTip and receipt helpers match OPEN_SHARD, BUY, and CLAIM_REFUND per shard (including interleaved multi-shard rounds)',()=>{
+  const scidA=hex('1'),scidB=hex('2');
+  const txGen=hex('a'),txOpenA=hex('b'),txOpenB=hex('c'),txBuyA1=hex('d'),txClaimA0=hex('e'),txClaimA1=hex('f');
+  const buyer1=hex('9'),buyer2=hex('8');
+  const shA={index:0,kind:'frozen',status:'refunded',startTicket:1,endTicket:2,tickets:2,recordCount:2,hash:scidA,refundedRecords:2,mineCount:1,
+    records:[
+      {index:0,startTicket:1,endTicket:1,count:1,key:buyer1,mine:true,refunded:true},
+      {index:1,startTicket:2,endTicket:2,count:1,key:buyer2,mine:false,refunded:true},
+    ]};
+  const shB={index:1,kind:'frozen',status:'frozen',startTicket:3,endTicket:3,tickets:1,recordCount:1,hash:scidB,refundedRecords:0,mineCount:0,
+    records:[{index:0,startTicket:3,endTicket:3,count:1,key:buyer2,mine:false,refunded:false}]};
+  const r=roundFixture({
+    terminal:'REFUNDED',
+    manager:null,
+    kusdt:{cid:hex('a'),loading:false,stage:null,price:1_000_000n,closeDaa:100n,openedCount:2,cursor:2,totalTickets:3,decision:2,creatorPk:buyer1,winnerPk:null,shards:[]},
+    receipts:[
+      {action:'GENESIS',txid:txGen,feeSompi:'1000000',finalized:true},
+      {action:'OPEN_SHARD',txid:txOpenA,feeSompi:'8951000',finalized:true,shardCid:scidA,recordIndex:0},
+      {action:'OPEN_SHARD',txid:txOpenB,feeSompi:'8951000',finalized:true,shardCid:scidB,recordIndex:0},
+      {action:'BUY',txid:txBuyA1,feeSompi:'4200000',finalized:true,shardCid:scidA,recordIndex:1},
+      {action:'CLAIM_REFUND',txid:txClaimA1,feeSompi:'3300000',finalized:true,shardCid:scidA,recIdx:1},
+      {action:'CLAIM_REFUND',txid:txClaimA0,feeSompi:'4500000',finalized:true,shardCid:scidA,recIdx:0},
+    ],
+  });
+  const shards=[shA,shB];
+  // Interleaved parallel shard receipts resolve strictly to their owning shard & record
+  assert.equal(buyReceiptForRound(shA,shA.records[0],r,shards,true)?.txid,txOpenA);
+  assert.equal(buyReceiptForRound(shA,shA.records[1],r,shards,true)?.txid,txBuyA1);
+  assert.equal(buyReceiptForRound(shB,shB.records[0],r,shards,true)?.txid,txOpenB);
+  assert.equal(refundReceiptForRound(shA,shA.records[0],r,shards,true)?.txid,txClaimA0);
+  assert.equal(refundReceiptForRound(shA,shA.records[1],r,shards,true)?.txid,txClaimA1);
+
+  // Without shardCid on a multi-shard round, must return null rather than misattributing across shards
+  const unlabelled={...r,receipts:r.receipts.map(({shardCid:_s,recordIndex:_i,recIdx:_r,...rest})=>rest)};
+  assert.equal(buyReceiptForRound(shA,shA.records[0],unlabelled,shards,true),null);
+  assert.equal(refundReceiptForRound(shA,shA.records[0],unlabelled,shards,true),null);
+
+  // Single-shard fallback works even without shardCid/recordIndex/recIdx
+  const singleSh={...shA,tickets:1,recordCount:1,refundedRecords:1,records:[shA.records[0]]};
+  const singleR={...r,receipts:[
+    {action:'GENESIS',txid:txGen,feeSompi:'1000000',finalized:true},
+    {action:'OPEN_SHARD',txid:txOpenA,feeSompi:'8951000',finalized:true},
+    {action:'CLAIM_REFUND',txid:txClaimA0,feeSompi:'4500000',finalized:true},
+  ]};
+  assert.equal(buyReceiptForRound(singleSh,singleSh.records[0],singleR,[singleSh],true)?.txid,txOpenA);
+  assert.equal(refundReceiptForRound(singleSh,singleSh.records[0],singleR,[singleSh],true)?.txid,txClaimA0);
+
+  // Rendered purchaseTip shows BOTH 购买交易 (OPEN_SHARD) and 退款交易 (CLAIM_REFUND) with 1 kUSDT and zero "本机未保留" text
+  const D={
+    ...item(r,facts({module:null,ticketPrice:1_000_000n,tickets:3,shards:2}),actions()),
+    mine:null,isWinner:false,shards,
+    asset:{kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')},
+    kusdt:r.kusdt,
+  };
+  const tipHtml=roundView(ctx({net:MAINNET,S:{...BASE_S,view:'round',cid:r.cid,shard:0,purchase:0,detailTab:'map'},detail:D})).s;
+  assert.ok(tipHtml.includes(txOpenA.slice(0,10)));
+  assert.ok(tipHtml.includes(txClaimA0.slice(0,10)));
+  assert.match(tipHtml,/1 kUSDT/);
+  assert.ok(!tipHtml.includes('本机未保留完整购买交易索引'));
+  assert.ok(!tipHtml.includes('本机未保留完整退款交易索引'));
+
+  // txTable omits finalized OPEN_SHARD/BUY/CLAIM_REFUND just like KAS rounds, keeping GENESIS in table and summarizing omitted buys/refunds
+  const txsHtml=roundView(ctx({net:MAINNET,S:{...BASE_S,view:'round',cid:r.cid,shard:null,purchase:null,detailTab:'txs'},detail:D})).s;
+  assert.match(txsHtml,/发起轮次/);
+  assert.match(txsHtml,/3 笔已确认购买交易/);
+  assert.match(txsHtml,/2 笔已确认退款交易/);
+
+  // Post-DISPATCH_BATCH kusdt-v2 round (manager=null, terminal=null, module='refund'|'win') must show 退款中 / 派奖中, NOT 等待创建确认!
+  const postDispatchRefundR=roundFixture({
+    terminal:null,manager:null,
+    kusdt:{cid:hex('a'),loading:false,stage:3,price:1_000_000n,closeDaa:100n,openedCount:1,cursor:1,totalTickets:1,decision:2,creatorPk:buyer1,winnerPk:null,nodeVerified:true,shards:[]},
+  });
+  assert.deepEqual(phaseOf(postDispatchRefundR,{module:'refund'}),{key:'refund',label:'退款中',tone:'amber'});
+  assert.deepEqual(phaseOf(postDispatchRefundR,{module:'win'}),{key:'paying',label:'派奖中',tone:'gold'});
+  const postDispatchHtml=roundView(ctx({
+    net:MAINNET,
+    S:{...BASE_S,view:'round',cid:postDispatchRefundR.cid,detailTab:'map'},
+    detail:{...item(postDispatchRefundR,facts({module:'refund',ticketPrice:1_000_000n,tickets:1,shards:1}),actions()),mine:null,isWinner:false,shards:[singleSh],asset:D.asset,kusdt:postDispatchRefundR.kusdt},
+  })).s;
+  assert.match(postDispatchHtml,/退款中/);
+  assert.ok(!postDispatchHtml.includes('等待创建确认'));
+});
+
+test('kusdt-v2 BUY selector shows 开新片 while buyable open shards < 8, hides it at 8, and re-enables once a shard hits 256 records',()=>{
+  const mkOpenShard=(i,recordCount)=>({
+    shardCid:`${i.toString(16).padStart(2,'0')}${'ab'.repeat(31)}`,
+    stage:0x11,terminal:false,tickets:recordCount,recordCount,
+  });
+  const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
+  const renderWith=(shards,openedCount)=>{
+    const r=roundFixture({
+      kusdt:{cid:hex('a'),loading:false,stage:1,price:1_000_000n,closeDaa:5000n,openedCount,cursor:0,totalTickets:shards.reduce((s,x)=>s+x.tickets,0),decision:0,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards},
+    });
+    const D={
+      ...item(r,facts({module:'sales',ticketPrice:1_000_000n,tickets:r.kusdt.totalTickets,shards:openedCount}),actions({BUY:{ok:true}})),
+      mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:r.kusdt,
+    };
+    return roundView(ctx({net:MAINNET,S:{...BASE_S,view:'round',cid:r.cid,detailTab:'map'},detail:D})).s;
+  };
+  // 8 active buyable shards -> 开新片 option MUST be hidden and cap hint shown
+  const eightActive=Array.from({length:8},(_,i)=>mkOpenShard(i+1,5));
+  const html8=renderWith(eightActive,8);
+  assert.match(html8,/id="kShardCid"/);
+  assert.ok(!html8.includes('<option value="">'));
+  assert.ok(!html8.includes('开新片'));
+  assert.match(html8,/8\/8 个可买活动分片/);
+
+  // 7 active buyable shards + 1 full 256-record shard -> only 7 open shards in dropdown + 开新片 re-enabled (7/8)!
+  const sevenPlusFull=[mkOpenShard(1,256),...Array.from({length:7},(_,i)=>mkOpenShard(i+2,5))];
+  const html7=renderWith(sevenPlusFull,8);
+  assert.match(html7,/<option value="">开新片（含 4 KAS 可退押金 · 活动分片 7\/8）<\/option>/);
+  assert.equal((html7.match(/已有分片 #/g)??[]).length,7);
+  assert.ok(!html7.includes('个可买活动分片'));
+});
+
+test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding contract rollovers), and splits rollover outputs',()=>{
+  const mine='20'+'ab'.repeat(32)+'ac',other='20'+'cd'.repeat(32)+'ac';
+  const wallet={kind:'key',address:'kaspa:qa',key:hex('1'),spk:{script:mine}};
+  const kasAsset={kind:'KAS',symbol:'KAS',decimals:8,tokenCovenantId:null};
+  const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
+  const baseMass={computeMass:1,transientMass:2,storageMass:3};
+
+  // 1) OPEN_SHARD: -1 kUSDT into new shard vault, -4.041 KAS net (-4 KAS refundable deposit, -0.041 KAS fee); 4 KAS MANAGER separated into rollover section!
+  const openPrepared={
+    op:{action:'BUY',quantity:1},kusdtAction:'OPEN_SHARD',fee:4_100_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    review:{
+      txid:hex('e'),fee:4_100_000n,
+      assetDeltas:[
+        {asset:kusdtAsset,amount:-1_000_000n,role:'NET'},
+        {asset:kasAsset,amount:-400_000_000n,role:'REFUNDABLE_DEPOSIT'},
+        {asset:kasAsset,amount:-4_100_000n,role:'FEE'},
+      ],
+      inputs:[
+        {index:0,value:400_000_000n,kind:'合约 UTXO'},
+        {index:1,value:100_000_000n,kind:'需签名（你的 kUSDT）'},
+        {index:2,value:14_877_191_524n,kind:'需签名（你的钱包）'},
+      ],
+      outputs:[
+        {role:'MANAGER',value:400_000_000n,script:'m',covenant:true,mine:false,rollover:true,note:'原轮次总管 4 KAS 押金滚存（创建者押金，非你支出）'},
+        {role:'SHARD_DEPOSIT',value:200_000_000n,script:'s',covenant:true,mine:false,rollover:false,note:'你垫付的新分片账本押金（分片结清时原路退回给你）'},
+        {role:'VAULT_DEPOSIT',value:200_000_000n,script:'v',covenant:true,mine:false,rollover:false,tokenAmount:1_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'你支付的 1 kUSDT 票款存入新分片金库 + 你垫付 2 KAS 可退押金'},
+        {role:'TOKEN_CHANGE',value:100_000_000n,script:'tc',covenant:true,mine:true,rollover:false,tokenAmount:4_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'退回你的 4 kUSDT 找零（含 1 KAS 代币载体，仍归你所有）'},
+        {role:'CHANGE',value:14_473_091_524n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const openHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:openPrepared,planText:'开新分片购票'}).s;
+  assert.match(openHtml,/你的 kUSDT 支出[\s\S]*?-1 kUSDT/);
+  assert.match(openHtml,/存入新分片金库/);
+  assert.match(openHtml,/你的 KAS 净变动[\s\S]*?-4\.041 KAS/);
+  assert.match(openHtml,/其中 · 暂锁可退押金[\s\S]*?-4 KAS/);
+  assert.match(openHtml,/分片账本 2 \+ 分片金库 2/);
+  assert.match(openHtml,/其中 · 网络费[\s\S]*?-0\.041 KAS/);
+  const [openUserPart,openRolloverPart]=openHtml.split('合约原有状态滚存（非你支出，不从你钱包扣除）');
+  assert.ok(openRolloverPart,'OPEN_SHARD should separate rollover outputs');
+  assert.match(openUserPart,/涉及你的资金去向/);
+  assert.match(openUserPart,/1 kUSDT/);
+  assert.match(openUserPart,/4 kUSDT/);
+  assert.ok(!openUserPart.includes('轮次状态（原押金滚存）'));
+  assert.match(openRolloverPart,/轮次状态（原押金滚存）/);
+  assert.match(openRolloverPart,/创建者押金，非你支出/);
+
+  // 2) BUY (existing shard): -1 kUSDT into existing vault, -0.031 KAS net (no deposit), VAULT_DEPOSIT in user section & SHARD_DEPOSIT in rollover
+  const buyPrepared={
+    op:{action:'BUY',quantity:1},kusdtAction:'BUY',fee:3_100_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    review:{
+      txid:hex('e'),fee:3_100_000n,
+      assetDeltas:[
+        {asset:kusdtAsset,amount:-1_000_000n,role:'NET'},
+        {asset:kasAsset,amount:-3_100_000n,role:'FEE'},
+      ],
+      inputs:[
+        {index:0,value:200_000_000n,kind:'合约 UTXO'},
+        {index:1,value:200_000_000n,kind:'合约 UTXO'},
+        {index:2,value:100_000_000n,kind:'需签名（你的 kUSDT）'},
+        {index:3,value:1_000_000_000n,kind:'需签名（你的钱包）'},
+      ],
+      outputs:[
+        {role:'SHARD_DEPOSIT',value:200_000_000n,script:'s',covenant:true,mine:false,rollover:true,note:'原分片账本 2 KAS 押金滚存（首购者垫付，非你支出）'},
+        {role:'VAULT_DEPOSIT',value:200_000_000n,script:'v',covenant:true,mine:false,rollover:false,tokenAmount:2_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'你本次支付的 1 kUSDT 票款存入此金库（金库现存 2 kUSDT）；2 KAS 为原押金滚存，非你支出'},
+        {role:'TOKEN_CHANGE',value:100_000_000n,script:'tc',covenant:true,mine:true,rollover:false,tokenAmount:4_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'退回你的 4 kUSDT 找零（含 1 KAS 代币载体，仍归你所有）'},
+        {role:'CHANGE',value:996_900_000n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const buyHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:buyPrepared,planText:'在已有分片购票'}).s;
+  assert.match(buyHtml,/你的 kUSDT 支出[\s\S]*?-1 kUSDT/);
+  assert.match(buyHtml,/存入已有分片金库/);
+  assert.match(buyHtml,/你的 KAS 净变动[\s\S]*?-0\.031 KAS/);
+  assert.ok(!buyHtml.includes('暂锁可退押金'));
+  const [buyUserPart,buyRolloverPart]=buyHtml.split('合约原有状态滚存（非你支出，不从你钱包扣除）');
+  assert.match(buyUserPart,/分片金库（存票款）/);
+  assert.match(buyUserPart,/2 kUSDT/);
+  assert.match(buyRolloverPart,/分片账本（原押金滚存）/);
+
+  // 3) PAYOUT_EXECUTOR (3rd-party executor): +0.5 kUSDT, -1.546 KAS net (-1.5 KAS winner carrier + -0.046 KAS fee); first-buyer 4 KAS return in rollover
+  const execPrepared={
+    op:{action:'PAYOUT_EXECUTOR'},kusdtAction:'PAYOUT_EXECUTOR',fee:4_600_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    review:{
+      txid:hex('e'),fee:4_600_000n,
+      assetDeltas:[
+        {asset:kusdtAsset,amount:500_000n,role:'NET'},
+        {asset:kasAsset,amount:-300_000_000n,role:'CARRIER'},
+        {asset:kasAsset,amount:-4_600_000n,role:'FEE'},
+      ],
+      inputs:[
+        {index:0,value:200_000_000n,kind:'合约 UTXO'},
+        {index:1,value:200_000_000n,kind:'合约 UTXO'},
+        {index:2,value:1_000_000_000n,kind:'需签名（你的钱包）'},
+      ],
+      outputs:[
+        {role:'SHARD_DEPOSIT',value:400_000_000n,script:other,covenant:false,mine:false,rollover:true,note:'合约退回首购者的 4 KAS 分片押金（非你支出）'},
+        {role:'WINNER',value:150_000_000n,script:'w',covenant:true,mine:false,rollover:false,tokenAmount:2_500_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'发给中奖者的 2.5 kUSDT 奖金（含你垫付的 1.5 KAS 载体，不可退）'},
+        {role:'EXECUTOR',value:150_000_000n,script:'ex',covenant:true,mine:true,rollover:false,tokenAmount:500_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'你的 0.5 kUSDT 代推激励（含 1.5 KAS 代币载体，仍归你所有）'},
+        {role:'CHANGE',value:695_400_000n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const execHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:execPrepared,planText:'代领派奖'}).s;
+  assert.match(execHtml,/你的 kUSDT 到账[\s\S]*?\+0\.5 kUSDT/);
+  assert.match(execHtml,/分片金库代推激励/);
+  assert.match(execHtml,/你的 KAS 净变动[\s\S]*?-1\.546 KAS/);
+  assert.match(execHtml,/其中 · 不可退支出[\s\S]*?-1\.5 KAS/);
+  assert.match(execHtml,/中奖者代币细胞载体/);
+  const [execUserPart,execRolloverPart]=execHtml.split('合约原有状态滚存（非你支出，不从你钱包扣除）');
+  assert.match(execUserPart,/2\.5 kUSDT/);
+  assert.match(execUserPart,/0\.5 kUSDT/);
+  assert.match(execRolloverPart,/分片押金退回/);
+
+  // 4) CLAIM_REFUND (final by first buyer): +1 kUSDT, +3.977 KAS net (+4 KAS deposit return, -0.023 KAS fee)
+  const claimPrepared={
+    op:{action:'CLAIM_REFUND'},kusdtAction:'CLAIM_REFUND',fee:2_300_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    review:{
+      txid:hex('e'),fee:2_300_000n,
+      assetDeltas:[
+        {asset:kusdtAsset,amount:1_000_000n,role:'NET'},
+        {asset:kasAsset,amount:-150_000_000n,role:'CARRIER'},
+        {asset:kasAsset,amount:-2_300_000n,role:'FEE'},
+      ],
+      inputs:[
+        {index:0,value:200_000_000n,kind:'合约 UTXO'},
+        {index:1,value:200_000_000n,kind:'合约 UTXO'},
+        {index:2,value:1_000_000_000n,kind:'需签名（你的钱包）'},
+      ],
+      outputs:[
+        {role:'SHARD_DEPOSIT',value:400_000_000n,script:mine,covenant:false,mine:true,rollover:true,note:'合约退回你的 4 KAS 分片押金'},
+        {role:'BUYER_REFUND',value:150_000_000n,script:'br',covenant:true,mine:true,rollover:false,tokenAmount:1_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'退回你的 1 kUSDT 票款（含 1.5 KAS 代币载体，仍归你所有）'},
+        {role:'CHANGE',value:847_700_000n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const claimHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:claimPrepared,planText:'领取退款'}).s;
+  assert.match(claimHtml,/你的 kUSDT 到账[\s\S]*?\+1 kUSDT/);
+  assert.match(claimHtml,/你的 KAS 净变动[\s\S]*?\+3\.977 KAS/);
+  assert.match(claimHtml,/其中 · 合约退回押金[\s\S]*?\+4 KAS/);
+  assert.match(claimHtml,/其中 · 网络费[\s\S]*?-0\.023 KAS/);
+  assert.match(claimHtml,/分片押金退回/);
+  assert.ok(!claimHtml.includes('合约原有状态滚存（非你支出，不从你钱包扣除）'));
+
+  // 5) CLAIM_REFUND by 3rd party (buyer != wallet): MUST NOT show "你的 kUSDT 到账", shows -1.5 KAS non-refundable carrier
+  const claimOtherPrepared={
+    ...claimPrepared,
+    review:{
+      ...claimPrepared.review,
+      outputs:[
+        {role:'SHARD_DEPOSIT',value:400_000_000n,script:other,covenant:false,mine:false,rollover:true,note:'合约退回首购者的 4 KAS 分片押金（非你支出）'},
+        {role:'BUYER_REFUND',value:150_000_000n,script:'br',covenant:true,mine:false,rollover:false,tokenAmount:1_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'退回买家的 1 kUSDT 票款（含 1.5 KAS 载体，不可退）'},
+        {role:'CHANGE',value:847_700_000n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const claimOtherHtml=confirmBody({...ctx({net:MAINNET,wallet}),prepared:claimOtherPrepared,planText:'代领退款'}).s;
+  assert.ok(!claimOtherHtml.includes('你的 kUSDT 到账'));
+  assert.match(claimOtherHtml,/你的 KAS 净变动[\s\S]*?-1\.523 KAS/);
+  assert.match(claimOtherHtml,/其中 · 不可退支出[\s\S]*?-1\.5 KAS/);
+  assert.match(claimOtherHtml,/买家退款代币细胞载体/);
+});
+
+test('English i18n translates all kUSDT v2 create, round detail, and confirmBody text nodes without leftover Chinese',()=>{
+  const exact=new Map(),patterns=[];
+  const literal=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  for(const [src,en] of [...EN_COMMON,...EN_ROLLING]){
+    const k=normalize(src);
+    if(!/\{\d+\}/.test(k)){exact.set(k,en);continue;}
+    const ids=[],pieces=k.split(/(\{\d+\})/);
+    const regex=new RegExp('^'+pieces.map(p=>/^\{\d+\}$/.test(p)?(ids.push(p),'(.*?)'):literal(p)).join('')+'$','u');
+    patterns.push({regex,ids,en,weight:k.replace(/\{\d+\}/g,'').length});
+  }
+  patterns.sort((a,b)=>b.weight-a.weight);
+  const tr=(value,depth=0)=>{
+    const s=normalize(value);if(!s)return s;
+    if(exact.has(s))return exact.get(s);
+    if(depth<5)for(const p of patterns){
+      const m=p.regex.exec(s);if(!m)continue;
+      const vars=Object.fromEntries(p.ids.map((id,i)=>[id,tr(m[i+1],depth+1)]));
+      return p.en.replace(/\{\d+\}/g,id=>vars[id]??id);
+    }
+    return s;
+  };
+  const checkNoChinese=(label,markup)=>{
+    const chunks=markup.replace(/<[^>]+>/g,'\n').split('\n').map(s=>s.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').trim()).filter(Boolean);
+    const untranslated=[];
+    for(const c of chunks){
+      if(!/[\u4e00-\u9fff]/.test(c))continue;
+      const out=tr(c);
+      if(/[\u4e00-\u9fff]/.test(out))untranslated.push(`${c} => ${out}`);
+    }
+    assert.deepEqual(untranslated,[],`${label} has untranslated Chinese:\n${untranslated.join('\n')}`);
+  };
+
+  const mine='20'+'ab'.repeat(32)+'ac';
+  const wallet={kind:'extension',address:'kaspa:qa',key:hex('1'),spk:{script:mine}};
+  const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
+  const kasAsset={kind:'KAS',symbol:'KAS',decimals:8,tokenCovenantId:null};
+
+  // 1) Create page in kusdt-v2 mode
+  checkNoChinese('createView(kusdt-v2)',createView(ctx({net:MAINNET,wallet,S:{...BASE_S,form:{...BASE_S.form,protocol:'kusdt-v2'}}})).s);
+
+  // 2) Round detail in sales, payout-ready, and refund-ready states
+  const openShards=[{shardCid:hex('1'),stage:0x11,terminal:false,tickets:5,recordCount:2}];
+  const rOpen=roundFixture({kusdt:{cid:hex('a'),loading:false,stage:1,price:1_000_000n,closeDaa:5000n,openedCount:1,cursor:0,totalTickets:5,decision:0,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards:openShards}});
+  checkNoChinese('roundView(kusdt-v2 sales)',roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rOpen.cid},detail:{...item(rOpen,facts({module:'sales',ticketPrice:1_000_000n,tickets:5,shards:1}),actions({BUY:{ok:true},CLOSE:{ok:true}})),mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:rOpen.kusdt}})).s);
+
+  const rRef=roundFixture({manager:null,kusdt:{cid:hex('a'),loading:false,stage:3,price:1_000_000n,closeDaa:100n,openedCount:1,cursor:1,totalTickets:1,decision:2,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards:[{shardCid:hex('2'),stage:0x14,terminal:false,tickets:1,recordCount:1,claimedMask:0,records:[{buyerPk:hex('1'),cumTickets:1}]}]}});
+  checkNoChinese('roundView(kusdt-v2 refund)',roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rRef.cid},detail:{...item(rRef,facts({module:'refund',ticketPrice:1_000_000n,tickets:1,shards:1}),actions()),mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:rRef.kusdt}})).s);
+
+  // 3) Confirm modal for OPEN_SHARD
+  const openPrepared={
+    op:{action:'BUY',quantity:1},kusdtAction:'OPEN_SHARD',fee:4_100_000n,feerate:'100',mass:{computeMass:1,transientMass:2,storageMass:3},targetCount:0,cid:hex('a'),
+    review:{
+      txid:hex('e'),fee:4_100_000n,
+      assetDeltas:[{asset:kusdtAsset,amount:-1_000_000n,role:'NET'},{asset:kasAsset,amount:-400_000_000n,role:'REFUNDABLE_DEPOSIT'},{asset:kasAsset,amount:-4_100_000n,role:'FEE'}],
+      inputs:[{index:0,value:400_000_000n,kind:'合约 UTXO'},{index:1,value:100_000_000n,kind:'需签名（你的 kUSDT）'},{index:2,value:14_877_191_524n,kind:'需签名（你的钱包）'}],
+      outputs:[
+        {role:'MANAGER',value:400_000_000n,script:'m',covenant:true,mine:false,rollover:true,note:'原轮次总管 4 KAS 押金滚存（创建者押金，非你支出）'},
+        {role:'SHARD_DEPOSIT',value:200_000_000n,script:'s',covenant:true,mine:false,rollover:false,note:'你垫付的新分片账本押金（分片结清时原路退回给你）'},
+        {role:'VAULT_DEPOSIT',value:200_000_000n,script:'v',covenant:true,mine:false,rollover:false,tokenAmount:1_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'你支付的 1 kUSDT 票款存入新分片金库 + 你垫付 2 KAS 可退押金'},
+        {role:'TOKEN_CHANGE',value:100_000_000n,script:'tc',covenant:true,mine:true,rollover:false,tokenAmount:4_000_000n,tokenSymbol:'kUSDT',tokenDecimals:6,note:'退回你的 4 kUSDT 找零（含 1 KAS 代币载体，仍归你所有）'},
+        {role:'CHANGE',value:14_473_091_524n,script:mine,covenant:false,mine:true,rollover:false,note:'退回你钱包的普通 KAS 找零'},
+      ],
+    },
+  };
+  const plan='购买 1 张票（首购开新分片需暂锁 4 KAS 可退押金，结算后全额退还），另付网络费 0.041 KAS。如果别人抢先操作了这一轮，这笔交易会被节点拒绝，不会扣款。';
+  checkNoChinese('confirmBody(OPEN_SHARD)',confirmBody({...ctx({net:MAINNET,wallet}),prepared:openPrepared,planText:plan}).s);
+});
+

@@ -406,6 +406,17 @@ footer>*{min-width:0;max-width:100%}footer .mono{overflow-wrap:anywhere;word-bre
 .wallet-back{margin-bottom:10px}
 
 .confirm-summary{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:2px 14px}
+.confirm-summary .sum{gap:12px;align-items:flex-start}
+.confirm-summary .sum>.mono{flex:none;white-space:nowrap}
+.confirm-summary .sum-sub{font-weight:500;font-size:13px;color:var(--muted);padding:7px 0;border-top:1px solid var(--line)}
+.confirm-summary .sum-label{display:grid;gap:2px;min-width:0}
+.confirm-summary .sum-hint{font-size:11px;font-weight:500;color:var(--muted);line-height:1.4}
+.out.rollover{opacity:.72;border-style:dashed}
+.out-note{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.45;font-family:var(--sans);color:var(--muted)}
+.out-tok{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:700;background:var(--kas-soft);color:var(--kas-ink)}
+.outs-group{font-size:11px;font-weight:700;color:var(--muted);margin:10px 0 6px}
+.outs-group:first-child{margin-top:0}
+@media(max-width:600px){.out .r{white-space:normal;max-width:100%}}
 
 @media(max-width:720px){
   .search.search-sm{flex:1 1 100%;width:100%}

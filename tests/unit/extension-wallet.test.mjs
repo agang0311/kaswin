@@ -298,6 +298,34 @@ test('Kaspire WalletConnect adapter pairs, signs ordinary inputs via kaspa_signP
   await assert.rejects(() => ctl.state.wallet.sign(d2), /WALLET_TRANSACTION_CHANGED/);
   tamperOutput = false;
 
+  // Same-network and same-account session_events (e.g. Kaspire auto-switching back to active chain on signPskt) MUST NOT invalidate!
+  for (const fn of handlers.get('session_event') ?? []) {
+    fn({topic: 'topic-1', params: {chainId: 'kaspa:testnet-10', event: {name: 'networkChanged', data: 'testnet-10'}}});
+    fn({topic: 'topic-1', params: {chainId: 'kaspa:testnet-10', event: {name: 'networkChanged', data: 'kaspa:testnet-10'}}});
+    fn({topic: 'topic-1', params: {chainId: 'kaspa:testnet-10', event: {name: 'accountsChanged', data: [mem.address]}}});
+    fn({topic: 'topic-1', params: {chainId: 'kaspa:mainnet', event: {name: 'accountsChanged', data: ['kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e']}}});
+  }
+  assert.equal(ctl.state.wallet?.id, 'kaspire');
+  assert.equal(ctl.state.wallet?.closed, false);
+
+  // Genuine network switch to a different network MUST still invalidate!
+  for (const fn of handlers.get('session_event') ?? []) {
+    fn({topic: 'topic-1', params: {chainId: 'kaspa:mainnet', event: {name: 'networkChanged', data: 'mainnet'}}});
+  }
+  assert.equal(ctl.state.wallet, null);
+
+  // Reconnect and verify genuine account switch and session_delete both invalidate cleanly
+  await ctl.connectExternalWallet('kaspire', {client: mockClient});
+  assert.equal(ctl.state.wallet?.id, 'kaspire');
+  const memOther = openMemoryWallet(SECRET_B);
+  for (const fn of handlers.get('session_event') ?? []) {
+    fn({topic: 'topic-1', params: {chainId: 'kaspa:testnet-10', event: {name: 'accountsChanged', data: [memOther.address]}}});
+  }
+  assert.equal(ctl.state.wallet, null);
+  memOther.close();
+
+  await ctl.connectExternalWallet('kaspire', {client: mockClient});
+  assert.equal(ctl.state.wallet?.id, 'kaspire');
   for (const fn of handlers.get('session_delete') ?? []) fn({topic: 'topic-1'});
   assert.equal(ctl.state.wallet, null);
   ctl.close();
@@ -364,3 +392,56 @@ test('extension wallet ping() returns false and invalidates on locked/changed se
   memA.close();
   memB.close();
 });
+
+test('KasWare connect avoids hung requestAccounts when already unlocked, recovers on unlock accountsChanged, and aborts cleanly via signal without locking controller.busy', async () => {
+  const memA = openMemoryWallet(SECRET_A);
+
+  // 1) Already unlocked & authorized: fast getAccounts() path connects immediately even if requestAccounts() hangs forever
+  const kwFast = makeMockKasware(memA);
+  kwFast.provider.requestAccounts = () => new Promise(() => {});
+  const wFast = await openExtensionWallet('kasware', {globals: {kasware: kwFast.provider}, connectTimeoutMs: 500});
+  assert.equal(wFast.address, memA.address);
+  // Same-account / same-network echoes do NOT falsely disconnect
+  kwFast.emit('accountsChanged', [memA.address]);
+  kwFast.emit('networkChanged', 'kaspa_testnet_10');
+  assert.equal(wFast.closed, false);
+  // Empty accountsChanged (auto-lock) DOES disconnect
+  kwFast.emit('accountsChanged', []);
+  assert.equal(wFast.closed, true);
+
+  // 2) Locked KasWare (getAccounts returns []) + hung requestAccounts(): recovers immediately when user unlocks and accountsChanged emits
+  const kwUnlock = makeMockKasware(memA);
+  kwUnlock.setAccount(null);
+  kwUnlock.provider.requestAccounts = () => new Promise(() => {});
+  setTimeout(() => {
+    kwUnlock.setAccount(memA.address, memA.key);
+    kwUnlock.emit('accountsChanged', [memA.address]);
+  }, 30);
+  const wUnlock = await openExtensionWallet('kasware', {globals: {kasware: kwUnlock.provider}, connectTimeoutMs: 2000});
+  assert.equal(wUnlock.address, memA.address);
+  wUnlock.close();
+
+  // 3) Locked KasWare + hung requestAccounts(): clicking Cancel aborts via signal with WALLET_CONNECT_CANCELLED and immediately frees ctl.state.busy
+  const kwHung = makeMockKasware(memA);
+  kwHung.setAccount(null);
+  kwHung.provider.requestAccounts = () => new Promise(() => {});
+  const ctl = createController({profile, roundStore: new RoundStore(new MemoryStore())});
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 30);
+  await assert.rejects(
+    () => ctl.connectExternalWallet('kasware', {globals: {kasware: kwHung.provider}, signal: ac.signal, connectTimeoutMs: 5000}),
+    /WALLET_CONNECT_CANCELLED/,
+  );
+  assert.equal(ctl.state.busy, false);
+  assert.equal(ctl.state.wallet, null);
+
+  // Immediately reconnecting after user unlocks KasWare succeeds with zero "BUSY" lockout
+  kwHung.setAccount(memA.address, memA.key);
+  const addr = await ctl.connectExternalWallet('kasware', {globals: {kasware: kwHung.provider}, connectTimeoutMs: 500});
+  assert.equal(addr, memA.address);
+  assert.equal(ctl.state.busy, false);
+
+  ctl.close();
+  memA.close();
+});
+

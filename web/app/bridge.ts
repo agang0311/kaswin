@@ -6,13 +6,18 @@ import {verifyDrawReceipt as verifyDrawJs} from '../../scripts/round/indexer-cli
 import {createController as controllerJs} from '../../scripts/round/controller.mjs';
 import {profileFromData as profileJs} from '../../scripts/contract/profile-data.mjs';
 import {openRoundStore as openStoreJs,RoundStore as RoundStoreJs} from '../../scripts/store/round-store.mjs';
-import {identify as identifyJs,MAX_TICKETS as MAX_TICKETS_JS} from '../../scripts/core.mjs';
+import {identify as identifyJs,MAX_TICKETS as MAX_TICKETS_JS,hex as hexJs,unhex as unhexJs,targetSeqOf as targetSeqOfJs} from '../../scripts/core.mjs';
+import {locateRollingDrawTarget as locateDrawTargetJs} from '../../scripts/round/draw-proof.mjs';
 import {commonUtxos as utxosJs,getAssetUtxos as assetUtxosJs} from '../../scripts/chain/chain.mjs';
 import {createProtocolRegistry as registryJs,formatAssetAmount as formatAssetJs} from '../../scripts/protocols/registry.mjs';
 import {createRollingV1Adapter as rollingV1Js} from '../../scripts/protocols/rolling-v1.mjs';
-import {pubkeyToAddress as addressJs,addressToSpk as addressToSpkJs} from '../../scripts/wallet/address.mjs';
+import {loadKusdtV2Profile as loadKusdtV2Js,verifyKusdtV2Redeem as verifyKusdtV2RedeemJs} from '../../scripts/protocols/kusdt-v2/profile.mjs';
+import {extractKcc20Suffix as extractKcc20SuffixJs} from '../../scripts/protocols/kusdt-v2/codec.mjs';
+import {createKusdtV2Adapter as kusdtV2Js,verifyKusdtDrawReceipt as verifyKusdtDrawJs} from '../../scripts/protocols/kusdt-v2.mjs';
+import {MAX_ACTIVE_OPEN_SHARDS as MAX_ACTIVE_OPEN_SHARDS_JS} from '../../scripts/protocols/kusdt-v2/constants.mjs';
+import {pubkeyToAddress as addressJs,addressToSpk as addressToSpkJs,spkToAddress as spkToAddressJs} from '../../scripts/wallet/address.mjs';
 import {managerBoundUnits as boundUnitsJs,unitsToBudget as unitsToBudgetJs} from '../../scripts/round/budget.mjs';
-import {connectNetwork as connectNetworkJs,connectTN10 as connectTN10Js} from '../../scripts/round/prepare.mjs';
+import {connectNetwork as connectNetworkJs,connectTN10 as connectTN10Js,nodeFeeRate as nodeFeeRateJs,mempoolSpentOutpoints as mempoolSpentJs} from '../../scripts/round/prepare.mjs';
 import {createIndexerClient as indexerClientJs} from '../../scripts/round/indexer-client.mjs';
 import type {ActionState,AssetDescriptor,Controller,DiscoveryCacheLike,DrawProgress,DrawResult,Facts,NetInfo,Profile,ProtocolAdapterLike,ProtocolRegistryLike,Round,RoundStoreLike,RpcLike,ShardView,TicketRecord,Utxo} from './types.ts';
 
@@ -22,21 +27,40 @@ export const describeRound = (r: Round, profile: Profile, daa: bigint | null): P
 export const availableActions = (r: Round, profile: Profile, daa: bigint): Record<string, ActionState> => (availableJs as (...a: unknown[]) => Record<string, ActionState>)(r, profile, daa);
 export const shardCatalog = (r: Round, profile: Profile, walletKey: string | null = null): ShardView[] | null => (shardCatalogJs as (...a: unknown[]) => ShardView[] | null)(r, profile, walletKey);
 export const verifyDrawReceipt = (r: Round, rpc: RpcLike, profile: Profile): Promise<DrawResult | null> => (verifyDrawJs as (...a: unknown[]) => Promise<DrawResult | null>)(r, rpc, profile);
+export const verifyKusdtDrawReceipt = (r: Round, rpc: RpcLike, profile: Profile): Promise<DrawResult | null> => (verifyKusdtDrawJs as (...a: unknown[]) => Promise<DrawResult | null>)(r, rpc, profile);
 export const MAX_TICKETS: number = MAX_TICKETS_JS;
+export const MAX_ACTIVE_OPEN_SHARDS: number = MAX_ACTIVE_OPEN_SHARDS_JS;
 export const identify = (redeemScript: Uint8Array, profile: Profile): {module: string; records: TicketRecord[]} => (identifyJs as (...a: unknown[]) => {module: string; records: TicketRecord[]})(redeemScript, profile);
 export const commonUtxos = (rpc: RpcLike, address: string): Promise<Utxo[]> => (utxosJs as (...a: unknown[]) => Promise<Utxo[]>)(rpc, address);
 export const getAssetUtxos = (rpc: RpcLike, address: string, asset: AssetDescriptor): Promise<Utxo[]> => (assetUtxosJs as (...a: unknown[]) => Promise<Utxo[]>)(rpc, address, asset);
 export const formatAssetAmount = (amount: bigint | string, asset: AssetDescriptor, opts?: {maxFrac?: number}): string => (formatAssetJs as (...a: unknown[]) => string)(amount, asset, opts);
 export const createRollingV1Adapter = (opts: {profile: Profile; canCreate?: boolean}): ProtocolAdapterLike => (rollingV1Js as (o: unknown) => ProtocolAdapterLike)(opts);
+export const loadKusdtV2Profile = (artifacts: Record<string, unknown>, opts?: {kusdtCid?: string; expectedHashes?: Record<string, string>}): Profile => (loadKusdtV2Js as (...a: unknown[]) => Profile)(artifacts, opts);
+export const createKusdtV2Adapter = (opts: {profile: Profile; kusdtCid?: string; kcc20Suffix?: Uint8Array; canCreate?: boolean}): ProtocolAdapterLike => (kusdtV2Js as (o: unknown) => ProtocolAdapterLike)(opts);
 export const createProtocolRegistry = (adapters: ProtocolAdapterLike[], opts?: {defaultCreateProfileId?: string}): ProtocolRegistryLike => (registryJs as (...a: unknown[]) => ProtocolRegistryLike)(adapters, opts);
 export const pubkeyToAddress = (xonly: string, prefix: string): string => (addressJs as (...a: unknown[]) => string)(xonly, prefix);
 export const addressToSpk = (address: string, prefix: string): {version: number; script: string} => (addressToSpkJs as (...a: unknown[]) => {version: number; script: string})(address, prefix);
+export const spkToAddress = (spk: {version: number; script: string}, prefix: string): string => (spkToAddressJs as (...a: unknown[]) => string)(spk, prefix);
 export const managerBoundUnits = (action: string, opts: unknown): number => (boundUnitsJs as (...a: unknown[]) => number)(action, opts);
 export const unitsToBudget = (units: number): number => (unitsToBudgetJs as (u: number) => number)(units);
 export const connectNetwork = (urls: string[], net: NetInfo): Promise<RpcLike & {close?(): void}> => (connectNetworkJs as unknown as (u: string[], o: {net: NetInfo}) => Promise<RpcLike & {close?(): void}>)(urls, {net});
 export const connectTN10 = (urls: string[]): Promise<RpcLike & {close?(): void}> => (connectTN10Js as unknown as (u: string[]) => Promise<RpcLike & {close?(): void}>)(urls);
-export const createIndexerClient = (opts: {baseUrl: string; networkId?: string; genesisHash?: string; profileId?: string}): {info(): Promise<{roundsCount?: number;stale?: boolean}>;rounds(o?: {limit?: number}): Promise<{rounds: unknown[]}>} =>
-  (indexerClientJs as (o: unknown) => {info(): Promise<{roundsCount?: number;stale?: boolean}>;rounds(o?: {limit?: number}): Promise<{rounds: unknown[]}>})(opts);
+export const nodeFeeRate = (rpc: RpcLike): Promise<string> => (nodeFeeRateJs as (r: unknown) => Promise<string>)(rpc);
+export const mempoolSpentOutpoints = (rpc: RpcLike, address: string): Promise<Set<string>> => (mempoolSpentJs as (r: unknown, a: string) => Promise<Set<string>>)(rpc, address);
+export const hexBytes = (b: Uint8Array): string => (hexJs as (b: Uint8Array) => string)(b);
+export const unhexBytes = (s: string, len?: number): Uint8Array => (unhexJs as (s: string, l?: number) => Uint8Array)(s, len);
+export const decodeKusdtManager = (b: Uint8Array, profile: unknown): Record<string, unknown> => (verifyKusdtV2RedeemJs as (r: Uint8Array, p: unknown, k?: string) => {state: Record<string, unknown>})(b, profile, 'manager').state;
+export const decodeKusdtShard = (b: Uint8Array, profile: unknown): Record<string, unknown> => (verifyKusdtV2RedeemJs as (r: Uint8Array, p: unknown, k?: string) => {state: Record<string, unknown>})(b, profile, 'shard').state;
+export const extractKcc20Suffix = (b: Uint8Array): Uint8Array => (extractKcc20SuffixJs as (b: Uint8Array) => Uint8Array)(b);
+export const locateDrawTarget = (rpc: RpcLike, accepting: string, boundary: bigint): Promise<{target: {hash: string; daa: bigint}; parentHash: string} | null> => (locateDrawTargetJs as (...a: unknown[]) => Promise<{target: {hash: string; daa: bigint}; parentHash: string} | null>)(rpc, accepting, boundary);
+export const targetSeqOf = (proof: Uint8Array): string => (targetSeqOfJs as (p: Uint8Array) => string)(proof);
+export const createIndexerClient = (opts: {baseUrl: string; networkId?: string; genesisHash?: string; profileId?: string; profileIds?: string[]}): {
+  info(): Promise<{roundsCount?: number;stale?: boolean}>;
+  rounds(o?: {limit?: number}): Promise<{rounds: unknown[]}>;
+  roundDetail(cid: string): Promise<Record<string, unknown>>;
+  covenant(cid: string): Promise<{covenant: {role: string; roundCid: string; covenantId: string; stage: string; outpoint: {transactionId: string; index: number}; value: string; daaScore: string; spk: {version: number; script: string}; address: string; redeemHex: string}}>;
+  walletActivity(pk: string, o?: {profileId?: string}): Promise<{activities: unknown[]; byProfile?: Record<string, unknown[]>}>;
+} => (indexerClientJs as (o: unknown) => never)(opts);
 export const openStore = async (opts: {genesis?: string; profileId?: string} = {}): Promise<RoundStoreLike> => new (RoundStoreJs as new (s: unknown, o?: unknown) => RoundStoreLike)(await openStoreJs(), opts);
 export const makeController = (profile: Profile, roundStore: RoundStoreLike, net?: NetInfo, discoveryCache?: DiscoveryCacheLike | null, registry?: ProtocolRegistryLike | null): Controller =>
   (controllerJs as (o: unknown) => unknown)({profile, registry, roundStore, net, discoveryCache}) as Controller;

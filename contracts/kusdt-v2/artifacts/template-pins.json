@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "protocol": "kaswin-kusdt-v2",
+  "compilerPackage": "silverscript-lang",
+  "compilerPackageVersion": "1.0.1",
+  "compilerBinarySha256": "07f58766893ed151a2c03d43c030af8a31fd36a65cd57127bc4b40e3f03667d8",
+  "kusdtCid": "50b3477e7368d0c5bfbd64483b4607350ec411377972f33e40b2d4b6d1513fd3",
+  "maxBatch": 8,
+  "order": [
+    "s_payout",
+    "s_refund",
+    "s_frozen",
+    "s_open",
+    "m_dispatch",
+    "m_sealed",
+    "m_open"
+  ],
+  "templates": {
+    "s_payout": {
+      "contract": "KusdtShardPayout",
+      "bytecodeBytes": 2343,
+      "stateSpanLen": 112,
+      "tailBytes": 2230,
+      "templateHash": "d9c495e42d7730616441e05335ab8e30a742e7004e67f467ad4498111452e950"
+    },
+    "s_refund": {
+      "contract": "KusdtShardRefund",
+      "bytecodeBytes": 3128,
+      "stateSpanLen": 82,
+      "tailBytes": 3045,
+      "templateHash": "63f0f28aee985e1b3393c3722de1cbf1c4bec8eb565de75ee5125165c9a79983"
+    },
+    "s_frozen": {
+      "contract": "KusdtShardFrozen",
+      "bytecodeBytes": 810,
+      "stateSpanLen": 114,
+      "tailBytes": 695,
+      "templateHash": "5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a"
+    },
+    "s_open": {
+      "contract": "KusdtShardOpen",
+      "bytecodeBytes": 2678,
+      "stateSpanLen": 114,
+      "tailBytes": 2563,
+      "templateHash": "30213f2234df0b1f67794ef5b8fd6e91f144a3d745ffa282d679218ac52165fc"
+    },
+    "m_dispatch": {
+      "contract": "KusdtManagerDispatch",
+      "bytecodeBytes": 4063,
+      "stateSpanLen": 126,
+      "tailBytes": 3936,
+      "templateHash": "c19b021080e31fd1408bd7aa7455cf11cfd4324d1cae0d94dd8ce6139db00050"
+    },
+    "m_sealed": {
+      "contract": "KusdtManagerSealed",
+      "bytecodeBytes": 15608,
+      "stateSpanLen": 130,
+      "tailBytes": 15477,
+      "templateHash": "e987429ff1ee8d5905fe6dc7c7a01ea5747f7e036d26d2a2e37e35c6d031f20f"
+    },
+    "m_open": {
+      "contract": "KusdtManagerOpen",
+      "bytecodeBytes": 8750,
+      "stateSpanLen": 61,
+      "tailBytes": 8688,
+      "templateHash": "559e67acf808e5d48283421e01ac7dc3134d91109f09ac1257324fa85feb8f2a"
+    }
+  }
+}

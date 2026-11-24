@@ -42,10 +42,14 @@ export function sanitizeDiscoveredRound(raw) {
   if(!raw||typeof raw!=='object'||typeof raw.cid!=='string'||!HASH64.test(raw.cid))return null;
   const out={cid:raw.cid,terminal:typeof raw.terminal==='string'&&raw.terminal.length<=32?raw.terminal:null,
     module:typeof raw.module==='string'&&raw.module.length<=32?raw.module:null};
+  if(typeof raw.protocolId==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/.test(raw.protocolId))out.protocolId=raw.protocolId;
   if((typeof raw.phase==='string'&&raw.phase.length<=32)||(typeof raw.phase==='number'&&Number.isSafeInteger(raw.phase)))out.phase=raw.phase;
-  for(const k of ['tickets','shards','bought','buys']){
+  for(const k of ['tickets','ticketsSold','ticketCap','shards','bought','buys']){
     const v=raw[k];if(typeof v==='number'&&Number.isSafeInteger(v)&&v>=0)out[k]=v;
   }
+  const tp=raw.ticketPrice;
+  if(typeof tp==='string'&&DEC_UINT.test(tp))out.ticketPrice=tp;
+  else if(typeof tp==='number'&&Number.isSafeInteger(tp)&&tp>=0)out.ticketPrice=String(tp);
   const mv=raw.managerValue;
   out.managerValue=typeof mv==='string'&&DEC_UINT.test(mv)?mv:(typeof mv==='number'&&Number.isSafeInteger(mv)&&mv>=0?String(mv):null);
   const daa=raw.acceptingDaa;
@@ -66,6 +70,9 @@ export function sanitizeDiscoveredRound(raw) {
     &&Number.isSafeInteger(raw.settlementProgress.total)&&raw.settlementProgress.total>=raw.settlementProgress.done) {
     out.settlementProgress={done:raw.settlementProgress.done,total:raw.settlementProgress.total,
       ...(typeof raw.settlementProgress.labelKey==='string'&&raw.settlementProgress.labelKey.length<=32?{labelKey:raw.settlementProgress.labelKey}:{})};
+  }
+  if(raw.protocolData&&typeof raw.protocolData==='object'&&!Array.isArray(raw.protocolData)){
+    try{const s=JSON.stringify(raw.protocolData);if(s.length<=65536)out.protocolData=JSON.parse(s);}catch{}
   }
   return out;
 }

@@ -43,8 +43,7 @@ export async function locateRollingDrawTarget(rpc,accepting,boundary) {
  }
  return null;
 }
-export async function acquireRollingProof(rpc,manager,profile,accepting) {
- const s=verifyManager(manager,profile);check(s.module==='sealed','PROOF_SEALED');
+export async function acquirePassAProof(rpc,manager,accepting) {
  const ev=await acceptedAt(rpc,manager.outpoint.transactionId,accepting),o=ev.tx.outputs[manager.outpoint.index];
  check(o?.value===manager.value&&o.covenant?.covenantId===manager.cid&&o.scriptPublicKey.script===manager.spk.script&&ev.acceptingDaa===manager.utxoDaa,'PROOF_CLOSE_CONTEXT');
  const boundary=manager.utxoDaa+DRAW_DELAY;
@@ -65,4 +64,8 @@ export async function acquireRollingProof(rpc,manager,profile,accepting) {
  for(let i=0;i<2;i++) {const b=i===0?parent:target,fresh=freshPair[i];check(fresh.header.seqCommit===b.header.seqCommit&&fresh.header.selectedParent===b.header.selectedParent,'PROOF_REORG');}
  const confirmation=await confirmDrawTargetWithRetry(rpc,drawTargetFromOpening(proof.opening));
  return {...proof,confirmation,accessor:{blockHash:proof.target.hash,sequenceCommitment:proof.target.seqCommit}};
+}
+export async function acquireRollingProof(rpc,manager,profile,accepting) {
+ const s=verifyManager(manager,profile);check(s.module==='sealed','PROOF_SEALED');
+ return acquirePassAProof(rpc,manager,accepting);
 }

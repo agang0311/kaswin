@@ -6,6 +6,7 @@ import {p2pk} from '../core/lib/covenant-id.js';
 import {decodeAddress,pubkeyToAddress} from './address.mjs';
 import {parseJson,jsonText} from '../chain/json.mjs';
 import {verifyOrdinarySignatures} from './wallet.mjs';
+import {schnorrSighash} from './sighash.mjs';
 import {extensionSafeJson,committed} from './extension-wallet.mjs';
 
 const PREFIX='kaspatest';
@@ -138,6 +139,19 @@ function extractSignedJson(res) {
   throw new Error('WALLET_RESPONSE_INVALID');
 }
 
+function normalizeKaspaNetwork(raw) {
+  const s=String(raw??'').trim().toLowerCase();
+  if(s==='mainnet'||s==='kaspa:mainnet'||s==='kaspa_mainnet')return 'mainnet';
+  if(s==='testnet-10'||s==='kaspa:testnet-10'||s==='kaspa_testnet_10'||s==='tn10')return 'testnet-10';
+  return s;
+}
+
+function normalizeEventAddress(raw,prefix) {
+  const s=String(raw??'').trim().toLowerCase();
+  if(!s)return '';
+  return s.includes(':')?s:`${prefix}:${s}`;
+}
+
 export async function openKaspireWallet({client=null,onPairingUri=null,onInvalidate=()=>{},onLog=()=>{},signal=null,timeoutMs=120000,reuseExisting=true,net={networkId:'testnet-10',addressPrefix:PREFIX}}={}) {
   check(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=300000,'WALLET_TIMEOUT_CONFIG');
   const chain=`kaspa:${net.networkId}`;
@@ -182,8 +196,38 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
   }
 
   let closed=false;
-  const onDelete=ev=>{if(ev?.topic===session.topic)invalidate();};
-  const onEvent=ev=>{if(ev?.topic===session.topic&&['accountsChanged','networkChanged'].includes(ev?.params?.event?.name))invalidate();};
+  const onDelete=ev=>{
+    if(ev?.topic!==session.topic)return;
+    onLog(`Kaspire：会话已断开 (session_delete, ${session.topic.slice(0,8)}…)`);
+    invalidate();
+  };
+  const onEvent=ev=>{
+    if(ev?.topic!==session.topic)return;
+    const name=ev?.params?.event?.name;
+    const data=ev?.params?.event?.data;
+    const evChain=ev?.params?.chainId;
+    if(name==='networkChanged'){
+      const nextNet=normalizeKaspaNetwork(data);
+      if(nextNet&&nextNet===owner.network){
+        onLog(`Kaspire：钱包已确认当前网络 (${nextNet})，保持会话`);
+        return;
+      }
+      onLog(`Kaspire：钱包切换网络 (${String(data??'').slice(0,32)} ≠ ${owner.network})，断开当前会话`);
+      invalidate();
+      return;
+    }
+    if(name==='accountsChanged'){
+      if(evChain&&evChain!==chain)return;
+      const list=Array.isArray(data)?data:(typeof data==='string'&&data?[data]:[]);
+      const nextAddr=list.length?normalizeEventAddress(list[0],net.addressPrefix):'';
+      if(nextAddr&&nextAddr===owner.address){
+        onLog('Kaspire：钱包账户未变化，保持会话');
+        return;
+      }
+      onLog(`Kaspire：钱包账户已变化 (${nextAddr?'已切换其他地址':'空账户'})，断开当前会话`);
+      invalidate();
+    }
+  };
   const close=()=>{
     if(closed)return;
     closed=true;
@@ -202,16 +246,42 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
     async sign(draft) {
       check(!closed,'WALLET_CLOSED');
       const auth=new Set(draft.authorizedInputIndices);
-      if(!auth.size)return;
+      const scriptInputs=Array.isArray(draft.scriptInputs)?draft.scriptInputs:[];
+      if(!auth.size&&!scriptInputs.length)return;
       check(typeof draft.fee==='bigint'&&draft.fee>0n&&draft.fee<=FEE_CAP,'SIGNER_FEE_SCOPE');
       check(draft.inputUtxos.reduce((n,u)=>n+u.value,0n)-draft.transaction.outputs.reduce((n,o)=>n+o.value,0n)===draft.fee,'SIGNER_CONSERVATION');
+      const utxos=draft.inputUtxos.map(u=>({value:u.value,spk:u.spk}));
       for(const i of auth) {
         check(Number.isInteger(i)&&i>=0&&i<draft.transaction.inputs.length,'SIGNER_INPUT_SCOPE');
         const u=draft.inputUtxos[i];check(u.spk.version===0&&u.spk.script===p2pk(owner.key).script&&!u.covenantId,'SIGNER_INPUT_SCOPE');
         check(draft.transaction.inputs[i].signatureScript==='','SIGNER_ALREADY_SIGNED');
       }
+      const scriptIdxSet=new Set();
+      for(const si of scriptInputs) {
+        const i=si.inputIndex;
+        check(Number.isInteger(i)&&i>=0&&i<draft.transaction.inputs.length&&!auth.has(i)&&!scriptIdxSet.has(i),'SIGNER_INPUT_SCOPE');
+        check(!!draft.inputUtxos[i]?.covenantId&&si.ownerKey===owner.key,'SIGNER_INPUT_SCOPE');
+        check(draft.transaction.inputs[i].signatureScript===si.prebuiltSignatureScript,'SIGNER_ALREADY_SIGNED');
+        if(si.expectedSighash)check(hex(schnorrSighash(draft.transaction,utxos,i))===si.expectedSighash,'SCRIPT_SIGHASH_MISMATCH');
+        scriptIdxSet.add(i);
+      }
+      const allSigned=new Set([...auth,...scriptIdxSet]);
       const request=extensionSafeJson(draft,owner),approved=jsonText(draft.transaction),contexts=jsonText(draft.inputUtxos);
-      const params={txJsonString:request,options:{signInputs:[...auth].map(index=>({index,sighashType:1}))}};
+      const params=scriptInputs.length
+        ?{
+            psktTransactionJson:request,
+            submitTransaction:false,
+            signInputs:[...auth].map(index=>({index,sighashType:1})),
+            scripts:scriptInputs.map(si=>({
+              inputIndex:si.inputIndex,
+              scriptHex:'',
+              signType:si.signType??1,
+              prebuiltSignatureScript:si.prebuiltSignatureScript,
+              signatureOffsets:si.signatureOffsets,
+              expectedSighash:si.expectedSighash,
+            })),
+          }
+        :{txJsonString:request,options:{signInputs:[...auth].map(index=>({index,sighashType:1}))}};
       const serializedParams=JSON.stringify(params);
       const reopenRelay=()=>Promise.resolve(sc.core?.relayer?.restartTransport?.()??sc.core?.relayer?.transportOpen?.()).catch(()=>{});
       let rawRes,wakeTimer=null,woken=false,settled=false;
@@ -254,12 +324,12 @@ export async function openKaspireWallet({client=null,onPairingUri=null,onInvalid
       const response=extractSignedJson(rawRes);
       check(response.length<=8*1024*1024,'WALLET_RESPONSE_INVALID');
       let back;try{back=parseJson(response);}catch{throw new Error('WALLET_RESPONSE_INVALID');}
-      check(committed(back,auth)===committed(parseJson(request),auth),'WALLET_TRANSACTION_CHANGED');
+      check(committed(back,allSigned)===committed(parseJson(request),allSigned),'WALLET_TRANSACTION_CHANGED');
       const candidate=structuredClone(draft);
-      for(const index of auth)candidate.transaction.inputs[index].signatureScript=String(back.inputs[index].signatureScript??'').toLowerCase();
+      for(const index of allSigned)candidate.transaction.inputs[index].signatureScript=String(back.inputs[index].signatureScript??'').toLowerCase();
       await verifyOrdinarySignatures(candidate);
       check(!closed,'WALLET_CLOSED');
-      for(const index of auth)draft.transaction.inputs[index].signatureScript=candidate.transaction.inputs[index].signatureScript;
+      for(const index of allSigned)draft.transaction.inputs[index].signatureScript=candidate.transaction.inputs[index].signatureScript;
     },
   });
 }

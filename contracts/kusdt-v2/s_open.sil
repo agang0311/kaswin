@@ -1,0 +1,187 @@
+pragma silverscript ^0.1.0;
+// Kaswin kUSDT v2 — S_OPEN (Depends on S_FROZEN_HASH + self-continuation).
+// Actions:
+//   1 = BUY (parallel ticket purchase, independent of manager; updates shard ledger & KCC-20 vault)
+//   2 = COLLECT (co-executed with M_OPEN in COLLECT_BATCH; transitions shard into S_FROZEN)
+contract KusdtShardOpen(byte[] initialState) {
+    byte[] state = initialState;
+    int constant FEE_INPUTS = 8;
+    int constant FEE_OUTPUTS = 4;
+    byte[32] constant S_FROZEN_HASH = byte[32](0x5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a);
+    // Shared constants and stack-conscious helpers for Kaswin kUSDT v2 (256 parallel shards).
+    // SilverScript 1.0.1 inlines every function and retains locals until the enclosing block ends (244-item stack limit).
+    // Call multi-local helpers inside dedicated `{ }` blocks and avoid helper calls inside unrolled loops.
+    // U16/U32/U63 are stack-neutral source macros expanded by prepare-sources.mjs.
+    byte[32] constant ZERO = byte[32](0x0000000000000000000000000000000000000000000000000000000000000000);
+    byte[32] constant KUSDT_CID = byte[32](0x50b3477e7368d0c5bfbd64483b4607350ec411377972f33e40b2d4b6d1513fd3);
+    byte[32] constant KCC20_EXT_TEMPLATE_HASH = byte[32](0x734850b0af0aeef49f009167bf9ddd238fd8c5cdbe214234f97181ac6f5cc498);
+    byte[] constant KCC20_PREFIX = byte[](0x6b209703112ee6e3555107cd168858992b77d3b74f655205b2b463b1f9ec2ec73cf7);
+    int constant KCC20_SUFFIX_LEN = 3885;
+
+    int constant MANAGER_DEPOSIT = 400000000;
+    int constant SHARD_LEDGER_DEPOSIT = 200000000;
+    int constant SHARD_VAULT_DEPOSIT = 200000000;
+    int constant SHARD_TOTAL_DEPOSIT = 400000000;
+    int constant WINNER_CARRIER_MIN = 150000000;
+    int constant PRICE_MIN = 1000000;
+    int constant EXECUTOR_REWARD = 500000;
+    int constant MAX_SHARDS = 256;
+    int constant MAX_RECORDS_PER_SHARD = 256;
+    int constant MAX_BATCH = 8;
+    int constant MIN_DRAW_TICKETS = 3;
+    int constant DRAW_DELAY_DAA = 100;
+    int constant REROLL_TIMEOUT_DAA = 432000;
+    int constant FEE_CAP = 50000000;
+
+    int constant MAX_STATE_BYTES = 17468;
+    int constant VALUE_LIMIT = 9000000000000000;
+    int constant DAA_LIMIT = 500000000000;
+    int constant TOKEN_AMOUNT_LIMIT = 1000000000000000000;
+
+    function pushState(byte[] b): byte[] {
+        int n = length(b);
+        require(n > 0 && n <= MAX_STATE_BYTES);
+        byte[] prefix = byte[](0x4d) + byte[](n as byte[2]);
+        if (n <= 75) { prefix = byte[](n as byte[1]); }
+        else if (n <= 255) { prefix = byte[](0x4c) + byte[](n as byte[4]).slice(0, 1); }
+        return prefix + b;
+    }
+
+    function scriptFor(byte[] b, byte[] tail): byte[] {
+        require(length(tail) > 0 && tail.slice(0, 1) == byte[](0x6c));
+        return byte[](0x6b) + pushState(b) + tail;
+    }
+
+    function selfTail(int idx, int n): byte[] {
+        int len = OpTxInputScriptSigLen(idx);
+        require(n > 0 && n < len && n <= 250000);
+        byte[] tail = OpTxInputScriptSigSubstr(idx, len - n, len);
+        require(tx.inputs[idx].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(state, tail))));
+        return tail;
+    }
+
+    function checkKcc20Suffix(byte[] suffix) {
+        require(length(suffix) == KCC20_SUFFIX_LEN);
+        require(templateHash(KCC20_PREFIX, suffix) == KCC20_EXT_TEMPLATE_HASH);
+    }
+
+    function kcc20Spk(int amount, byte[32] owner, byte[] ownerScheme, byte[] suffix): byte[] {
+        require(amount > 0 && amount <= TOKEN_AMOUNT_LIMIT && length(ownerScheme) == 1);
+        byte[] encoded = byte[](0x08) + byte[](amount as byte[8])
+            + byte[](0x20) + byte[](owner)
+            + byte[](0x01) + ownerScheme
+            + byte[](0x0100)
+            + byte[](0x20) + byte[](ZERO)
+            + byte[](0x20) + byte[](ZERO);
+        return byte[](new ScriptPubKeyP2SHFromRedeemScript(KCC20_PREFIX + encoded + suffix));
+    }
+
+    function checkKcc20Input(int idx, int amount, byte[32] owner, byte[] ownerScheme, byte[] suffix, int expectedValue) {
+        require(OpInputCovenantId(idx) == KUSDT_CID);
+        require(tx.inputs[idx].value == expectedValue);
+        require(tx.inputs[idx].scriptPubKey == kcc20Spk(amount, owner, ownerScheme, suffix));
+    }
+
+    function checkKcc20Output(int idx, int amount, byte[32] owner, byte[] ownerScheme, byte[] suffix, int minValue, bool exactValue) {
+        require(OpOutputCovenantId(idx) == KUSDT_CID);
+        if (exactValue) { require(tx.outputs[idx].value == minValue); }
+        else { require(tx.outputs[idx].value >= minValue && tx.outputs[idx].value <= VALUE_LIMIT); }
+        require(tx.outputs[idx].scriptPubKey == kcc20Spk(amount, owner, ownerScheme, suffix));
+    }
+
+    function ordinaryP2PK(int i, int value, pubkey key) {
+        require(value > 0 && value <= VALUE_LIMIT && tx.outputs[i].value == value);
+        require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2PK(key)) && OpOutputCovenantId(i) == ZERO);
+    }
+
+    function checkFee(int cap) {
+        require(tx.outputs.length >= 1);
+        int vi = 0;
+        int vo = 0;
+        for (fi, 0, tx.inputs.length, FEE_INPUTS) { vi = vi + tx.inputs[fi].value; }
+        for (fo, 0, tx.outputs.length, FEE_OUTPUTS) { vo = vo + tx.outputs[fo].value; }
+        require(vi > vo && vi - vo <= cap);
+    }
+
+    entry spend(int action, int qty, byte[32] buyerPk, int ownTailBytes, byte[] nextTail, byte[] kcc20Suffix) {
+        require(tx.version == 1);
+        require(length(state) >= 112 && state.slice(0, 2) == byte[](0x1101));
+
+        int rc = OpBin2Num(state.slice(74, (74) + 2) + byte[](0x00));
+        require(rc >= 1 && rc <= MAX_RECORDS_PER_SHARD && length(state) == 76 + 36 * rc);
+
+        int price = OpBin2Num(state.slice(66, (66) + 8));
+        int oldTickets = OpBin2Num(state.slice(76 + 36 * (rc - 1), (76 + 36 * (rc - 1)) + 4) + byte[](0x00));
+        require(price >= PRICE_MIN && oldTickets >= 1 && price <= TOKEN_AMOUNT_LIMIT / oldTickets);
+
+        byte[32] managerCid = byte[32](state.slice(2, 34));
+        byte[32] zero = ZERO;
+        byte[32] kusdtCid = KUSDT_CID;
+        require(managerCid != zero && managerCid != kusdtCid);
+
+        if (action == 1) {
+            // BUY: parallel purchase on an existing open shard without touching manager UTXO.
+            require(this.activeInputIndex == 0 && tx.inputs.length >= 3 && tx.inputs.length <= 8);
+            require(rc < MAX_RECORDS_PER_SHARD && qty >= 1 && qty <= 2147483647 - oldTickets);
+            require(buyerPk != zero && length(nextTail) == 0);
+
+            int newTickets = oldTickets + qty;
+            require(price <= TOKEN_AMOUNT_LIMIT / newTickets);
+
+            byte[32] selfCid = OpInputCovenantId(0);
+            require(selfCid != zero && selfCid != managerCid && selfCid != kusdtCid);
+            require(OpCovInputCount(selfCid) == 1 && OpCovInputIdx(selfCid, 0) == 0);
+            require(OpInputCovenantId(1) == kusdtCid && OpCovInputCount(kusdtCid) >= 2);
+            for (ii, 2, tx.inputs.length, 6) {
+                byte[32] c = OpInputCovenantId(ii);
+                require(c == zero || c == kusdtCid);
+            }
+
+            require(tx.inputs[0].value == SHARD_LEDGER_DEPOSIT);
+            byte[] tail = byte[](0x00);
+            { tail = selfTail(0, ownTailBytes); }
+
+            { checkKcc20Suffix(kcc20Suffix); }
+            { checkKcc20Input(1, oldTickets * price, selfCid, byte[](0x04), kcc20Suffix, SHARD_VAULT_DEPOSIT); }
+            { checkKcc20Output(1, newTickets * price, selfCid, byte[](0x04), kcc20Suffix, SHARD_VAULT_DEPOSIT, true); }
+
+            require(tx.outputs.length >= 2 && tx.outputs.length <= 4);
+            require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
+            require(OpCovOutputCount(selfCid) == 1 && OpCovOutputIdx(selfCid, 0) == 0);
+            require(OpCovOutputCount(kusdtCid) == 1 || OpCovOutputCount(kusdtCid) == 2);
+
+            byte[] nextState = state.slice(0, 74)
+                + byte[]((rc + 1) as byte[2])
+                + state.slice(76, length(state))
+                + byte[](newTickets as byte[4])
+                + byte[](buyerPk);
+            require(tx.outputs[0].value == SHARD_LEDGER_DEPOSIT);
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, tail))));
+
+            for (oi, 2, tx.outputs.length, 2) {
+                byte[32] oc = OpOutputCovenantId(oi);
+                require((oc == zero || oc == kusdtCid) && tx.outputs[oi].value > 0 && tx.outputs[oi].value <= VALUE_LIMIT);
+            }
+            { checkFee(FEE_CAP); }
+        } else if (action == 2) {
+            // COLLECT (shard side): co-executed with M_OPEN at input 0; fee is validated by M_OPEN.
+            int own = this.activeInputIndex;
+            require(own >= 1 && own <= MAX_BATCH);
+            require(qty == 0 && buyerPk == zero && ownTailBytes == 0 && length(kcc20Suffix) == 0);
+
+            byte[32] selfCid = OpInputCovenantId(own);
+            require(selfCid != zero && selfCid != managerCid && selfCid != kusdtCid);
+            require(OpInputCovenantId(0) == managerCid);
+            require(OpCovInputCount(selfCid) == 1 && OpCovInputIdx(selfCid, 0) == own);
+            require(OpAuthOutputCount(own) == 1 && OpAuthOutputIdx(own, 0) == own);
+            require(OpCovOutputCount(selfCid) == 1 && OpCovOutputIdx(selfCid, 0) == own);
+            require(tx.inputs[own].value == SHARD_LEDGER_DEPOSIT && tx.outputs[own].value == SHARD_LEDGER_DEPOSIT);
+
+            require(templateHash(byte[](0x6b), nextTail) == S_FROZEN_HASH);
+            byte[] frozenState = byte[](0x12) + state.slice(1, length(state));
+            require(tx.outputs[own].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(frozenState, nextTail))));
+        } else {
+            require(false);
+        }
+    }
+}

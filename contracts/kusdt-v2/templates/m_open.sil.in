@@ -1,0 +1,227 @@
+pragma silverscript ^0.1.0;
+// Kaswin kUSDT v2 — M_OPEN (Root template: depends on S_OPEN, S_FROZEN, M_SEALED, M_DISPATCH + self-continuation).
+// Actions:
+//   1 = OPEN_SHARD (create new shard + first ticket purchase in one tx; 3-layer on-chain verification)
+//   2 = EMPTY_CLOSE (0-ticket round settlement after closeDaa; refunds 4 KAS to creatorPk)
+//   3 = COLLECT_BATCH (cursor-ordered batch freeze of 1..MAX_BATCH S_OPEN shards into S_FROZEN)
+contract KusdtManagerOpen(byte[] initialState) {
+    byte[] state = initialState;
+    int constant FEE_INPUTS = {{BATCH_FEE_INPUTS}};
+    int constant FEE_OUTPUTS = {{BATCH_FEE_OUTPUTS}};
+    byte[32] constant S_OPEN_HASH = byte[32](0x{{S_OPEN_HASH}});
+    byte[32] constant S_FROZEN_HASH = byte[32](0x{{S_FROZEN_HASH}});
+    byte[32] constant M_SEALED_HASH = byte[32](0x{{M_SEALED_HASH}});
+    byte[32] constant M_DISPATCH_HASH = byte[32](0x{{M_DISPATCH_HASH}});
+{{COMMON}}
+    entry spend(int action, int ownTailBytes, byte[] shardTail, byte[] extraBytes, byte[] data) {
+        require(tx.version == 1 && this.activeInputIndex == 0);
+        require(length(state) >= 60 && length(state) <= MAX_STATE_BYTES);
+        require(state.slice(0, 2) == byte[](0x0101) && state.slice(58, 60) == byte[](0x0000));
+
+        int price = U63(state, 34);
+        int closeDaa = U63(state, 42);
+        int openedCount = U16(state, 50);
+        int cursor = U16(state, 52);
+        int totalTickets = U32(state, 54);
+        require(price >= PRICE_MIN && price <= TOKEN_AMOUNT_LIMIT);
+        require(closeDaa > 0 && closeDaa < DAA_LIMIT - REROLL_TIMEOUT_DAA);
+        require(openedCount <= MAX_SHARDS && cursor <= openedCount && length(state) == 60 + 68 * openedCount);
+
+        byte[32] zero = ZERO;
+        byte[32] kusdtCid = KUSDT_CID;
+        byte[32] managerCid = OpInputCovenantId(0);
+        require(managerCid != zero && managerCid != kusdtCid);
+        require(OpCovInputCount(managerCid) == 1 && OpCovInputIdx(managerCid, 0) == 0);
+        require(tx.inputs[0].value == MANAGER_DEPOSIT);
+        { checkFee(FEE_CAP); }
+
+        if (action == 1) {
+            // OPEN_SHARD: shardTail = sOpenTail, extraBytes = kcc20Suffix (3885B), data = qty(u32) || buyerPk(32B).
+            require(cursor == 0 && totalTickets == 0 && openedCount < MAX_SHARDS && length(data) == 36);
+            require(tx.inputs.length >= 3 && tx.inputs.length <= 8);
+            require(tx.outputs.length >= 3 && tx.outputs.length <= 5);
+
+            int qty = U32(data, 0);
+            byte[32] buyerPk = byte[32](data.slice(4, 36));
+            require(qty >= 1 && qty <= 2147483647 && buyerPk != zero && price <= TOKEN_AMOUNT_LIMIT / qty);
+
+            require(OpInputCovenantId(1) == zero);
+            require(OpCovInputCount(kusdtCid) >= 1);
+            for (ii, 2, tx.inputs.length, 6) {
+                byte[32] c = OpInputCovenantId(ii);
+                require(c == zero || c == kusdtCid);
+            }
+
+            byte[] tail = byte[](0x00);
+            { tail = selfTail(0, ownTailBytes); }
+            require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
+            require(OpCovOutputCount(managerCid) == 1 && OpCovOutputIdx(managerCid, 0) == 0);
+
+            // 1. Assemble unique initial S_OPEN ledger (112B) and verify output 1 + S_OPEN_HASH.
+            require(templateHash(byte[](0x6b), shardTail) == S_OPEN_HASH);
+            byte[] initShard = byte[](0x1101)
+                + byte[](managerCid)
+                + byte[](buyerPk)
+                + state.slice(34, 42)
+                + byte[](0x0100)
+                + byte[](qty as byte[4])
+                + byte[](buyerPk);
+            require(tx.outputs[1].value == SHARD_LEDGER_DEPOSIT);
+            require(tx.outputs[1].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(initShard, shardTail))));
+
+            byte[32] shardCid = OpOutputCovenantId(1);
+            require(shardCid != zero && shardCid != managerCid && shardCid != kusdtCid);
+            // Genesis output is validated by CovenantsContext::from_tx without populating auth/shared output contexts.
+            // OpCovInputCount(shardCid) == 0 ensures genesis (no input carries shardCid); outputs 0, 2..n are proven != shardCid.
+            require(OpCovInputCount(shardCid) == 0);
+
+            // 2. Read-only verification of genuine kUSDT vault creation at output 2.
+            { checkKcc20Suffix(extraBytes); }
+            { checkKcc20Output(2, qty * price, shardCid, byte[](0x04), extraBytes, SHARD_VAULT_DEPOSIT, true); }
+            require(OpCovOutputCount(kusdtCid) == 1 || OpCovOutputCount(kusdtCid) == 2);
+            for (oi, 3, tx.outputs.length, 2) {
+                byte[32] oc = OpOutputCovenantId(oi);
+                require((oc == zero || oc == kusdtCid) && tx.outputs[oi].value > 0 && tx.outputs[oi].value <= VALUE_LIMIT);
+            }
+
+            // 3. Register new shardCid into manager directory (68B entry) and verify output 0.
+            byte[] newEntry = byte[](shardCid) + byte[](zero) + byte[](0x00000000);
+            byte[] nextState = state.slice(0, 50)
+                + byte[]((openedCount + 1) as byte[2])
+                + state.slice(52, length(state))
+                + newEntry;
+            require(tx.outputs[0].value == MANAGER_DEPOSIT);
+            require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, tail))));
+        } else if (action == 2) {
+            // EMPTY_CLOSE: 0-ticket round settlement after closeDaa.
+            require(tx.daa >= closeDaa);
+            require(openedCount == 0 && cursor == 0 && totalTickets == 0);
+            require(ownTailBytes == 0 && length(shardTail) == 0 && length(extraBytes) == 0 && length(data) == 0);
+            require(tx.inputs.length >= 1 && tx.inputs.length <= 9 && (tx.outputs.length == 1 || tx.outputs.length == 2));
+            for (ii, 1, tx.inputs.length, 8) {
+                require(OpInputCovenantId(ii) == zero);
+            }
+            require(OpAuthOutputCount(0) == 0 && OpCovOutputCount(managerCid) == 0);
+            { ordinaryP2PK(0, MANAGER_DEPOSIT, pubkey(state.slice(2, 34))); }
+            if (tx.outputs.length == 2) {
+                require(OpOutputCovenantId(1) == zero && tx.outputs[1].value > 0 && tx.outputs[1].value <= VALUE_LIMIT);
+            }
+        } else if (action == 3) {
+            // COLLECT_BATCH: shardTail = sFrozenTail, extraBytes = nextMgrTail (if final batch else empty),
+            // data = k(u16) || sOpenTailLen(u32) || redeemLen[0..k-1](u32 * k).
+            require(tx.daa >= closeDaa);
+            require(openedCount > 0 && length(data) >= 6);
+            int k = U16(data, 0);
+            int sOpenTailLen = U32(data, 2);
+            require(k >= 1 && k <= MAX_BATCH && cursor + k <= openedCount && sOpenTailLen > 0 && length(data) == 6 + 4 * k);
+            require(tx.inputs.length >= 1 + k && tx.inputs.length <= {{BATCH_FEE_INPUTS}});
+            require(tx.outputs.length == 1 + k || tx.outputs.length == 2 + k);
+            for (ii, 1 + k, tx.inputs.length, 8) {
+                require(OpInputCovenantId(ii) == zero);
+            }
+
+            require(length(shardTail) > 0 && shardTail.slice(0, 1) == byte[](0x6c));
+            require(templateHash(byte[](0x6b), shardTail) == S_FROZEN_HASH);
+            require(OpAuthOutputCount(0) == 1 && OpAuthOutputIdx(0, 0) == 0);
+            require(OpCovOutputCount(managerCid) == 1 && OpCovOutputIdx(managerCid, 0) == 0);
+            if (tx.outputs.length == 2 + k) {
+                require(OpOutputCovenantId(1 + k) == zero && tx.outputs[1 + k].value > 0 && tx.outputs[1 + k].value <= VALUE_LIMIT);
+            }
+
+            int runningTotal = totalTickets;
+            byte[] updatedEntries = state.slice(0, 0);
+            byte[32] sOpenHash = S_OPEN_HASH;
+            for (j, 0, k, {{MAX_BATCH}}) {
+                int i = j + 1;
+                int eOff = 60 + 68 * (cursor + j);
+                byte[32] expectedCid = byte[32](state.slice(eOff, eOff + 32));
+                require(OpInputCovenantId(i) == expectedCid && OpOutputCovenantId(i) == expectedCid);
+                require(tx.outputs[i].value == SHARD_LEDGER_DEPOSIT);
+
+                int sigLen = OpTxInputScriptSigLen(i);
+                int rLen = U32(data, 6 + 4 * j);
+                require(rLen > sOpenTailLen + 114 && rLen < sigLen && rLen <= 250000);
+                byte[] raw = OpTxInputScriptSigSubstr(i, sigLen - rLen, sigLen);
+                require(tx.inputs[i].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(raw)));
+                require(raw.slice(0, 1) == byte[](0x6b));
+
+                int tag = unsigned(raw[1]);
+                int off = 2;
+                int n = tag;
+                if (tag == 76) {
+                    off = 3;
+                    n = unsigned(raw[2]);
+                    require(n > 75);
+                } else if (tag == 77) {
+                    off = 4;
+                    n = OpBin2Num(raw.slice(2, 4) + byte[](0x00));
+                    require(n > 255);
+                } else {
+                    require(false);
+                }
+                require(n >= 112 && n <= 9292 && off + n + sOpenTailLen == rLen);
+                require(templateHash(byte[](0x6b), raw.slice(off + n, rLen)) == sOpenHash);
+                require(raw.slice(off, off + 2) == byte[](0x1101));
+
+                int rc = U16(raw, off + 74);
+                require(rc >= 1 && rc <= MAX_RECORDS_PER_SHARD && n == 76 + 36 * rc);
+
+                byte[] frozen = byte[](0x12) + raw.slice(off + 1, off + n);
+                byte[] frozenRedeem = raw.slice(0, off) + frozen + shardTail;
+                require(tx.outputs[i].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(frozenRedeem)));
+
+                int shardTickets = U32(frozen, 76 + 36 * (rc - 1));
+                require(shardTickets >= 1 && shardTickets <= 2147483647 - runningTotal);
+                runningTotal = runningTotal + shardTickets;
+                updatedEntries = updatedEntries + byte[](expectedCid) + byte[](blake2b(frozen)) + byte[](runningTotal as byte[4]);
+            }
+
+            int newCursor = cursor + k;
+            if (newCursor < openedCount) {
+                require(length(extraBytes) == 0);
+                byte[] tail = byte[](0x00);
+                { tail = selfTail(0, ownTailBytes); }
+                byte[] nextState = state.slice(0, 52)
+                    + byte[](newCursor as byte[2])
+                    + byte[](runningTotal as byte[4])
+                    + state.slice(58, 60)
+                    + state.slice(60, 60 + 68 * cursor)
+                    + updatedEntries
+                    + state.slice(60 + 68 * newCursor, length(state));
+                require(tx.outputs[0].value == MANAGER_DEPOSIT);
+                require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, tail))));
+            } else {
+                require(ownTailBytes == 0);
+                byte[] fullEntries = state.slice(60, 60 + 68 * cursor) + updatedEntries;
+                if (runningTotal >= MIN_DRAW_TICKETS) {
+                    require(templateHash(byte[](0x6b), extraBytes) == M_SEALED_HASH);
+                    byte[] nextState = byte[](0x02)
+                        + state.slice(1, 52)
+                        + byte[](0x0000)
+                        + byte[](runningTotal as byte[4])
+                        + byte[](0x0000)
+                        + fullEntries;
+                    require(tx.outputs[0].value == MANAGER_DEPOSIT);
+                    require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, extraBytes))));
+                } else {
+                    // 1~2 total tickets -> enter M_DISPATCH(REFUND) with compact shardCid[] directory.
+                    require(runningTotal >= 1 && openedCount <= 2);
+                    require(templateHash(byte[](0x6b), extraBytes) == M_DISPATCH_HASH);
+                    byte[] cids = fullEntries.slice(0, 32);
+                    if (openedCount == 2) { cids = cids + fullEntries.slice(68, 100); }
+                    byte[] nextState = byte[](0x03)
+                        + state.slice(1, 52)
+                        + byte[](0x0000)
+                        + byte[](runningTotal as byte[4])
+                        + byte[](0x0200)
+                        + byte[](zero)
+                        + cids;
+                    require(tx.outputs[0].value == MANAGER_DEPOSIT);
+                    require(tx.outputs[0].scriptPubKey == byte[](new ScriptPubKeyP2SHFromRedeemScript(scriptFor(nextState, extraBytes))));
+                }
+            }
+        } else {
+            require(false);
+        }
+    }
+}

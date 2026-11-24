@@ -6,10 +6,26 @@ import path from 'node:path';
 import {decodeTagged,encodeTagged} from '../../scripts/store/codec.mjs';
 import {connectTN10} from '../../scripts/round/prepare.mjs';
 import {acceptedAt,searchAccepted,mempoolEntry} from '../../scripts/chain/chain.mjs';
+import {unhex} from '../../scripts/core.mjs';
 
 export const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export const key=o=>`${o.transactionId}:${o.index}`;
-export async function readRound(page) {return decodeTagged(await page.exportRoundText());}
+const unpackReceipt=rc=>{
+  if(!Array.isArray(rc))return rc;
+  if(rc.length===2)return {txid:rc[0],action:'BUY',accepted:true,candidate:false,finalized:true,feeSompi:rc[1]};
+  if(rc.length===3||(rc.length===4&&typeof rc[3]==='string'))return {txid:rc[0],action:rc[1],accepted:true,candidate:false,finalized:true,feeSompi:rc[2],...(rc[3]!=null?{acceptingBlock:rc[3]}:{})};
+  return rc;
+};
+const txTransientMass=t=>{
+  let size=94n+BigInt(unhex(t.payload??'').length);
+  for(const i of t.inputs)size+=54n+BigInt(unhex(i.signatureScript).length);
+  for(const o of t.outputs)size+=18n+BigInt(unhex(o.scriptPublicKey.script).length)+(o.covenant?34n:0n);
+  return (4n*size).toString();
+};
+export async function readRound(page) {
+  const r=decodeTagged(await page.exportRoundText());
+  return Array.isArray(r?.receipts)?{...r,receipts:r.receipts.map(unpackReceipt)}:r;
+}
 export function saveJson(file,data) {fs.writeFileSync(file,encodeTagged(data),{mode:0o600});}
 export async function openEvidenceRpc(url='ws://127.0.0.1:18210') {return connectTN10([url]);}
 export async function stableCursor(rpc,back=300) {
@@ -19,13 +35,14 @@ export async function stableCursor(rpc,back=300) {
 }
 export async function roundReady(page,predicate=round=>!round.intent,timeout=180000) {
   const until=Date.now()+timeout;let last;
+  const exportReadySel='#view [data-act=export], #view [data-act=moreRound]:not([disabled])';
   while(Date.now()<until) {
     if(!await page.p.locator('#modal[open]').count()) {
-      if(!await page.p.locator('[data-act=export]').count()) {
+      if(!await page.p.locator(exportReadySel).count()) {
         const card=page.p.locator('[data-open]').first();
         if(await card.count())await card.click({force:true,timeout:2000}).catch(()=>{});
       }
-      if(await page.p.locator('[data-act=export]').count()) {
+      if(await page.p.locator(exportReadySel).count()) {
         last=await readRound(page);
         if(last.halted)throw new Error(`ROUND_HALTED ${last.halted}`);
         if(last.intent?.status==='REJECTED')throw new Error(`NODE_REJECTED ${last.intent.txid} ${last.intent.nodeError??''}`);
@@ -83,7 +100,7 @@ export async function acceptanceEvidence(rpc,txid,{block=null,cursor,timeout=120
       if(ev.inputs.some(x=>x===null))throw new Error('ACCEPTED_SPENT_INPUT_MISSING');
       const fee=ev.inputs.reduce((n,x)=>n+x.value,0n)-ev.tx.outputs.reduce((n,x)=>n+x.value,0n);
       return {txid,accepted:true,acceptingBlock:block,acceptingDaa:ev.acceptingDaa.toString(),checkedAt:new Date().toISOString(),depth:depth.toString(),
-        computeMass:ev.computeMass?.toString()??null,storageMass:ev.tx.storageMass.toString(),feeSompi:fee.toString(),
+        computeMass:ev.computeMass?.toString()??null,storageMass:ev.tx.storageMass.toString(),transientMass:txTransientMass(ev.tx),feeSompi:fee.toString(),
         inputs:ev.tx.inputs.map((i,n)=>({outpoint:key(i.previousOutpoint),covenantId:ev.inputs[n].covenantId,valueSompi:ev.inputs[n].value.toString()})),
         outputs:ev.tx.outputs.map((o,index)=>({index,valueSompi:o.value.toString(),covenantId:o.covenant?.covenantId??null}))};
     } catch(e) {
@@ -102,7 +119,7 @@ export async function finalizedRound(page,rpc,{cursor,dir,log=()=>{}}) {
   for(const receipt of round.receipts) {
     const ev=await acceptanceEvidence(rpc,receipt.txid,{block:receipt.acceptingBlock,cursor});
     if(ev.feeSompi!==receipt.feeSompi)throw new Error('ACTUAL_FEE_DIFFERS_FROM_PAGE');
-    ev.action=receipt.action;ev.transientMass=receipt.transientMass;
+    ev.action=receipt.action;ev.transientMass=receipt.transientMass??ev.transientMass;
     evidence.push(ev);saveJson(path.join(dir,'acceptance.json'),evidence);
   }
   log(`ACCEPTED >=100 DAA: ${evidence.length} transactions, terminal ${round.terminal}`);

@@ -1,0 +1,59 @@
+pragma silverscript ^0.1.0;
+// Kaswin kUSDT v2 — S_PAYOUT (Leaf: no successor template dependencies).
+// Actions: 1 = PAYOUT_EXECUTOR (0.5 kUSDT reward), 2 = PAYOUT_SELF (0 reward / winner self-push).
+contract KusdtShardPayout(byte[] initialState) {
+    byte[] state = initialState;
+    int constant FEE_INPUTS = 8;
+    int constant FEE_OUTPUTS = 4;
+{{COMMON}}
+    entry spend(int action, byte[] kcc20Suffix) {
+        require(tx.version == 1 && this.activeInputIndex == 0);
+        require(tx.inputs.length >= 2 && tx.inputs.length <= 8);
+        require(length(state) == 110 && state.slice(0, 2) == byte[](0x1301));
+
+        int vaultAmount = U63(state, 66);
+        int shardTickets = U32(state, 106);
+        require(vaultAmount > 0 && vaultAmount <= TOKEN_AMOUNT_LIMIT && shardTickets > 0);
+
+        byte[32] selfCid = OpInputCovenantId(0);
+        byte[32] zero = ZERO;
+        require(selfCid != zero && selfCid != KUSDT_CID);
+        require(OpCovInputCount(selfCid) == 1 && OpCovInputIdx(selfCid, 0) == 0);
+        require(OpCovOutputCount(selfCid) == 0 && OpAuthOutputCount(0) == 0);
+        require(OpCovInputCount(KUSDT_CID) == 1 && OpCovInputIdx(KUSDT_CID, 0) == 1);
+        for (ii, 2, tx.inputs.length, 6) {
+            require(OpInputCovenantId(ii) == zero);
+        }
+
+        require(tx.inputs[0].value == SHARD_LEDGER_DEPOSIT);
+        { checkKcc20Suffix(kcc20Suffix); }
+        { checkKcc20Input(1, vaultAmount, selfCid, byte[](0x04), kcc20Suffix, SHARD_VAULT_DEPOSIT); }
+        { ordinaryP2PK(0, SHARD_TOTAL_DEPOSIT, pubkey(state.slice(2, 34))); }
+        { checkFee(FEE_CAP); }
+
+        byte[32] winnerPk = byte[32](state.slice(34, 66));
+        require(winnerPk != zero);
+
+        if (action == 1) {
+            // PAYOUT_EXECUTOR: winner receives vaultAmount - 0.5 kUSDT, executor receives 0.5 kUSDT.
+            require(vaultAmount > EXECUTOR_REWARD);
+            require(tx.outputs.length == 3 || tx.outputs.length == 4);
+            require(OpCovOutputCount(KUSDT_CID) == 2);
+            { checkKcc20Output(1, vaultAmount - EXECUTOR_REWARD, winnerPk, byte[](0x00), kcc20Suffix, WINNER_CARRIER_MIN, false); }
+            require(OpOutputCovenantId(2) == KUSDT_CID && tx.outputs[2].value > 0 && tx.outputs[2].value <= VALUE_LIMIT);
+            if (tx.outputs.length == 4) {
+                require(OpOutputCovenantId(3) == zero && tx.outputs[3].value > 0 && tx.outputs[3].value <= VALUE_LIMIT);
+            }
+        } else if (action == 2) {
+            // PAYOUT_SELF: 100% of vaultAmount goes to winnerPk.
+            require(tx.outputs.length == 2 || tx.outputs.length == 3);
+            require(OpCovOutputCount(KUSDT_CID) == 1);
+            { checkKcc20Output(1, vaultAmount, winnerPk, byte[](0x00), kcc20Suffix, WINNER_CARRIER_MIN, false); }
+            if (tx.outputs.length == 3) {
+                require(OpOutputCovenantId(2) == zero && tx.outputs[2].value > 0 && tx.outputs[2].value <= VALUE_LIMIT);
+            }
+        } else {
+            require(false);
+        }
+    }
+}

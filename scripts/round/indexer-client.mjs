@@ -20,8 +20,10 @@ export function indexerBase(text) {
   check(['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash,'INDEXER_URL');
   return u.href.replace(/\/+$/,'');
 }
-function scope(value,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}={}) {
-  check(value&&value.schema===1&&value.network===networkId&&value.genesisHash===genesisHash&&value.profileId===profileId,'INDEXER_SCOPE');
+function scope(value,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID,profileIds=null,requireProfile=true}={}) {
+  const allowed=profileIds?new Set(profileIds):new Set([profileId]);
+  const profileOk=requireProfile?(typeof value?.profileId==='string'&&allowed.has(value.profileId)):(value?.profileId==null||allowed.has(value.profileId));
+  check(value&&value.schema===1&&value.network===networkId&&value.genesisHash===genesisHash&&profileOk,'INDEXER_SCOPE');
   check(value.stale!==true,'INDEXER_STALE');return value;
 }
 function checkOptionalSummaryExtensions(entry) {
@@ -38,9 +40,10 @@ function checkOptionalSummaryExtensions(entry) {
   }
   if(entry.protocolData!=null) check(typeof entry.protocolData==='object'&&!Array.isArray(entry.protocolData),'INDEXER_RESPONSE_INVALID');
 }
-export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutMs=12000,networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID}) {
+export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutMs=12000,networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID,profileIds=null}) {
   const base=indexerBase(baseUrl);
-  async function get(path,{maxBytes=16_000_000,reqTimeoutMs=timeoutMs}={}) {
+  const allowedProfiles=profileIds?[...new Set([profileId,...profileIds])]:[profileId];
+  async function get(path,{maxBytes=16_000_000,reqTimeoutMs=timeoutMs,requireProfile=true}={}) {
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),reqTimeoutMs);
     try {
       const response=await fetchImpl(base+path,{method:'GET',credentials:'omit',cache:'no-store',redirect:'error',signal:abort.signal});
@@ -53,7 +56,7 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
         finally{if(!finished)await reader.cancel().catch(()=>{});reader.releaseLock();}
       }else{text=await response.text();check(new TextEncoder().encode(text).length<=maxBytes,'INDEXER_RESPONSE_SIZE');}
       let value;try{value=parseJson(text);}catch{throw new Error('INDEXER_RESPONSE_INVALID');}
-      return scope(value,{networkId,genesisHash,profileId});
+      return scope(value,{networkId,genesisHash,profileId,profileIds:allowedProfiles,requireProfile});
     }catch(e){if(abort.signal.aborted)throw new Error('INDEXER_TIMEOUT');if(e?.message?.startsWith('INDEXER_'))throw e;throw new Error('INDEXER_UNAVAILABLE');}
     finally{clearTimeout(timer);}
   }
@@ -74,7 +77,17 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
       check(value.cid===cid&&value.summary&&typeof value.summary==='object','INDEXER_RESPONSE_INVALID');
       checkOptionalSummaryExtensions(value.summary);
       if(value.protocolData!=null)check(typeof value.protocolData==='object'&&!Array.isArray(value.protocolData),'INDEXER_RESPONSE_INVALID');
+      if(value.receipts!=null)check(Array.isArray(value.receipts),'INDEXER_RESPONSE_INVALID');
       return value;
+    },
+    async roundHistory(cid,{cursor=null,limit=200}={}){
+      check(HASH.test(cid),'INDEXER_CID');
+      check(Number.isInteger(limit)&&limit>=1&&limit<=200,'INDEXER_PAGE_LIMIT');
+      const q=new URLSearchParams({limit:String(limit)});
+      if(cursor!==null){check(typeof cursor==='string'&&cursor.length<=2048,'INDEXER_CURSOR');q.set('cursor',cursor);}
+      const value=await get(`/rounds/${cid}/history?${q}`);
+      check(value.cid===cid&&Array.isArray(value.events),'INDEXER_RESPONSE_INVALID');
+      return {...value,nextCursor:value.nextCursor??value.next??null};
     },
     exportRound(cid,{sinceTxid=null,sinceStep=null}={}){
       check(HASH.test(cid),'INDEXER_CID');
@@ -110,6 +123,21 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
       inflightExports.set(key,p);return p;
     },
     async resolveTxid(txid){check(HASH.test(txid),'INDEXER_TXID');const value=await get(`/txid/${txid}`);check(HASH.test(value.cid),'INDEXER_RESPONSE_INVALID');return value.cid;},
+    async walletActivity(pk,{profileId:filterProfileId=null}={}){
+      check(HASH.test(pk),'INDEXER_PK');
+      const q=new URLSearchParams();
+      if(filterProfileId){check(HASH.test(filterProfileId),'INDEXER_PROFILE_ID');q.set('profileId',filterProfileId);}
+      const value=await get(`/wallets/${pk}/activity`+(q.size?`?${q}`:''),{requireProfile:false});
+      check(value&&Array.isArray(value.activities),'INDEXER_RESPONSE_INVALID');
+      value.activities.forEach(a=>{check(a&&HASH.test(a.cid),'INDEXER_RESPONSE_INVALID');checkOptionalSummaryExtensions(a);});
+      return value;
+    },
+    async covenant(cid){
+      check(HASH.test(cid),'INDEXER_CID');
+      const value=await get(`/covenants/${cid}`,{requireProfile:false});
+      check(value&&value.covenant&&typeof value.covenant==='object','INDEXER_RESPONSE_INVALID');
+      return value;
+    },
   });
 }
 
