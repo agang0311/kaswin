@@ -61,8 +61,8 @@ export function formatLocalTime(timestamp, lang = language) {
 }
 export function installLocalization(doc = document, {
   messages = EN,
-  titles = {en: 'Kaswin Rolling · Testnet 10 experiment', 'zh-CN': 'Kaswin Rolling · Testnet 10 实验版'},
-  descriptions = {en: 'Kaswin Rolling: review tickets, fees, purchase records and data sources before approving a Kaspa transaction.', 'zh-CN': 'Kaswin Rolling：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa 交易。'},
+  titles = {en: 'Kaswin', 'zh-CN': 'Kaswin'},
+  descriptions = {en: 'Kaswin: review tickets, fees, purchase records and data sources before approving a Kaspa transaction.', 'zh-CN': 'Kaswin：查看票款、费用、购买记录和数据来源，再确认你的 Kaspa 交易。'},
 } = {}) {
   const translate = messages === EN ? englishText : createTranslator([...EN, ...messages]);
   const sources = new WeakMap();

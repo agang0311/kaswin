@@ -1829,16 +1829,23 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
   const adapter = createKusdtV2Adapter({profile: v2Profile, kcc20Suffix: KCC20_SUFFIX});
   const buyer1 = keyHex('paid-b1');
   const buyer2 = keyHex('paid-b2');
+  const paidOrigin = {transactionId: keyHex('paid-origin'), index: 0};
+  const emptyMgrRedeem = redeemForState({
+    stage: STAGE.M_OPEN, version: KUSDT_V2_VERSION, creatorPk: buyer1,
+    price: 1_000_000n, closeDaa: 700_000_000n, openedCount: 0, cursor: 0,
+    totalTickets: 0, decision: 0, reserved: 0, entries: [],
+  }, v2Profile);
+  const paidCid = covenantId(paidOrigin, [{index: 0, value: 400_000_000n, spk: p2sh(hex(blake2b256(emptyMgrRedeem)))}]);
   const scid = keyHex('paid-sh0');
   const sFrozenState = {
-    stage: STAGE.S_FROZEN, version: KUSDT_V2_VERSION, managerCid: MGR_CID,
+    stage: STAGE.S_FROZEN, version: KUSDT_V2_VERSION, managerCid: paidCid,
     firstBuyerPk: buyer1, price: 1_000_000n,
     records: [{cumTickets: 1, buyerPk: buyer1}, {cumTickets: 3, buyerPk: buyer2}],
   };
   const sFrozenRedeem = redeemForState(sFrozenState, v2Profile);
   const sPayoutState = {
     stage: STAGE.S_PAYOUT, version: KUSDT_V2_VERSION, firstBuyerPk: buyer1,
-    winnerPk: buyer2, vaultAmount: 3_000_000n, managerCid: MGR_CID, shardTickets: 3,
+    winnerPk: buyer2, vaultAmount: 3_000_000n, managerCid: paidCid, shardTickets: 3,
   };
   const sPayoutRedeem = redeemForState(sPayoutState, v2Profile);
   const sPayoutSpk = p2sh(hex(blake2b256(sPayoutRedeem)));
@@ -1850,12 +1857,12 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
     schema: 1,
     network: MAINNET.networkId,
     genesisHash: MAINNET.genesis,
-    cid: MGR_CID,
+    cid: paidCid,
     profileId: v2Profile.id,
     revision: '6',
     terminal: 'PAID',
     manager: null,
-    origin: {transactionId: keyHex('paid-origin'), index: 0},
+    origin: paidOrigin,
     draw: {txid: drawTx, shard: 0, record: 1, ticket: 2, winnerPk: buyer2},
     shards: {
       [scid]: {
@@ -1903,7 +1910,7 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
   // 1. syncRound hydrates draw, accepting, and frozenRedeemHex -> full buyer records on PAID shard!
   const synced = await adapter.syncRound({
     indexer: {async roundDetail() { return paidDetail; }},
-    cid: MGR_CID,
+    cid: paidCid,
     net: MAINNET,
   });
   assert.equal(synced.round.terminal, 'PAID');
@@ -1938,15 +1945,15 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
         schema: 1, network: MAINNET.networkId, genesisHash: MAINNET.genesis,
         pk: buyer2,
         activities: [{
-          cid: MGR_CID, profileId: v2Profile.id, roles: ['buyer'],
+          cid: paidCid, profileId: v2Profile.id, roles: ['buyer'],
           phase: 'DONE', subPhase: 'PAID', terminal: 'PAID',
           asset: {kind: 'KCC20', symbol: 'kUSDT', decimals: 6, tokenCovenantId: MAINNET_KUSDT_CID},
           updatedAt: Date.now(),
         }],
-        byProfile: {[v2Profile.id]: [{cid: MGR_CID}]},
+        byProfile: {[v2Profile.id]: [{cid: paidCid}]},
       }), {status: 200});
     }
-    if (u.endsWith(`/rounds/${MGR_CID}`)) {
+    if (u.endsWith(`/rounds/${paidCid}`)) {
       return new Response(JSON.stringify(paidDetail), {status: 200});
     }
     return new Response(JSON.stringify({detail: 'NOT_FOUND'}), {status: 404});
@@ -1961,7 +1968,7 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
   });
   const wa = await client.walletActivity(buyer2);
   assert.equal(wa.activities.length, 1);
-  assert.equal(wa.activities[0].cid, MGR_CID);
+  assert.equal(wa.activities[0].cid, paidCid);
 
   const backingMem = new MemoryStore();
   backingMem.persistent = true;
@@ -1986,10 +1993,10 @@ test('kusdt-v2 syncRound hydrates accepting block, PAID frozenRedeemHex records,
   await ctl.connectNode(['ws://mainnet.test']);
   await ctl.checkIndexer('https://indexer.test/mainnet');
   const res = await ctl.syncWalletActivity(buyer2);
-  assert.deepEqual(res.synced, [MGR_CID]);
+  assert.deepEqual(res.synced, [paidCid]);
   const stored = await ctl.rounds();
   assert.equal(stored.length, 1);
-  assert.equal(stored[0].cid, MGR_CID);
+  assert.equal(stored[0].cid, paidCid);
   assert.equal(stored[0].draw, undefined);
   assert.deepEqual(stored[0].drawHint, {txid: drawTx, shard: 0, record: 1, ticket: 2});
   assert.equal(stored[0].kusdt.shards[0].records?.length, 2);

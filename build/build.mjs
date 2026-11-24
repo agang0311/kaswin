@@ -73,6 +73,8 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',
     kusdtArtifacts[name]=JSON.parse(await fs.readFile(path.join(root,`contracts/kusdt-v2/artifacts/${name}.json`),'utf8'));
     kusdtExpectedHashes[name]=kusdtPinsRaw.templates[name].templateHash;
   }
+  const {loadKusdtV2Profile}=await import('../scripts/protocols/kusdt-v2/profile.mjs');
+  const kusdtProfile=loadKusdtV2Profile(kusdtArtifacts,{kusdtCid:kusdtPinsRaw.kusdtCid,expectedHashes:kusdtExpectedHashes});
   const wcResult=await esbuild.build({
     absWorkingDir:root,entryPoints:['scripts/wallet/kaspire-wc-entry.mjs'],bundle:true,metafile:true,write:false,
     platform:'browser',format:'iife',globalName:'__KASWIN_KASPIRE_WC__',target:['es2022'],minify:true,legalComments:'none',charset:'utf8',
@@ -119,10 +121,14 @@ export async function buildKaswin({outDir=path.join(root,'dist'),mode='mainnet',
     ...kusdtPinsRaw.order.flatMap(n=>[`contracts/kusdt-v2/artifacts/${n}.json`,`contracts/kusdt-v2/${n}.sil`]),
     ...Object.keys(profile.frames).flatMap(m=>[`contracts/artifacts/${m}.json`,`contracts/${m}.sil`])])].sort();
   const inputs=Object.fromEntries(await Promise.all(inputPaths.map(async f=>[f,sha256(await fs.readFile(path.join(root,f)))])));
+  const compatibleProfiles=[
+    {protocolId:'rolling-v1',name:'KAS (Rolling v1)',asset:defaultNet.unit,profileId:TN10_PROFILE_ID},
+    {protocolId:'kusdt-v2',name:'kUSDT v2 (KCC-20)',asset:'kUSDT',profileId:kusdtProfile.id,tokenCovenantId:kusdtPinsRaw.kusdtCid},
+  ];
   const manifest={formatVersion:1,version:appVersion,mode,cd311:!!cd311,artifact:{file:'index.html',bytes:Buffer.byteLength(html),sha256:sha256(html)},
     kaspireWc:{file:'kaspire-wc.js',bytes:Buffer.byteLength(wcJs),sha256:sha256(wcJs),integrity:wcIntegrity},
     capabilities:{tn10Trading:true,mainnetTrading:mode==='mainnet',memoryWallet:mode!=='mainnet',networkSwitch:true},
-    contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},network:defaultNet.networkId,genesis:defaultNet.genesis,
+    contract:{version:'Rolling v1',profileId:TN10_PROFILE_ID},compatibleProfiles,network:defaultNet.networkId,genesis:defaultNet.genesis,
     networks:['mainnet','tn10'],profileId:TN10_PROFILE_ID,evidence:'UNVALIDATED',toolchain:{esbuild:esbuild.version,typescript:ts.version},
     graph:{files:sources.length,nodeImports:0,forbiddenModules:0},inputs};
   await fs.mkdir(outDir,{recursive:true});

@@ -1,4 +1,4 @@
-# Pushing a tag vX.Y.Z builds the TN10 HTML from that exact tag and publishes a release with it.
+# Pushing a tag vX.Y.Z builds Kaswin from that exact tag and publishes a release with it.
 # A manual run (workflow_dispatch) only builds and reports the hashes; it never publishes.
 name: release
 
@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -32,7 +33,7 @@ jobs:
       - name: Collect release files
         run: |
           set -euo pipefail
-          node -e "const m=require('./dist/build-manifest.json'); if (!['mainnet','tn10'].includes(m.mode) || !m.capabilities?.tn10Trading) process.exit(1)"
+          node -e "const m=require('./dist/build-manifest.json'); if (!['mainnet','tn10'].includes(m.mode) || !m.capabilities?.tn10Trading || !Array.isArray(m.compatibleProfiles) || !m.compatibleProfiles.length) process.exit(1)"
           mkdir release
           cp dist/index.html release/kaswin.html
           cp dist/kaspire-wc.js release/kaspire-wc.js
@@ -53,29 +54,114 @@ jobs:
           set -euo pipefail
           version="v$(node -p "require('./package.json').version")"
           if [ "$TAG" != "$version" ]; then echo "tag $TAG does not match package.json $version"; exit 1; fi
-          profile="$(node -p "require('./dist/build-manifest.json').contract.profileId")"
           html="$(awk '$2 == "kaswin.html" {print $1}' release/SHA256SUMS)"
-          cat > notes.md <<EOF
-          基于 Kaspa L1 covenant 的抽奖协议单页应用。整个应用就是一个自包含 HTML 文件，没有后端，也不托管资金。
+          node - "$TAG" "$GITHUB_SHA" "$html" <<'NODE'
+          const fs = require('node:fs');
+          const {execFileSync} = require('node:child_process');
+          const [tag, sha, htmlSha] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync('dist/build-manifest.json', 'utf8'));
+          const curProfiles = Object.fromEntries(manifest.compatibleProfiles.map(p => [p.protocolId, p.profileId]));
 
-          - 源码提交：\`$GITHUB_SHA\`
-          - 合约 Profile ID：\`$profile\`
-          - 本 release 的附件由 GitHub Actions 从上述提交构建（\`npm ci && npm run build\`）。
+          const git = (...args) => {
+            try { return execFileSync('git', args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim(); }
+            catch { return ''; }
+          };
+          const prevTag = (git('tag', '--merged', 'HEAD^', '--list', 'v*', '--sort=-version:refname') || git('tag', '--list', 'v*', '--sort=-version:refname'))
+            .split('\n').map(s => s.trim()).filter(s => s && s !== tag)[0] || '';
 
-          | 文件 | 说明 |
-          |---|---|
-          | \`kaswin.html\` | 主页面（默认主网，可切换 Testnet 10） |
-          | \`kaspire-wc.js\` | Kaspire WalletConnect v2 按需加载模块（仅点击 Kaspire 时请求） |
-          | \`build-manifest.json\` | 构建模式、合约 Profile、工具版本、源码与产物哈希 |
-          | \`SHA256SUMS\` | 以上文件的 SHA256 |
+          const prevProfiles = {};
+          if (prevTag) {
+            const prevRolling = git('show', `${prevTag}:contracts/pins.json`);
+            if (prevRolling) {
+              try {
+                const pid = JSON.parse(prevRolling).profileId;
+                if (pid) prevProfiles['rolling-v1'] = pid;
+              } catch {}
+            }
+            const prevKusdt = git('show', `${prevTag}:contracts/kusdt-v2/artifacts/template-pins.json`);
+            if (prevKusdt) {
+              try {
+                const pid = JSON.parse(prevKusdt)?.templates?.m_open?.templateHash;
+                if (pid) prevProfiles['kusdt-v2'] = pid;
+              } catch {}
+            }
+          }
 
-          \`kaswin.html\` SHA256：\`$html\`
+          const changes = [];
+          if (prevTag && Object.keys(prevProfiles).length) {
+            const keys = [...new Set([...Object.keys(prevProfiles), ...Object.keys(curProfiles)])].sort();
+            for (const k of keys) {
+              const oldPid = prevProfiles[k] || null;
+              const newPid = curProfiles[k] || null;
+              if (oldPid !== newPid) {
+                if (!oldPid) changes.push(`- 新增 \`${k}\`：\`${newPid}\``);
+                else if (!newPid) changes.push(`- 移除 \`${k}\`（原 \`${oldPid}\`）`);
+                else changes.push(`- **变更 \`${k}\`（不兼容旧轮次）**：\`${oldPid}\` → \`${newPid}\``);
+              }
+            }
+          }
 
-          下载后可用 \`sha256sum -c SHA256SUMS\` 核对；也可以检出上述提交自行构建比对。
+          let changelogSection = '';
+          if (fs.existsSync('CHANGELOG.md')) {
+            const md = fs.readFileSync('CHANGELOG.md', 'utf8');
+            const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(`^## \\[${escaped}\\][^\\n]*\\n([\\s\\S]*?)(?=^## \\[|$)`, 'm');
+            const m = re.exec(md);
+            if (m) changelogSection = m[1].trim();
+          }
 
-          使用：需要 KasWare 或 Kastle 钱包扩展。建议放在 HTTPS 站点，或在本地用静态服务器打开（例如 \`python3 -m http.server 8000\` 后访问 \`http://localhost:8000/kaswin.html\`）；直接双击得到的 \`file://\` 地址下，浏览器默认不会注入钱包扩展。
+          if (changes.length) {
+            if (!changelogSection) {
+              console.error(`ERROR: Compatible contract profiles changed since ${prevTag}, but CHANGELOG.md has no ## [${tag}] entry.`);
+              process.exit(1);
+            }
+            for (const [k, pid] of Object.entries(curProfiles)) {
+              if (prevProfiles[k] !== pid && !changelogSection.includes(pid)) {
+                console.error(`ERROR: CHANGELOG.md ## [${tag}] must document the updated profileId for ${k}: ${pid}`);
+                process.exit(1);
+              }
+            }
+          }
 
-          没有第三方安全审计。请只投入你能承受损失的金额。
-          EOF
+          const profileTable = [
+            '| 协议 | 资产 | 合约 Profile ID |',
+            '|---|---|---|',
+            ...manifest.compatibleProfiles.map(p => `| \`${p.protocolId}\` | ${p.asset} | \`${p.profileId}\` |`),
+          ].join('\n');
+
+          const parts = [
+            '基于 Kaspa L1 covenant 的抽奖协议单页应用。整个应用就是一个自包含 HTML 文件，没有后端，也不托管资金。',
+            '',
+            ...(changes.length ? [
+              `> [!IMPORTANT]`,
+              `> **兼容合约 Profile 较 \`${prevTag}\` 发生变更**（旧 Profile 轮次将在新版本中归入「不兼容轮次」只读查看，如需操作请使用对应历史 Release）：`,
+              ...changes.map(c => `> ${c}`),
+              '',
+            ] : []),
+            '### 兼容的合约 Profile',
+            '',
+            profileTable,
+            '',
+            ...(changelogSection ? ['### 变更记录（CHANGELOG）', '', changelogSection, ''] : []),
+            `- 源码提交：\`${sha}\``,
+            `- 本 release 的附件由 GitHub Actions 从上述提交构建（\`npm ci && npm run build\`）。`,
+            '',
+            '| 文件 | 说明 |',
+            '|---|---|',
+            '| `kaswin.html` | 主页面（默认主网，可切换 Testnet 10） |',
+            '| `kaspire-wc.js` | Kaspire WalletConnect v2 按需加载模块（仅点击 Kaspire 时请求） |',
+            '| `build-manifest.json` | 构建模式、兼容合约 Profile 列表、工具版本、源码与产物哈希 |',
+            '| `SHA256SUMS` | 以上文件的 SHA256 |',
+            '',
+            `\`kaswin.html\` SHA256：\`${htmlSha}\``,
+            '',
+            '下载后可用 `sha256sum -c SHA256SUMS` 核对；也可以检出上述提交自行构建比对。',
+            '',
+            '使用：需要 KasWare、Kastle 钱包扩展或 Kaspire 钱包。建议放在 HTTPS 站点，或在本地用静态服务器打开（例如 `python3 -m http.server 8000` 后访问 `http://localhost:8000/kaswin.html`）；直接双击得到的 `file://` 地址下，浏览器默认不会注入钱包扩展。',
+            '',
+            '没有第三方安全审计。请只投入你能承受损失的金额。',
+          ];
+          fs.writeFileSync('notes.md', parts.join('\n') + '\n');
+          NODE
           gh release create "$TAG" release/kaswin.html release/kaspire-wc.js release/build-manifest.json release/SHA256SUMS \
-            --verify-tag --title "Kaswin ${TAG#v} · Profile ${profile:0:16}" --notes-file notes.md
+            --verify-tag --title "Kaswin ${TAG#v}" --notes-file notes.md

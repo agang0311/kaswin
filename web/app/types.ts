@@ -127,7 +127,8 @@ export interface DiscoveryCacheLike {
   read(): DiscoveryCacheSnapshot|null;
   write(snapshot: DiscoveryCacheSnapshot): void;
 }
-export interface Conn {node?: boolean | null; nodeUrl?: string | null; indexer?: boolean|null; indexerUrl?: string|null; indexerStale?: boolean; discoveredSource?: 'indexer'|'rest'|'cache'|null}
+export interface IndexerProfileEntry {protocolId: string; profileId: Hex}
+export interface Conn {node?: boolean | null; nodeUrl?: string | null; indexer?: boolean|null; indexerUrl?: string|null; indexerStale?: boolean; discoveredSource?: 'indexer'|'rest'|'cache'|null; indexerProfiles?: IndexerProfileEntry[] | null}
 export interface Gate {ok: boolean; reason?: string; fix?: string}
 export interface Explorer {tx(id: Hex): string; addr(a: string): string; addrOfKey(k: Hex | null): string | null; addrOfScript(s: string): string}
 export interface LogLine {at: number; kind: string; text: string}
@@ -149,6 +150,9 @@ export interface DrawProgress {
   confirmations?: bigint; observedAt: number;
 }
 export interface SubmissionProgress {cid: Hex; action: string; txid: Hex | null; error?: string}
+export interface CompatibleProfile {
+  protocolId: string; name: string; asset: string; profileId: Hex; tokenCovenantId?: Hex | null;
+}
 export interface Ctx {
   net: NetInfo;
   items: Item[]; S: UiState; wallet: WalletView | null; balance: bigint | null; daa: bigint | null; conn: Conn; busy: boolean;
@@ -157,6 +161,8 @@ export interface Ctx {
   saved?: Set<string>; checkProgress?: string | null; submission?: SubmissionProgress | null;
   drawProgress?: DrawProgress | null; daaObservedAt?: number;
   kusdtLive?: KusdtLiveState | null;
+  supportedProfiles?: Set<string>;
+  compatibleProfiles?: CompatibleProfile[];
 }
 export interface ReviewInput {index: number; value: bigint; kind: string}
 export interface ReviewOutput {
@@ -179,7 +185,7 @@ export interface LastSyncedInfo {
 export interface CtlState {
   rpc: RpcLike | null;
   wallet: WalletView | null; prepared: Prepared | null; busy: boolean; busyLabel: string | null; logs: LogLine[];
-  indexer: unknown|null; indexerInfo: {stale?: boolean}|null; indexerCursor: string|null; discovered: DiscoveredRound[]; discoveredSource?: 'indexer'|'rest'|'cache'|null; discoveredCachedAt?: number|null;
+  indexer: unknown|null; indexerInfo: {stale?: boolean; profiles?: IndexerProfileEntry[]}|null; indexerCursor: string|null; discovered: DiscoveredRound[]; discoveredSource?: 'indexer'|'rest'|'cache'|null; discoveredCachedAt?: number|null;
   watchedAddress?: string|null; watchedAddresses?: string[]; lastSynced?: LastSyncedInfo|null;
 }
 export interface Controller {

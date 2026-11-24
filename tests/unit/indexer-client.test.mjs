@@ -257,3 +257,54 @@ test('verifyIndexedSnapshot authenticates terminal and active rounds from node F
   // validateRound rejects malformed draw metadata
   assert.doesNotThrow(() => verifyIndexedSnapshot(badHistDoc, termRpc, profile));
 });
+
+test('createIndexerClient validates optional info().profiles and round protocolId/profileId fields', async () => {
+  const kusdtPid = '39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445';
+  const client = createIndexerClient({
+    baseUrl: 'https://indexer.example/mainnet',
+    networkId: TN10_NETWORK_ID,
+    genesisHash: TN10_GENESIS,
+    profileId: TN10_PROFILE_ID,
+    profileIds: [TN10_PROFILE_ID, kusdtPid],
+    fetchImpl: async url => {
+      if (url.endsWith('/info')) {
+        return new Response(JSON.stringify({
+          schema: 1, network: TN10_NETWORK_ID, genesisHash: TN10_GENESIS, profileId: TN10_PROFILE_ID,
+          profiles: [
+            {protocolId: 'rolling-v1', profileId: TN10_PROFILE_ID},
+            {protocolId: 'kusdt-v2', profileId: kusdtPid},
+          ],
+          readOnly: true, stale: false,
+        }), {status: 200});
+      }
+      if (url.includes('/rounds?')) {
+        return new Response(JSON.stringify({
+          schema: 1, network: TN10_NETWORK_ID, genesisHash: TN10_GENESIS, profileId: TN10_PROFILE_ID,
+          stale: false,
+          rounds: [{cid: 'ab'.repeat(32), protocolId: 'rolling-v1', profileId: TN10_PROFILE_ID, terminal: null, module: 'sales'}],
+          nextCursor: null,
+        }), {status: 200});
+      }
+      return new Response(JSON.stringify({detail: 'NOT_FOUND'}), {status: 404});
+    },
+  });
+  const info = await client.info();
+  assert.equal(info.profiles.length, 2);
+  assert.equal(info.profiles[1].profileId, kusdtPid);
+  const page = await client.rounds({limit: 10});
+  assert.equal(page.rounds[0].protocolId, 'rolling-v1');
+  assert.equal(page.rounds[0].profileId, TN10_PROFILE_ID);
+
+  const badProfilesClient = createIndexerClient({
+    baseUrl: 'https://indexer.example/mainnet',
+    networkId: TN10_NETWORK_ID,
+    genesisHash: TN10_GENESIS,
+    profileId: TN10_PROFILE_ID,
+    fetchImpl: async () => new Response(JSON.stringify({
+      schema: 1, network: TN10_NETWORK_ID, genesisHash: TN10_GENESIS, profileId: TN10_PROFILE_ID,
+      profiles: [{protocolId: 'rolling-v1', profileId: 'not-a-hash'}],
+      readOnly: true, stale: false,
+    }), {status: 200}),
+  });
+  await assert.rejects(() => badProfilesClient.info(), /INDEXER_RESPONSE_INVALID/);
+});

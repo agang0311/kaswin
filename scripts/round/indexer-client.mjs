@@ -22,12 +22,15 @@ export function indexerBase(text) {
 }
 function scope(value,{networkId=TN10_NETWORK_ID,genesisHash=TN10_GENESIS,profileId=TN10_PROFILE_ID,profileIds=null,requireProfile=true}={}) {
   const allowed=profileIds?new Set(profileIds):new Set([profileId]);
-  const profileOk=requireProfile?(typeof value?.profileId==='string'&&allowed.has(value.profileId)):(value?.profileId==null||allowed.has(value.profileId));
+  const profilesMatch=Array.isArray(value?.profiles)&&value.profiles.some(p=>p&&typeof p.profileId==='string'&&allowed.has(p.profileId));
+  const profileOk=requireProfile?((typeof value?.profileId==='string'&&allowed.has(value.profileId))||profilesMatch):(value?.profileId==null||allowed.has(value.profileId)||profilesMatch);
   check(value&&value.schema===1&&value.network===networkId&&value.genesisHash===genesisHash&&profileOk,'INDEXER_SCOPE');
   check(value.stale!==true,'INDEXER_STALE');return value;
 }
 function checkOptionalSummaryExtensions(entry) {
   if(!entry||typeof entry!=='object')return;
+  if(entry.protocolId!=null) check(typeof entry.protocolId==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/.test(entry.protocolId),'INDEXER_RESPONSE_INVALID');
+  if(entry.profileId!=null) check(typeof entry.profileId==='string'&&HASH.test(entry.profileId),'INDEXER_RESPONSE_INVALID');
   if(entry.asset!=null) {
     const a=entry.asset;
     check(typeof a==='object'&&['KAS','KCC20'].includes(a.kind)&&typeof a.symbol==='string'&&a.symbol.length>=1&&a.symbol.length<=16
@@ -62,7 +65,15 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
   }
   const inflightExports=new Map(),recentExports=new Map();
   return Object.freeze({base,
-    async info(){const value=await get('/info');check(value.readOnly===true,'INDEXER_SCOPE');return value;},
+    async info(){
+      const value=await get('/info');check(value.readOnly===true,'INDEXER_SCOPE');
+      if(value.profiles!=null){
+        check(Array.isArray(value.profiles),'INDEXER_RESPONSE_INVALID');
+        for(const p of value.profiles)
+          check(p&&typeof p==='object'&&typeof p.protocolId==='string'&&p.protocolId.length>=1&&p.protocolId.length<=64&&typeof p.profileId==='string'&&HASH.test(p.profileId),'INDEXER_RESPONSE_INVALID');
+      }
+      return value;
+    },
     async rounds({cursor=null,limit=30}={}){
       check(Number.isInteger(limit)&&limit>=1&&limit<=100,'INDEXER_PAGE_LIMIT');
       const query=new URLSearchParams({limit:String(limit)});if(cursor!==null){check(typeof cursor==='string'&&cursor.length<=2048,'INDEXER_CURSOR');query.set('cursor',cursor);}

@@ -27,6 +27,9 @@ test('page defaults to mainnet with TN10 switch, fixed Profile and UNVALIDATED e
   assert.equal(manifest.mode,'mainnet');assert.equal(manifest.network,'mainnet');
   assert.equal(manifest.capabilities.mainnetTrading,true);assert.equal(manifest.capabilities.tn10Trading,true);
   assert.equal(manifest.capabilities.memoryWallet,false);assert.equal(manifest.capabilities.networkSwitch,true);
+  assert.ok(Array.isArray(manifest.compatibleProfiles)&&manifest.compatibleProfiles.length>=2);
+  assert.equal(manifest.compatibleProfiles.find(p=>p.protocolId==='rolling-v1')?.profileId,TN10_PROFILE_ID);
+  assert.match(manifest.compatibleProfiles.find(p=>p.protocolId==='kusdt-v2')?.profileId??'',/^[0-9a-f]{64}$/);
   assert.match(html,/id="netBtn"/);
 });
 test('tn10 mode builds with testnet-10 default network',async()=>{

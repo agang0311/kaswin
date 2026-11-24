@@ -1380,9 +1380,14 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
       else if (localMgrState?.shardCids?.length) canonicalShardOrder = [...localMgrState.shardCids];
       const kciReceipts = [];
       const caughtReceipts = [];
+      let detProfileMismatch = false;
       if (indexer) {
         try {
           const det = await indexer.roundDetail(targetCid);
+          if (det?.profileId && det.profileId !== profile.id) {
+            detProfileMismatch = true;
+            throw new Error('UNSUPPORTED_PROFILE');
+          }
           const pd = det.protocolData ?? det.summary?.protocolData ?? {};
           if (!origin && det.origin?.transactionId) origin = det.origin;
           if (typeof det.head?.txid === 'string' && HASH64.test(det.head.txid.toLowerCase())) detHeadTxid = det.head.txid.toLowerCase();
@@ -1637,6 +1642,9 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
             }
           }
         } catch {}
+      }
+      if (detProfileMismatch) {
+        throw Object.assign(new Error('UNSUPPORTED_PROFILE'), {code: 'UNSUPPORTED_PROFILE', safeCode: 'UNSUPPORTED_PROFILE'});
       }
 
       // Verify manager live on node; if spent while indexer lags, chase via REST + crypto verification + live node check
@@ -1952,6 +1960,27 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
     },
     describeRound(r, currentDaa = null) {
       return describeKusdtV2Round(r, currentDaa);
+    },
+    matchesProfile(r) {
+      if (!r || typeof r !== 'object') return false;
+      if (r.profileId && r.profileId !== profile.id) return false;
+      const k = r.kusdt ?? {};
+      if (k.genesisRootInvalid) return false;
+      if (r.manager?.redeemScript instanceof Uint8Array) {
+        try { verifyKusdtV2Redeem(r.manager.redeemScript, profile, 'manager'); }
+        catch { return false; }
+      }
+      const creatorPk = k.creatorPk ?? r.settings?.creatorPk ?? null;
+      const price = BigInt(k.price ?? r.settings?.ticketPrice ?? 0n);
+      const closeDaa = BigInt(k.closeDaa ?? r.settings?.closeDaa ?? r.settings?.closeEligibleDaa ?? 0n);
+      if (r.origin?.transactionId && creatorPk && HASH64.test(creatorPk) && price > 0n && closeDaa > 0n) {
+        try {
+          verifyKusdtV2GenesisRoot({cid: r.cid, origin: r.origin, price, closeDaa, creatorPk, profile});
+        } catch {
+          return false;
+        }
+      }
+      return true;
     },
     uiActions(r, currentDaa = null) {
       return kusdtV2UiActions(r, currentDaa);

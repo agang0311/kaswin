@@ -83,10 +83,11 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
     {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
   ]})).s;
   assert.match(offlineCacheOut,/索引暂不可用，当前显示本地缓存列表/);
-  // Starred filter & collapsed incompatible rounds (pending GENESIS and valid kUSDT rounds must NOT collapse into 不适用轮次)
+  // Starred filter & collapsed incompatible rounds (pending GENESIS and valid kUSDT rounds must NOT collapse into 不兼容轮次)
   const pendingGenesis={...r,cid:hex('8'),manager:null,intent:{status:'SUBMITTED',action:'GENESIS',txid:hex('7')}};
   const kusdtLocal={...r,cid:hex('7'),kusdt:{stage:1,price:1_000_000n,closeDaa:900n,openedCount:0,cursor:0,totalTickets:2,decision:0,creatorPk:hex('2'),winnerPk:null,nodeVerified:true,shards:[]}};
-  const savedOut=exploreView(ctx({S:{...BASE_S,filter:'saved'},saved:new Set([r.cid]),items:[
+  const legacyDisc={cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:{kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('4')},updatedAt:100};
+  const savedOut=exploreView(ctx({S:{...BASE_S,filter:'saved'},saved:new Set([r.cid]),supportedProfiles:new Set([hex('1')]),discovered:[legacyDisc],items:[
     item(r,facts(),actions()),
     item(pendingGenesis,{module:null},actions()),
     item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions()),
@@ -94,11 +95,12 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
   ]})).s;
   assert.match(savedOut,/★ 关注/);
   assert.ok(savedOut.includes(`data-open="${r.cid}"`));
-  assert.match(savedOut,/不适用轮次 \(1\)/);
-  const kusdtAllOut=exploreView(ctx({S:{...BASE_S,filter:'all'},items:[item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions())]})).s;
+  assert.match(savedOut,/不兼容轮次 \(2\)/);
+  assert.ok(savedOut.includes(`data-indexed="${legacyDisc.cid}"`));
+  const kusdtAllOut=exploreView(ctx({S:{...BASE_S,filter:'all'},supportedProfiles:new Set([hex('1')]),items:[item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions())]})).s;
   assert.match(kusdtAllOut,/kUSDT/);
   assert.match(kusdtAllOut,/1 kUSDT\/张/);
-  assert.doesNotMatch(kusdtAllOut,/不适用轮次/);
+  assert.doesNotMatch(kusdtAllOut,/不兼容轮次/);
 });
 
 test('create form: bounds are enforced, bad input never throws, and values are escaped in the page',()=>{
@@ -202,7 +204,16 @@ test('mine / rules / dialogs render, never claim full validation, and show no ke
   assert.match(connMine,/我 2 张/);
   assert.match(connMine,/确认中/);
   assert.match(connMine,/data-act="checkPending"/);
-  const rules=rulesView(ctx({S:{...BASE_S,budgetPc:64}})).s;assert.match(rules,/未经第三方安全审计/);assert.match(rules,/256 个封存分片/);assert.match(rules,/安全与使用须知/);assert.doesNotMatch(rules,/515 张票|超过 2 个封存分片/);assert.doesNotMatch(rules,/已全部验证|已通过全部验证|fully validated/i);
+  const compatProfiles=[
+    {protocolId:'rolling-v1',name:'Rolling v1',asset:'KAS',profileId:hex('a'),tokenCovenantId:null},
+    {protocolId:'kusdt-v2',name:'kUSDT v2',asset:'kUSDT',profileId:hex('b'),tokenCovenantId:hex('c')},
+  ];
+  const rules=rulesView(ctx({S:{...BASE_S,budgetPc:64},compatibleProfiles:compatProfiles})).s;assert.match(rules,/未经第三方安全审计/);assert.match(rules,/256 个封存分片/);assert.match(rules,/安全与使用须知/);assert.doesNotMatch(rules,/515 张票|超过 2 个封存分片/);assert.doesNotMatch(rules,/已全部验证|已通过全部验证|fully validated/i);
+  assert.match(rules,/本版本兼容的合约 Profile/);assert.ok(rules.includes(hex('a')));assert.ok(rules.includes(hex('b')));
+  const rulesTab=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,detailTab:'rules'},compatibleProfiles:compatProfiles,detail:{...item({...r,profileId:hex('a')},facts(),actions()),preview:false,mine:null,isWinner:false,shards:null}})).s;
+  assert.match(rulesTab,/合约 Profile/);assert.ok(rulesTab.includes(hex('a')));
+  const incompatDetail=roundView(ctx({S:{...BASE_S,view:'round',cid:hex('6')},supportedProfiles:new Set([hex('a')]),compatibleProfiles:compatProfiles,discovered:[{cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:{kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('c')}}]})).s;
+  assert.match(incompatDetail,/不兼容轮次（只读）/);assert.match(incompatDetail,/当前版本不兼容此轮次的合约 Profile/);assert.ok(incompatDetail.includes(`data-copy="${hex('5')}"`));assert.ok(incompatDetail.includes('https://github.com/agang0311/kaswin/releases'));
   assert.match(rules,/id="budgetPc"/);assert.match(rules,/value="64"/);assert.match(rules,/<svg class="chart"/);
   assert.match(walletBody(ctx()).s,/type="password"/);
   assert.match(walletBody(ctx({S:{...BASE_S,wtab:'extension'}})).s,/data-connect="kaspire"/);
@@ -211,6 +222,12 @@ test('mine / rules / dialogs render, never claim full validation, and show no ke
   const settingsHtml=settingsBody(ctx({conn:{node:true,indexer:true}})).s;
   assert.match(settingsHtml,/id="sProbe"/);
   assert.match(settingsHtml,/id="sNodes"/);
+  const settingsCovered=settingsBody(ctx({net:MAINNET,compatibleProfiles:compatProfiles,conn:{node:true,indexer:true,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')},{protocolId:'kusdt-v2',profileId:hex('b')}]}})).s;
+  assert.match(settingsCovered,/已覆盖全部兼容 Profile/);
+  const settingsMissing=settingsBody(ctx({net:MAINNET,compatibleProfiles:compatProfiles,conn:{node:true,indexer:true,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')}]}})).s;
+  assert.match(settingsMissing,/未覆盖 kUSDT Profile/);
+  const exploreMissing=exploreView(ctx({net:MAINNET,compatibleProfiles:compatProfiles,conn:{node:true,indexer:true,indexerStale:false,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')}]}})).s;
+  assert.match(exploreMissing,/当前索引未覆盖本页的 kUSDT/);
   assert.ok(!settingsBody(ctx()).s.includes('sSvc'));
 });
 

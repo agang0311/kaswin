@@ -19,7 +19,7 @@ import {pubkeyToAddress as addressJs,addressToSpk as addressToSpkJs,spkToAddress
 import {managerBoundUnits as boundUnitsJs,unitsToBudget as unitsToBudgetJs} from '../../scripts/round/budget.mjs';
 import {connectNetwork as connectNetworkJs,connectTN10 as connectTN10Js,nodeFeeRate as nodeFeeRateJs,mempoolSpentOutpoints as mempoolSpentJs} from '../../scripts/round/prepare.mjs';
 import {createIndexerClient as indexerClientJs} from '../../scripts/round/indexer-client.mjs';
-import type {ActionState,AssetDescriptor,Controller,DiscoveryCacheLike,DrawProgress,DrawResult,Facts,NetInfo,Profile,ProtocolAdapterLike,ProtocolRegistryLike,Round,RoundStoreLike,RpcLike,ShardView,TicketRecord,Utxo} from './types.ts';
+import type {ActionState,AssetDescriptor,Controller,DiscoveryCacheLike,DrawProgress,DrawResult,Facts,IndexerProfileEntry,NetInfo,Profile,ProtocolAdapterLike,ProtocolRegistryLike,Round,RoundStoreLike,RpcLike,ShardView,TicketRecord,Utxo} from './types.ts';
 
 export const readDrawProgress = (rpc: RpcLike, round: Round): Promise<DrawProgress> => (readDrawProgressJs as (r: unknown, s: unknown) => Promise<DrawProgress>)(rpc, round);
 export const loadProfile = (data: unknown): Profile => profileJs(data) as Profile;
@@ -55,7 +55,7 @@ export const extractKcc20Suffix = (b: Uint8Array): Uint8Array => (extractKcc20Su
 export const locateDrawTarget = (rpc: RpcLike, accepting: string, boundary: bigint): Promise<{target: {hash: string; daa: bigint}; parentHash: string} | null> => (locateDrawTargetJs as (...a: unknown[]) => Promise<{target: {hash: string; daa: bigint}; parentHash: string} | null>)(rpc, accepting, boundary);
 export const targetSeqOf = (proof: Uint8Array): string => (targetSeqOfJs as (p: Uint8Array) => string)(proof);
 export const createIndexerClient = (opts: {baseUrl: string; networkId?: string; genesisHash?: string; profileId?: string; profileIds?: string[]}): {
-  info(): Promise<{roundsCount?: number;stale?: boolean}>;
+  info(): Promise<{roundsCount?: number;stale?: boolean;profiles?: IndexerProfileEntry[]}>;
   rounds(o?: {limit?: number}): Promise<{rounds: unknown[]}>;
   roundDetail(cid: string): Promise<Record<string, unknown>>;
   covenant(cid: string): Promise<{covenant: {role: string; roundCid: string; covenantId: string; stage: string; outpoint: {transactionId: string; index: number}; value: string; daaScore: string; spk: {version: number; script: string}; address: string; redeemHex: string}}>;

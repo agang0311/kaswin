@@ -5,7 +5,7 @@ import {html,raw,ic} from './ui.ts';
 import type {Raw} from './ui.ts';
 import {ACTION_INFO,actionTitle,ROLE_LABEL,TERMINAL_LABEL,CLOSE_PRESETS,errText} from './messages.ts';
 import {formatTkas,parseTkas,shortHash,daaDuration} from './format.mjs';
-import {TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
+import {TN10_PROFILE_ID,TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
 import {MAX_TICKETS,MAX_ACTIVE_OPEN_SHARDS,addressToSpk,managerBoundUnits,unitsToBudget} from '../app/bridge.ts';
 import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
 import type {AssetDescriptor,Ctx,ConfirmCtx,CreateForm,Detail,DiscoveredRound,Facts,ActionState,Intent,Item,KusdtLiveState,NetInfo,Phase,Receipt,Round,ShardRecordView,ShardStatus,ShardView,VerifyState} from '../app/types.ts';
@@ -129,7 +129,9 @@ export function exploreView(x: Ctx): Raw {
     }),
     ...disc.filter(d=>!localCids.has(d.cid)).map(d=>{const ph=indexedPhase(d);return {cid:d.cid,ph,value:d.terminal?0n:safeBig(d.managerValue),at:d.updatedAt??0,disc:d};}),
   ];
-  const isOther=(e: ExploreEntry)=>e.item?(!e.item.f.module&&!e.item.r.terminal&&!e.item.r.intent):(e.disc?.protocolId!=='kusdt-v2'&&!!e.disc?.module&&!['sales','sealed','win','refund'].includes(String(e.disc.module)));
+  const isIncompatibleProfile=(pid: string|null|undefined)=>!!(pid&&x.supportedProfiles&&!x.supportedProfiles.has(pid));
+  const isOther=(e: ExploreEntry)=>isIncompatibleProfile(e.disc?.profileId)||isIncompatibleProfile(e.item?.r.profileId)
+    ||(e.item?(!e.item.f.module&&!e.item.r.terminal&&!e.item.r.intent):(e.disc?.protocolId!=='kusdt-v2'&&!!e.disc?.module&&!['sales','sealed','win','refund'].includes(String(e.disc.module))));
   const entries=allEntries.filter(e=>!isOther(e)),otherEntries=allEntries.filter(isOther);
   const is=(e: ExploreEntry,...k: string[])=>k.includes(e.ph.key);
   const saved=x.saved??new Set<string>();
@@ -155,14 +157,23 @@ export function exploreView(x: Ctx): Raw {
   });
   const filteredOther=otherEntries.filter(e=>!q||e.cid.includes(q));
   const seg: [string,string][]=[['saved','★ 关注'],['open','售票中'],['sealed','待开奖'],['settle','派奖/退款'],['done','已结束'],['all','全部']];
-  const isRest=x.conn.discoveredSource==='rest',isCache=x.conn.discoveredSource==='cache';
+const missingProfilesOf=(x: Ctx)=>{
+  const reported=Array.isArray(x.conn.indexerProfiles)&&x.conn.indexerProfiles.length?new Set(x.conn.indexerProfiles.map(p=>p.profileId)):null;
+  if(!reported||!x.compatibleProfiles?.length)return null;
+  const required=x.compatibleProfiles.filter(p=>x.net.key==='mainnet'||p.protocolId!=='kusdt-v2');
+  return required.filter(p=>!reported.has(p.profileId));
+};
+const isRest=x.conn.discoveredSource==='rest',isCache=x.conn.discoveredSource==='cache';
+  const missingProfiles=x.conn.indexer&&!x.conn.indexerStale?missingProfilesOf(x):null;
   const sourceNotice=isCache&&x.conn.indexerStale
     ?html`<div class="source-strip"><span class="dot"></span><span>索引暂不可用，当前显示本地缓存列表（${disc.length} 轮）</span></div>`
     :isRest
     ?html`<div class="source-strip"><span class="dot"></span><span>${x.conn.indexerStale?'索引暂不可用，已切换为 REST API 备用查询':'使用 REST API 备用查询'}（${disc.length} 轮）</span></div>`
     :x.conn.indexerStale
       ?html`<div class="notice warn">索引正在追赶最新链状态，点击任意轮次会向节点核对。</div>`
-      :'';
+      :missingProfiles&&missingProfiles.length
+        ?html`<div class="notice warn">当前索引未覆盖本页的 ${missingProfiles.map(p=>`${p.asset} (${shortHash(p.profileId,6,4)})`).join('、')} 合约 Profile，相关新轮次可能无法自动发现；请在「高级设置」切换或升级索引。</div>`
+        :'';
   const u=unitOf(x);
   const sourceLabel=isCache?`本地缓存 ${disc.length}`:isRest?`REST 备用 ${disc.length}`:x.conn.indexer?`索引 ${disc.length}`:'';
   return html`
@@ -185,19 +196,19 @@ export function exploreView(x: Ctx): Raw {
     <div class="seg"><button data-sort="new" aria-pressed="${x.S.sort==='new'}">最新</button><button data-sort="value" aria-pressed="${x.S.sort==='value'}">奖池</button></div>
     ${x.conn.indexer||isRest||isCache||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="刷新列表" title="刷新轮次列表">${ic('refresh')}</button>`:''}
     ${x.indexerMore?html`<button class="btn sm" data-act="moreIndex">加载更多</button>`:''}
-    ${otherEntries.length?html`<details class="other-rounds-details">
-      <summary class="btn ghost sm" title="查看无法按当前固定 Profile 解析的轮次">${ic('archive')}<span>不适用轮次 (${otherEntries.length})</span></summary>
-      <div class="panel" style="margin-top:12px;background:var(--panel2);border:1px dashed var(--line2)">
-        <div class="grid">${filteredOther.map(e=>e.item?card(e.item,x):indexedCard(e.disc!,x))}</div>
-      </div>
-    </details>`:''}
   </div>
   ${sourceNotice}
   <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x,e.disc):indexedCard(e.disc!,x)):html`<div class="empty">${ic('ticket')}<p>${entries.length?html`当前筛选下没有轮次。${x.S.filter!=='all'?html`<button class="link" data-filter="all">查看全部轮次 (${entries.length})</button> 或 `:''}`:'还没有轮次。'}你可以<button class="link" data-go2="create">发起一个新轮次</button>，或在下方通过分享链接加入。</p></div>`}</div>
   <details class="join-details"${x.S.join||!entries.length?' open':''}>
     <summary class="small muted">${ic('download')} <span>有分享链接或轮次编号？点此加入</span></summary>
     <div class="joinrow" style="margin-top:10px"><input id="joinText" value="${x.S.join}" placeholder="粘贴分享链接、轮次编号或交易 ID" autocomplete="off" spellcheck="false" aria-label="分享链接或轮次 ID"><button class="btn pri" data-act="join">加入</button></div>
-  </details>`;
+  </details>
+  ${otherEntries.length?html`<details class="other-rounds-details">
+    <summary class="small dim" title="查看属于旧版或当前版本不兼容合约 Profile 的轮次">${ic('archive')}<span>不兼容轮次 (${otherEntries.length})</span></summary>
+    <div class="panel" style="margin-top:10px;background:var(--panel2);border:1px dashed var(--line2)">
+      <div class="grid">${filteredOther.map(e=>e.item?card(e.item,x):indexedCard(e.disc!,x))}</div>
+    </div>
+  </details>`:''}`;
 }
 
 /* ------------------------------------------------------------------ create */
@@ -761,18 +772,37 @@ function discoveredDetailView(d: DiscoveredRound,x: Ctx): Raw {
   const kusdtPool=isKusdt&&d.ticketPrice?BigInt(tkt)*safeBig(d.ticketPrice):0n;
   const refund=d.module==='refund'||d.phase==='REFUNDING'||d.terminal==='REFUNDED',labels=refund?STEPS_REFUND:STEPS_NORMAL;
   const pos=d.terminal?4:(d.module==='sealed'||d.phase==='SEALED')?1:(d.module==='win'||d.module==='refund'||d.phase==='SETTLING'||d.phase==='REFUNDING')?2:0;
-  const statusNotice=x.verify?.state==='bad'
-    ?verifyPanel(x.verify)
-    :x.conn.node===false
-      ?html`<div class="notice warn">节点未连接，先展示本地缓存摘要；连接节点后自动同步最新状态。</div>`
-      :html`<div class="notice">正在后台同步分片明细并向节点核对最新状态…</div>`;
+  const isIncompat=!!(d.profileId&&x.supportedProfiles&&!x.supportedProfiles.has(d.profileId));
+  const compatList=x.compatibleProfiles??[];
+  const statusNotice=isIncompat
+    ?html`<div class="notice warn">
+      <h3>当前版本不兼容此轮次的合约 Profile（仅供只读查看）</h3>
+      <p>如需查看完整明细或继续操作此轮次，请按下方完整合约 Profile 前往 GitHub Releases 查找兼容该 Profile 的对应 Kaswin 版本。</p>
+      <dl class="kv" style="margin:10px 0 8px">
+        <dt>轮次协议</dt><dd>${isKusdt?'kUSDT v2 (KCC-20)':'KAS (Rolling v1)'}${d.protocolId?html` <span class="mono small muted">(${d.protocolId})</span>`:''}</dd>
+        <dt>轮次合约 Profile</dt><dd><span class="mono small" style="word-break:break-all;user-select:all">${d.profileId}</span></dd>
+        ${compatList.length?html`<dt>本页兼容 Profile</dt><dd class="small muted">${compatList.map((p,i)=>html`${i?' · ':''}${p.asset}: <span class="mono">${shortHash(p.profileId,8,4)}</span>`)}</dd>`:''}
+      </dl>
+      <div class="btnrow" style="margin-top:8px">
+        <button type="button" class="btn sm" data-copy="${d.profileId}">${ic('copy')}复制合约 Profile</button>
+        <a class="btn sm ghost" href="https://github.com/agang0311/kaswin/releases" target="_blank" rel="noopener noreferrer">前往 GitHub Releases 查找对应版本 ↗</a>
+      </div>
+    </div>`
+    :x.verify?.state==='bad'
+      ?verifyPanel(x.verify)
+      :x.conn.node===false
+        ?html`<div class="notice warn">节点未连接，先展示本地缓存摘要；连接节点后自动同步最新状态。</div>`
+        :html`<div class="notice">正在后台同步分片明细并向节点核对最新状态…</div>`;
+  const profileRow=d.profileId&&!isIncompat
+    ?html`<dl class="kv" style="margin:12px 0 0"><dt>合约协议</dt><dd>${isKusdt?'kUSDT v2 (KCC-20)':'KAS (Rolling v1)'}</dd><dt>合约 Profile</dt><dd>${hash(d.profileId,{n:12})} <span class="tag kas">兼容</span></dd></dl>`
+    :'';
   return html`
   <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}返回</button><span class="spacer"></span>
     <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(cid)?'已关注':'关注'}</button>
-    ${!d.terminal?liveSyncToggle(x):''}</div>
+    ${!d.terminal&&!isIncompat?liveSyncToggle(x):''}</div>
   <div class="panel t-${ph.tone}">
     <div class="row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="badge t-${ph.tone}">${ph.label}</span>${isKusdt?html`<span class="badge">${u}</span>`:''}<span class="spacer"></span>
-      <span class="tag">本地缓存摘要</span></div>
+      <span class="tag">${isIncompat?'不兼容轮次（只读）':'本地缓存摘要'}</span></div>
     <h2 style="margin:8px 0 14px">轮次 ${hash(cid,{n:14})}</h2>
     <div class="stepper">${labels.map((l,i)=>html`<div class="step ${i<pos?'done':i===pos?'now':''} ${refund&&i>=2?'alt':''}"><div class="b">${i<pos?'✓':i+1}</div>${l}</div>`)}</div>
     ${statusNotice}
@@ -780,8 +810,9 @@ function discoveredDetailView(d: DiscoveredRound,x: Ctx): Raw {
     <div class="cols3">
       ${kpi(d.terminal?'历史售出票数':'当前已售票数',`${tkt.toLocaleString()} 张`,d.buys!=null?`${d.buys.toLocaleString()} 笔购买`:'读取中…')}
       ${kpi(isKusdt?'活跃分片':'封存分片',`${sc}`)}
-      ${kpi(isKusdt?'当前奖池':'合约锁定',isKusdt?`${formatKcc20(kusdtPool,d.asset?.decimals??6)} ${u}`:(mval>0n?`${kas(mval)} ${u}`:(d.terminal?'已结算':'—')))}
+      ${kpi(isKusdt?(d.terminal?'已售总额':'当前奖池'):'合约锁定',isKusdt?`${formatKcc20(kusdtPool,d.asset?.decimals??6)} ${u}`:(mval>0n?`${kas(mval)} ${u}`:(d.terminal?'已结算':'—')))}
     </div>
+    ${profileRow}
   </div>`;
 }
 const ORDER: Record<string,string[]>={sales:['BUY','CLOSE'],sealed:['DRAW','TIMEOUT'],win:['PAY_OLD','PAY_SELF'],refund:['REFUND_OLD','REFUND_SELF']};
@@ -852,7 +883,7 @@ export function roundView(x: Ctx): Raw {
       ${D.preview?html`<span class="tag amber">本地预览 · 后台核对中</span>`:isPrunedArchive?html`<span class="tag" title="该轮次已结束且区块早于节点裁剪窗口，当前展示经离线校验的索引历史存档">历史存档 · 节点已裁剪</span>`:isVerifiedOk?html`<span class="verify-chip" title="已向节点核对（${new Date(x.verify!.at??0).toLocaleTimeString()}）">✓ 已向节点核对</span>`:''}
     </div>
     <div class="cols3" style="margin:14px 0 12px">
-      ${kpi(r.terminal==='PAID'?'奖池总额':'当前奖池',f.tickets!=null?html`${fmtAmt(BigInt(f.tickets)*price,D.asset)} <span class="small muted">${tu}</span>`:'—',f.tickets!=null?`每张 ${fmtAmt(price,D.asset)} ${tu}`:'')}
+      ${kpi(r.terminal?'已售总额':'当前奖池',f.tickets!=null?html`${fmtAmt(BigInt(f.tickets)*price,D.asset)} <span class="small muted">${tu}</span>`:'—',f.tickets!=null?`每张 ${fmtAmt(price,D.asset)} ${tu}`:'')}
       ${kpi(isKusdt?'已售 / 分片':'已售 / 上限',f.tickets!=null?(isKusdt?`${f.tickets.toLocaleString()} 张 · ${f.shards} / 256 片`:`${f.tickets.toLocaleString()} / ${f.ticketCap.toLocaleString()}`):'—',f.tickets!=null?`最低 ${f.minTickets} 张开奖`:'')}
       ${f.winnerKey?kpi('中奖者',hash(x.ex.addrOfKey(f.winnerKey),{n:12}),D.isWinner?'就是你！':''):
         kpi(mine?'你持有':'你的票',mine?`${mine.tickets.toLocaleString()} 张`:signing(x.wallet)?'0 张':'—',mine&&mine.total>0&&(f.module==='sales'||f.module==='sealed')?`中奖概率约 ${(mine.tickets/mine.total*100).toFixed(2)}%`:'')}
@@ -868,7 +899,11 @@ export function roundView(x: Ctx): Raw {
       <button type="button" role="tab" data-dtab="rules" aria-selected="${dtab==='rules'}" aria-pressed="${dtab==='rules'}">${ic('clock')} 规则与信息</button>
     </div>
     <div class="detail-tab-body">
-      ${dtab==='map'?shardSection(D,x):dtab==='txs'?txTable(D,x):html`<dl class="kv">
+      ${dtab==='map'?shardSection(D,x):dtab==='txs'?txTable(D,x):(()=>{
+        const roundProfileId=r.profileId??x.compatibleProfiles?.find(cp=>cp.protocolId===(isKusdt?'kusdt-v2':'rolling-v1'))?.profileId??null;
+        return html`<dl class="kv">
+        <dt>合约协议</dt><dd>${isKusdt?'kUSDT v2 (KCC-20)':'KAS (Rolling v1)'}</dd>
+        <dt>合约 Profile</dt><dd>${roundProfileId?html`${hash(roundProfileId,{n:12})} <span class="tag kas">兼容</span>`:html`<span class="muted">—</span>`}</dd>
         <dt>票价</dt><dd>${fmtAmt(price,D.asset)} ${tu}</dd>
         <dt>最低开奖票数</dt><dd>${f.minTickets} 张（不足自动退款）</dd>
         <dt>最早可封盘</dt><dd>${f.closeEligibleDaa>0n?(x.daa!=null&&x.daa>=f.closeEligibleDaa?'已到时间':`约 ${wait(x.daa,f.closeEligibleDaa)}`):'—'}</dd>
@@ -881,10 +916,11 @@ export function roundView(x: Ctx): Raw {
         <dt>超时转退款</dt><dd>封盘后约 12 小时未开奖</dd>
         <dt>累计网络费</dt><dd>${kas(r.fees)} ${u}</dd>
         <dt>完整 CID</dt><dd class="mono small">${r.cid}</dd>
+        ${roundProfileId?html`<dt>完整 Profile</dt><dd class="mono small">${roundProfileId}</dd>`:''}
         ${r.origin?html`<dt>创世输出</dt><dd class="mono small" title="创建这一轮时被花掉的资金输出（合约 ID 由它推出），不是创建交易本身">${shortHash(r.origin.transactionId,10,6)}:${r.origin.index}</dd>`:''}
         ${r.manager?html`<dt>状态 UTXO</dt><dd class="mono small">${shortHash(r.manager.outpoint.transactionId,10,6)}:${r.manager.outpoint.index}</dd><dt>合约锁定</dt><dd>${kas(r.manager.value)} ${u}</dd>`:''}
         <dt>数据来源</dt><dd>${r.source==='imported'?'导入':'本页创建'}</dd>
-      </dl></details>`}
+      </dl></details>`;})()}
     </div>
   </div>
   </div>`;
@@ -985,6 +1021,18 @@ export function rulesView(x?: Ctx): Raw {
       <dt>任何人</dt><dd>买票、封盘、开奖、派奖、退款。派奖和退款无需签名，只需要一个领取奖励的地址。</dd>
       <dt>多人参与</dt><dd>用「复制分享链接」把一轮发给朋友，对方在「加入轮次」粘贴。别人操作后你的本机记录会过期，需要重新获取最新链接。</dd></dl></div>
   </div>
+  <div class="panel"><h3>${ic('shield')} 本版本兼容的合约 Profile</h3>
+    <p class="sub" style="margin-top:0">本页仅对以下经密码学固定校验的合约 Profile 提供交易构造与节点复核；属于其他历史或旧版 Profile 的轮次会自动归入广场底部「不兼容轮次」分栏，仅供只读查看。</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>协议</th><th>计价资产</th><th>合约 Profile ID</th></tr></thead>
+      <tbody>${(x?.compatibleProfiles?.length?x.compatibleProfiles:[{protocolId:'rolling-v1',name:'Rolling v1',asset:u,profileId:TN10_PROFILE_ID,tokenCovenantId:null}]).map(p=>html`<tr>
+        <td><b>${p.protocolId==='kusdt-v2'?'kUSDT v2 (KCC-20)':'KAS (Rolling v1)'}</b><div class="small muted mono">${p.protocolId}</div></td>
+        <td>${p.asset}${p.tokenCovenantId?html`<div class="small muted">代币 ${shortHash(p.tokenCovenantId,6,4)}</div>`:''}</td>
+        <td class="mono small" style="word-break:break-all"><span style="user-select:all">${p.profileId}</span> <button type="button" class="copy-btn" data-copy="${p.profileId}" title="复制合约 Profile" aria-label="复制合约 Profile">${ic('copy')}</button></td>
+      </tr>`)}</tbody>
+    </table></div>
+    <p class="small muted" style="margin:10px 0 0">若需操作旧版 Profile 的历史轮次，请前往 <a class="link" href="https://github.com/agang0311/kaswin/releases" target="_blank" rel="noopener noreferrer">GitHub Releases ↗</a> 下载对应声明该 Profile 的历史版本（详见仓库 CHANGELOG.md）。</p>
+  </div>
   <div class="panel"><h3>${ic('gauge')} 费用与算力预算计算器</h3>${budgetPanel(pc,u)}</div>
   <div class="panel"><h3>${ic('lock')} 安全与使用须知</h3>
     <div class="notice warn"><b>${isMainnet?'当前为 Kaspa 主网（Rolling 候选 Profile）':'这是 Testnet 10 实验版'}。</b>未经第三方安全审计，请谨慎控制投入金额。</div>
@@ -1022,6 +1070,12 @@ export function walletBody(x: Ctx): Raw {
 }
 export function settingsBody(x: Ctx): Raw {
   const c=x.conn,isMainnet=x.net.key==='mainnet';
+  const reported=Array.isArray(c.indexerProfiles)&&c.indexerProfiles.length?new Set(c.indexerProfiles.map(p=>p.profileId)):null;
+  const required=(x.compatibleProfiles??[]).filter(p=>isMainnet||p.protocolId!=='kusdt-v2');
+  const missing=reported&&required.length?required.filter(p=>!reported.has(p.profileId)):null;
+  const indexerHint=c.indexer===true
+    ?(c.indexerStale?'索引暂不可用':missing===null?'索引已连接':missing.length?`索引已连接 · 未覆盖 ${missing.map(p=>p.asset).join('、')} Profile`:'索引已连接 · 已覆盖全部兼容 Profile')
+    :(c.indexer===false?'连接失败':'未配置');
   return html`<div class="row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:10px 12px;background:var(--panel2);border-radius:10px;border:1px solid var(--line2)">
       <div><b>当前网络：${x.net.label}</b><div class="small muted">${isMainnet?'默认主网 · 禁用内存私钥':'测试网络 · 可用测试私钥'}</div></div>
       <button type="button" class="btn sm" data-act="switchNet">切换到 ${isMainnet?'Testnet 10':'Kaspa 主网'}</button>
@@ -1029,8 +1083,8 @@ export function settingsBody(x: Ctx): Raw {
     <div class="form">
       <label class="field full">${x.net.label} 节点（每行一个 wss:// 地址）<textarea id="sNodes" rows="2" spellcheck="false" autocomplete="off" style="background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;width:100%">${x.S.nodes}</textarea>
         <small>${c.node===true?`已连接 · ${c.nodeUrl??''}`:c.node===false?'连接失败':'未连接'}</small></label>
-      <label class="field full">Rolling 索引 API（可选）<input id="sIndexer" value="${x.S.indexer??''}" spellcheck="false" autocomplete="off" placeholder="https://你的索引服务/${x.net.key}/rolling/v1/ProfileID">
-        <small>${c.indexer===true?(c.indexerStale?'索引暂不可用':'索引已连接'):c.indexer===false?'连接失败':'未配置'}</small></label>
+      <label class="field full">索引 API（可选）<input id="sIndexer" value="${x.S.indexer??''}" spellcheck="false" autocomplete="off" placeholder="https://你的索引服务/${x.net.key}">
+        <small>${indexerHint}</small></label>
     </div>
     <p class="err" id="sErr" role="alert"></p><div id="sProbe" style="display:grid;gap:8px;margin-top:8px"></div>
     <h3 style="margin-top:16px">备份与恢复</h3>

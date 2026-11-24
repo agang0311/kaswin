@@ -37,6 +37,19 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     const pid=typeof target==='string'?target:(target?.profileId??defaultAdapter.profileId);
     return protocolRegistry.require(pid);
   };
+  const isSupportedEntry=entry=>{
+    if(!entry||typeof entry!=='object')return false;
+    if(entry.profileId)return protocolRegistry.has(entry.profileId);
+    if(entry.protocolId)return !!protocolRegistry.getById(entry.protocolId);
+    return true;
+  };
+  const isSupportedRound=r=>{
+    if(!r||typeof r!=='object')return false;
+    const adapter=r.profileId?protocolRegistry.get(r.profileId):(!r.kusdt?defaultAdapter:null);
+    if(!adapter)return false;
+    if(typeof adapter.matchesProfile==='function')return adapter.matchesProfile(r);
+    return true;
+  };
   const c={rpc:null,indexer:null,indexerInfo:null,indexerCursor:null,discovered:[],discoveredSource:null,discoveredCachedAt:null,watchedAddress:null,watchedAddresses:[],lastSynced:null,wallet:null,prepared:null,busy:false,busyLabel:null,logs:[]},listeners=new Set();
   let cachedOrigin=null,api=null;
   const applyCachedDiscovery=snap=>{
@@ -51,7 +64,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
   const mergeLocalDiscovered=rounds=>{
     const seen=new Set(rounds.map(r=>r.cid));
     const cutoff=now()-180_000;
-    const recentLocal=c.discovered.filter(r=>!seen.has(r.cid)&&r.protocolId==='kusdt-v2'&&typeof r.updatedAt==='number'&&r.updatedAt>=cutoff);
+    const recentLocal=c.discovered.filter(r=>isSupportedEntry(r)&&!seen.has(r.cid)&&r.protocolId==='kusdt-v2'&&typeof r.updatedAt==='number'&&r.updatedAt>=cutoff);
     return recentLocal.length?[...recentLocal,...rounds]:rounds;
   };
   const persistDiscovery=(rounds,origin,base='',{temporaryFallback=false}={})=>{
@@ -123,7 +136,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     const cur=await roundStore.get(cid).catch(()=>null);
     if(seq!==watchSeq||watchedCid!==cid||c.rpc!==rpc)return;
     if(!cur||cur.round.terminal||cur.round.halted){teardownWatch();return;}
-    const adapter=adapterFor(cur.round.profileId);
+    const adapter=adapterFor(cur.round);
     let target=null;
     if(typeof adapter.watchTargets==='function'){
       target=adapter.watchTargets(cur.round,net.addressPrefix);
@@ -441,6 +454,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       if(c.prepared?.cid===input||initial&&(initial.round.intent||(!allowHalted&&initial.round.halted)))return {cid:input,skipped:'LOCAL_PENDING'};
       const client=c.indexer;
       const discEntry=c.discovered.find(d=>d.cid===input);
+      if(initial&&!isSupportedRound(initial.round))throw Object.assign(new Error('UNSUPPORTED_PROFILE'),{code:'UNSUPPORTED_PROFILE',safeCode:'UNSUPPORTED_PROFILE'});
       let protoAdapter=initial?.round.profileId
         ?adapterFor(initial.round.profileId)
         :(initial?.round.kusdt
@@ -449,7 +463,13 @@ export function createController({profile,registry=null,roundStore,connect=(urls
             ?adapterFor(discEntry.profileId)
             :(discEntry?.protocolId?protocolRegistry.getById(discEntry.protocolId):null)));
       if((!protoAdapter||protoAdapter.id==='rolling-v1')&&!initial&&!discEntry&&client&&/^[0-9a-f]{64}$/.test(input)){
-        try{const det=await client.roundDetail(input);if(det?.profileId&&protocolRegistry.has(det.profileId))protoAdapter=adapterFor(det.profileId);}catch{}
+        try{
+          const det=await client.roundDetail(input);
+          if(det?.profileId){
+            if(!protocolRegistry.has(det.profileId))throw Object.assign(new Error('UNSUPPORTED_PROFILE'),{code:'UNSUPPORTED_PROFILE',safeCode:'UNSUPPORTED_PROFILE'});
+            protoAdapter=adapterFor(det.profileId);
+          }
+        }catch(e){if(e?.code==='UNSUPPORTED_PROFILE')throw e;}
       }
       if(protoAdapter&&protoAdapter.id!=='rolling-v1'&&typeof protoAdapter.syncRound==='function'){
         const synced=await protoAdapter.syncRound({rpc,indexer:client,round:initial?.round??null,cid:input,net,fetcher});
@@ -570,11 +590,11 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       log('info',`${wallet.name} 已连接：${wallet.address}（${net.networkId}）`);return wallet.address;
     });},
     disconnectWallet({keepSession=false}={}) {const old=c.wallet;replaceWallet(null);if(!keepSession)old?.disconnectSession?.().catch(()=>{});if(old)log('info','钱包已断开，未发送报价已撤销');},
-    async rounds() {return (await roundStore.list()).map(x=>x.round).sort((a,b)=>a.cid<b.cid?-1:1);},
+    async rounds() {return (await roundStore.list()).map(x=>x.round).filter(isSupportedRound).sort((a,b)=>a.cid<b.cid?-1:1);},
     async describe(cid) {
       const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),r=cur.round;
       const daa=c.rpc?await c.rpc.currentDaa().catch(()=>null):null;
-      const adapter=adapterFor(r.profileId);
+      const adapter=adapterFor(r);
       if(adapter.id!=='rolling-v1'&&typeof adapter.describeRound==='function'&&typeof adapter.uiActions==='function'){
         return {round:r,facts:adapter.describeRound(r,daa),actions:adapter.uiActions(r,daa),daa};
       }
@@ -725,7 +745,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     async track(cid,{recover=false}={}) {return guard(recover?'恢复':'查询接受状态',async()=>{
       need(c.rpc,'NODE_REQUIRED');let cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND');
       need(cur.round.intent||cur.round.pending?.length,'NO_PENDING_INTENT');
-      const adapter=adapterFor(cur.round.profileId);
+      const adapter=adapterFor(cur.round);
       if(typeof adapter.trackRoundIntent==='function'){
         const res=await adapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover,net,fetcher});
         await roundStore.replace(res.round,cur.revision);
@@ -764,7 +784,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
      * gone and prepare() always re-reads live UTXOs); the only thing lost is the local record of whether our own transaction was the one that spent them. */
     async discard(cid,{force=false}={}) {return guard('放弃意图',async()=>{
       need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),i=need(cur.round.intent,'NO_PENDING_INTENT');
-      if(adapterFor(cur.round.profileId).id!=='rolling-v1'){
+      if(adapterFor(cur.round).id!=='rolling-v1'){
         const settled=['REJECTED','UNSENT'].includes(i.status);
         check(settled||['SUBMITTED','UNKNOWN','PREPARED'].includes(i.status),'DISCARD_NOT_ALLOWED');
         const probe=(i.draft?.inputUtxos??[]).map(u=>({...u,daa:u.utxoDaa??u.daa}));
@@ -776,7 +796,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
         });
         check(!await mempoolEntry(c.rpc,i.txid),'INTENT_IN_MEMPOOL');
         if(!settled){
-          const adapter=adapterFor(cur.round.profileId);
+          const adapter=adapterFor(cur.round);
           if(typeof adapter.trackRoundIntent==='function'){
             const chk=await adapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover:false,net,fetcher});
             check(!chk.accepted,'INTENT_ACCEPTANCE_UNRESOLVED');
@@ -813,7 +833,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       else log(gone?'warn':'info',gone?'已放弃：有输入已被其他交易花费（他人抢先操作了同一个 manager），本地 round state 已过期。请导入最新的 round state（例如抢先者导出的）后再继续。':'已放弃被拒绝/未发送的意图');});},
     async verifyLive(cid) {return guard('核对链上状态',async()=>{
       need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),r=cur.round;
-      const adapter=adapterFor(r.profileId);
+      const adapter=adapterFor(r);
       if(adapter.id!=='rolling-v1'&&typeof adapter.syncRound==='function'){
         const synced=await adapter.syncRound({rpc:c.rpc,indexer:c.indexer,round:r,cid,net,fetcher});
         await roundStore.replace(synced.round,cur.revision);emit();
@@ -836,7 +856,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       const client=c.indexer;
       if(!client||typeof client.walletActivity!=='function'||typeof pk!=='string'||!/^[0-9a-f]{64}$/.test(pk))return {activities:[],synced:[]};
       const res=await client.walletActivity(pk);
-      const activities=Array.isArray(res?.activities)?res.activities:[];
+      const activities=(Array.isArray(res?.activities)?res.activities:[]).filter(isSupportedEntry);
       if(!activities.length)return {activities:[],synced:[]};
       // Merge newly discovered kUSDT v2 rounds without clobbering richer fields already present in c.discovered
       const existingByCid=new Map(c.discovered.map(d=>[d.cid,d]));
@@ -905,8 +925,8 @@ export function createController({profile,registry=null,roundStore,connect=(urls
         return txid;
       });
     },
-    summaryOf(round) {return adapterFor(round?.profileId).toRoundSummary(round,{net});},
-    exportText(cid) {return (async()=>{const r=cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND');return adapterFor(r.profileId).roundToText(r);})();},
+    summaryOf(round) {return adapterFor(round).toRoundSummary(round,{net});},
+    exportText(cid) {return (async()=>{const r=cid&&typeof cid==='object'?cid:need((await roundStore.get(cid))?.round,'ROUND_NOT_FOUND');return adapterFor(r).roundToText(r);})();},
     /** Import = data only. Never authenticated until prepare() verifies the live UTXOs; a local pending intent is never overwritten. */
     async importText(text) {return guard('导入',async()=>{
       let adapter=defaultAdapter;

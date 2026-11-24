@@ -101,10 +101,10 @@ main{max-width:1320px;width:100%;margin:0 auto;padding:22px 24px 90px;box-sizing
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .round-tools-actions{display:grid;gap:10px}
 .round-tools-actions .btn{justify-content:flex-start;min-height:48px;text-align:left;white-space:normal}
-.other-rounds-details{display:inline-block}
-.other-rounds-details[open]{flex-basis:100%;width:100%}
-.other-rounds-details summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
-.other-rounds-details summary::-webkit-details-marker{display:none}
+.other-rounds-details{display:block;margin-top:12px;padding:0 4px}
+.other-rounds-details>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:4px 0;opacity:.68;transition:opacity .15s ease,color .15s ease}
+.other-rounds-details>summary:hover,.other-rounds-details[open]>summary{opacity:1;color:var(--muted)}
+.other-rounds-details>summary::-webkit-details-marker{display:none}
 .seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px;overflow-x:auto}
 .seg button{padding:6px 11px;border-radius:8px;font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
 .seg button[aria-pressed=true]{background:var(--panel3);color:var(--text)}

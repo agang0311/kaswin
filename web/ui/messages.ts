@@ -58,6 +58,7 @@ const ERR: Record<string,string>={
   INTENT_UNRESOLVED_REPLACEMENT_BLOCKED:'这一轮还有一笔交易没有确认结果，需要先处理它，才能发起新的操作。',
   IMPORT_WOULD_REPLACE_LOCAL_INTENT:'本机有一笔尚未确认的交易，导入会覆盖它。请先处理完这笔交易（或放弃它）再导入。',
   ROUND_NOT_FOUND:'找不到这一轮。',ROUND_HALTED:'这一轮已停止，需要人工核对后重新导入。',
+  UNSUPPORTED_PROFILE:'该轮次属于旧版或当前版本不兼容的合约 Profile，无法在此版本中查看或操作。',
   STATE_TEXT_SIZE:'导入内容太大。',STATE_PARSE:'导入内容无法解析，请确认是完整的分享链接或轮次数据。',STATE_BIGINT:'导入内容格式不正确。',STATE_BYTES:'导入内容格式不正确。',
   SHARE_FORMAT:'分享链接无法解析，请确认复制完整。',SHARE_EMPTY:'请先粘贴分享链接。',
   PRIZE_MIN:'这一轮的奖池太小，扣除执行奖励和网络费后不足以派奖。',PROTOCOL_FEE_CAP:'当前网络费用超过协议上限，请稍后重试。',FEE_CONVERGENCE:'暂时无法确定网络费，请稍后重试。',

@@ -85,7 +85,7 @@ async function getSignClient() {
       const {SignClient}=await loadKaspireDeps();
       return SignClient.init({
         projectId:KASPIRE_PROJECT_ID,
-        metadata:{name:'Kaswin Rolling',description:'Kaswin Rolling Lottery',url:origin,icons:[]},
+        metadata:{name:'Kaswin',description:'Kaswin Lottery',url:origin,icons:[]},
       });
     })().catch(e=>{clientPromise=null;throw e;});
   }
