@@ -10,19 +10,22 @@ import {TN10_ROLLING_REGISTRY} from '../../scripts/contract/protocol.mjs';
 import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {TN10} from '../../scripts/chain/tn10.mjs';
 import {parseNodeList} from '../../web/app/settings.ts';
-import {normalize} from '../../web/ui/i18n.mjs';
-import {EN as EN_COMMON} from '../../web/ui/messages-common-en.mjs';
-import {EN as EN_ROLLING} from '../../web/ui/messages-en.mjs';
+import {LOCALES,ZH_CN,EN,resolveLocale,nextLocale} from '../../web/ui/locales/index.ts';
+import {defaultSequentialCreateSpec} from '../../scripts/protocols/registry.mjs';
+import {kusdtV2InteractiveModel} from '../../scripts/protocols/kusdt-v2.mjs';
+import {pickRandomBuyShard,isShardUtxoConflict,shouldWarnShardCongestion} from '../../web/app/buy-shard.ts';
+import {recomputeDrawProof,buildPythonVerifyScript} from '../../web/app/draw-verify.ts';
 
 /* The views are pure (data in, HTML string out): no DOM, controller, node or wallet is needed. */
 const hex=c=>c.repeat(64),price=100000000n;
+const parallelMeta={protocolId:'kusdt-v2',profileId:hex('b'),displayName:'kUSDT v2 (KCC-20)',shardModel:'parallel',maxShards:256,supportsBatchSettlement:false,supportsIntentResend:false,freeActions:[],actionStyle:'parallel_dispatch'};
 const EX={tx:id=>`https://explorer.test/transactions/${id}`,addr:a=>`https://explorer.test/addresses/${a}`,addrOfKey:k=>k?`kaspatest:q${k.slice(0,8)}`:null,addrOfScript:s=>s};
 const NO=reason=>({ok:false,reason});
 const actions=(over={})=>({BUY:NO('x'),CLOSE:NO('x'),DRAW:NO('x'),TIMEOUT:NO('x'),PAY_OLD:NO('x'),PAY_SELF:NO('x'),REFUND_OLD:NO('x'),REFUND_SELF:NO('x'),...over});
 const roundFixture=(over={})=>({cid:hex('a'),source:'local',terminal:null,halted:null,intent:null,
   manager:{value:400000000n,outpoint:{transactionId:hex('b'),index:0},utxoDaa:100n},frozen:[],receipts:[],pending:[],fees:0n,origin:{transactionId:hex('c'),index:0},settings:{},bought:0,...over});
 const facts=(over={})=>({module:'sales',ticketPrice:price,ticketCap:100,minTickets:3,closeEligibleDaa:1000n,tickets:5,shards:0,localRecords:5,owner:hex('d'),winnerKey:null,payCursor:null,refundShard:null,...over});
-const item=(r,f,a)=>({r,f,a,ph:phaseOf(r,f),value:r.manager?.value??0n,at:1});
+const item=(r,f,a,extra={})=>({r,f,a,ph:phaseOf(r,f),value:r.manager?.value??0n,at:1,...extra});
 const BASE_S={view:'explore',cid:null,filter:'all',sort:'new',query:'',qty:'1',join:'',wtab:'key',form:{price:'1',cap:'100',min:'3',dur:'60',custom:''},nodes:'wss://n.test',svc:'https://s.test'};
 const ctx=(over={})=>({net:TN10,items:[],S:BASE_S,wallet:null,balance:null,daa:0n,conn:{},busy:false,ex:EX,logs:[],gate:()=>({ok:true}),detail:null,verify:null,...over});
 
@@ -36,11 +39,11 @@ test('html`` escapes values; fragments and arrays of fragments are inserted as-i
 test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filters, and escaped user text',()=>{
   const evil='"><script>alert(1)</script>';
   let out=exploreView(ctx({S:{...BASE_S,query:evil,join:evil}})).s;
-  assert.ok(!out.includes('<script>'));assert.ok(out.includes('&lt;script&gt;'));assert.match(out,/没有轮次/);
+  assert.ok(!out.includes('<script>'));assert.ok(out.includes('&lt;script&gt;'));assert.match(out,/没有.*轮次/);
   const r=roundFixture();
   out=exploreView(ctx({items:[item(r,facts(),actions())]})).s;
-  assert.ok(out.includes(`data-open="${r.cid}"`));assert.match(out,/售票中/);assert.match(out,/5 \/ 100/);
-  assert.match(out,/轮次广场/);assert.doesNotMatch(out,/我的轮次|索引发现（链上共/);
+  assert.ok(out.includes(`data-open="${r.cid}"`));assert.match(out,/售票中/);assert.match(out,/已售 5 \/ 100 张/);
+  assert.match(out,/抽奖广场/);assert.doesNotMatch(out,/我的轮次|索引发现（链上共/);
   // Unified plaza merges local rounds (data-open, deduplicated) and unjoined indexed rounds (data-indexed) as cards
   const dOut=exploreView(ctx({conn:{indexer:true},indexerMore:true,items:[item(r,facts(),actions())],discovered:[
     {cid:r.cid,terminal:'PAID',bought:4355,buys:4353,updatedAt:500},
@@ -48,12 +51,12 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
     {cid:hex('c'),terminal:'EMPTY',bought:0,buys:0,updatedAt:200},
     {cid:hex('f'),module:'sales',tickets:12,managerValue:'1600000000',updatedAt:1000},
   ]})).s;
-  assert.match(dOut,/索引 4/);
+  assert.match(dOut,/1 场火热进行中/);
   assert.match(dOut,/data-act="refreshIndex"/);
   assert.match(dOut,/data-act="moreIndex"/);
   assert.equal((dOut.match(new RegExp(`data-(?:open|indexed)="${r.cid}"`,'g'))??[]).length,1);
   assert.ok(dOut.includes(`data-indexed="${hex('b')}"`));
-  assert.match(dOut,/17 片/);
+  assert.doesNotMatch(dOut,/17 片/); // shard counts hidden on plaza cards
   assert.ok(dOut.includes(`data-indexed="${hex('c')}"`));
   assert.ok(dOut.includes(`data-indexed="${hex('f')}"`));
   assert.match(dOut,/16<small>TKAS<\/small>/);
@@ -65,42 +68,42 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
   assert.ok(!doneOut.includes(`data-open="${r.cid}"`));
   assert.ok(doneOut.includes(`data-indexed="${hex('b')}"`));
   assert.ok(doneOut.includes(`data-indexed="${hex('c')}"`));
-  // REST fallback discovery strip + REST badge on cards
+  // REST fallback cards render cleanly without technical REST banners
   const restOut=exploreView(ctx({conn:{node:true,discoveredSource:'rest'},discovered:[
     {cid:hex('e'),module:'sales',tickets:0,managerValue:'400000000',source:'rest',updatedAt:1200},
   ]})).s;
-  assert.match(restOut,/REST API 备用查询/);
-  assert.match(restOut,/REST 备用 1/);
+  assert.ok(restOut.includes(`data-indexed="${hex('e')}"`));
+  assert.match(restOut,/点击查看最新进度/);
   // Local storage cached Plaza renders immediately on reload before live indexer responds, and when indexer is offline
   const cacheOut=exploreView(ctx({conn:{discoveredSource:'cache'},discovered:[
     {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
   ]})).s;
   assert.ok(!cacheOut.includes('已从本地存储恢复广场列表'));
-  assert.match(cacheOut,/本地缓存 1/);
   assert.match(cacheOut,/data-act="refreshIndex"/);
   assert.ok(cacheOut.includes(`data-indexed="${hex('d')}"`));
   const offlineCacheOut=exploreView(ctx({conn:{discoveredSource:'cache',indexerStale:true},discovered:[
     {cid:hex('d'),terminal:'PAID',module:'win',bought:10,buys:1,updatedAt:1500},
   ]})).s;
-  assert.match(offlineCacheOut,/索引暂不可用，当前显示本地缓存列表/);
-  // Starred filter & collapsed incompatible rounds (pending GENESIS and valid kUSDT rounds must NOT collapse into 不兼容轮次)
+  assert.match(offlineCacheOut,/当前展示本机缓存/);
+  // Starred filter & collapsed incompatible rounds (pending GENESIS and valid kUSDT rounds must NOT collapse into 旧版历史轮次)
   const pendingGenesis={...r,cid:hex('8'),manager:null,intent:{status:'SUBMITTED',action:'GENESIS',txid:hex('7')}};
+  const kusdtTokAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('4')};
   const kusdtLocal={...r,cid:hex('7'),kusdt:{stage:1,price:1_000_000n,closeDaa:900n,openedCount:0,cursor:0,totalTickets:2,decision:0,creatorPk:hex('2'),winnerPk:null,nodeVerified:true,shards:[]}};
-  const legacyDisc={cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:{kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('4')},updatedAt:100};
+  const legacyDisc={cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:kusdtTokAsset,updatedAt:100};
   const savedOut=exploreView(ctx({S:{...BASE_S,filter:'saved'},saved:new Set([r.cid]),supportedProfiles:new Set([hex('1')]),discovered:[legacyDisc],items:[
     item(r,facts(),actions()),
     item(pendingGenesis,{module:null},actions()),
-    item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions()),
+    item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions(),{asset:kusdtTokAsset,protocolMeta:parallelMeta}),
     item({...r,cid:hex('9')},{module:null},actions()),
   ]})).s;
   assert.match(savedOut,/★ 关注/);
   assert.ok(savedOut.includes(`data-open="${r.cid}"`));
-  assert.match(savedOut,/不兼容轮次 \(2\)/);
+  assert.match(savedOut,/旧版历史轮次 \(2\)/);
   assert.ok(savedOut.includes(`data-indexed="${legacyDisc.cid}"`));
-  const kusdtAllOut=exploreView(ctx({S:{...BASE_S,filter:'all'},supportedProfiles:new Set([hex('1')]),items:[item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions())]})).s;
+  const kusdtAllOut=exploreView(ctx({S:{...BASE_S,filter:'all'},supportedProfiles:new Set([hex('1')]),items:[item(kusdtLocal,facts({ticketPrice:1_000_000n,tickets:2}),actions(),{asset:kusdtTokAsset,protocolMeta:parallelMeta})]})).s;
   assert.match(kusdtAllOut,/kUSDT/);
-  assert.match(kusdtAllOut,/1 kUSDT\/张/);
-  assert.doesNotMatch(kusdtAllOut,/不兼容轮次/);
+  assert.match(kusdtAllOut,/每张 1 kUSDT/);
+  assert.doesNotMatch(kusdtAllOut,/旧版历史轮次/);
 });
 
 test('create form: bounds are enforced, bad input never throws, and values are escaped in the page',()=>{
@@ -112,13 +115,13 @@ test('create form: bounds are enforced, bad input never throws, and values are e
   const KEYED={kind:'key',address:'kaspatest:qabc',key:hex('1'),spk:{script:'x'}};
   const out=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,price:'<x>'}}})).s;
   assert.ok(!out.includes('<x>'));assert.match(out,/data-act="create"/);assert.match(out,/disabled/);   // invalid form: the send button is disabled
-  // large ticket caps are allowed without a scary ticket-count warning (shards depend on purchase count, capped at 256)
+  // large ticket caps are allowed without a scary ticket-count warning
   assert.doesNotMatch(createView(ctx({wallet:KEYED})).s,/超出已验证范围/);
   const big=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,cap:'10000000',min:'3'}}})).s;
-  assert.doesNotMatch(big,/超出已验证范围|notice warn/);assert.match(big,/封存分片<\/dt><dd>最多约 256 个/);assert.doesNotMatch(big,/39063|39,063/);assert.doesNotMatch(big,/disabled/);
-  // an illegal cap (10000001) shows the error only: no preview that pretends 256 shards / 39063 shards exist
+  assert.doesNotMatch(big,/超出已验证范围|notice warn/);assert.doesNotMatch(big,/39063|39,063/);assert.doesNotMatch(big,/disabled/);
+  // an illegal cap (10000001) shows the error
   const over=createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,cap:'10000001'}}})).s;
-  assert.match(over,/票数上限需在 3 – 10,000,000 之间/);assert.doesNotMatch(over,/最多约/);
+  assert.match(over,/票数上限需在 3 – 10,000,000 之间/);
   // the button says what will really happen for each wallet type
   assert.match(createView(ctx()).s,/连接钱包后创建/);assert.ok(!createView(ctx()).s.includes('data-act="create"'));
   const ro=createView(ctx({wallet:{...KEYED,kind:'public'}})).s;
@@ -134,7 +137,7 @@ test('create form: bounds are enforced, bad input never throws, and values are e
   assert.match(createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,registry:true,registryAddr:customAddr}}})).s,/已改为非默认地址/);
   const noRegParsed=parseCreate({...base,registry:false,registryAddr:'invalid-addr'});
   assert.equal(noRegParsed.ok,true);assert.equal(noRegParsed.registry,false);
-  assert.match(createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,registry:false}}})).s,/不附加（不进入公共索引/);
+  assert.match(createView(ctx({wallet:KEYED,S:{...BASE_S,form:{...base,registry:false}}})).s,/id="cRegBox" hidden/);
   assert.equal(parseCreate({...base,registry:true,registryAddr:'kaspa:qztrjpfpuf6g9jw76e6ay909z43hndpv5maqkker6ur4enz7llarsh82ezggl'}).ok,false);
 });
 
@@ -148,9 +151,9 @@ test('buy quantity text',()=>{
 test('round view: offered actions follow the phase; blocked ones carry their (escaped) reason; finished rounds offer nothing',()=>{
   const r=roundFixture(),a=actions({BUY:{ok:true,maxQuantity:95},CLOSE:NO('<b>尚未到可关闭 DAA</b>')});
   let out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,qty:'2'},detail:{...item(r,facts(),a),mine:null,isWinner:false}})).s;
-  assert.match(out,/购买票/);assert.match(out,/data-act="BUY"/);assert.match(out,/&lt;b&gt;尚未到可关闭/);assert.ok(!out.includes('<b>尚未到可关闭'));
+  assert.match(out,/参与抽奖/);assert.match(out,/data-act="BUY"/);assert.match(out,/&lt;b&gt;尚未到可关闭/);assert.ok(!out.includes('<b>尚未到可关闭'));
   assert.ok(!out.includes('data-act="DRAW"'));assert.ok(!out.includes('data-act="CLOSE"'));   // CLOSE is blocked -> disabled button, no hook
-  assert.match(out,/data-act="verify"/);assert.match(out,/role="switch"/);assert.match(out,/实时同步/);assert.ok(!out.includes('data-act="syncIndex"'));
+  assert.ok(!out.includes('data-act="verify"'));assert.ok(!out.includes('data-act="syncIndex"'));
   assert.match(out,/<button[^>]*data-act="moreRound"[^>]*aria-haspopup="dialog"/);
   // unmet wallet: the same action turns into a "connect wallet" hook instead of a send hook
   out=roundView(ctx({gate:()=>({ok:false,reason:'需要先连接钱包。',fix:'wallet'}),detail:{...item(r,facts(),a),mine:null,isWinner:false}})).s;
@@ -158,7 +161,7 @@ test('round view: offered actions follow the phase; blocked ones carry their (es
   // finished round
   const done=roundFixture({manager:null,terminal:'PAID'});
   out=roundView(ctx({detail:{...item(done,facts({module:null,tickets:7}),actions()),mine:null,isWinner:false}})).s;
-  assert.match(out,/已派奖/);assert.ok(!out.includes('data-act="BUY"'));assert.ok(!out.includes('data-act="verify"'));
+  assert.match(out,/已派奖/);assert.ok(!out.includes('data-act="BUY"'));
   assert.match(roundView(ctx({detail:null})).s,/没有找到这一轮/);
 });
 
@@ -167,7 +170,7 @@ test('round view: verification and pending-intent notices',()=>{
   let out=roundView(ctx({detail:D,verify:{state:'bad',code:'STALE_INPUT'}})).s;
   assert.match(out,/与链上状态不一致/);assert.match(out,/被节点拒绝/);assert.match(out,/data-act="discard"/);assert.ok(!out.includes('data-act="recover"'));
   out=roundView(ctx({detail:{...D,r:{...r,intent:{status:'UNKNOWN',action:'BUY'}}},verify:{state:'ok',at:Date.now()}})).s;
-  assert.match(out,/已向节点核对/);assert.match(out,/data-act="recover"/);assert.match(out,/data-act="discard"/);
+  assert.match(out,/data-act="recover"/);assert.match(out,/data-act="discard"/);
   assert.match(roundView(ctx({detail:null,verify:{state:'checking'}})).s,/同步轮次最新状态/);
   // Local-first detail rendering: cached Plaza summary renders immediately without blanking, and preview mode disables share/export until verified
   const discSummary=roundView(ctx({
@@ -208,36 +211,40 @@ test('mine / rules / dialogs render, never claim full validation, and show no ke
     {protocolId:'rolling-v1',name:'Rolling v1',asset:'KAS',profileId:hex('a'),tokenCovenantId:null},
     {protocolId:'kusdt-v2',name:'kUSDT v2',asset:'kUSDT',profileId:hex('b'),tokenCovenantId:hex('c')},
   ];
-  const rules=rulesView(ctx({S:{...BASE_S,budgetPc:64},compatibleProfiles:compatProfiles})).s;assert.match(rules,/未经第三方安全审计/);assert.match(rules,/256 个封存分片/);assert.match(rules,/安全与使用须知/);assert.doesNotMatch(rules,/515 张票|超过 2 个封存分片/);assert.doesNotMatch(rules,/已全部验证|已通过全部验证|fully validated/i);
+  const rules=rulesView(ctx({compatibleProfiles:compatProfiles})).s;assert.match(rules,/未经第三方安全审计/);assert.match(rules,/256 个封存分片/);assert.match(rules,/安全与使用须知/);assert.doesNotMatch(rules,/515 张票|超过 2 个封存分片/);assert.doesNotMatch(rules,/已全部验证|已通过全部验证|fully validated/i);
   assert.match(rules,/本版本兼容的合约 Profile/);assert.ok(rules.includes(hex('a')));assert.ok(rules.includes(hex('b')));
+  assert.doesNotMatch(rules,/id="budgetPc"|<svg class="chart"/); // SVG budget slider removed from simplified how-it-works modal
   const rulesTab=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,detailTab:'rules'},compatibleProfiles:compatProfiles,detail:{...item({...r,profileId:hex('a')},facts(),actions()),preview:false,mine:null,isWinner:false,shards:null}})).s;
   assert.match(rulesTab,/合约 Profile/);assert.ok(rulesTab.includes(hex('a')));
   const incompatDetail=roundView(ctx({S:{...BASE_S,view:'round',cid:hex('6')},supportedProfiles:new Set([hex('a')]),compatibleProfiles:compatProfiles,discovered:[{cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:{kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('c')}}]})).s;
   assert.match(incompatDetail,/不兼容轮次（只读）/);assert.match(incompatDetail,/当前版本不兼容此轮次的合约 Profile/);assert.ok(incompatDetail.includes(`data-copy="${hex('5')}"`));assert.ok(incompatDetail.includes('https://github.com/agang0311/kaswin/releases'));
-  assert.match(rules,/id="budgetPc"/);assert.match(rules,/value="64"/);assert.match(rules,/<svg class="chart"/);
   assert.match(walletBody(ctx()).s,/type="password"/);
   assert.match(walletBody(ctx({S:{...BASE_S,wtab:'extension'}})).s,/data-connect="kaspire"/);
   const connected=walletBody(ctx({wallet:{kind:'key',address:'kaspatest:qabc',key:hex('1')},balance:5n})).s;
   assert.ok(!connected.includes('<input'));
-  const settingsHtml=settingsBody(ctx({conn:{node:true,indexer:true}})).s;
+  const settingsHtml=settingsBody(ctx({conn:{node:true,indexer:true},lang:'zh-CN'})).s;
   assert.match(settingsHtml,/id="sProbe"/);
   assert.match(settingsHtml,/id="sNodes"/);
+  assert.match(settingsHtml,/data-act="switchLang"/);
+  assert.match(settingsHtml,/data-act="switchTheme"/);
+  assert.match(settingsHtml,/data-act="openHelp"/);
+  assert.match(settingsHtml,/当前语言：简体中文/);
+  assert.match(settingsBody(ctx({conn:{node:true,indexer:true},lang:'en'})).s,/Current language: English/);
   const settingsCovered=settingsBody(ctx({net:MAINNET,compatibleProfiles:compatProfiles,conn:{node:true,indexer:true,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')},{protocolId:'kusdt-v2',profileId:hex('b')}]}})).s;
   assert.match(settingsCovered,/已覆盖全部兼容 Profile/);
   const settingsMissing=settingsBody(ctx({net:MAINNET,compatibleProfiles:compatProfiles,conn:{node:true,indexer:true,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')}]}})).s;
   assert.match(settingsMissing,/未覆盖 kUSDT Profile/);
   const exploreMissing=exploreView(ctx({net:MAINNET,compatibleProfiles:compatProfiles,conn:{node:true,indexer:true,indexerStale:false,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')}]}})).s;
-  assert.match(exploreMissing,/当前索引未覆盖本页的 kUSDT/);
+  assert.match(exploreMissing,/当前索引尚未收录 kUSDT/);
   assert.ok(!settingsBody(ctx()).s.includes('sSvc'));
 });
 
-test('foreground work visibly disables transaction buttons; background verification only marks its own button as checking',()=>{
+test('foreground work visibly disables transaction buttons; background verification keeps round actions enabled',()=>{
   const r=roundFixture(),D={...item(r,facts(),actions({BUY:{ok:true},CLOSE:{ok:true}})),mine:null,isWinner:false};
   let out=roundView(ctx({detail:D,busy:true,gate:()=>({ok:false,reason:'正在准备交易，请稍候。'})})).s;
   assert.match(out,/正在准备交易，请稍候/);assert.match(out,/<button[^>]*disabled aria-busy="true"[^>]*>处理中…<\/button>/);
   assert.ok(!out.includes('data-act="BUY"'));assert.ok(!out.includes('data-act="CLOSE"'));
   out=roundView(ctx({detail:D,verify:{state:'checking'}})).s;
-  assert.match(out,/<button[^>]*data-act="verify"[^>]*aria-busy="true"[^>]*>[\s\S]*?实时同步中…<\/button>/);
   assert.match(out,/data-act="BUY"/);assert.match(out,/data-act="CLOSE"/);
   const key={kind:'key',address:'kaspatest:qabc',key:hex('1'),spk:{script:'x'}};
   out=createView(ctx({wallet:key,busy:true})).s;
@@ -311,7 +318,7 @@ test('round view: "创建交易" is the GENESIS receipt, not the output GENESIS 
   s=mk([]);assert.ok(!row(s).includes(O));assert.match(row(s),/—/); // no GENESIS receipt: nothing is claimed
 });
 
-test('round view: renders shard dot-map first without listing 65536 records, then renders selected shard purchases on click',()=>{
+test('round view: defaults to round info (rules) and renders 16x16 pixel shard wall on secondary map tab',()=>{
   const mkShard=(index,count=256)=>{
     const startTicket=index*count+1,endTicket=(index+1)*count;
     return {index,kind:'frozen',status:'frozen',startTicket,endTicket,tickets:count,recordCount:count,hash:hex('f'),refundedRecords:0,mineCount:index===1?3:0,
@@ -321,13 +328,19 @@ test('round view: renders shard dot-map first without listing 65536 records, the
   const r=roundFixture();
   const fBig=facts({ticketCap:65536,tickets:65536,shards:256,localRecords:0});
   const baseD={...item(r,fBig,actions()),mine:null,isWinner:false,shards:allShards};
-  // Initial view: 256 shard dots only; zero individual purchase dots/rows in DOM.
-  let out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:null,purchase:null},detail:baseD})).s;
+  // Default tab ('rules'): shows round info & compact summary without inflating participant DOM rows.
+  const infoOut=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid},detail:baseD})).s;
+  assert.match(infoOut,/data-dtab="rules"[^>]*aria-selected="true"/);
+  assert.ok(!infoOut.includes('data-dtab="entries"'));
+  assert.ok(!infoOut.includes('data-shard='));
+  assert.match(infoOut,/最低开奖票数/);
+  // Secondary tab ('map'): 256 shard dots only; zero individual purchase dots/rows in DOM.
+  let out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:null,purchase:null,detailTab:'map'},detail:baseD})).s;
   assert.equal((out.match(/data-shard="/g)??[]).length,256);
   assert.ok(!out.includes('data-purchase="'));
   assert.match(out,/点击任意分片点图/);
-  // Selecting shard #1 (index=1): displays that shard's 256 purchases dot-map and details without rendering 65536 rows or address ticket-count stats.
-  out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:1,purchase:0},detail:baseD})).s;
+  // Selecting shard #1 (index=1) on 'map': displays that shard's 256 purchases dot-map and details.
+  out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:1,purchase:0,detailTab:'map'},detail:baseD})).s;
   assert.match(out,/封存分片 #2/);
   assert.match(out,/data-shard="close"/);
   assert.equal((out.match(/data-purchase="/g)??[]).length,256);
@@ -335,10 +348,11 @@ test('round view: renders shard dot-map first without listing 65536 records, the
   assert.match(out,/第 1 笔购买/);
   const shardDetail=out.slice(out.indexOf('<div class="shard-detail">'));
   assert.doesNotMatch(shardDetail,/位买家|<div class="legend">/);
-  // Untrusted key / HTML inside key must be escaped.
+  // Untrusted key / HTML inside key must be escaped on both entries and map tabs.
   const evilShards=[{index:0,kind:'active',status:'active',startTicket:1,endTicket:1,tickets:1,recordCount:1,hash:null,refundedRecords:0,mineCount:0,
     records:[{index:0,startTicket:1,endTicket:1,count:1,key:'<script>x</script>',mine:false,refunded:false}]}];
-  out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:0,purchase:0},detail:{...baseD,shards:evilShards}})).s;
+  assert.ok(!roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid},detail:{...baseD,shards:evilShards}})).s.includes('<script>'));
+  out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,shard:0,purchase:0,detailTab:'map'},detail:{...baseD,shards:evilShards}})).s;
   assert.ok(!out.includes('<script>'));
   assert.ok(out.includes('&lt;script&gt;'));
   // Terminal PAID round with historical shards shows clickable 17-shard dot-map
@@ -358,7 +372,7 @@ test('round view: renders shard dot-map first without listing 65536 records, the
   assert.ok(!out.includes('data-shardtable='));
   assert.equal((out.match(/<tr>/g)??[]).length,5);
   assert.match(out,/已省略 300 笔已确认购买交易/);
-  assert.doesNotMatch(out,/<td>购买票<\/td>/);
+  assert.doesNotMatch(out,/<td>参与抽奖<\/td>/);
   out=roundView(ctx({S:{...BASE_S,view:'round',cid:doneR.cid,shard:1,purchase:null,detailTab:'map'},detail:doneD})).s;
   assert.equal((out.match(/data-shard="/g)??[]).length,18); // 17 shard dots + 1 close button
   assert.match(out,/本轮已结束（已派奖）/);
@@ -370,14 +384,14 @@ test('round view: renders shard dot-map first without listing 65536 records, the
   const winR=roundFixture({manager:null,terminal:'PAID',bought:2,draw:{txid:hex('d'),shard:0,record:1,ticket:1},
     receipts:[{action:'BUY',txid:buyTx0,feeSompi:'1000000',finalized:true},{action:'BUY',txid:buyTx1,feeSompi:'1000000',finalized:true}]});
   const winD={...item(winR,facts({module:null,tickets:2,shards:1,localRecords:0,winnerKey:winBuyer}),actions()),mine:null,isWinner:false,shards:twoShards};
-  // Purchase 0 by the same winnerKey is NOT marked as winning, and its tip shows buyTx0
-  out=roundView(ctx({S:{...BASE_S,view:'round',cid:winR.cid,shard:0,purchase:0},detail:winD})).s;
+  // Purchase 0 by the same winnerKey is NOT marked as winning on 'map', and its tip shows buyTx0
+  out=roundView(ctx({S:{...BASE_S,view:'round',cid:winR.cid,shard:0,purchase:0,detailTab:'map'},detail:winD})).s;
   assert.match(out,/第 1 笔购买/);
   assert.doesNotMatch(out,/中奖记录/);
   assert.ok(out.includes(`data-copy="${buyTx0}"`)&&!out.includes(`data-copy="${buyTx1}"`));
   assert.equal((out.match(/data-purchase="\d+"[^>]*>🏆/g)??[]).length,1); // only purchase 1 cell has the trophy, not purchase 0
   // Purchase 1 is the exact winner; shard detail keeps winning-ticket legend without per-address ticket counts
-  out=roundView(ctx({S:{...BASE_S,view:'round',cid:winR.cid,shard:0,purchase:1},detail:winD})).s;
+  out=roundView(ctx({S:{...BASE_S,view:'round',cid:winR.cid,shard:0,purchase:1,detailTab:'map'},detail:winD})).s;
   assert.match(out,/🏆 中奖记录（中奖票 #2）/);
   assert.ok(out.includes(`data-copy="${buyTx1}"`));
   const winDetail=out.slice(out.indexOf('<div class="shard-detail">'));
@@ -419,7 +433,7 @@ test('round view: folds confirmed refund receipts into purchaseTip / shard panel
   assert.ok(!out.includes(`data-copy="${refOldTxs[0].txid}"`));
 
   // Tail purchase index 1 maps to refSelfTx
-  out=roundView(ctx({S:{...BASE_S,view:'round',cid:refR.cid,shard:1,purchase:1},detail:refD})).s;
+  out=roundView(ctx({S:{...BASE_S,view:'round',cid:refR.cid,shard:1,purchase:1,detailTab:'map'},detail:refD})).s;
   assert.ok(out.includes(`data-copy="${buyTxs[257].txid}"`));
   assert.ok(out.includes(`data-copy="${refSelfTx.txid}"`));
 
@@ -427,7 +441,7 @@ test('round view: folds confirmed refund receipts into purchaseTip / shard panel
   const mergedShards=[refShards[0],{...refShards[1],endTicket:258,tickets:2,recordCount:2,refundedRecords:2,records:tailRecs.slice(0,2)}];
   const mergedR={...refR,bought:258,receipts:[{action:'GENESIS',txid:mkTx(1),feeSompi:'1000000',finalized:true},...buyTxs.slice(0,258),{action:'CLOSE',txid:mkTx(2),feeSompi:'1000000',finalized:true},...refOldTxs]};
   const mergedD={...item(mergedR,facts({module:null,tickets:258,shards:1,localRecords:2}),actions()),mine:null,isWinner:false,shards:mergedShards};
-  out=roundView(ctx({S:{...BASE_S,view:'round',cid:mergedR.cid,shard:1,purchase:0},detail:mergedD})).s;
+  out=roundView(ctx({S:{...BASE_S,view:'round',cid:mergedR.cid,shard:1,purchase:0,detailTab:'map'},detail:mergedD})).s;
   assert.ok(out.includes(`data-copy="${refOldTxs[7].txid}"`));
 
   // Active refund round with records:null on already-refunded frozen shard shows shard-level refund txs, and unfinalized REFUND_OLD remains in txTable
@@ -439,7 +453,7 @@ test('round view: folds confirmed refund receipts into purchaseTip / shard panel
   assert.match(out,/退款交易（8 批）/);
   assert.ok(out.includes(`data-copy="${refOldTxs[0].txid}"`));
   out=roundView(ctx({S:{...BASE_S,view:'round',cid:activeR.cid,shard:0,purchase:null,detailTab:'txs'},detail:activeD})).s;
-  assert.match(out,/<td>退款：已封存的分片<\/td>/);
+  assert.match(out,/<td>退回票款（分批）<\/td>/);
 });
 
 test('mainnet views: disable memory private key tab, use KAS unit and mainnet registry/prefix',()=>{
@@ -449,7 +463,7 @@ test('mainnet views: disable memory private key tab, use KAS unit and mainnet re
   const wAddr=walletBody(ctx({net:MAINNET,S:{...BASE_S,wtab:'addr'}})).s;
   assert.match(wAddr,/kaspa:q/);
   const c=createView(ctx({net:MAINNET})).s;
-  assert.match(c,/每张票价格（KAS）/);
+  assert.match(c,/单张票价（KAS）/);
   assert.ok(c.includes(MAINNET.registry.address));
   const s=settingsBody(ctx({net:MAINNET})).s;
   assert.match(s,/切换到 Testnet 10/);
@@ -458,19 +472,28 @@ test('mainnet views: disable memory private key tab, use KAS unit and mainnet re
 
 test('round countdown: sales close countdown and two-stage sealed draw readiness never unlock DRAW from wall-clock elapsed time alone',()=>{
   const r=roundFixture({manager:{value:400000000n,outpoint:{transactionId:hex('b'),index:0},utxoDaa:1000n}});
-  // Sales countdown
+  // Sales countdown appears prominently in round-hero
   const salesD={...item(r,facts({module:'sales',closeEligibleDaa:1600n}),actions({BUY:{ok:true,maxQuantity:95},CLOSE:NO('尚未到可关闭 DAA')})),mine:null,isWinner:false};
   const salesHtml=roundView(ctx({daa:1000n,detail:salesD})).s;
+  assert.match(salesHtml,/class="hero-countdown"/);
   assert.match(salesHtml,/距最早可封盘约 1 分 0 秒/);
+
+  // Sealed Stage 1: works for BOTH sequential (KAS) and parallel (kUSDT v2) protocols!
+  const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
+  const sealedKusdtD={...item(r,facts({module:'sealed'}),actions({DRAW:{ok:true},TIMEOUT:NO('wait')})),mine:null,isWinner:false,asset:kusdtAsset,protocolMeta:parallelMeta};
+  const sealedKusdtHtml=roundView(ctx({net:MAINNET,daa:1040n,daaObservedAt:1000,detail:sealedKusdtD})).s;
+  assert.match(sealedKusdtHtml,/开奖倒计时/);
+  assert.match(sealedKusdtHtml,/<progress max="100" value="40"/);
+  assert.ok(!sealedKusdtHtml.includes('data-act="DRAW"'));
 
   // Sealed Stage 1: DAA wait (even after wall-clock elapsed > 20s, never becomes ready without node DAA >= 1100n)
   const sealedD={...item(r,facts({module:'sealed'}),actions({DRAW:{ok:true},TIMEOUT:NO('wait')})),mine:null,isWinner:false};
   const stage1=drawReadiness(sealedD,ctx({daa:1040n,daaObservedAt:1000}),30000);
   assert.equal(stage1.ready,false);
   assert.equal(stage1.percent,40);
-  assert.match(stage1.detail,/正在等待节点确认封存满 100 DAA/);
+  assert.match(stage1.detail,/正在等待最新区块确认/);
   const stage1Html=roundView(ctx({daa:1040n,daaObservedAt:1000,detail:sealedD})).s;
-  assert.match(stage1Html,/开奖倒计时 · 封存等待/);
+  assert.match(stage1Html,/开奖倒计时/);
   assert.match(stage1Html,/<progress max="100" value="40"/);
   assert.ok(!stage1Html.includes('data-act="DRAW"'));
 
@@ -480,10 +503,10 @@ test('round countdown: sales close countdown and two-stage sealed draw readiness
   const stage2=drawReadiness(sealedD,stage2Ctx,now+2000);
   assert.equal(stage2.ready,false);
   assert.equal(stage2.percent,35);
-  assert.match(stage2.detail,/第二阶段：目标块确认 35\/100 blue score/);
+  assert.match(stage2.detail,/区块安全确认 35\/100/);
   const stage2Html=roundView(stage2Ctx).s;
-  assert.match(stage2Html,/开奖倒计时 · 目标块确认/);
-  assert.match(stage2Html,/等待目标块确认/);
+  assert.match(stage2Html,/开奖倒计时/);
+  assert.match(stage2Html,/等待区块确认/);
   assert.ok(!stage2Html.includes('data-act="DRAW"'));
 
   // Sealed Ready: both 100 DAA and 100 blue-score confirmations met
@@ -492,9 +515,9 @@ test('round countdown: sales close countdown and two-stage sealed draw readiness
   assert.equal(ready.ready,true);
   assert.equal(ready.percent,100);
   const readyHtml=roundView(readyCtx).s;
-  assert.match(readyHtml,/开奖条件已就绪/);
+  assert.match(readyHtml,/已到开奖时间/);
   assert.match(readyHtml,/data-act="DRAW"/);
-  assert.match(readyHtml,/核验并开奖/);
+  assert.match(readyHtml,/立即开奖/);
 });
 
 test('kusdt-v2 purchaseTip and receipt helpers match OPEN_SHARD, BUY, and CLAIM_REFUND per shard (including interleaved multi-shard rounds)',()=>{
@@ -549,7 +572,8 @@ test('kusdt-v2 purchaseTip and receipt helpers match OPEN_SHARD, BUY, and CLAIM_
     ...item(r,facts({module:null,ticketPrice:1_000_000n,tickets:3,shards:2}),actions()),
     mine:null,isWinner:false,shards,
     asset:{kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')},
-    kusdt:r.kusdt,
+    protocolMeta:parallelMeta,
+    interactive:kusdtV2InteractiveModel(r),
   };
   const tipHtml=roundView(ctx({net:MAINNET,S:{...BASE_S,view:'round',cid:r.cid,shard:0,purchase:0,detailTab:'map'},detail:D})).s;
   assert.ok(tipHtml.includes(txOpenA.slice(0,10)));
@@ -574,42 +598,74 @@ test('kusdt-v2 purchaseTip and receipt helpers match OPEN_SHARD, BUY, and CLAIM_
   const postDispatchHtml=roundView(ctx({
     net:MAINNET,
     S:{...BASE_S,view:'round',cid:postDispatchRefundR.cid,detailTab:'map'},
-    detail:{...item(postDispatchRefundR,facts({module:'refund',ticketPrice:1_000_000n,tickets:1,shards:1}),actions()),mine:null,isWinner:false,shards:[singleSh],asset:D.asset,kusdt:postDispatchRefundR.kusdt},
+    detail:{...item(postDispatchRefundR,facts({module:'refund',ticketPrice:1_000_000n,tickets:1,shards:1}),actions()),mine:null,isWinner:false,shards:[singleSh],asset:D.asset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(postDispatchRefundR)},
   })).s;
   assert.match(postDispatchHtml,/退款中/);
   assert.ok(!postDispatchHtml.includes('等待创建确认'));
 });
 
-test('kusdt-v2 BUY selector shows 开新片 while buyable open shards < 8, hides it at 8, and re-enables once a shard hits 256 records',()=>{
+test('kusdt-v2 BUY renders collapsed advanced channel selector, compact hero-kpis, and random shard / 3-strike congestion rules',()=>{
   const mkOpenShard=(i,recordCount)=>({
     shardCid:`${i.toString(16).padStart(2,'0')}${'ab'.repeat(31)}`,
     stage:0x11,terminal:false,tickets:recordCount,recordCount,
   });
   const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
-  const renderWith=(shards,openedCount)=>{
+  const renderWith=(shards,openedCount,buyShard='auto')=>{
     const r=roundFixture({
       kusdt:{cid:hex('a'),loading:false,stage:1,price:1_000_000n,closeDaa:5000n,openedCount,cursor:0,totalTickets:shards.reduce((s,x)=>s+x.tickets,0),decision:0,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards},
     });
     const D={
       ...item(r,facts({module:'sales',ticketPrice:1_000_000n,tickets:r.kusdt.totalTickets,shards:openedCount}),actions({BUY:{ok:true}})),
-      mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:r.kusdt,
+      mine:null,isWinner:false,shards:[],asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(r),
     };
-    return roundView(ctx({net:MAINNET,S:{...BASE_S,view:'round',cid:r.cid,detailTab:'map'},detail:D})).s;
+    return {html:roundView(ctx({net:MAINNET,S:{...BASE_S,view:'round',cid:r.cid,buyShard},detail:D})).s,selector:D.interactive.buyShardSelector};
   };
-  // 8 active buyable shards -> 开新片 option MUST be hidden and cap hint shown
-  const eightActive=Array.from({length:8},(_,i)=>mkOpenShard(i+1,5));
-  const html8=renderWith(eightActive,8);
-  assert.match(html8,/id="kShardCid"/);
-  assert.ok(!html8.includes('<option value="">'));
-  assert.ok(!html8.includes('开新片'));
-  assert.match(html8,/8\/8 个可买活动分片/);
+  // 0 open shards -> compact hero-kpis + refundable deposit button & collapsed advanced options
+  const {html:html0}=renderWith([],0);
+  assert.match(html0,/class="hero-kpis"/);
+  assert.match(html0,/<details class="adv-details buy-adv">/);
+  assert.match(html0,/id="buyShardSelect"/);
+  assert.match(html0,/立即购买（含 4 KAS 可退押金）/);
 
-  // 7 active buyable shards + 1 full 256-record shard -> only 7 open shards in dropdown + 开新片 re-enabled (7/8)!
-  const sevenPlusFull=[mkOpenShard(1,256),...Array.from({length:7},(_,i)=>mkOpenShard(i+2,5))];
-  const html7=renderWith(sevenPlusFull,8);
-  assert.match(html7,/<option value="">开新片（含 4 KAS 可退押金 · 活动分片 7\/8）<\/option>/);
-  assert.equal((html7.match(/已有分片 #/g)??[]).length,7);
-  assert.ok(!html7.includes('个可买活动分片'));
+  // 7 active open shards -> default auto mode is deposit-free, advanced options collapsed with new-shard choice available
+  const sevenActive=Array.from({length:7},(_,i)=>mkOpenShard(i+1,5));
+  const {html:html7,selector:sel7}=renderWith(sevenActive,7,'auto');
+  assert.match(html7,/<details class="adv-details buy-adv">/);
+  assert.match(html7,/>立即购买<\/button>/);
+  assert.match(html7,/<option value="new"/);
+  // Explicitly selecting new shard in advanced options opens details & updates CTA to show refundable deposit
+  const {html:html7New}=renderWith(sevenActive,7,'new');
+  assert.match(html7New,/<details class="adv-details buy-adv" open>/);
+  assert.match(html7New,/立即购买（含 4 KAS 可退押金）/);
+
+  // 8 active open shards -> hides value="new" option in advanced selector
+  const eightActive=Array.from({length:8},(_,i)=>mkOpenShard(i+1,5));
+  const {html:html8,selector:sel8}=renderWith(eightActive,8,'auto');
+  assert.ok(!html8.includes('<option value="new"'));
+  assert.match(html8,/>立即购买<\/button>/);
+
+  // 256 opened shards and all full (256 records) -> disables buySubmit
+  const all256Full=[mkOpenShard(1,256)];
+  const {html:htmlFull}=renderWith(all256Full,256);
+  assert.match(htmlFull,/id="buySubmit"[^>]*disabled/);
+
+  // Random shard selection excludes conflicted shards and avoids repeating them
+  const opts=sel7.options;
+  const p0=pickRandomBuyShard(opts,new Set(),()=>0.0);
+  const pLast=pickRandomBuyShard(opts,new Set(),()=>0.99);
+  assert.equal(p0.shardId,opts[0].shardId);
+  assert.equal(pLast.shardId,opts[opts.length-1].shardId);
+  const pExcl=pickRandomBuyShard(opts,new Set([opts[0].shardId]),()=>0.0);
+  assert.equal(pExcl.shardId,opts[1].shardId);
+  assert.equal(pickRandomBuyShard(opts,new Set(opts.map(o=>o.shardId)),()=>0.5),null);
+
+  // UTXO conflict detector & 3-strike congestion threshold (only when conflicts >= 3 AND activeOpen < 8)
+  assert.equal(isShardUtxoConflict({code:'STALE_INPUT'}),true);
+  assert.equal(isShardUtxoConflict({message:'outpoint already spent'}),true);
+  assert.equal(isShardUtxoConflict({code:'INSUFFICIENT_FUNDS'}),false);
+  assert.equal(shouldWarnShardCongestion(2,sel7),false);
+  assert.equal(shouldWarnShardCongestion(3,sel7),true);
+  assert.equal(shouldWarnShardCongestion(3,sel8),false);
 });
 
 test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding contract rollovers), and splits rollover outputs',()=>{
@@ -621,7 +677,7 @@ test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding
 
   // 1) OPEN_SHARD: -1 kUSDT into new shard vault, -4.041 KAS net (-4 KAS refundable deposit, -0.041 KAS fee); 4 KAS MANAGER separated into rollover section!
   const openPrepared={
-    op:{action:'BUY',quantity:1},kusdtAction:'OPEN_SHARD',fee:4_100_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    op:{action:'BUY',quantity:1},subAction:'OPEN_SHARD',fee:4_100_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
     review:{
       txid:hex('e'),fee:4_100_000n,
       assetDeltas:[
@@ -661,7 +717,7 @@ test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding
 
   // 2) BUY (existing shard): -1 kUSDT into existing vault, -0.031 KAS net (no deposit), VAULT_DEPOSIT in user section & SHARD_DEPOSIT in rollover
   const buyPrepared={
-    op:{action:'BUY',quantity:1},kusdtAction:'BUY',fee:3_100_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    op:{action:'BUY',quantity:1},subAction:'BUY',fee:3_100_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
     review:{
       txid:hex('e'),fee:3_100_000n,
       assetDeltas:[
@@ -694,7 +750,7 @@ test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding
 
   // 3) PAYOUT_EXECUTOR (3rd-party executor): +0.5 kUSDT, -1.546 KAS net (-1.5 KAS winner carrier + -0.046 KAS fee); first-buyer 4 KAS return in rollover
   const execPrepared={
-    op:{action:'PAYOUT_EXECUTOR'},kusdtAction:'PAYOUT_EXECUTOR',fee:4_600_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    op:{action:'PAYOUT_EXECUTOR'},subAction:'PAYOUT_EXECUTOR',fee:4_600_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
     review:{
       txid:hex('e'),fee:4_600_000n,
       assetDeltas:[
@@ -728,7 +784,7 @@ test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding
 
   // 4) CLAIM_REFUND (final by first buyer): +1 kUSDT, +3.977 KAS net (+4 KAS deposit return, -0.023 KAS fee)
   const claimPrepared={
-    op:{action:'CLAIM_REFUND'},kusdtAction:'CLAIM_REFUND',fee:2_300_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    op:{action:'CLAIM_REFUND'},subAction:'CLAIM_REFUND',fee:2_300_000n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
     review:{
       txid:hex('e'),fee:2_300_000n,
       assetDeltas:[
@@ -778,7 +834,7 @@ test('confirmBody for kusdt-v2 breaks down kUSDT flow, net KAS change (excluding
 
   // 6) PAYOUT_SELF triggered by non-winner (e.g. first buyer recovering 4 KAS deposit): MUST show winner kUSDT destination & 1.5 KAS winner carrier
   const selfOtherPrepared={
-    op:{action:'PAYOUT_SELF'},kusdtAction:'PAYOUT_SELF',fee:2_863_800n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
+    op:{action:'PAYOUT_SELF'},subAction:'PAYOUT_SELF',fee:2_863_800n,feerate:'100',mass:baseMass,targetCount:0,cid:hex('a'),
     review:{
       txid:hex('e'),fee:2_863_800n,
       assetDeltas:[{asset:kusdtAsset,amount:3_000_000n,role:'NET'},{asset:kasAsset,amount:-150_000_000n,role:'CARRIER'},{asset:kasAsset,amount:-2_863_800n,role:'FEE'}],
@@ -802,67 +858,88 @@ test('kusdt-v2 payout actions hide PAYOUT_SELF for non-winners and show it for t
   const wallet={kind:'extension',address:'kaspa:qa',key:hex('1'),spk:{script:'20'+'ab'.repeat(32)+'ac'}};
   const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
   const rPay=roundFixture({manager:null,kusdt:{cid:hex('a'),loading:false,stage:3,price:1_000_000n,closeDaa:100n,openedCount:1,cursor:1,totalTickets:3,decision:1,creatorPk:hex('1'),winnerPk:hex('2'),nodeVerified:true,shards:[{shardCid:hex('3'),stage:0x13,terminal:false,tickets:3,recordCount:3}]}});
-  const nonWinHtml=roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rPay.cid},detail:{...item(rPay,facts({module:'win',ticketPrice:1_000_000n,tickets:3,shards:1,winnerKey:hex('2')}),actions()),mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:rPay.kusdt}})).s;
-  assert.ok(!nonWinHtml.includes('data-kusdt-act="PAYOUT_SELF"'));
-  assert.ok(nonWinHtml.includes('data-kusdt-act="PAYOUT_EXECUTOR"'));
+  const nonWinHtml=roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rPay.cid},detail:{...item(rPay,facts({module:'win',ticketPrice:1_000_000n,tickets:3,shards:1,winnerKey:hex('2')}),actions()),mine:null,isWinner:false,shards:[],asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(rPay,{isWinner:false})}})).s;
+  assert.ok(!nonWinHtml.includes('data-proto-act="PAYOUT_SELF"'));
+  assert.ok(nonWinHtml.includes('data-proto-act="PAYOUT_EXECUTOR"'));
 
-  const winHtml=roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rPay.cid},detail:{...item(rPay,facts({module:'win',ticketPrice:1_000_000n,tickets:3,shards:1,winnerKey:hex('1')}),actions()),mine:null,isWinner:true,shards:[],asset:kusdtAsset,kusdt:rPay.kusdt}})).s;
-  assert.ok(winHtml.includes('data-kusdt-act="PAYOUT_SELF"'));
-  assert.ok(winHtml.includes('赢家自推（领全额奖金'));
-  assert.ok(winHtml.includes('data-kusdt-act="PAYOUT_EXECUTOR"'));
+  const winHtml=roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rPay.cid},detail:{...item(rPay,facts({module:'win',ticketPrice:1_000_000n,tickets:3,shards:1,winnerKey:hex('1')}),actions()),mine:null,isWinner:true,shards:[],asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(rPay,{isWinner:true})}})).s;
+  assert.ok(winHtml.includes('data-proto-act="PAYOUT_SELF"'));
+  assert.ok(winHtml.includes('领取全额奖金'));
+  assert.ok(winHtml.includes('data-proto-act="PAYOUT_EXECUTOR"'));
 });
 
-test('English i18n translates all kUSDT v2 create, round detail, and confirmBody text nodes without leftover Chinese',()=>{
-  const exact=new Map(),patterns=[];
-  const literal=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  for(const [src,en] of [...EN_COMMON,...EN_ROLLING]){
-    const k=normalize(src);
-    if(!/\{\d+\}/.test(k)){exact.set(k,en);continue;}
-    const ids=[],pieces=k.split(/(\{\d+\})/);
-    const regex=new RegExp('^'+pieces.map(p=>/^\{\d+\}$/.test(p)?(ids.push(p),'(.*?)'):literal(p)).join('')+'$','u');
-    patterns.push({regex,ids,en,weight:k.replace(/\{\d+\}/g,'').length});
-  }
-  patterns.sort((a,b)=>b.weight-a.weight);
-  const tr=(value,depth=0)=>{
-    const s=normalize(value);if(!s)return s;
-    if(exact.has(s))return exact.get(s);
-    if(depth<5)for(const p of patterns){
-      const m=p.regex.exec(s);if(!m)continue;
-      const vars=Object.fromEntries(p.ids.map((id,i)=>[id,tr(m[i+1],depth+1)]));
-      return p.en.replace(/\{\d+\}/g,id=>vars[id]??id);
+test('Locale abstraction: ZH_CN and EN are structurally isomorphic and every EN view renders zero leftover Chinese',()=>{
+  const checkShape=(a,b,path='')=>{
+    assert.equal(typeof a,typeof b,`type mismatch at ${path}`);
+    if(a&&typeof a==='object'&&!Array.isArray(a)){
+      assert.deepEqual(Object.keys(a).sort(),Object.keys(b).sort(),`keys mismatch at ${path}`);
+      for(const k of Object.keys(a))checkShape(a[k],b[k],path?`${path}.${k}`:k);
     }
-    return s;
   };
+  checkShape(ZH_CN,EN);
+  assert.equal(LOCALES.length,2);
+  assert.equal(nextLocale(ZH_CN),EN);
+  assert.equal(nextLocale(EN),ZH_CN);
+  assert.equal(resolveLocale('en'),EN);
+  assert.equal(resolveLocale('zh-CN'),ZH_CN);
+
   const checkNoChinese=(label,markup)=>{
-    const chunks=markup.replace(/<[^>]+>/g,'\n').split('\n').map(s=>s.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').trim()).filter(Boolean);
-    const untranslated=[];
-    for(const c of chunks){
-      if(!/[\u4e00-\u9fff]/.test(c))continue;
-      const out=tr(c);
-      if(/[\u4e00-\u9fff]/.test(out))untranslated.push(`${c} => ${out}`);
-    }
-    assert.deepEqual(untranslated,[],`${label} has untranslated Chinese:\n${untranslated.join('\n')}`);
+    // Strip explicit language-switcher labels that intentionally name the Chinese language (e.g. "Switch to 简体中文").
+    const cleaned=markup.replace(/简体中文/g,'Chinese');
+    const chunks=cleaned.replace(/<[^>]+>/g,'\n').split('\n').map(s=>s.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').trim()).filter(Boolean);
+    const bad=chunks.filter(c=>/[\u4e00-\u9fff]/.test(c));
+    assert.deepEqual(bad,[],`${label} rendered Chinese in EN locale:\n${bad.join('\n')}`);
   };
 
   const mine='20'+'ab'.repeat(32)+'ac';
   const wallet={kind:'extension',address:'kaspa:qa',key:hex('1'),spk:{script:mine}};
   const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};
   const kasAsset={kind:'KAS',symbol:'KAS',decimals:8,tokenCovenantId:null};
+  const compatProfiles=[
+    {protocolId:'rolling-v1',name:'Rolling v1',displayName:'KAS (Rolling v1)',asset:'KAS',profileId:hex('a'),tokenCovenantId:null,supportsNet:true},
+    {protocolId:'kusdt-v2',name:'kUSDT v2',displayName:'kUSDT v2 (KCC-20)',asset:'kUSDT',assetDescriptor:kusdtAsset,profileId:hex('b'),tokenCovenantId:hex('5'),supportsNet:true},
+  ];
+  const createSpecs=[
+    {
+      protocolId:'kusdt-v2',profileId:hex('b'),name:'kUSDT v2',displayName:'kUSDT v2 (KCC-20)',layout:'parallel_fixed_shards',
+      supportedOnNet:true,asset:kusdtAsset,priceMin:1_000_000n,priceMax:500_000_000_000_000_000n,fixedTicketCap:65536,
+      minTicketCap:3,maxTicketCap:65536,fixedMinTickets:3,minTicketsFloor:3,shardSize:256,maxShards:256,
+      creatorDepositSompi:400_000_000n,minCloseMinutes:1,maxCloseMinutes:10080,
+    },
+    defaultSequentialCreateSpec(MAINNET,{protocolId:'rolling-v1',profileId:hex('a'),name:'Rolling v1'}),
+  ];
+  const enBase={net:MAINNET,wallet,L:EN,lang:'en',compatibleProfiles:compatProfiles,createSpecs,supportedProfiles:new Set([hex('a'),hex('b')])};
 
-  // 1) Create page in kusdt-v2 mode
-  checkNoChinese('createView(kusdt-v2)',createView(ctx({net:MAINNET,wallet,S:{...BASE_S,form:{...BASE_S.form,protocol:'kusdt-v2'}}})).s);
+  // 1) Explore (with incompatible round & missing-profile notice)
+  const rRoll=roundFixture({profileId:hex('a')});
+  checkNoChinese('exploreView(en)',exploreView(ctx({...enBase,items:[item(rRoll,facts(),actions())],discovered:[{cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:kusdtAsset}],conn:{node:true,indexer:true,indexerStale:false,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')}]}})).s);
 
-  // 2) Round detail in sales, payout-ready, and refund-ready states
+  // 2) Create (both protocols)
+  checkNoChinese('createView(en, rolling-v1)',createView(ctx({...enBase,S:{...BASE_S,form:{...BASE_S.form,protocol:'rolling-v1'}}})).s);
+  checkNoChinese('createView(en, kusdt-v2)',createView(ctx({...enBase,S:{...BASE_S,form:{...BASE_S.form,protocol:'kusdt-v2'}}})).s);
+
+  // 3) Round detail: sales, refund, payout, rules tab, and incompatible read-only round
   const openShards=[{shardCid:hex('1'),stage:0x11,terminal:false,tickets:5,recordCount:2}];
-  const rOpen=roundFixture({kusdt:{cid:hex('a'),loading:false,stage:1,price:1_000_000n,closeDaa:5000n,openedCount:1,cursor:0,totalTickets:5,decision:0,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards:openShards}});
-  checkNoChinese('roundView(kusdt-v2 sales)',roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rOpen.cid},detail:{...item(rOpen,facts({module:'sales',ticketPrice:1_000_000n,tickets:5,shards:1}),actions({BUY:{ok:true},CLOSE:{ok:true}})),mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:rOpen.kusdt}})).s);
+  const rOpen=roundFixture({profileId:hex('b'),kusdt:{cid:hex('a'),loading:false,stage:1,price:1_000_000n,closeDaa:5000n,openedCount:1,cursor:0,totalTickets:5,decision:0,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards:openShards}});
+  const enShard=[{index:0,kind:'active',status:'active',startTicket:1,endTicket:5,tickets:5,recordCount:1,hash:hex('1'),refundedRecords:0,mineCount:5,records:[{index:0,startTicket:1,endTicket:5,count:5,key:hex('1'),mine:true,refunded:false}]}];
+  checkNoChinese('roundView(en, kusdt-v2 sales default)',roundView(ctx({...enBase,S:{...BASE_S,view:'round',cid:rOpen.cid},detail:{...item(rOpen,facts({module:'sales',ticketPrice:1_000_000n,tickets:5,shards:1}),actions({BUY:{ok:true},CLOSE:{ok:true}})),mine:null,isWinner:false,shards:enShard,asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(rOpen)}})).s);
+  checkNoChinese('roundView(en, kusdt-v2 sales map)',roundView(ctx({...enBase,S:{...BASE_S,view:'round',cid:rOpen.cid,detailTab:'map'},detail:{...item(rOpen,facts({module:'sales',ticketPrice:1_000_000n,tickets:5,shards:1}),actions({BUY:{ok:true},CLOSE:{ok:true}})),mine:null,isWinner:false,shards:enShard,asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(rOpen)}})).s);
+  checkNoChinese('roundView(en, rules tab)',roundView(ctx({...enBase,S:{...BASE_S,view:'round',cid:rOpen.cid,detailTab:'rules'},detail:{...item(rOpen,facts({module:'sales',ticketPrice:1_000_000n,tickets:5,shards:1}),actions({BUY:{ok:true}})),mine:null,isWinner:false,shards:[],asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(rOpen)}})).s);
 
-  const rRef=roundFixture({manager:null,kusdt:{cid:hex('a'),loading:false,stage:3,price:1_000_000n,closeDaa:100n,openedCount:1,cursor:1,totalTickets:1,decision:2,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards:[{shardCid:hex('2'),stage:0x14,terminal:false,tickets:1,recordCount:1,claimedMask:0,records:[{buyerPk:hex('1'),cumTickets:1}]}]}});
-  checkNoChinese('roundView(kusdt-v2 refund)',roundView(ctx({net:MAINNET,wallet,S:{...BASE_S,view:'round',cid:rRef.cid},detail:{...item(rRef,facts({module:'refund',ticketPrice:1_000_000n,tickets:1,shards:1}),actions()),mine:null,isWinner:false,shards:[],asset:kusdtAsset,kusdt:rRef.kusdt}})).s);
+  const rRef=roundFixture({profileId:hex('b'),manager:null,kusdt:{cid:hex('a'),loading:false,stage:3,price:1_000_000n,closeDaa:100n,openedCount:1,cursor:1,totalTickets:1,decision:2,creatorPk:hex('1'),winnerPk:null,nodeVerified:true,shards:[{shardCid:hex('2'),stage:0x14,terminal:false,tickets:1,recordCount:1,claimedMask:0,records:[{buyerPk:hex('1'),cumTickets:1}]}]}});
+  checkNoChinese('roundView(en, kusdt-v2 refund)',roundView(ctx({...enBase,S:{...BASE_S,view:'round',cid:rRef.cid},detail:{...item(rRef,facts({module:'refund',ticketPrice:1_000_000n,tickets:1,shards:1}),actions()),mine:null,isWinner:false,shards:[],asset:kusdtAsset,protocolMeta:parallelMeta,interactive:kusdtV2InteractiveModel(rRef)}})).s);
 
-  // 3) Confirm modal for OPEN_SHARD
+  checkNoChinese('roundView(en, incompatible)',roundView(ctx({...enBase,S:{...BASE_S,view:'round',cid:hex('6')},discovered:[{cid:hex('6'),protocolId:'kusdt-v2',profileId:hex('5'),phase:'DONE',terminal:'REFUNDED',ticketsSold:1,ticketPrice:'1000000',asset:kusdtAsset}]})).s);
+
+  // 4) Mine, Help (How it works), Wallet, Settings
+  checkNoChinese('mineView(en)',mineView(ctx({...enBase,balance:5_00000000n,items:[item(rRoll,facts(),actions())],mine:{rounds:[{item:item(rRoll,facts(),actions()),tickets:2,created:true,won:false}],txs:[]}})).s);
+  checkNoChinese('rulesView(en)',rulesView(ctx({...enBase})).s);
+  checkNoChinese('walletBody(en)',walletBody(ctx({...enBase,wallet:null,S:{...BASE_S,wtab:'extension'}})).s);
+  checkNoChinese('settingsBody(en)',settingsBody(ctx({...enBase,conn:{node:true,nodeUrl:'wss://node',indexer:true,indexerProfiles:[{protocolId:'rolling-v1',profileId:hex('a')},{protocolId:'kusdt-v2',profileId:hex('b')}]}})).s);
+
+  // 5) Confirm modal for OPEN_SHARD
   const openPrepared={
-    op:{action:'BUY',quantity:1},kusdtAction:'OPEN_SHARD',fee:4_100_000n,feerate:'100',mass:{computeMass:1,transientMass:2,storageMass:3},targetCount:0,cid:hex('a'),
+    op:{action:'BUY',quantity:1},subAction:'OPEN_SHARD',fee:4_100_000n,feerate:'100',mass:{computeMass:1,transientMass:2,storageMass:3},targetCount:0,cid:hex('a'),
     review:{
       txid:hex('e'),fee:4_100_000n,
       assetDeltas:[{asset:kusdtAsset,amount:-1_000_000n,role:'NET'},{asset:kasAsset,amount:-400_000_000n,role:'REFUNDABLE_DEPOSIT'},{asset:kasAsset,amount:-4_100_000n,role:'FEE'}],
@@ -876,7 +953,93 @@ test('English i18n translates all kUSDT v2 create, round detail, and confirmBody
       ],
     },
   };
-  const plan='购买 1 张票（首购开新分片需暂锁 4 KAS 可退押金，结算后全额退还），另付网络费 0.041 KAS。如果别人抢先操作了这一轮，这笔交易会被节点拒绝，不会扣款。';
-  checkNoChinese('confirmBody(OPEN_SHARD)',confirmBody({...ctx({net:MAINNET,wallet}),prepared:openPrepared,planText:plan}).s);
+  const plan=EN.app.planAction('OPEN_SHARD',{qty:1,n:0,fee:'0.041',unit:'KAS',tokenUnit:'kUSDT',hasReg:false,isParallel:true});
+  checkNoChinese('confirmBody(en, OPEN_SHARD)',confirmBody({...ctx(enBase),prepared:openPrepared,planText:plan}).s);
+});
+
+test('ProtocolPlugin UI decoupling: plugging a 3rd covenant (kUSDC v3 fixed-denomination) renders across explore, create, round, rules, and confirm without touching web/',()=>{
+  const kusdcAsset={kind:'KCC20',symbol:'kUSDC',decimals:6,tokenCovenantId:hex('9')};
+  const kusdcSpec={
+    protocolId:'kusdc-v3',profileId:hex('8'),name:'kUSDC v3',displayName:'kUSDC v3 (KCC-20)',
+    layout:'parallel_fixed_shards',supportedOnNet:true,asset:kusdcAsset,
+    priceMin:5_000_000n,priceMax:100_000_000n,fixedTicketCap:16384,
+    minTicketCap:10,maxTicketCap:16384,fixedMinTickets:10,minTicketsFloor:10,
+    shardSize:256,maxShards:64,creatorDepositSompi:600_000_000n,minCloseMinutes:5,maxCloseMinutes:1440,
+  };
+  const kusdcMeta={protocolId:'kusdc-v3',profileId:hex('8'),displayName:'kUSDC v3 (KCC-20)',shardModel:'parallel',maxShards:64,supportsBatchSettlement:false,supportsIntentResend:false,freeActions:[],actionStyle:'parallel_dispatch'};
+  const compat=[
+    {protocolId:'rolling-v1',name:'Rolling v1',displayName:'KAS (Rolling v1)',asset:'KAS',profileId:hex('a'),tokenCovenantId:null,supportsNet:true},
+    {protocolId:'kusdc-v3',name:'kUSDC v3',displayName:'kUSDC v3 (KCC-20)',asset:'kUSDC',assetDescriptor:kusdcAsset,profileId:hex('8'),tokenCovenantId:hex('9'),supportsNet:true},
+  ];
+  const specs=[kusdcSpec,defaultSequentialCreateSpec(MAINNET,{protocolId:'rolling-v1',profileId:hex('a'),name:'Rolling v1'})];
+
+  // Create view renders 3rd covenant pill, 5 kUSDC min hint, no-ticket-cap 10-ticket threshold, and 6 KAS deposit
+  const createHtml=createView(ctx({net:MAINNET,createSpecs:specs,S:{...BASE_S,form:{...BASE_S.form,protocol:'kusdc-v3',price:'5'}}})).s;
+  assert.match(createHtml,/data-proto="kusdc-v3"/);
+  assert.match(createHtml,/kUSDC/);
+  assert.match(createHtml,/不限总票数 · 满 10 张开奖/);
+  assert.ok(!createHtml.includes('65,536'));
+  assert.match(createHtml,/需冻结 6 KAS 创建押金（结算后退回创建者）/);
+  assert.equal(parseCreate({...BASE_S.form,protocol:'kusdc-v3',price:'4'},MAINNET,ZH_CN,kusdcSpec).ok,false);
+  assert.equal(parseCreate({...BASE_S.form,protocol:'kusdc-v3',price:'5'},MAINNET,ZH_CN,kusdcSpec).ok,true);
+
+  // Explore, Round detail, Rules, and Confirm all project kUSDC v3 cleanly
+  const r3=roundFixture({cid:hex('7'),profileId:hex('8')});
+  const it3=item(r3,facts({module:'sales',ticketPrice:5_000_000n,tickets:12,shards:2,minTickets:10}),actions({BUY:{ok:true}}),{asset:kusdcAsset,protocolMeta:kusdcMeta});
+  const expHtml=exploreView(ctx({net:MAINNET,compatibleProfiles:compat,supportedProfiles:new Set([hex('a'),hex('8')]),items:[it3]})).s;
+  assert.match(expHtml,/60<small>kUSDC<\/small>/);
+  const rndHtml=roundView(ctx({net:MAINNET,compatibleProfiles:compat,S:{...BASE_S,view:'round',cid:r3.cid,detailTab:'rules'},detail:{...it3,mine:null,isWinner:false,shards:[]}})).s;
+  assert.match(rndHtml,/kUSDC v3 \(KCC-20\)/);
+  assert.match(rndHtml,/2 \/ 64/);
+  const rulesHtml=rulesView(ctx({net:MAINNET,compatibleProfiles:compat})).s;
+  assert.match(rulesHtml,/kUSDC v3 \(KCC-20\)/);
+});
+
+test('draw verification: independently recomputes BLAKE2b-256 winning ticket, builds zero-dep Python script, and renders in round info tab (zh & en)',()=>{
+  const seedBase={
+    scheme:'kusdt-v2',
+    seedDomain:'KASWIN_KUSDT_DRAW_V1',
+    sampleDomain:'KASWIN_KUSDT_SAMPLE_V1',
+    cid:hex('a'),
+    sealedTxid:hex('b'),
+    sealedIndex:0,
+    sealedDaa:'1000',
+    boundaryDaa:'1100',
+    targetBlockHash:hex('c'),
+    targetBlockDaa:'1101',
+    parentBlockDaa:'1099',
+    sequenceCommitment:hex('d'),
+    seed:'',
+    digest:'',
+    sample:'0',
+    totalTickets:17,
+    winningTicket:1,
+    rejectionSampled:false,
+  };
+  const computed=recomputeDrawProof(seedBase);
+  const validProof={...seedBase,seed:computed.seed,digest:computed.digest,sample:computed.sample,winningTicket:computed.winningTicket};
+  assert.equal(recomputeDrawProof(validProof).ok,true);
+  assert.equal(recomputeDrawProof({...validProof,winningTicket:(validProof.winningTicket%17)+1}).ok,false);
+  assert.equal(recomputeDrawProof({...validProof,targetBlockDaa:'1099'}).ok,false);
+
+  const py=buildPythonVerifyScript(validProof);
+  assert.match(py,/hashlib\.blake2b/);
+  assert.ok(py.includes(`b"KASWIN_KUSDT_DRAW_V1"`));
+  assert.ok(py.includes(`assert winning_ticket == ${validProof.winningTicket}`));
+
+  const rWin=roundFixture({
+    terminal:'PAID',manager:null,bought:17,
+    draw:{txid:hex('e'),shard:0,record:1,ticket:validProof.winningTicket-1,proof:validProof},
+  });
+  const dWin={...item(rWin,facts({module:null,tickets:17,shards:1,winnerKey:hex('1')}),actions()),mine:null,isWinner:false,shards:[]};
+  const zhOut=roundView(ctx({S:{...BASE_S,view:'round',cid:rWin.cid},detail:dWin})).s;
+  assert.match(zhOut,/draw-verify-box/);
+  assert.match(zhOut,new RegExp(`本地 BLAKE2b-256 独立复算通过：中奖票 #${validProof.winningTicket}`));
+  assert.match(zhOut,/复制 Python 3 独立验算脚本/);
+
+  const enOut=roundView(ctx({L:EN,lang:'en',S:{...BASE_S,view:'round',cid:rWin.cid},detail:dWin})).s;
+  assert.match(enOut,/Local BLAKE2b-256 recomputation passed/);
+  assert.match(enOut,/Copy Python 3 verification script/);
+  assert.doesNotMatch(enOut,/[\u4e00-\u9fff]/);
 });
 

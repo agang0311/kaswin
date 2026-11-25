@@ -10,15 +10,16 @@ Kaswin 当前源码以 Rolling 为主实现，保留 `contracts/`、`scripts/`�
 | `scripts/core/src/` | Rolling 状态、Profile、交易、mass、接受解释、收款规则，以及字节、哈希、交易序列化、CID、PASS-A 等通用基础能力 |
 | `scripts/core.mjs` | 统一协议入口，连接生成核心与所需密码学/地址能力 |
 | `scripts/contract/` | `protocol.mjs` 协议常量与数据格式；`profile-data.mjs` 浏览器 Profile 数据；`bundle.mjs` 固定产物加载 |
+| `scripts/protocols/` | 多合约插件抽象与注册表（`registry.mjs`、`installed.mjs`、`receipts.mjs`）以及具体合约实现（`rolling-v1.mjs`、`kusdt-v2.mjs`） |
 | `scripts/chain/` | 网络上下文（主网 / TN10）、节点连接、RPC/REST、费用和接受证据读取 |
 | `scripts/round/` | controller、轮次状态、准备与预算、追赶同步、索引客户端、开奖证明及确认 |
 | `scripts/store/` | `codec.mjs` 持久化编码；`round-store.mjs` 轮次与意图存储 |
 | `scripts/tracking/` | `intent.mjs` 提交意图与恢复；`conflict.mjs` 拒绝和冲突分类 |
 | `scripts/wallet/` | 内存钱包、扩展钱包、Kaspire 接入及通用地址/签名能力 |
 | `scripts/indexer/` | 只读索引服务及原实验归档、索引、HTTP 和节点接受适配模块 |
-| `web/app/` | `app.ts` 入口、`bridge.ts` 运行时接线、类型、设置、分享与环境声明 |
-| `web/ui/` | 模板、样式、视图、UI、交互、格式化和词典 |
-| `build/` | 统一核心编译与主页面构建；合约重编译为显式工具 |
+| `web/app/` | `app.ts` 入口、`bridge.ts` 协议无关运行时接线、类型、设置、分享与环境声明 |
+| `web/ui/` | 协议无关模板、样式、视图、UI、交互、格式化和强类型语言包（`locales/`） |
+| `build/` | 统一核心编译、已安装协议产物聚合（`protocol-bundles.mjs`）与主页面构建（含 `web/` 协议解耦检查门）；合约重编译为显式工具 |
 | `tests/` | 合约/VM/旧 MJS 差分基线、网页集成、单测与节点替身 |
 
 核心不选择端点、不连接节点、不接触 DOM 或钱包。网页通过运行时操作轮次；索引服务与浏览器共享协议核心，但服务端归档和节点扫描器不进入网页运行时。旧 MJS 协议实现留在 `tests/contracts/` 作为差分基线，不构成第二套应用核心。

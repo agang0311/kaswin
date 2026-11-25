@@ -61,10 +61,20 @@ export function requiredFee(mass,rate='100') {
   const fee=(mass.orderingMass*num+den-1n)/den;return fee>mass.relayFloor?fee:mass.relayFloor;
 }
 const inflightFeeRate=new WeakMap();
-export async function nodeFeeRate(rpc) {
+const cachedFeeRate=new WeakMap();
+const FEE_RATE_CACHE_MS=5_000;
+export async function nodeFeeRate(rpc,{force=false}={}) {
   if(rpc&&typeof rpc==='object'){
+    if(!force){
+      const cached=cachedFeeRate.get(rpc);
+      if(cached&&Date.now()-cached.at<FEE_RATE_CACHE_MS)return cached.rate;
+    }
     const hit=inflightFeeRate.get(rpc);if(hit)return hit;
-    const p=(async()=>String(Math.max(1,Math.ceil(parseFeeEstimate(await rpc.call('getFeeEstimate')).normal.feerate))))().finally(()=>{inflightFeeRate.delete(rpc);});
+    const p=(async()=>{
+      const rate=String(Math.max(1,Math.ceil(parseFeeEstimate(await rpc.call('getFeeEstimate')).normal.feerate)));
+      cachedFeeRate.set(rpc,{rate,at:Date.now()});
+      return rate;
+    })().finally(()=>{inflightFeeRate.delete(rpc);});
     inflightFeeRate.set(rpc,p);return p;
   }
   return String(Math.max(1,Math.ceil(parseFeeEstimate(await rpc.call('getFeeEstimate')).normal.feerate)));
@@ -94,8 +104,11 @@ export async function liveRound(rpc,round,profile,{targets=[]}={}) {
  * "output (…) already spent by transaction … in the mempool". The page's own `reserved` set cannot see other profiles.
  * Fail-open on purpose: if the node cannot answer, selection proceeds as before and the node's own rejection is the backstop (classifyRejection). */
 export async function mempoolSpentOutpoints(rpc,address) {
-  const spent=new Set();let r;
-  try{r=await rpc.call('getMempoolEntriesByAddresses',{addresses:[address],includeOrphanPool:true,filterTransactionPool:false});}
+  const spent=new Set();
+  const addrs=Array.isArray(address)?[...new Set(address.filter(a=>typeof a==='string'&&a.length>0))]:(typeof address==='string'&&address.length>0?[address]:[]);
+  if(!addrs.length)return spent;
+  let r;
+  try{r=await rpc.call('getMempoolEntriesByAddresses',{addresses:addrs,includeOrphanPool:true,filterTransactionPool:false});}
   catch{return spent;}
   for(const g of Array.isArray(r?.entries)?r.entries:[])for(const e of Array.isArray(g?.sending)?g.sending:[])for(const i of Array.isArray(e?.transaction?.inputs)?e.transaction.inputs:[]) {
     const o=i?.previousOutpoint;if(o&&typeof o.transactionId==='string'&&Number.isInteger(Number(o.index)))spent.add(`${o.transactionId}:${Number(o.index)}`);

@@ -79,8 +79,8 @@ export class RollingPage {
     await this.p.waitForTimeout(2500);
     const langBtn = this.p.locator('#languageBtn');
     if (await langBtn.count()) {
-      const lbl = (await langBtn.innerText().catch(() => '')).trim();
-      if (lbl === '中文') { await langBtn.click().catch(() => {}); await this.p.waitForTimeout(400); }
+      const lang = await this.p.evaluate(() => document.documentElement.lang).catch(() => '');
+      if (lang === 'en') { await langBtn.click().catch(() => {}); await this.p.waitForTimeout(400); }
     }
     return this;
   }

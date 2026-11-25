@@ -35,9 +35,9 @@ tests/       contracts/ and VM; web/ integration; unit/; helpers/
 docs/        architecture, development and protocol documentation
 ```
 
-- Runtime entry: `scripts/core.mjs` (compiled from `scripts/core/src/` into `scripts/core/lib/`).
+- Runtime entry: `scripts/core.mjs` (compiled from `scripts/core/src/` into `scripts/core/lib/`); covenant plugins: `scripts/protocols/` (`registry.mjs`, `installed.mjs`, `rolling-v1.mjs`, `kusdt-v2.mjs`) and `build/protocol-bundles.mjs`.
 - Indexer & client: `scripts/indexer/` (read-only indexer) and `scripts/round/` (browser client).
-- Web entry: `web/app/app.ts`; translations: `web/ui/messages-common-en.mjs` and `web/ui/messages-en.mjs`. See [scripts/README.md](scripts/README.md), [web/README.md](web/README.md), and [contracts/README.md](contracts/README.md).
+- Web entry: `web/app/app.ts`; typed locale packs: `web/ui/locales/` (`schema.ts`, `zh-cn.ts`, `en.ts`, `index.ts`). See [scripts/README.md](scripts/README.md), [web/README.md](web/README.md), and [contracts/README.md](contracts/README.md).
 
 ## Contracts, network and transaction model
 

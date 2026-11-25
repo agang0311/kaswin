@@ -1817,7 +1817,12 @@ test('kusdt-v2 DRAW & REROLL: kusdtDrawSample, resolveKusdtDrawWinner, real VM e
     fakeRpc,
     v2Profile,
   );
-  assert.deepEqual(verified, {txid: drawTxid, shard: 1, record: 1, ticket: chosen.sample.ticket});
+  assert.deepEqual({txid: verified.txid, shard: verified.shard, record: verified.record, ticket: verified.ticket}, {txid: drawTxid, shard: 1, record: 1, ticket: chosen.sample.ticket});
+  assert.equal(verified.proof.scheme, 'kusdt-v2');
+  assert.equal(verified.proof.targetBlockHash, chosen.sample.targetHash);
+  assert.equal(verified.proof.seed, chosen.sample.seed);
+  assert.equal(verified.proof.winningTicket, chosen.sample.ticket + 1);
+  assert.equal(verified.proof.totalTickets, 5);
 
   w1.close();
   w2.close();

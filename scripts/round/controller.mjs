@@ -34,8 +34,13 @@ export function createController({profile,registry=null,roundStore,connect=(urls
   const protocolRegistry=registry??createProtocolRegistry([createRollingV1Adapter({profile})]);
   const defaultAdapter=protocolRegistry.defaultForCreate();
   const adapterFor=target=>{
-    const pid=typeof target==='string'?target:(target?.profileId??defaultAdapter.profileId);
-    return protocolRegistry.require(pid);
+    if(typeof target==='string')return protocolRegistry.require(target);
+    if(target&&typeof target==='object'){
+      const hit=protocolRegistry.resolveForRound(target);
+      if(hit)return hit;
+      if(target.profileId)return protocolRegistry.require(target.profileId);
+    }
+    return defaultAdapter;
   };
   const isSupportedEntry=entry=>{
     if(!entry||typeof entry!=='object')return false;
@@ -45,7 +50,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
   };
   const isSupportedRound=r=>{
     if(!r||typeof r!=='object')return false;
-    const adapter=r.profileId?protocolRegistry.get(r.profileId):(!r.kusdt?defaultAdapter:null);
+    const adapter=protocolRegistry.resolveForRound(r);
     if(!adapter)return false;
     if(typeof adapter.matchesProfile==='function')return adapter.matchesProfile(r);
     return true;
@@ -64,7 +69,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
   const mergeLocalDiscovered=rounds=>{
     const seen=new Set(rounds.map(r=>r.cid));
     const cutoff=now()-180_000;
-    const recentLocal=c.discovered.filter(r=>isSupportedEntry(r)&&!seen.has(r.cid)&&r.protocolId==='kusdt-v2'&&typeof r.updatedAt==='number'&&r.updatedAt>=cutoff);
+    const recentLocal=c.discovered.filter(r=>isSupportedEntry(r)&&!seen.has(r.cid)&&r.protocolId&&typeof r.updatedAt==='number'&&r.updatedAt>=cutoff);
     return recentLocal.length?[...recentLocal,...rounds]:rounds;
   };
   const persistDiscovery=(rounds,origin,base='',{temporaryFallback=false}={})=>{
@@ -224,9 +229,9 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       void rpc.subscribe(toRemove,false).catch(()=>{});
     }
     // KCI subscribe-first gap check: verify the manager UTXO is still live AFTER the subscription took effect.
-    if(mode==='manager'&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy&&adapter.id==='rolling-v1'){
+    if(mode==='manager'&&!cur.round.intent&&c.prepared?.cid!==cid&&!c.busy&&typeof adapter.checkManagerLive==='function'){
       try{
-        await liveRound(rpc,cur.round,profile,{targets:[]});
+        await adapter.checkManagerLive(rpc,cur.round);
       }catch(e){
         if(codeOf(e)==='STALE_INPUT'&&watchedCid===cid&&c.rpc===rpc&&activeWatch.addresses[0]===primaryAddr){
           wakeWatchedRound(cid,primaryTipKey??primaryAddr,20);
@@ -275,7 +280,11 @@ export function createController({profile,registry=null,roundStore,connect=(urls
   }
   async function setIntentStatus(cid,intent,status) {
     if(status==='UNSENT') { // never handed to the transport: safe to drop; the next prepare starts from scratch
-      await mutate(cid,r=>(r.step===0&&(!r.manager||(r.kusdt&&!r.kusdt.nodeVerified&&r.intent?.action==='GENESIS')))?null:{...r,intent:null});return;}
+      await mutate(cid,r=>{
+        const ad=protocolRegistry.resolveForRound(r);
+        const dropGenesis=ad?.shouldRemoveOnGenesisDiscard?ad.shouldRemoveOnGenesisDiscard(r,intent??r.intent):(r.step===0&&!r.manager);
+        return dropGenesis?null:{...r,intent:null};
+      });return;}
     await mutate(cid,r=>({...r,intent:{...r.intent,status,errorCode:intent.errorCode??null,nodeError:intent.nodeError??null}}));
   }
   /** One pass over a round's candidates: promote (>=100 DAA deep), follow a reorg, or halt the round when one was lost. */
@@ -403,8 +412,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
         let adapter=defaultAdapter;
         try{
           const peek=JSON.parse(text);
-          if(peek?.profileId&&protocolRegistry.get(peek.profileId))adapter=protocolRegistry.get(peek.profileId);
-          else if(peek?.protocol==='kusdt-v2'||peek?.kusdt)adapter=protocolRegistry.getById('kusdt-v2')??defaultAdapter;
+          adapter=protocolRegistry.resolveForRound(peek)??defaultAdapter;
         }catch{}
         const r=adapter.roundFromText(text,{network:net.networkId});
         return r.cid===cid&&!r.intent&&!r.pending?.length?r:null;
@@ -450,19 +458,14 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       try{
       const rpc=need(c.rpc,'NODE_REQUIRED');need(roundStore.persistent,'DURABLE_STORE_REQUIRED');
       const initial=await roundStore.get(input);
-      if(initial?.round.terminal&&!initial.round.kusdt&&(initial.round.terminal==='EMPTY'||initial.round.history))return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
+      const initialAdapter=initial?protocolRegistry.resolveForRound(initial.round):null;
+      if(initial?.round.terminal&&(initialAdapter?.isTerminalImmutable?initialAdapter.isTerminalImmutable(initial.round):(initial.round.terminal==='EMPTY'||initial.round.history)))return {cid:initial.round.cid,unchanged:true,source:'local',steps:0,terminal:initial.round.terminal};
       if(c.prepared?.cid===input||initial&&(initial.round.intent||(!allowHalted&&initial.round.halted)))return {cid:input,skipped:'LOCAL_PENDING'};
       const client=c.indexer;
       const discEntry=c.discovered.find(d=>d.cid===input);
       if(initial&&!isSupportedRound(initial.round))throw Object.assign(new Error('UNSUPPORTED_PROFILE'),{code:'UNSUPPORTED_PROFILE',safeCode:'UNSUPPORTED_PROFILE'});
-      let protoAdapter=initial?.round.profileId
-        ?adapterFor(initial.round.profileId)
-        :(initial?.round.kusdt
-          ?protocolRegistry.getById('kusdt-v2')
-          :(discEntry?.profileId
-            ?adapterFor(discEntry.profileId)
-            :(discEntry?.protocolId?protocolRegistry.getById(discEntry.protocolId):null)));
-      if((!protoAdapter||protoAdapter.id==='rolling-v1')&&!initial&&!discEntry&&client&&/^[0-9a-f]{64}$/.test(input)){
+      let protoAdapter=initialAdapter??(discEntry?protocolRegistry.resolveForRound(discEntry):null);
+      if((!protoAdapter||!protoAdapter.capabilities?.customRoundSync)&&!initial&&!discEntry&&client&&/^[0-9a-f]{64}$/.test(input)){
         try{
           const det=await client.roundDetail(input);
           if(det?.profileId){
@@ -471,18 +474,18 @@ export function createController({profile,registry=null,roundStore,connect=(urls
           }
         }catch(e){if(e?.code==='UNSUPPORTED_PROFILE')throw e;}
       }
-      if(protoAdapter&&protoAdapter.id!=='rolling-v1'&&typeof protoAdapter.syncRound==='function'){
+      if(protoAdapter?.capabilities?.customRoundSync&&typeof protoAdapter.syncRound==='function'){
         const synced=await protoAdapter.syncRound({rpc,indexer:client,round:initial?.round??null,cid:input,net,fetcher});
         const nextRound=synced.round;
-        const sigOfProto=r=>r?`${r.terminal??''}|${r.manager?.outpoint?.transactionId??''}:${r.manager?.outpoint?.index??''}|${r.accepting??''}|${r.draw?`${r.draw.txid}:${r.draw.shard}:${r.draw.record}:${r.draw.ticket}`:''}|${r.kusdt?.stage??''}|${r.kusdt?.totalTickets??0}|${r.kusdt?.openedCount??0}|${r.kusdt?.cursor??0}|${(r.receipts??[]).map(t=>`${t.txid}:${t.action}:${t.finalized===false?0:1}:${t.feeSompi??''}:${t.shardCid??''}:${t.recordIndex??''}:${t.recIdx??''}:${t.acceptingBlock??''}`).join(';')}|${!!r.kusdt?.nodeVerified}|${(r.kusdt?.shards??[]).map(s=>`${s.shardCid}:${s.outpoint?.transactionId??''}:${s.outpoint?.index??''}:${s.stage??0}:${s.tickets??0}:${s.terminal?1:0}:${s.claimedMask??0}:${s.records?.length??0}:${s.frozenRedeem?1:0}`).join(',')}`:'';
+        const sigOfProto=r=>r&&typeof protoAdapter.roundFingerprint==='function'?protoAdapter.roundFingerprint(r):'';
         const prevSig=sigOfProto(initial?.round??null);
         const nextSig=sigOfProto(nextRound);
-        const unchanged=!!initial&&prevSig===nextSig;
+        const unchanged=!!initial&&prevSig!==''&&prevSig===nextSig;
         if(!unchanged){
           if(initial)await roundStore.replace(nextRound,initial.revision);
           else await roundStore.create(nextRound);
         }
-        if(nextRound.terminal||nextRound.kusdt?.nodeVerified){
+        if(protoAdapter.isNodeVerified?protoAdapter.isNodeVerified(nextRound):!!nextRound.terminal){
           c.lastSynced={cid:nextRound.cid,nodeUrl:rpc.url??'',managerOutpoint:nextRound.manager?`${nextRound.manager.outpoint.transactionId}:${nextRound.manager.outpoint.index}`:'-',step:nextRound.step,frozen:0,at:now()};
         }
         if(!unchanged)emit();
@@ -595,8 +598,8 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),r=cur.round;
       const daa=c.rpc?await c.rpc.currentDaa().catch(()=>null):null;
       const adapter=adapterFor(r);
-      if(adapter.id!=='rolling-v1'&&typeof adapter.describeRound==='function'&&typeof adapter.uiActions==='function'){
-        return {round:r,facts:adapter.describeRound(r,daa),actions:adapter.uiActions(r,daa),daa};
+      if(typeof adapter.describeRound==='function'&&typeof adapter.uiActions==='function'){
+        return {round:r,facts:adapter.describeRound(r,daa??undefined),actions:adapter.uiActions(r,daa??r.manager?.currentDaa??0n),daa};
       }
       return {round:r,facts:describeRound(r,profile,daa??undefined),actions:availableActions(r,profile,daa??r.manager?.currentDaa??0n),daa};
     },
@@ -610,7 +613,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       const initAdapter=choice.action==='GENESIS'?adapterFor(op.profileId):null;
       if(choice.action==='GENESIS') {
         const st=choice.settings,daa=await c.rpc.currentDaa();
-        const decimals=initAdapter?.id==='kusdt-v2'?6:8;
+        const decimals=initAdapter?.assetFor?.(net)?.decimals??8;
         const rawPrice=String(st.ticketPrice).trim();
         const priceVal=decimals===8?parseTkas(rawPrice):(()=>{
           const [w='0',f='']=rawPrice.split('.');
@@ -657,40 +660,16 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       need(wallet&&wallet.address===p.walletAddress&&walletValid(wallet,epoch)&&p.walletEpoch===epoch,'WALLET_REQUIRED');
       const adapter=adapterFor(p.profileId);
       log('info',`正在请求 ${wallet.name??'钱包'} 签名 ${p.op.action}…`);
-      if(adapter.id!=='rolling-v1'){
+      if(adapter.capabilities?.customLifecycle){
         const signed=await adapter.signAndRecord({wallet,prepared:p,signal});
         c.prepared=null;
         check(walletValid(wallet,epoch),'WALLET_CHANGED');
         onSigned();
-        const kusdtAct=p.kusdtAction??p.op.action;
-        const intent={
-          status:'PREPARED',
-          action:kusdtAct,
-          txid:signed.txid,
-          profileId:adapter.profileId,
-          draft:signed.draft,
-          createdAtMs:now(),
-          nextManagerState:p.managerState??null,
-          nextShardState:p.shardState??null,
-          nextShardStates:p.shardStates??null,
-          shardCid:p.shardCid??p.op?.shardCid??null,
-          recordIndex:kusdtAct==='OPEN_SHARD'?0:(kusdtAct==='BUY'&&Array.isArray(p.shardState?.records)?p.shardState.records.length-1:null),
-          recIdx:kusdtAct==='CLAIM_REFUND'&&p.op?.recIdx!=null?Number(p.op.recIdx):null,
-          proof:p.passAProof??null,
-          drawResult:p.drawResult??null,
-        };
+        const intent=adapter.buildPreparedIntent({prepared:p,signed,wallet,now});
         if(p.op.action==='GENESIS'){
-          const mgrSpk=p.transaction?.outputs?.[0]?.scriptPublicKey??null;
-          const r={
-            cid:p.cid,profileId:adapter.profileId,source:'created',terminal:null,halted:null,intent,
-            manager:p.managerRedeem&&mgrSpk?{outpoint:{transactionId:signed.txid,index:0},value:400_000_000n,spk:mgrSpk,utxoDaa:0n,daaScore:0n,covenantId:p.cid,redeemScript:p.managerRedeem}:null,
-            frozen:[],receipts:[{action:'GENESIS',txid:signed.txid,feeSompi:String(p.fee??0),finalized:false}],pending:[],fees:BigInt(p.fee??0),
-            origin:p.transaction?.inputs?.[0]?.previousOutpoint??null,
-            settings:{...p.settings,closeDaa:p.settings.closeEligibleDaa,creatorPk:wallet.key},bought:0,step:0,
-            kusdt:{stage:1,price:p.settings.ticketPrice,closeDaa:p.settings.closeEligibleDaa,openedCount:0,cursor:0,totalTickets:0,decision:0,creatorPk:wallet.key,winnerPk:null,nodeVerified:false,shards:[]},
-          };
+          const r=adapter.createGenesisRound({prepared:p,signed,intent,wallet,network:net.networkId});
           await roundStore.create(r);
-        }else await mutate(p.cid,r=>{check(!r.intent&&(r.manager||['PAYOUT_EXECUTOR','PAYOUT_SELF','CLAIM_REFUND'].includes(intent.action)),'INTENT_UNRESOLVED_REPLACEMENT_BLOCKED');r.intent=intent;return r;});
+        }else await mutate(p.cid,r=>{check(adapter.canAttachIntent?adapter.canAttachIntent(r,intent):(!r.intent&&!!r.manager),'INTENT_UNRESOLVED_REPLACEMENT_BLOCKED');r.intent=intent;return r;});
         let status;
         try{
           if(typeof adapter.submitIntent==='function'){
@@ -749,7 +728,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       if(typeof adapter.trackRoundIntent==='function'){
         const res=await adapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover,net,fetcher});
         await roundStore.replace(res.round,cur.revision);
-        if(res.accepted&&(res.round.terminal||res.round.kusdt?.nodeVerified)){
+        if(res.accepted&&(adapter.isNodeVerified?adapter.isNodeVerified(res.round):!!res.round.terminal)){
           c.lastSynced={cid:res.round.cid,nodeUrl:c.rpc.url??'',managerOutpoint:res.round.manager?`${res.round.manager.outpoint.transactionId}:${res.round.manager.outpoint.index}`:'-',step:res.round.step,frozen:0,at:now()};
         }
         emit();
@@ -784,7 +763,8 @@ export function createController({profile,registry=null,roundStore,connect=(urls
      * gone and prepare() always re-reads live UTXOs); the only thing lost is the local record of whether our own transaction was the one that spent them. */
     async discard(cid,{force=false}={}) {return guard('放弃意图',async()=>{
       need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),i=need(cur.round.intent,'NO_PENDING_INTENT');
-      if(adapterFor(cur.round).id!=='rolling-v1'){
+      const curAdapter=adapterFor(cur.round);
+      if(curAdapter.capabilities?.customLifecycle){
         const settled=['REJECTED','UNSENT'].includes(i.status);
         check(settled||['SUBMITTED','UNKNOWN','PREPARED'].includes(i.status),'DISCARD_NOT_ALLOWED');
         const probe=(i.draft?.inputUtxos??[]).map(u=>({...u,daa:u.utxoDaa??u.daa}));
@@ -796,15 +776,14 @@ export function createController({profile,registry=null,roundStore,connect=(urls
         });
         check(!await mempoolEntry(c.rpc,i.txid),'INTENT_IN_MEMPOOL');
         if(!settled){
-          const adapter=adapterFor(cur.round);
-          if(typeof adapter.trackRoundIntent==='function'){
-            const chk=await adapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover:false,net,fetcher});
+          if(typeof curAdapter.trackRoundIntent==='function'){
+            const chk=await curAdapter.trackRoundIntent({rpc:c.rpc,indexer:c.indexer,round:cur.round,recover:false,net,fetcher});
             check(!chk.accepted,'INTENT_ACCEPTANCE_UNRESOLVED');
           }
           check(gone>0,'INTENT_INPUTS_STILL_LIVE');
           check(now()-(i.createdAtMs??now())>=LOST_GRACE_MS,'INTENT_TOO_RECENT');
         }
-        await mutate(cid,x=>(!x.kusdt?.nodeVerified&&x.receipts?.length<=1&&i.action==='GENESIS')?null:{...x,intent:null});
+        await mutate(cid,x=>(curAdapter.shouldRemoveOnGenesisDiscard?curAdapter.shouldRemoveOnGenesisDiscard(x,i):false)?null:{...x,intent:null});
         log(gone?'warn':'info',gone?'已放弃：有输入已被其他交易花费，本地状态已过期，请刷新状态。':'已放弃被拒绝/未发送的意图');
         return;
       }
@@ -834,11 +813,12 @@ export function createController({profile,registry=null,roundStore,connect=(urls
     async verifyLive(cid) {return guard('核对链上状态',async()=>{
       need(c.rpc,'NODE_REQUIRED');const cur=need(await roundStore.get(cid),'ROUND_NOT_FOUND'),r=cur.round;
       const adapter=adapterFor(r);
-      if(adapter.id!=='rolling-v1'&&typeof adapter.syncRound==='function'){
+      if(adapter.capabilities?.customRoundSync&&typeof adapter.syncRound==='function'){
         const synced=await adapter.syncRound({rpc:c.rpc,indexer:c.indexer,round:r,cid,net,fetcher});
         await roundStore.replace(synced.round,cur.revision);emit();
-        const mod=adapter.describeRound(synced.round).module??(synced.round.terminal?'terminal':'unknown');
-        return {module:mod,frozen:synced.round.kusdt?.openedCount??0};
+        const desc=adapter.describeRound(synced.round);
+        const mod=desc.module??(synced.round.terminal?'terminal':'unknown');
+        return {module:mod,frozen:desc.shards??0};
       }
       const live=await liveRound(c.rpc,r,profile,{targets:r.frozen});
       log('info',`链上核对通过：manager 与 ${live.targets.length} 个分片均为活跃且一致的 UTXO（阶段 ${live.state.module}）`);
@@ -864,9 +844,10 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       let added=false;
       for(const a of activities){
         if(!a||typeof a.cid!=='string'||existingByCid.has(a.cid))continue;
+        const resolved=protocolRegistry.resolveForRound(a);
         const entry={
           cid:a.cid,
-          protocolId:a.protocolId??'kusdt-v2',
+          protocolId:a.protocolId??resolved?.id,
           profileId:a.profileId,
           phase:a.phase,
           subPhase:a.subPhase,
@@ -932,8 +913,7 @@ export function createController({profile,registry=null,roundStore,connect=(urls
       let adapter=defaultAdapter;
       try{
         const peek=JSON.parse(text);
-        if(peek?.profileId&&protocolRegistry.get(peek.profileId))adapter=protocolRegistry.get(peek.profileId);
-        else if(peek?.protocol==='kusdt-v2'||peek?.kusdt)adapter=protocolRegistry.getById('kusdt-v2')??defaultAdapter;
+        adapter=protocolRegistry.resolveForRound(peek)??defaultAdapter;
       }catch{}
       const r=adapter.roundFromText(text,{network:net.networkId});
       if(r.intent&&typeof adapter.authenticateIntent==='function')await adapter.authenticateIntent(r.intent,{network:net.networkId});

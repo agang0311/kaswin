@@ -1,5 +1,5 @@
 /** Read-only Rolling index discovery. REST supplies candidates; this module authenticates the head against the user's node. */
-import {check,hex,unhex,ZERO,totalTickets,fromLe} from '../core.mjs';
+import {ascii,cat,check,DRAW_DELAY,hex,unhex,ZERO,totalTickets,fromLe} from '../core.mjs';
 import {decodeSpend,drawSample,identify,interpretAccepted,verifyManager} from '../core.mjs';
 import {redeem} from '../core.mjs';
 import {blake2b256} from '../core/lib/hashes.js';
@@ -152,19 +152,63 @@ export function createIndexerClient({baseUrl,fetchImpl=globalThis.fetch,timeoutM
   });
 }
 
-/** Extract node-authenticated DRAW winning shard/record/ticket directly from the DRAW tx witness & target block commitment. */
-export async function verifyDrawReceipt(round,rpc,profile) {
-  const drawRc=round?.receipts?.find(x=>x?.action==='DRAW'&&typeof x.acceptingBlock==='string'&&HASH.test(x.acceptingBlock)&&typeof x.txid==='string'&&HASH.test(x.txid));
+/** Extract node-authenticated DRAW winning shard/record/ticket & verification proof directly from the DRAW tx witness & target block commitment. */
+export async function verifyDrawReceipt(round,rpc,profile,{net=null,fetcher=null}={}) {
+  const drawRc=round?.receipts?.find(x=>x?.action==='DRAW'&&typeof x.txid==='string'&&HASH.test(x.txid));
   if(!drawRc)return null;
-  const ev=await acceptedAt(rpc,drawRc.txid,drawRc.acceptingBlock);
+  let acceptingBlock=typeof drawRc.acceptingBlock==='string'&&HASH.test(drawRc.acceptingBlock)?drawRc.acceptingBlock:null;
+  if(!acceptingBlock&&net?.rest&&typeof fetcher==='function'){
+    try{
+      const restBase=String(net.rest).replace(/\/+$/,'');
+      const res=await fetcher(`${restBase}/transactions/${encodeURIComponent(drawRc.txid)}?inputs=false&outputs=false`,{method:'GET',credentials:'omit',cache:'no-store'});
+      if(res.ok){
+        const j=await res.json();
+        const ab=String(j?.accepting_block_hash??'').toLowerCase();
+        if(HASH.test(ab))acceptingBlock=ab;
+      }
+    }catch{}
+  }
+  if(!acceptingBlock)return null;
+  const ev=await acceptedAt(rpc,drawRc.txid,acceptingBlock);
   const tx=ev.tx,w=decodeSpend(tx.inputs[0].signatureScript,profile);
   check(w.args?.action===4n,'INDEXER_DRAW_ACTION');
   const d=w.args.data,proof=d.slice(0,240),shard=Number(fromLe(d.slice(240,242))),record=Number(fromLe(d.slice(242,244))),targetHash=hex(proof.slice(0,32));
   const tb=(await rpc.call('getBlock',{hash:targetHash,includeTransactions:false}))?.block;
   check(tb?.header?.hash===targetHash&&tb.verboseData?.isChainBlock===true,'DRAW_TARGET_NOT_CHAIN');
-  const sample=drawSample({cid:round.cid,outpoint:tx.inputs[0].previousOutpoint,utxoDaa:ev.inputs[0].daa,currentDaa:ev.acceptingDaa},w.state,
+  const sealedOutpoint=tx.inputs[0].previousOutpoint;
+  const sealedDaa=BigInt(ev.inputs[0].daa);
+  const boundaryDaa=sealedDaa+DRAW_DELAY;
+  const sample=drawSample({cid:round.cid,outpoint:sealedOutpoint,utxoDaa:sealedDaa,currentDaa:ev.acceptingDaa},w.state,
     {proof,accessor:{blockHash:targetHash,sequenceCommitment:tb.header.acceptedIdMerkleRoot}});
-  return {txid:drawRc.txid,shard,record,ticket:sample.ticket};
+  const digest=blake2b256(cat(ascii('KASWIN_V2_SAMPLE'),sample.seed,new Uint8Array(8)));
+  const sampleVal=fromLe(digest.slice(0,7));
+  const tot=totalTickets(w.state);
+  return {
+    txid:drawRc.txid,
+    shard,
+    record,
+    ticket:sample.ticket,
+    proof:{
+      scheme:'rolling-v1',
+      seedDomain:'KASWIN_ROLLING_DRAW_V1',
+      sampleDomain:'KASWIN_V2_SAMPLE',
+      cid:round.cid,
+      sealedTxid:sealedOutpoint.transactionId,
+      sealedIndex:Number(sealedOutpoint.index),
+      sealedDaa:sealedDaa.toString(),
+      boundaryDaa:boundaryDaa.toString(),
+      targetBlockHash:targetHash,
+      targetBlockDaa:fromLe(proof.slice(104,112)).toString(),
+      parentBlockDaa:fromLe(proof.slice(224,232)).toString(),
+      sequenceCommitment:tb.header.acceptedIdMerkleRoot,
+      seed:hex(sample.seed),
+      digest:hex(digest),
+      sample:sampleVal.toString(),
+      totalTickets:tot,
+      winningTicket:sample.ticket+1,
+      rejectionSampled:true,
+    },
+  };
 }
 
 /** Materialize a full, delta, or unchanged (with cached baseRound) Indexer export document into an offline-validated Round record. */

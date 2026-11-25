@@ -261,9 +261,38 @@ export function advanceRound(round,intent,accepted,profile) {
   r.cid=cid;r.origin=origin;r.accepting=accepted.acceptingBlock;r.fees+=accepted.actualFee;
   if(intent.action==='BUY'){r.buys++;r.bought+=intent.quantity;}
   if(intent.action==='DRAW'){
-    const w=decodeSpend(accepted.tx.inputs[0].signatureScript,profile),d=w.args.data;
-    const sample=drawSample(intent.draft.inputUtxos[0],w.state,{proof:d.slice(0,240),accessor:intent.accessor});
-    r.draw={txid,shard:Number(S.fromLe(d.slice(240,242))),record:Number(S.fromLe(d.slice(242,244))),ticket:sample.ticket};
+    const w=decodeSpend(accepted.tx.inputs[0].signatureScript,profile),d=w.args.data,proofBytes=d.slice(0,240);
+    const in0=intent.draft.inputUtxos[0];
+    const sample=drawSample(in0,w.state,{proof:proofBytes,accessor:intent.accessor});
+    const sealedDaa=BigInt(in0.utxoDaa??in0.daa??0n),boundaryDaa=sealedDaa+S.DRAW_DELAY;
+    const digest=S.blake2b256(S.cat(S.ascii('KASWIN_V2_SAMPLE'),sample.seed,new Uint8Array(8)));
+    const sampleVal=S.fromLe(digest.slice(0,7));
+    r.draw={
+      txid,
+      shard:Number(S.fromLe(d.slice(240,242))),
+      record:Number(S.fromLe(d.slice(242,244))),
+      ticket:sample.ticket,
+      proof:{
+        scheme:'rolling-v1',
+        seedDomain:'KASWIN_ROLLING_DRAW_V1',
+        sampleDomain:'KASWIN_V2_SAMPLE',
+        cid,
+        sealedTxid:in0.outpoint.transactionId,
+        sealedIndex:Number(in0.outpoint.index),
+        sealedDaa:sealedDaa.toString(),
+        boundaryDaa:boundaryDaa.toString(),
+        targetBlockHash:S.hex(proofBytes.slice(0,32)),
+        targetBlockDaa:S.fromLe(proofBytes.slice(104,112)).toString(),
+        parentBlockDaa:S.fromLe(proofBytes.slice(224,232)).toString(),
+        sequenceCommitment:intent.accessor.sequenceCommitment,
+        seed:S.hex(sample.seed),
+        digest:S.hex(digest),
+        sample:sampleVal.toString(),
+        totalTickets:S.totalTickets(w.state),
+        winningTicket:sample.ticket+1,
+        rejectionSampled:true,
+      },
+    };
   }
   r.step++;r.intent=null;r.terminal=t.terminal??null;
   const cand=accepted.candidate===true;

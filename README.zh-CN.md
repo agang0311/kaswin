@@ -35,9 +35,9 @@ tests/       contracts/ 合约与 VM；web/ 集成；unit/；helpers/
 docs/        架构、开发与协议文档
 ```
 
-- 运行时入口：`scripts/core.mjs`（由 `scripts/core/src/` 编译生成至 `scripts/core/lib/`）。
+- 运行时入口：`scripts/core.mjs`（由 `scripts/core/src/` 编译生成至 `scripts/core/lib/`）；多合约插件：`scripts/protocols/`（`registry.mjs`、`installed.mjs`、`rolling-v1.mjs`、`kusdt-v2.mjs`）与 `build/protocol-bundles.mjs`。
 - 索引与客户端：`scripts/indexer/` 为只读索引器，`scripts/round/` 为浏览器索引客户端。
-- 网页入口：`web/app/app.ts`；词典位于 `web/ui/messages-common-en.mjs` 与 `web/ui/messages-en.mjs`。详见[运行时目录](scripts/README.md)、[网页目录](web/README.md)及[合约目录](contracts/README.md)。
+- 网页入口：`web/app/app.ts`；强类型语言包位于 `web/ui/locales/`（`schema.ts`、`zh-cn.ts`、`en.ts`、`index.ts`）。详见[运行时目录](scripts/README.md)、[网页目录](web/README.md)及[合约目录](contracts/README.md)。
 
 ## 合约、网络与交易模型
 

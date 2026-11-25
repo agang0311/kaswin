@@ -1,5 +1,7 @@
-/** Shapes shared by the presentation layer (type-only module: nothing here exists at runtime). The protocol modules stay plain .mjs
- * (their behaviour is what the TN10 runs and offline tests cover); these types describe only the parts the views read. */
+/** Shapes shared by the presentation layer (type-only module: nothing here exists at runtime).
+ * Completely covenant-agnostic: every protocol-specific detail is projected through ProtocolAdapterLike,
+ * ProtocolCreateSpec, ProtocolViewMeta, RoundInteractiveModel, AssetDescriptor, and AssetDelta. */
+import type {Locale, LocaleKey} from '../ui/locales/index.ts';
 export type Hex = string;
 export type Tone = 'mint' | 'violet' | 'amber' | 'gold' | 'muted';
 export type AssetKind = 'KAS' | 'KCC20';
@@ -7,58 +9,125 @@ export type AssetDeltaRole = 'NET' | 'REFUNDABLE_DEPOSIT' | 'CARRIER' | 'FEE';
 export interface AssetDescriptor {kind: AssetKind; symbol: string; decimals: number; tokenCovenantId: Hex | null}
 export interface AssetDelta {asset: AssetDescriptor; amount: bigint; role: AssetDeltaRole}
 export interface SettlementProgress {done: number; total: number; labelKey?: string}
-export interface KusdtLiveShard {
-  shardCid: Hex;
-  stage: number;
-  terminal: boolean;
-  firstBuyerPk: Hex | null;
+
+export interface ProtocolCreateSpec {
+  protocolId: string;
+  profileId: Hex;
+  name: string;
+  displayName: string;
+  layout: 'sequential_cap' | 'parallel_fixed_shards';
+  supportedOnNet: boolean;
+  asset: AssetDescriptor;
+  priceMin: bigint;
+  priceMax: bigint | null;
+  fixedTicketCap: number | null;
+  minTicketCap: number;
+  maxTicketCap: number;
+  fixedMinTickets: number | null;
+  minTicketsFloor: number;
+  shardSize: number;
+  maxShards: number;
+  creatorDepositSompi: bigint;
+  minCloseMinutes: number;
+  maxCloseMinutes: number;
+}
+
+export interface ProtocolViewMeta {
+  protocolId: string;
+  profileId: Hex;
+  displayName: string;
+  shardModel: 'sequential' | 'parallel';
+  maxShards: number;
+  supportsBatchSettlement: boolean;
+  supportsIntentResend: boolean;
+  freeActions: readonly string[];
+  actionStyle?: 'sequential' | 'parallel_dispatch';
+}
+
+export interface OpenShardOption {
+  shardId: Hex;
   tickets: number;
   recordCount: number;
-  claimedMask?: number;
-  records?: {cumTickets: number; buyerPk: Hex}[];
-  vaultAmount?: bigint;
-  winnerPk?: Hex | null;
-  outpoint?: {transactionId: Hex; index: number} | null;
-  value?: bigint;
-  spk?: {version: number; script: string};
-  daaScore?: bigint;
-  redeem?: Uint8Array | null;
-  frozenRedeem?: Uint8Array | null;
-  vaultUtxo?: {outpoint: {transactionId: Hex; index: number}; value: bigint; spk?: {version: number; script: string}; daa?: bigint; redeem?: Uint8Array} | null;
+  maxRecords: number;
 }
-export interface KusdtLiveState {
-  cid: Hex;
-  loading: boolean;
-  error?: string | null;
-  nodeVerified?: boolean;
-  genesisTxid?: Hex | null;
-  stage: number | null;
-  price: bigint;
-  closeDaa: bigint;
-  openedCount: number;
-  cursor: number;
-  totalTickets: number;
-  decision: number;
-  creatorPk: Hex | null;
-  winnerPk: Hex | null;
-  managerUtxo?: {outpoint: {transactionId: Hex; index: number}; value: bigint; spk?: {version: number; script: string}; daaScore: bigint; daa?: bigint; covenantId?: Hex; redeem: Uint8Array} | null;
-  shards: KusdtLiveShard[];
+export interface BuyShardSelectorModel {
+  canOpenNew: boolean;
+  activeOpenCount: number;
+  maxActiveOpen: number;
+  depositKas: string;
+  options: OpenShardOption[];
 }
+export interface ShardClaimItem {
+  recordIndex: number;
+  buyerKey: Hex;
+  tickets: number;
+  amount: bigint;
+  claimed: boolean;
+  op: {action: string; shardCid: Hex; recIdx: number};
+}
+export interface ShardSettlementGroup {
+  shardId: Hex;
+  mode: 'payout' | 'refund';
+  selfPayoutOp?: {action: string; shardCid: Hex} | null;
+  execPayoutOp?: {action: string; shardCid: Hex} | null;
+  claims?: ShardClaimItem[];
+}
+export interface ShardSettlementModel {
+  mode: 'payout' | 'refund';
+  depositKas: string;
+  execRewardFormatted?: string;
+  groups: ShardSettlementGroup[];
+}
+export interface RoundInteractiveModel {
+  buyShardSelector?: BuyShardSelectorModel | null;
+  shardSettlement?: ShardSettlementModel | null;
+}
+
 export interface ProtocolSummary {
   protocolId: string; profileId: Hex; roundId: Hex; asset: AssetDescriptor; phase: string; subPhase: string;
   terminal: string | null; ticketsSold: number; ticketCap: number; ticketPrice: bigint; settlementProgress: SettlementProgress | null;
 }
+
 export interface ProtocolAdapterLike {
   id: string; name: string; profileId: Hex; profile?: unknown;
-  capabilities: {canCreate: boolean; multiShardSelect: boolean; pullRefund: boolean; supportsExecIncentive: boolean; supportsBudgetCalculator?: boolean};
+  supportedNetworks?: readonly string[];
+  supportsNetwork?(net?: NetInfo | null): boolean;
+  displayName?(net?: NetInfo | null): string;
+  capabilities: {
+    canCreate: boolean;
+    multiShardSelect: boolean;
+    pullRefund: boolean;
+    supportsExecIncentive: boolean;
+    supportsBudgetCalculator?: boolean;
+    supportsBatchSettlement?: boolean;
+    supportsIntentResend?: boolean;
+    freeActions?: readonly string[];
+  };
   assetFor(net?: NetInfo | null): AssetDescriptor;
+  matchesRound?(round: unknown): boolean;
+  viewMeta?(net?: NetInfo | null): ProtocolViewMeta;
+  createSpec?(net?: NetInfo | null): ProtocolCreateSpec;
+  roundFingerprint?(round: Round): string;
+  isNodeVerified?(round: Round): boolean;
+  lockedSompi?(round: Round): bigint;
   prepareOperation(args: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
   toRoundSummary(round: Round, opts?: {net?: NetInfo | null}): ProtocolSummary;
   describeRound?(round: Round, daa?: bigint | null): Partial<Facts>;
   uiActions?(round: Round, daa?: bigint | null): Record<string, ActionState>;
   shardCatalog?(round: Round, walletKey?: string | null): ShardView[] | null;
+  holdingsOf?(round: Round, facts: Facts, shards: ShardView[] | null, walletKey: string | null): Holdings | null;
+  interactiveModel?(round: Round, opts?: {isWinner?: boolean}): RoundInteractiveModel | null;
+  matchBuyReceipt?(sh: ShardView, rec: ShardRecordView, round: Round, shards: ShardView[] | null): Receipt | null;
+  matchRefundReceipt?(sh: ShardView, rec: ShardRecordView, round: Round, shards: ShardView[] | null): Receipt | null;
+  shardRefundReceipts?(sh: ShardView, round: Round, shards: ShardView[] | null): Receipt[];
+  isPurchaseReceipt?(receipt: Receipt): boolean;
+  isRefundReceipt?(receipt: Receipt): boolean;
+  verifyDrawReceipt?(round: Round, rpc: RpcLike, opts?: {net?: NetInfo | null; fetcher?: typeof fetch}): Promise<DrawResult | null>;
   watchTargets?(round: Round, prefix: string): {mode: string; addresses: string[]; tipKeys: string[]} | null;
+  prefetchForWallet?(args: {wallet: WalletView | null; net?: NetInfo | null; fetcher?: typeof fetch}): void;
+  invalidateWalletCache?(ownerPk: string | null, fetcher?: typeof fetch): void;
 }
+
 export interface ProtocolRegistryLike {
   list(): ProtocolAdapterLike[];
   profileIds(): Hex[];
@@ -67,7 +136,12 @@ export interface ProtocolRegistryLike {
   getById(id: string): ProtocolAdapterLike | null;
   require(profileId: string): ProtocolAdapterLike;
   defaultForCreate(): ProtocolAdapterLike;
+  defaultUiCreateId(): string;
+  resolveForRound(roundOrDoc: unknown): ProtocolAdapterLike | null;
+  compatibleProfiles(net?: NetInfo | null): CompatibleProfile[];
+  createSpecs(net?: NetInfo | null): ProtocolCreateSpec[];
 }
+
 export interface Outpoint {transactionId: Hex; index: number}
 export interface Receipt {
   action: string; txid: Hex; feeSompi: string | number | bigint; finalized?: boolean;
@@ -77,15 +151,34 @@ export interface Intent {status: string; action: string; txid?: string; nodeErro
 export interface ManagerUtxo {value: bigint; outpoint: Outpoint; utxoDaa: bigint; redeemScript: Uint8Array}
 export interface FrozenUtxo {value: bigint; redeemScript: Uint8Array}
 export interface Settings {ticketPrice: bigint; ticketCap: number; minTickets: number; closeEligibleDaa: bigint}
-export interface DrawResult {txid: Hex; shard: number; record: number; ticket: number}
+export interface DrawVerificationProof {
+  scheme: 'rolling-v1' | 'kusdt-v2';
+  seedDomain: string;
+  sampleDomain: string;
+  cid: Hex;
+  sealedTxid: Hex;
+  sealedIndex: number;
+  sealedDaa: string;
+  boundaryDaa: string;
+  targetBlockHash: Hex;
+  targetBlockDaa: string;
+  parentBlockDaa: string;
+  sequenceCommitment: Hex;
+  seed: Hex;
+  digest: Hex;
+  sample: string;
+  totalTickets: number;
+  winningTicket: number;
+  rejectionSampled: boolean;
+}
+export interface DrawResult {txid: Hex; shard: number; record: number; ticket: number; proof?: DrawVerificationProof | null}
 export interface RoundHistoryShard {end: number; hash: Hex; records: TicketRecord[] | null}
 export interface RoundHistory {terminal: 'PAID' | 'REFUNDED'; winnerKey: Hex | null; localRecords: TicketRecord[]; shards: RoundHistoryShard[]}
 export interface Round {
-  cid: Hex; profileId?: Hex; source: string; terminal: string | null; halted: string | null; intent: Intent | null;
+  cid: Hex; protocol?: string; protocolId?: string; profileId?: Hex; source: string; terminal: string | null; halted: string | null; intent: Intent | null;
   manager: ManagerUtxo | null; frozen: FrozenUtxo[]; receipts: Receipt[]; pending: unknown[]; fees: bigint;
   origin: Outpoint | null; accepting?: Hex | null; settings: Settings; bought: number; step: number; history?: RoundHistory | null; draw?: DrawResult | null;
   indexer?: {prunedAtNode?: boolean; base?: string; revision?: string; headTxid?: string; acceptingBlock?: string; checkedAt?: number} | null;
-  kusdt?: KusdtLiveState | null;
 }
 export interface Facts {
   module: string | null; ticketPrice: bigint; ticketCap: number; minTickets: number; closeEligibleDaa: bigint;
@@ -93,7 +186,10 @@ export interface Facts {
 }
 export interface ActionState {ok: boolean; reason?: string; maxQuantity?: number; remaining?: number}
 export interface Phase {key: string; label: string; tone: Tone}
-export interface Item {r: Round; f: Facts; a: Record<string, ActionState>; ph: Phase; value: bigint; at: number}
+export interface Item {
+  r: Round; f: Facts; a: Record<string, ActionState>; ph: Phase; value: bigint; at: number;
+  asset?: AssetDescriptor; protocolMeta?: ProtocolViewMeta;
+}
 export type ShardStatus = 'active' | 'frozen' | 'settled' | 'refunding' | 'refunded';
 export interface ShardRecordView {
   index: number; startTicket: number; endTicket: number; count: number; key: Hex; mine: boolean; refunded: boolean;
@@ -103,7 +199,19 @@ export interface ShardView {
   recordCount: number | null; records: ShardRecordView[] | null; hash: Hex | null; refundedRecords: number; mineCount: number;
 }
 export interface Holdings {tickets: number; total: number}
-export interface Detail extends Item {mine: Holdings | null; isWinner: boolean; shards?: ShardView[] | null; preview?: boolean; asset?: AssetDescriptor; kusdt?: KusdtLiveState | null}
+export interface ReceiptMatcherLike {
+  buyReceipt(sh: ShardView, rec: ShardRecordView): Receipt | null;
+  refundReceipt(sh: ShardView, rec: ShardRecordView): Receipt | null;
+  shardRefunds(sh: ShardView): Receipt[];
+}
+export interface Detail extends Item {
+  mine: Holdings | null;
+  isWinner: boolean;
+  shards?: ShardView[] | null;
+  preview?: boolean;
+  interactive?: RoundInteractiveModel | null;
+  receiptMatcher?: ReceiptMatcherLike | null;
+}
 export interface MineRound {item: Item; tickets: number; created: boolean; won: boolean}
 export interface MineData {rounds: MineRound[]; txs: {cid: Hex; t: Receipt}[]}
 export interface WalletView {
@@ -130,19 +238,19 @@ export interface DiscoveryCacheLike {
 export interface IndexerProfileEntry {protocolId: string; profileId: Hex}
 export interface Conn {node?: boolean | null; nodeUrl?: string | null; indexer?: boolean|null; indexerUrl?: string|null; indexerStale?: boolean; discoveredSource?: 'indexer'|'rest'|'cache'|null; indexerProfiles?: IndexerProfileEntry[] | null}
 export interface Gate {ok: boolean; reason?: string; fix?: string}
-export interface Explorer {tx(id: Hex): string; addr(a: string): string; addrOfKey(k: Hex | null): string | null; addrOfScript(s: string): string}
+export interface Explorer {tx(id: Hex): string; addr(a: string): string; block?(hash: Hex): string; addrOfKey(k: Hex | null): string | null; addrOfScript(s: string): string}
 export interface LogLine {at: number; kind: string; text: string}
 /** `fp` binds a result to the node and round state it was obtained for; a different state or node makes it stale (see app.ts verifyFor). */
 export interface VerifyState {state: 'checking' | 'ok' | 'partial' | 'bad'; at?: number; code?: string; fp?: string}
-export interface CreateForm {protocol?: 'rolling-v1' | 'kusdt-v2'; price: string; cap: string; min: string; dur: string; custom: string; registry?: boolean; registryAddr?: string}
+export interface CreateForm {protocol?: string; price: string; cap: string; min: string; dur: string; custom: string; registry?: boolean; registryAddr?: string}
 export interface UiState {
   view: string; cid: string | null; filter: string; sort: string; query: string; qty: string; join: string; wtab: string; theme: string;
-  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; detailTab?: 'map' | 'txs' | 'rules'; txLimit?: number; budgetPc?: number;
+  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; detailTab?: 'rules' | 'map' | 'txs'; txLimit?: number; buyShard?: string;
   form: CreateForm; nodes: string; indexer: string; walletProvider: string;
 }
 export interface NetInfo {
   key: 'mainnet' | 'tn10'; label: string; unit: 'KAS' | 'TKAS'; networkId: string; genesis: string;
-  addressPrefix: string; explorer: string; registry: {address: string; spk: {version: number; script: string}};
+  addressPrefix: string; explorer: string; rest?: string; registry: {address: string; spk: {version: number; script: string}};
   web: {nodes: string[]; indexer: string};
 }
 export interface DrawProgress {
@@ -151,7 +259,14 @@ export interface DrawProgress {
 }
 export interface SubmissionProgress {cid: Hex; action: string; txid: Hex | null; error?: string}
 export interface CompatibleProfile {
-  protocolId: string; name: string; asset: string; profileId: Hex; tokenCovenantId?: Hex | null;
+  protocolId: string;
+  name: string;
+  displayName?: string;
+  asset: string;
+  assetDescriptor?: AssetDescriptor;
+  profileId: Hex;
+  tokenCovenantId?: Hex | null;
+  supportsNet?: boolean;
 }
 export interface Ctx {
   net: NetInfo;
@@ -160,9 +275,11 @@ export interface Ctx {
   discovered?: DiscoveredRound[]; indexerMore?: boolean; walletOptions?: {id: string;name: string}[];
   saved?: Set<string>; checkProgress?: string | null; submission?: SubmissionProgress | null;
   drawProgress?: DrawProgress | null; daaObservedAt?: number;
-  kusdtLive?: KusdtLiveState | null;
   supportedProfiles?: Set<string>;
   compatibleProfiles?: CompatibleProfile[];
+  createSpecs?: ProtocolCreateSpec[];
+  L?: Locale;
+  lang?: LocaleKey;
 }
 export interface ReviewInput {index: number; value: bigint; kind: string}
 export interface ReviewOutput {
@@ -170,7 +287,8 @@ export interface ReviewOutput {
   rollover?: boolean; note?: string; tokenAmount?: bigint; tokenSymbol?: string; tokenDecimals?: number;
 }
 export interface Prepared {
-  op: {action: string; quantity?: number}; kusdtAction?: string; review: {txid: Hex; fee: bigint; assetDeltas?: AssetDelta[]; inputs: ReviewInput[]; outputs: ReviewOutput[]};
+  op: {action: string; quantity?: number}; subAction?: string; profileId?: Hex;
+  review: {txid: Hex; fee: bigint; assetDeltas?: AssetDelta[]; inputs: ReviewInput[]; outputs: ReviewOutput[]};
   fee: bigint | number; feerate: string | number | bigint; mass: {computeMass: unknown; transientMass: unknown; storageMass: unknown}; targetCount: number; cid: Hex;
 }
 export interface ConfirmCtx extends Ctx {prepared: Prepared; planText: string}

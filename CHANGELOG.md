@@ -13,6 +13,24 @@ When a release **adds, changes, or drops** any compatible contract profile:
 
 ---
 
+## [v0.1.3.4] - 2026-11-25
+
+### Compatible Contract Profiles
+
+| Protocol | Asset | Contract Profile ID | Notes |
+|---|---|---|---|
+| `rolling-v1` | `KAS` / `TKAS` | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` | Unchanged |
+| `kusdt-v2` | `kUSDT` (KCC-20) | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` | Unchanged from `v0.1.3.2` (token `50b3477e…1513fd3`) |
+
+### Changed
+- **ProtocolPlugin architecture & decoupled i18n**: Decoupled `web/` from covenant-specific code via build-time `@kaswin/protocol-bundles`, unified `ProtocolPlugin` / `ProtocolAdapter` interfaces, and structured `web/ui/locales/` (`zh-CN` / `en`) schema.
+- **Simplified consumer raffle UI**: Streamlined top navigation (`Explore / Create / Mine`), moved How-it-works to a modal and removed the legacy budget SVG, simplified plaza cards and single-column Create flow (1h / 24h / Custom presets; 1 / 10 ticket quick pills), compacted the round hero KPI bar, and streamlined detail tabs to `Info` (default) + `Pixel wall`.
+- **Parallel-shard smart buy & congestion handling**: Switched default kUSDT v2 buy routing to random open-shard selection with automatic UTXO-conflict failover, 3-strike congestion prompt (when active shards `< 8`), and a collapsed **Advanced options** shard selector.
+- **Faster transaction preparation**: Parallelized `kusdt-v2` prepare I/O (`Promise.all` + batched node UTXO verification), added 15s wallet KCC-20 candidate prefetch/caching and 5s node fee-rate caching without relaxing on-chain verification.
+- **Draw verification & live countdowns**: Enabled two-stage sealed draw countdowns and live 1s sales countdowns across all protocols; added collapsible **Verify draw** in round Info with local BLAKE2b-256 recomputation and a one-click zero-dependency Python 3 verification script.
+
+---
+
 ## [v0.1.3.3] - 2026-11-24
 
 ### Compatible Contract Profiles

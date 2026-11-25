@@ -31,9 +31,9 @@ manifest 描述构建产物及来源，不包含业务测试通过或部署批�
 
 协议代码改在 `scripts/core/src/`；生成的 `scripts/core/lib/` 不手改。运行时统一使用 `scripts/core.mjs`，避免重新引入两套核心。`tests/contracts/` 保留原 MJS 实现用于差分，不应被应用或浏览器打包引用。
 
-轮次控制、准备、预算、同步和开奖位于 `scripts/round/`；意图与冲突分类在 `scripts/tracking/`；轮次持久化在 `scripts/store/`；钱包接入与签名在 `scripts/wallet/`。索引服务及归档/节点适配在 `scripts/indexer/`，浏览器索引客户端在 `scripts/round/indexer-client.mjs`。
+轮次控制、准备、预算、同步和开奖位于 `scripts/round/`；多合约插件注册表与具体合约适配器位于 `scripts/protocols/`（新增同类轮次/奖池/分片合约只需在 `build/protocol-bundles.mjs` 与 `scripts/protocols/installed.mjs` 注册，`web/` 无需改动，构建门 `checkGraph` 禁止 `web/` 直接引用具体合约实现）；意图与冲突分类在 `scripts/tracking/`；轮次持久化在 `scripts/store/`；钱包接入与签名在 `scripts/wallet/`。索引服务及归档/节点适配在 `scripts/indexer/`，浏览器索引客户端在 `scripts/round/indexer-client.mjs`。
 
-网页编排使用 `web/app/`；模板、样式和展示使用 `web/ui/`。`messages-common-en.mjs` 是共享基础词典，`messages-en.mjs` 是 Rolling 词典，`messages.ts` 连接展示文案。页面不再位于 `web/rolling-tn10/`。
+网页编排使用 `web/app/`；模板、样式和展示使用 `web/ui/`。多语言通过 `web/ui/locales/` 强类型语言包（`schema.ts` 定义 `Locale` 接口，`zh-cn.ts` / `en.ts` 各自实现并通过 `index.ts` 注册）一键切换，不再使用 `MutationObserver` 事后替换 DOM。页面不再位于 `web/rolling-tn10/`。
 
 合约模板输入位于 `contracts/templates/*.sil.in`，共用片段为 `common.sil.inc`；展开的五份 `.sil`、固定 `artifacts/*.json`、`pins.json` 与 `toolchain.json` 集中在 `contracts/`。修改模板、产物字节或 Profile 身份需单独处理重新生成与相应验证，不通过普通 HTML 构建隐式重编合约。原 V2.0.2 的 KW21/`ledger-layout.json` 不再是 Rolling 布局来源。
 

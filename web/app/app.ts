@@ -1,15 +1,26 @@
-/** Browser entry for the rolling TN10 page (user-facing). Wiring only: all protocol behaviour lives in controller.mjs, all markup in views.mjs.
- * No console output; interpolated text is escaped by html``; the private key lives in the wallet closure, its input is emptied as soon as it is
- * read, and everything is wiped on disconnect / pagehide. localStorage holds only non-sensitive preferences. */
+/** Browser entry for Kaswin (user-facing). Wiring only: all protocol behaviour lives in controller.mjs & ProtocolPlugin adapters,
+ * all markup in views.ts. No console output; interpolated text is escaped by html``; the private key lives in the wallet closure,
+ * its input is emptied as soon as it is read, and everything is wiped on disconnect / pagehide. */
 import {DRAW_DELAY,TIMEOUT_DELAY} from '../../scripts/core.mjs';
-import {profileData} from '@kaswin/rolling-profile';
-import {kusdtV2Artifacts,kusdtV2Pins,kusdtV2Kcc20SuffixHex} from '@kaswin/kusdt-v2-profile';
+import {protocolBundles,defaultCreateProfileId,defaultUiCreateId} from '@kaswin/protocol-bundles';
 import {MAINNET} from '../../scripts/chain/mainnet.mjs';
 import {TN10} from '../../scripts/chain/tn10.mjs';
-import {loadProfile,loadKusdtV2Profile,openStore,makeController,createProtocolRegistry,createRollingV1Adapter,createKusdtV2Adapter,describeRound,availableActions,shardCatalog,verifyDrawReceipt,verifyKusdtDrawReceipt,identify,commonUtxos,getAssetUtxos,pubkeyToAddress,addressToSpk,spkToAddress,connectNetwork,nodeFeeRate,mempoolSpentOutpoints,createIndexerClient,readDrawProgress,hexBytes,unhexBytes,decodeKusdtManager,decodeKusdtShard,locateDrawTarget,targetSeqOf} from './bridge.ts';
+import {
+  buildProtocolRegistryFromBundles,
+  connectNetwork,
+  createIndexerClient,
+  getAssetUtxos,
+  kasAsset,
+  makeController,
+  matchBuyReceiptAuto,
+  matchRefundReceiptAuto,
+  openStore,
+  pubkeyToAddress,
+  readDrawProgress,
+} from './bridge.ts';
 import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
-import {chooseLanguage,getLanguage,setLanguage,installLocalization} from '../ui/i18n.mjs';
-import {EN} from '../ui/messages-en.mjs';
+import {getLocale,setLocale,resolveLocale,nextLocale} from '../ui/locales/index.ts';
+import type {Locale} from '../ui/locales/index.ts';
 import {parseNodeList} from './settings.ts';
 import {deferPointerRender} from '../ui/interaction.ts';
 import {availableExtensionWallets} from '../../scripts/wallet/extension-wallet.mjs';
@@ -19,11 +30,44 @@ import {formatTkas,shortHash} from '../ui/format.mjs';
 import {TN10_PROFILE_ID} from '../../scripts/contract/protocol.mjs';
 import {$,put,html,ic,toast,copyText,download,modal,closeModal,lockModal,initModal,modalOpen} from '../ui/ui.ts';
 import {ACTION_INFO,actionTitle,errText,errCode,phaseOf} from '../ui/messages.ts';
-import {exploreView,createView,roundView,roundToolsBody,mineView,rulesView,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,qtyError,paintShardCanvases,buyReceiptForRound,refundReceiptForRound} from '../ui/views.ts';
+import {exploreView,createView,roundView,roundToolsBody,mineView,helpBody,walletBody,settingsBody,confirmBody,parseCreate,qtyCost,qtyError,paintShardCanvases} from '../ui/views.ts';
 import {drawReadiness} from '../ui/draw-readiness.ts';
+import {pickRandomBuyShard,isShardUtxoConflict,shouldWarnShardCongestion} from './buy-shard.ts';
 import type {Raw} from '../ui/ui.ts';
 import {makeShare,parseShare} from './share.ts';
-import type {ActionState,Ctx,ConfirmCtx,Conn,Controller,Detail,DiscoveryCacheLike,DiscoveryCacheSnapshot,DrawProgress,DrawResult,Explorer,Facts,Gate,Hex,Holdings,Item,KusdtLiveShard,KusdtLiveState,MineData,NetInfo,Prepared,Profile,Receipt,Round,RoundStoreLike,RpcLike,ShardView,SubmissionProgress,UiState,VerifyState,WalletView} from './types.ts';
+import type {
+  ConfirmCtx,
+  Conn,
+  Controller,
+  Ctx,
+  Detail,
+  DiscoveryCacheLike,
+  DiscoveryCacheSnapshot,
+  DrawProgress,
+  DrawResult,
+  Explorer,
+  Facts,
+  Gate,
+  Hex,
+  Holdings,
+  Item,
+  MineData,
+  NetInfo,
+  Prepared,
+  Profile,
+  ProtocolAdapterLike,
+  ProtocolRegistryLike,
+  Receipt,
+  Round,
+  RoundStoreLike,
+  RpcLike,
+  ShardRecordView,
+  ShardView,
+  SubmissionProgress,
+  UiState,
+  VerifyState,
+  WalletView,
+} from './types.ts';
 
 const NET_KEY_STORAGE='kaswin-rolling:net';
 const resolveInitialNet=(): NetInfo=>{
@@ -52,14 +96,45 @@ const discoveryCache: DiscoveryCacheLike={
   read:()=>LS.get<DiscoveryCacheSnapshot|null>(DISCOVERY_LS_KEY,null),
   write:(snap: DiscoveryCacheSnapshot)=>LS.set(DISCOVERY_LS_KEY,snap),
 };
-setLanguage(chooseLanguage(LS.get('language',null),[...navigator.languages]));
-const refreshLanguage=installLocalization(document,{
-  messages:EN,
-  titles:{en:'Kaswin','zh-CN':'Kaswin'},
-  descriptions:activeNet.key==='mainnet'
-    ?{en:'Kaswin: decentralized lottery rounds on Kaspa mainnet. Review tickets, fees and each step before approving a transaction.','zh-CN':'Kaswin：Kaspa 主网链上抽奖轮次。查看票款、费用和每一步，再确认你的交易。'}
-    :{en:'Kaswin (Testnet 10): decentralized lottery rounds on Kaspa testnet. Review tickets, fees and each step before approving a transaction.','zh-CN':'Kaswin（Testnet 10）：Kaspa 测试网链上抽奖轮次。查看票款、费用和每一步，再确认你的交易。'},
-});
+const LANG_KEY_STORAGE='kaswin-rolling:lang';
+const resolveInitialLocale=(): Locale=>{
+  try{
+    const q=new URLSearchParams(location.search).get('lang');
+    if(q){
+      const picked=resolveLocale(q,[]);
+      localStorage.setItem(LANG_KEY_STORAGE,picked.key);
+      return picked;
+    }
+    const globalSaved=localStorage.getItem(LANG_KEY_STORAGE);
+    if(globalSaved)return resolveLocale(globalSaved,[...navigator.languages]);
+  }catch{}
+  return resolveLocale(LS.get('language',null),[...navigator.languages]);
+};
+setLocale(resolveInitialLocale());
+const L=(): Locale=>getLocale();
+function applyShellLocale() {
+  const loc=L(),ch=loc.chrome;
+  document.documentElement.lang=loc.htmlLang;
+  document.title=loc.meta.title;
+  document.querySelector('meta[name="description"]')?.setAttribute('content',activeNet.key==='mainnet'?loc.meta.descriptionMainnet:loc.meta.descriptionTn10);
+  const brand=document.querySelector<HTMLElement>('.brand');
+  if(brand)brand.setAttribute('aria-label',ch.brandAria);
+  const nav=document.querySelector<HTMLElement>('.nav');
+  if(nav)nav.setAttribute('aria-label',ch.navAria);
+  const navLabels: Record<string,string>={explore:ch.navExplore,create:ch.navCreate,mine:ch.navMine};
+  document.querySelectorAll<HTMLElement>('.nav [data-go]').forEach(btn=>{
+    const key=btn.dataset.go??'',span=btn.querySelector('span');
+    if(span&&navLabels[key])span.textContent=navLabels[key];
+  });
+  const setAttr=(id: string,title: string,aria=title)=>{const el=document.getElementById(id);if(el){el.title=title;el.setAttribute('aria-label',aria);}};
+  setAttr('nodeChip',ch.nodeStatusTitle);
+  setAttr('helpBtn',ch.helpTitle);
+  setAttr('githubBtn',ch.githubTitle);
+  setAttr('settingsBtn',ch.settingsTitle);
+  const footHelp=document.getElementById('footHelpBtn');if(footHelp)footHelp.textContent=ch.helpTitle;
+  const mClose=document.getElementById('mClose');if(mClose)mClose.setAttribute('aria-label',ch.close);
+}
+applyShellLocale();
 const defaultNode=__KASWIN_CD311__&&activeNet.key==='tn10'
   ?'wss://cd311.cn:888/www/rolling-tn10/node'
   :activeNet.web.nodes.join('\n');
@@ -81,21 +156,24 @@ const initialIndexer=((): string=>{
   return saved.replace(/\/+$/,'').replace(`/rolling/v1/${TN10_PROFILE_ID}`,'');
 })();
 const ex: Explorer={
-  tx:(id: string)=>`${EX}/transactions/${id}`,addr:(a: string)=>`${EX}/addresses/${a}`,
+  tx:(id: string)=>`${EX}/transactions/${id}`,addr:(a: string)=>`${EX}/addresses/${a}`,block:(h: string)=>`${EX}/blocks/${h}`,
   addrOfKey:(k: string|null)=>k?pubkeyToAddress(k,ADDR_PREFIX):null,
   addrOfScript:(s: string)=>{const m=/^20([0-9a-f]{64})ac$/.exec(s);return m?pubkeyToAddress(m[1] as string,ADDR_PREFIX):shortHash(s,10,6);},
 };
-const S: UiState={view:'explore',cid:null,filter:'open',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),detailTab:'map',txLimit:20,budgetPc:32,
-  form:{protocol:'kusdt-v2',price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:initialNodes,indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
+const S: UiState={view:'explore',cid:null,filter:'live',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),detailTab:'rules',txLimit:20,buyShard:'auto',
+  form:{protocol:'',price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:initialNodes,indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
 const conn: Conn={node:null,nodeUrl:null,indexer:null,indexerUrl:null,indexerStale:false,discoveredSource:null};
 const verify=new Map<string,VerifyState>(),initialSyncDone=new Set<string>();
+const buyShardConflicts=new Map<string,{count: number; avoided: Set<string>}>();
+let lastPreparedBuy: {cid: string; shardCid: string|null; quantity: string; auto: boolean}|null=null;
+let pendingCongestion: {cid: string; quantity: string}|null=null;
 let savedCids=new Set<string>(LS.get<string[]>('saved',[]));
 let checkProgress: string|null=null,roundTimer: ReturnType<typeof setInterval>|null=null,daaObservedAt=0;
 let drawObservation: {rpc: RpcLike; key: string; value: DrawProgress}|null=null,drawReading=false,drawReadAt=0;
-let profile: Profile,kusdtProfile: Profile,store: RoundStoreLike,ctl: Controller,items: Item[]=[],daa: bigint|null=null,balance: bigint|null=null,balanceAt=0,renderQueued=false,lastBusy=false,lastHtml='',lastCanvasKey='',refreshSeq=0,daaPolling=false,lastRounds: Round[]=[],settingsOpened={nodes:'',indexer:''};
+let protocols: ProtocolRegistryLike,primaryProfileId=TN10_PROFILE_ID,store: RoundStoreLike,ctl: Controller,items: Item[]=[],daa: bigint|null=null,balance: bigint|null=null,balanceAt=0,renderQueued=false,lastBusy=false,lastHtml='',lastCanvasKey='',refreshSeq=0,daaPolling=false,lastRounds: Round[]=[],settingsOpened={nodes:'',indexer:''};
 let shardCache: {key: string;shards: ShardView[]|null}={key:'',shards:null};
 const itemCache=new Map<string,{fp: string;item: Item}>();
-const drawCache=new Map<string,DrawResult>(),drawTried=new Set<string>();
+const drawCache=new Map<string,DrawResult>(),drawResolveState=new Map<string,{inFlight: boolean; attempts: number; nextAt: number}>();
 const walletActivityAt=new Map<string,number>();
 let walletActivityInFlight: string|null=null;
 const canSign=(wallet: WalletView|null): boolean=>!!wallet&&(wallet.kind==='key'||wallet.kind==='extension');
@@ -121,58 +199,44 @@ const recordMyTx=(walletKey: string,txid: string)=>{
   const list=map[walletKey]??[];
   if(!list.includes(txid)){list.push(txid);if(list.length>500)list.splice(0,list.length-500);map[walletKey]=list;LS.set('myTxs',map);}
 };
-const adapterOf=(r: Round|null|undefined)=>
-  r?.profileId?ctl?.protocols?.get(r.profileId):(r?.kusdt?ctl?.protocols?.getById('kusdt-v2'):null);
+const adapterOf=(r: Round|null|undefined): ProtocolAdapterLike|null=>
+  r?(ctl?.protocols??protocols)?.resolveForRound(r)??null:null;
+const roundStateFp=(r: Round,adapter=adapterOf(r)): string=>
+  adapter?.roundFingerprint
+    ?adapter.roundFingerprint(r)
+    :`${r.step}:${r.terminal??''}:${r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-'}:${r.frozen.length}:${r.history?'h':''}`;
 function buildItem(r: Round,d: bigint|null,t: Record<string,number>,own: Record<string,string>): Item {
+  const adapter=adapterOf(r);
   const daaKey=r.terminal?'':(d??'');
-  const kKey=r.kusdt?`${r.kusdt.stage??''}:${r.kusdt.openedCount}:${r.kusdt.cursor}:${r.kusdt.totalTickets}:${r.kusdt.decision}:${r.kusdt.nodeVerified?1:0}:${(r.kusdt.shards??[]).map(s=>`${s.shardCid.slice(0,8)}:${s.outpoint?.transactionId?.slice(0,8)??''}:${s.stage??0}:${s.tickets??0}:${s.terminal?1:0}:${s.claimedMask??0}:${s.records?.length??0}`).join(',')}`:'';
-  const fp=[r.step,r.terminal??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.frozen.length,r.intent?.status??'',r.halted??'',r.pending?.length??0,daaKey,t[r.cid]??0,own[r.cid]??'',kKey].join('|');
+  const fp=[roundStateFp(r,adapter),r.intent?.status??'',r.halted??'',r.pending?.length??0,daaKey,t[r.cid]??0,own[r.cid]??''].join('|');
   const cached=itemCache.get(r.cid);
   if(cached&&cached.fp===fp&&cached.item.r===r)return cached.item;
-  const adapter=adapterOf(r);
-  let f: Partial<Facts>,a: Item['a'];
+  let f: Partial<Facts>={module:null},a: Item['a']={};
   try {
-    if(adapter&&adapter.id!=='rolling-v1'&&adapter.describeRound&&adapter.uiActions){
+    if(adapter?.describeRound&&adapter?.uiActions){
       f=adapter.describeRound(r,d);
       a=adapter.uiActions(r,d);
-    }else{
-      f=describeRound(r,profile,d);
-      a=availableActions(r,profile,d??0n);
     }
   }
-  catch {f={module:null};a=Object.fromEntries(Object.keys(ACTION_INFO).map(k=>[k,{ok:false,reason:'本机记录无法按固定 Profile 解析'}]));}
+  catch {f={module:null};a=Object.fromEntries(Object.keys(ACTION_INFO).map(k=>[k,{ok:false,reason:L().app.recordUnreadable}]));}
   const st=r.settings;
   // Rules come from the creation settings; a finished round has no manager UTXO any more, so its total comes from the recorded buys.
   const facts: Facts={module:null,ticketPrice:st.ticketPrice,ticketCap:st.ticketCap,minTickets:st.minTickets,closeEligibleDaa:st.closeEligibleDaa,shards:0,localRecords:0,owner:own[r.cid]??null,winnerKey:null,payCursor:null,refundShard:null,...f,
     tickets:f.tickets??(r.terminal?r.bought:0)};
   if(!facts.owner)facts.owner=own[r.cid]??null;   // the owner is only readable while the round has a manager UTXO; later it comes from the cache below
-  const value=r.manager?r.manager.value+r.frozen.reduce((n: bigint,x)=>n+x.value,0n):0n;
-  const item: Item={r,f: facts,a,ph:phaseOf(r,facts),value,at:t[r.cid]??0};
+  const value=adapter?.lockedSompi?adapter.lockedSompi(r):(r.manager?r.manager.value+r.frozen.reduce((n: bigint,x)=>n+x.value,0n):0n);
+  const asset=adapter?.assetFor(activeNet);
+  const protocolMeta=adapter?.viewMeta?.(activeNet);
+  const item: Item={r,f: facts,a,ph:phaseOf(r,facts),value,at:t[r.cid]??0,asset,protocolMeta};
   itemCache.set(r.cid,{fp,item});
   return item;
 }
-/** Tickets the connected wallet holds in the open shards (sales / sealed only; finished shards no longer exist as UTXOs). */
+/** Tickets the connected wallet holds in the active round, delegated to the owning ProtocolAdapter. */
 function holdings(it: Item,shards: ShardView[]|null=null): Holdings|null {
-  const key=ctl.state.wallet?.key,{r,f}=it;
+  const key=ctl.state.wallet?.key??null;
   if(!key)return null;
-  if(r.kusdt&&!r.terminal&&shards&&['sales','sealed','win','refund'].includes(f.module??'')){
-    let mine=0,total=0;
-    for(const s of shards){mine+=s.mineCount;total+=s.tickets;}
-    return {tickets:mine,total};
-  }
-  if(!r.manager||!['sales','sealed'].includes(f.module??''))return null;
-  if(shards){
-    let mine=0,total=0;
-    for(const s of shards){mine+=s.mineCount;total+=s.tickets;}
-    return {tickets:mine,total};
-  }
-  try {
-    let mine=0,total=0;
-    const add=(recs: {end: number;key: string}[])=>{let prev=0;for(const x of recs){const c=x.end-prev;prev=x.end;total+=c;if(x.key===key)mine+=c;}};
-    const m=identify(r.manager.redeemScript,profile);if(m.module==='frozen')return null;add(m.records);
-    for(const z of r.frozen){const s=identify(z.redeemScript,profile);add(s.records);}
-    return {tickets:mine,total};
-  } catch {return null;}
+  const adapter=adapterOf(it.r);
+  return adapter?.holdingsOf?adapter.holdingsOf(it.r,it.f,shards,key):null;
 }
 /** Items are rebuilt from the stored rounds + the last known DAA. Reading the store is the ONLY awaited step before rendering: a slow / hung node call
  * can no longer delay (or, by finishing late, overwrite) the newest stored state, and DAA is refreshed separately (pollDaa). */
@@ -194,9 +258,11 @@ async function refresh() {
   const ls=ctl.state.lastSynced;
   if(ls&&S.cid===ls.cid&&Date.now()-ls.at<10000){
     const it=items.find(i=>i.r.cid===ls.cid);
-    if(it&&!it.r.intent){
-      const syncedFp=[ls.nodeUrl,ls.managerOutpoint,ls.step,ls.frozen,''].join('|');
-      if(fpOf(it.r)===syncedFp)verify.set(ls.cid,{state:'ok',at:ls.at,fp:syncedFp});
+    if(it&&!it.r.intent&&isNodeVerified(it.r)){
+      const outpt=it.r.manager?`${it.r.manager.outpoint.transactionId}:${it.r.manager.outpoint.index}`:'-';
+      if((conn.nodeUrl??'')===ls.nodeUrl&&outpt===ls.managerOutpoint&&it.r.step===ls.step&&it.r.frozen.length===ls.frozen){
+        verify.set(ls.cid,{state:'ok',at:ls.at,fp:fpOf(it.r)});
+      }
     }
   }
   render();
@@ -219,33 +285,43 @@ async function pollDrawProgress() {
   if(drawObservation?.rpc===rpc&&drawObservation.key===key&&Date.now()-drawReadAt<5000)return;
   drawReading=true;drawReadAt=Date.now();
   try {
+    let roundForRead=D.r;
+    if(!roundForRead.accepting&&activeNet.rest&&roundForRead.manager?.outpoint.transactionId){
+      try{
+        const restBase=activeNet.rest.replace(/\/+$/,'');
+        const res=await fetch(`${restBase}/transactions/${encodeURIComponent(roundForRead.manager.outpoint.transactionId)}?inputs=false&outputs=false`,{method:'GET',credentials:'omit',cache:'no-store'});
+        if(res.ok){
+          const j=await res.json();
+          const ab=String(j?.accepting_block_hash??'').toLowerCase();
+          if(/^[0-9a-f]{64}$/.test(ab))roundForRead={...roundForRead,accepting:ab};
+        }
+      }catch{}
+    }
     let value: DrawProgress;
-    try {value=await readDrawProgress(rpc,D.r);}
+    try {value=await readDrawProgress(rpc,roundForRead);}
     catch {value={phase:'UNAVAILABLE',requiredConfirmations:100n,observedAt:Date.now()};}
     if(rpc===ctl.state.rpc&&S.view==='round'&&S.cid===D.r.cid&&drawKey(detail()?.r??D.r)===key){drawObservation={rpc,key,value};render();}
   } finally {drawReading=false;}
 }
 function gate(a: string): Gate {
-  const c=ctl.state,it=S.view==='round'&&S.cid?items.find(i=>i.r.cid===S.cid):null;
-  const isKusdt=!!it&&adapterOf(it.r)?.id==='kusdt-v2';
-  const free=!!ACTION_INFO[a]?.free&&!isKusdt;
-  if(!store.persistent)return {ok:false,reason:'这个浏览器没有可用的本地存储，无法安全发送。请换用普通（非隐私）窗口。'};
-  if(!c.rpc)return {ok:false,reason:'节点未连接。',fix:'settings'};
-  if(S.view==='round'&&S.cid&&!it)return {ok:false,reason:'正在向节点核对链上状态，核对完成后即可操作。'};
-  if(!c.wallet)return {ok:false,reason:free?'需要一个收款地址来领取奖励。':'需要先连接钱包。',fix:'wallet'};
-  if(!free&&!canSign(c.wallet))return {ok:false,reason:'这一步需要能签名的钱包支付手续费。',fix:'wallet'};
-  if(c.busy)return {ok:false,reason:`正在${c.busyLabel??'处理上一步'}，请稍候。`};
+  const c=ctl.state,it=S.view==='round'&&S.cid?items.find(i=>i.r.cid===S.cid):null,A=L().app;
+  const adapter=it?adapterOf(it.r):null;
+  const freeSet=adapter?.capabilities?.freeActions;
+  const free=freeSet?freeSet.includes(a):!!ACTION_INFO[a]?.free;
+  if(!store.persistent)return {ok:false,reason:A.gateNoStorage};
+  if(!c.rpc)return {ok:false,reason:A.gateNoNode,fix:'settings'};
+  if(S.view==='round'&&S.cid&&!it)return {ok:false,reason:A.gateVerifying};
+  if(!c.wallet)return {ok:false,reason:free?A.gateNeedRecipient:A.gateNeedWallet,fix:'wallet'};
+  if(!free&&!canSign(c.wallet))return {ok:false,reason:A.gateNeedSigning,fix:'wallet'};
+  if(c.busy)return {ok:false,reason:A.gateBusy(c.busyLabel??L().common.working)};
   return {ok:true};
 }
 const shardsFor=(it: Item): ShardView[]|null=>{
-  const wk=ctl.state.wallet?.key??'',kShardKey=it.r.kusdt?(it.r.kusdt.shards??[]).map(s=>`${s.shardCid.slice(0,8)}:${s.outpoint?.transactionId?.slice(0,8)??''}:${s.stage??0}:${s.tickets??0}:${s.terminal?1:0}:${s.claimedMask??0}:${s.records?.length??0}`).join(','):'',key=[it.r.cid,it.r.terminal??'',it.r.manager?`${it.r.manager.outpoint.transactionId}:${it.r.manager.outpoint.index}`:'-',it.r.step,it.r.frozen.length,it.r.history?'h':'',it.r.kusdt?.openedCount??0,it.r.kusdt?.totalTickets??0,kShardKey,wk].join('|');
+  const wk=ctl.state.wallet?.key??'',adapter=adapterOf(it.r);
+  const key=`${it.r.cid}|${roundStateFp(it.r,adapter)}|${wk}`;
   if(shardCache.key===key)return shardCache.shards;
   let shards: ShardView[]|null=null;
-  const adapter=adapterOf(it.r);
-  try{
-    if(adapter&&adapter.id!=='rolling-v1'&&adapter.shardCatalog)shards=adapter.shardCatalog(it.r,wk||null);
-    else shards=shardCatalog(it.r,profile,wk||null);
-  }catch{shards=null;}
+  try{shards=adapter?.shardCatalog?adapter.shardCatalog(it.r,wk||null):null;}catch{shards=null;}
   shardCache={key,shards};
   return shards;
 };
@@ -256,13 +332,22 @@ const detail=(): Detail|null=>{
     isPreview=true;
   }
   if(!it)return null;
-  const cachedDraw=it.r.draw??drawCache.get(it.r.cid)??null;
-  const r=cachedDraw&&!it.r.draw?{...it.r,draw:cachedDraw}:it.r;
+  const cachedDraw=drawCache.get(it.r.cid)??null;
+  const mergedDraw=it.r.draw?(cachedDraw?.proof&&!it.r.draw.proof?{...it.r.draw,proof:cachedDraw.proof}:it.r.draw):cachedDraw;
+  const r=mergedDraw&&mergedDraw!==it.r.draw?{...it.r,draw:mergedDraw}:it.r;
   const shards=shardsFor(it);
   const adapter=adapterOf(it.r);
-  const asset=adapter?.assetFor(activeNet);
-  const kusdt=it.r.kusdt?{...it.r.kusdt,cid:it.r.cid,loading:false}:null;
-  return {...it,r,preview:isPreview,mine:holdings(it,shards),isWinner:!!it.f.winnerKey&&it.f.winnerKey===ctl.state.wallet?.key,shards,asset,kusdt};
+  const isWinner=!!it.f.winnerKey&&it.f.winnerKey===ctl.state.wallet?.key;
+  const interactive=adapter?.interactiveModel?adapter.interactiveModel(r,{isWinner}):null;
+  const receiptMatcher=adapter?{
+    buyReceipt:(sh: ShardView,rec: ShardRecordView)=>
+      adapter.matchBuyReceipt?adapter.matchBuyReceipt(sh,rec,r,shards):matchBuyReceiptAuto(sh,rec,r,shards),
+    refundReceipt:(sh: ShardView,rec: ShardRecordView)=>
+      adapter.matchRefundReceipt?adapter.matchRefundReceipt(sh,rec,r,shards):matchRefundReceiptAuto(sh,rec,r,shards),
+    shardRefunds:(sh: ShardView)=>
+      adapter.shardRefundReceipts?adapter.shardRefundReceipts(sh,r,shards):[],
+  }:null;
+  return {...it,r,preview:isPreview,mine:holdings(it,shards),isWinner,shards,interactive,receiptMatcher};
 };
 async function hydrateRoundPreview(cid: string) {
   if(items.some(i=>i.r.cid===cid))return;
@@ -280,6 +365,7 @@ function mineData(): MineData|null {
   const myTxSet=new Set(myTxs()[w.key]??[]);
   const rounds: MineData['rounds']=[],txs: {cid: Hex; t: Receipt}[]=[];
   for(const i of items){
+    const adapter=adapterOf(i.r);
     const created=i.f.owner===w.key,won=!!i.f.winnerKey&&i.f.winnerKey===w.key;
     const shards=shardsFor(i);
     const tickets=shards?shards.reduce((n,s)=>n+s.mineCount,0):0;
@@ -287,36 +373,57 @@ function mineData(): MineData|null {
     if(created||won||tickets>0||hasMyTx)rounds.push({item:i,tickets,created,won});
     const myBuyTxids=new Set<string>(),myRefundTxids=new Set<string>();
     if(shards){
-      const isKusdt=!!i.r.kusdt;
       for(const s of shards){
         if(!s.records)continue;
         for(const rec of s.records){
           if(!rec.mine)continue;
-          const brc=buyReceiptForRound(s,rec,i.r,shards,isKusdt);
+          const brc=adapter?.matchBuyReceipt?adapter.matchBuyReceipt(s,rec,i.r,shards):matchBuyReceiptAuto(s,rec,i.r,shards);
           if(brc)myBuyTxids.add(brc.txid);
           if(rec.refunded){
-            const rrc=refundReceiptForRound(s,rec,i.r,shards,isKusdt);
+            const rrc=adapter?.matchRefundReceipt?adapter.matchRefundReceipt(s,rec,i.r,shards):matchRefundReceiptAuto(s,rec,i.r,shards);
             if(rrc)myRefundTxids.add(rrc.txid);
           }
         }
       }
     }
     for(const t of i.r.receipts){
-      if(myTxSet.has(t.txid)||(t.action==='GENESIS'&&created)||((t.action==='BUY'||t.action==='OPEN_SHARD')&&myBuyTxids.has(t.txid))||(t.action==='CLAIM_REFUND'&&myRefundTxids.has(t.txid)))txs.push({cid:i.r.cid,t});
+      const isBuy=adapter?.isPurchaseReceipt?adapter.isPurchaseReceipt(t):t.action==='BUY';
+      const isRef=adapter?.isRefundReceipt?adapter.isRefundReceipt(t):(t.action==='REFUND_OLD'||t.action==='REFUND_SELF');
+      if(myTxSet.has(t.txid)||(t.action==='GENESIS'&&created)||(isBuy&&myBuyTxids.has(t.txid))||(isRef&&myRefundTxids.has(t.txid)))txs.push({cid:i.r.cid,t});
     }
   }
   return {rounds,txs:txs.reverse().slice(0,100)};
 }
-async function resolveDrawHint(cid: string) {
+async function resolveDrawHint(cid: string,force=false) {
   const it=items.find(i=>i.r.cid===cid);const rpc=ctl.state.rpc;
-  if(!it||!rpc||it.r.draw||drawCache.has(cid)||drawTried.has(cid)||!it.r.receipts.some(t=>t.action==='DRAW'))return;
-  drawTried.add(cid);
+  if(!it||!rpc||it.r.draw?.proof||drawCache.get(cid)?.proof||!it.r.receipts.some(t=>t.action==='DRAW'))return;
+  const st=drawResolveState.get(cid)??{inFlight:false,attempts:0,nextAt:0};
+  const now=Date.now();
+  if(st.inFlight||(!force&&(st.attempts>=8||now<st.nextAt)))return;
+  st.inFlight=true;
+  drawResolveState.set(cid,st);
+  let resolved=false;
   try{
-    const d=it.r.kusdt&&kusdtProfile
-      ?await verifyKusdtDrawReceipt(it.r,rpc,kusdtProfile)
-      :await verifyDrawReceipt(it.r,rpc,profile);
-    if(d){drawCache.set(cid,d);if(S.view==='round'&&S.cid===cid)render();}
-  }catch{}
+    const adapter=adapterOf(it.r);
+    const d=adapter?.verifyDrawReceipt?await adapter.verifyDrawReceipt(it.r,rpc,{net:activeNet,fetcher:fetch}):null;
+    if(d?.proof){
+      resolved=true;
+      drawCache.set(cid,d);
+      drawResolveState.delete(cid);
+      if(S.view==='round'&&S.cid===cid)render();
+    }
+  }catch{}finally{
+    if(!resolved){
+      st.inFlight=false;
+      st.attempts+=1;
+      const delay=st.attempts<=2?2000:st.attempts<=5?3000:5000;
+      st.nextAt=Date.now()+delay;
+      drawResolveState.set(cid,st);
+      if(st.attempts<8&&S.view==='round'&&S.cid===cid&&!document.hidden){
+        setTimeout(()=>{if(S.view==='round'&&S.cid===cid)void resolveDrawHint(cid);},delay);
+      }
+    }
+  }
 }
 async function syncWalletActivityIfNeeded(force=false) {
   const w=ctl?.state.wallet;
@@ -336,36 +443,38 @@ const observedDrawProgress=(): DrawProgress|null=>{
   const r=items.find(i=>i.r.cid===S.cid)?.r;
   return r&&drawObservation?.rpc===ctl.state.rpc&&drawObservation.key===drawKey(r)?drawObservation.value:null;
 };
-const compatibleProfilesList=()=>ctl.protocols.list().map(p=>{const a=p.assetFor(activeNet);return {protocolId:p.id,name:p.name,asset:a.symbol,profileId:p.profileId,tokenCovenantId:a.tokenCovenantId??null};});
-const ctxt=(): Ctx=>{conn.discoveredSource=ctl.state.discoveredSource??null;conn.indexerProfiles=ctl.state.indexerInfo?.profiles??null;return {net:activeNet,items,S,wallet:ctl.state.wallet,balance,daa,conn,busy:ctl.state.busy,ex,logs:ctl.state.logs,gate,detail:S.view==='round'?detail():null,
-  mine:S.view==='mine'?mineData():null,verify:verifyFor(S.cid),discovered:ctl.state.discovered,indexerMore:ctl.state.indexerCursor!==null,walletOptions:availableExtensionWallets(),saved:savedCids,checkProgress,submission,daaObservedAt,drawProgress:observedDrawProgress(),supportedProfiles:new Set(ctl.protocols.profileIds()),compatibleProfiles:compatibleProfilesList()};};
+const compatibleProfilesList=()=>ctl.protocols.compatibleProfiles(activeNet);
+const createSpecsList=()=>ctl.protocols.createSpecs(activeNet);
+const ctxt=(): Ctx=>{const loc=L();conn.discoveredSource=ctl.state.discoveredSource??null;conn.indexerProfiles=ctl.state.indexerInfo?.profiles??null;return {net:activeNet,items,S,wallet:ctl.state.wallet,balance,daa,conn,busy:ctl.state.busy,ex,logs:ctl.state.logs,gate,detail:S.view==='round'?detail():null,
+  mine:S.view==='mine'?mineData():null,verify:verifyFor(S.cid),discovered:ctl.state.discovered,indexerMore:ctl.state.indexerCursor!==null,walletOptions:availableExtensionWallets(),saved:savedCids,checkProgress,submission,daaObservedAt,drawProgress:observedDrawProgress(),supportedProfiles:new Set(ctl.protocols.profileIds()),compatibleProfiles:compatibleProfilesList(),createSpecs:createSpecsList(),L:loc,lang:loc.key};};
 
 /* ------------------------------------------------------------------ render */
 interface Focus {id: string;s: number|null;e: number|null}
 function captureFocus(): Focus|null {const a=document.activeElement as HTMLInputElement|null;return a&&a.id&&$('view').contains(a)?{id:a.id,s:a.selectionStart,e:a.selectionEnd}:null;}
 function restoreFocus(f: Focus|null) {if(!f)return;const el=$<HTMLInputElement>(f.id);if(!el)return;el.focus({preventScroll:true});try{el.setSelectionRange(f.s,f.e);}catch{}}
-let lastFooterKey='',lastThemeIcon='';
+let lastFooterKey='';
 function chrome() {
+  const loc=L(),ch=loc.chrome,netLabel=ch.netLabel(activeNet.key);
   const ok=conn.node===true,bad=conn.node===false,chip=$('nodeChip');
-  const label=ok?'已连接':bad?'节点连接失败，点此处理':'连接中…';
+  const label=ok?ch.connected:bad?ch.nodeFailed:ch.connecting;
   (chip.querySelector('.dot') as HTMLElement).className='dot '+(ok?'ok':bad?'bad':'warn');
-  (chip.lastChild as ChildNode).textContent=`${activeNet.label} · ${label}`;
-  const netBtn=document.getElementById('netBtn');
-  if(netBtn)netBtn.textContent=`${activeNet.key==='mainnet'?'Mainnet':'Testnet 10'} ⇄`;
-  const kusdtPid=kusdtProfile?.id??'';
-  const footerNet=document.getElementById('footerNet'),fk=`${activeNet.key}|${profile?.id??TN10_PROFILE_ID}|${kusdtPid}`;
-  if(footerNet&&fk!==lastFooterKey){lastFooterKey=fk;put(footerNet,html`${activeNet.label} · ${UNIT} Profile <span class="mono" id="profileId">${profile?.id??TN10_PROFILE_ID}</span>${kusdtPid?html` · kUSDT v2 Profile <span class="mono" id="kusdtProfileId">${kusdtPid}</span>`:''}`);}
+  (chip.lastChild as ChildNode).textContent=`${netLabel} · ${label}`;
+  chip.hidden=!bad;
+  const netTag=document.getElementById('netTag');
+  if(netTag)netTag.hidden=activeNet.key!=='tn10';
+  const fk=`${loc.key}|${activeNet.key}`;
+  const footerNet=document.getElementById('footerNet');
+  if(footerNet&&fk!==lastFooterKey){
+    lastFooterKey=fk;
+    put(footerNet,html`${netLabel} · ${UNIT}`);
+  }
   const w=ctl?.state.wallet,b=$('walletBtn');
   b.className='wbtn'+(w?' on':'');
-  b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?' · 仅收款':''}`:'连接钱包';
+  b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?ch.receiveOnlySuffix:''}`:ch.connectWallet;
   document.querySelectorAll<HTMLElement>('.nav [data-go]').forEach(n=>{if(n.dataset.go===(S.view==='round'?'explore':S.view))n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
   document.documentElement.dataset.theme=S.theme;
   const themeColor=document.getElementById('themeColorMeta');
   if(themeColor)themeColor.setAttribute('content',S.theme==='dark'?'#081119':'#f4f7f9');
-  const themeLabel=S.theme==='dark'?'切换为浅色模式':'切换为深色模式';
-  if(lastThemeIcon!==S.theme){lastThemeIcon=S.theme;$('themeBtn').innerHTML=ic(S.theme==='dark'?'sun':'moon').s;}
-  $('themeBtn').setAttribute('aria-label',themeLabel);$('themeBtn').title=themeLabel;
-  $('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';
 }
 const isLiveSync=(): boolean=>S.liveSync!==false;
 const shouldWatchRound=(cid: string|null): boolean=>{
@@ -375,14 +484,14 @@ const shouldWatchRound=(cid: string|null): boolean=>{
 };
 function syncRoundTimer(x: Ctx) {
   const mod=x.detail?.f.module;
-  const need=S.view==='round'&&!document.hidden&&!!ctl.state.rpc&&(mod==='sealed'||(isLiveSync()&&mod==='sales'&&!x.detail?.a.CLOSE?.ok));
-  if(need&&!roundTimer)roundTimer=setInterval(()=>{if(!document.hidden){void pollDaa();if(S.view==='round'&&detail()?.f.module==='sealed'){void pollDrawProgress();render();}}},1000);
+  const need=S.view==='round'&&!document.hidden&&!!ctl.state.rpc&&(mod==='sealed'||(mod==='sales'&&!x.detail?.a.CLOSE?.ok));
+  if(need&&!roundTimer)roundTimer=setInterval(()=>{if(!document.hidden){void pollDaa();if(S.view==='round'){const d=detail();if(d?.f.module==='sealed'){void pollDrawProgress();render();}else if(d?.f.module==='sales'&&!d.a.CLOSE?.ok){render();}}}},1000);
   else if(!need&&roundTimer){clearInterval(roundTimer);roundTimer=null;}
 }
 function shardCanvasKey(D: Detail|null): string {
-  if(!D?.shards?.length)return '';
+  if(!D?.shards?.length||(S.detailTab??'rules')!=='map')return '';
   const draw=D.r.draw;
-  return `${D.r.cid}|${S.theme}|${draw?`${draw.shard}:${draw.record}`:''}|${D.shards.map(s=>`${s.index}:${s.status}:${s.records?.length??-1}:${s.refundedRecords}`).join(',')}`;
+  return `${D.r.cid}|${S.detailTab}|${S.theme}|${draw?`${draw.shard}:${draw.record}`:''}|${D.shards.map(s=>`${s.index}:${s.status}:${s.records?.length??-1}:${s.refundedRecords}`).join(',')}`;
 }
 function render() {
   const focus=captureFocus();
@@ -391,12 +500,12 @@ function render() {
     const x=ctxt();
     roundDetail=x.detail;
     syncRoundTimer(x);
-    body=S.view==='create'?createView(x):S.view==='round'?roundView(x):S.view==='mine'?mineView(x):S.view==='protocol'?rulesView(x):exploreView(x);
+    body=S.view==='create'?createView(x):S.view==='round'?roundView(x):S.view==='mine'?mineView(x):exploreView(x);
   } catch(e) {
     // One malformed record must not blank the whole page: say so, keep navigation alive.
-    body=html`<div class="notice bad"><b>这一页显示失败</b>（${(e as Error)?.name??'Error'}）。通常是导入的数据格式异常，其他页面不受影响；重新导入原始数据即可恢复。<div class="btnrow"><button class="btn sm" data-go2="explore">返回轮次列表</button></div></div>`;
+    body=html`<div class="notice bad"><b>${L().app.renderErrTitle}</b> (${(e as Error)?.name??'Error'})${L().app.renderErrBody}<div class="btnrow"><button class="btn sm" data-go2="explore">${L().common.backToList}</button></div></div>`;
   }
-  const out=html`${store.persistent?'':html`<div class="notice bad">这个浏览器没有可用的本地存储（可能是隐私窗口）：为避免“发出后没有记录”，已禁止发送交易。请换用普通窗口。</div>`}${body}`;
+  const out=html`${store.persistent?'':html`<div class="notice bad">${L().app.noStorageBanner}</div>`}${body}`;
   // Periodic refreshes often produce identical markup: skip the DOM write so <details>, scroll and selection are left alone.
   const canWrite=!deferViewWrite();
   if(out.s!==lastHtml&&canWrite){lastHtml=out.s;lastCanvasKey='';put($('view'),out);restoreFocus(focus);}
@@ -415,8 +524,9 @@ const schedule=()=>{
   }
   if(lastWallet!==ctl.state.wallet){
     const had=!!lastWallet;lastWallet=ctl.state.wallet;balance=null;
-    if(had&&!lastWallet&&!ctl.state.busy&&modalOpen()&&$('mTitle').dataset.sourceTitle?.startsWith('确认交易')){closeModal();toast('钱包连接已变化，请重新连接并报价。','warn');}
+    if(had&&!lastWallet&&!ctl.state.busy&&modalOpen()&&$('mTitle').dataset.modalKind==='confirm'){closeModal();toast(L().app.walletChangedCloseConfirm,'warn');}
     if(lastWallet?.key&&ctl.state.indexer)void syncWalletActivityIfNeeded();
+    if(canSign(lastWallet))prefetchActiveWalletAssets();
   }
   // Button availability comes from controller state, not the next asynchronous IndexedDB snapshot.
   // Paint foreground busy transitions now; reconcile round data separately. Background checks never set busy.
@@ -424,17 +534,26 @@ const schedule=()=>{
   if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;refresh().catch(()=>{});});
 };
 
+function prefetchActiveWalletAssets() {
+  const w=ctl?.state?.wallet;
+  if(!canSign(w)||!protocols)return;
+  for(const ad of protocols.list()){
+    if(ad.supportsNetwork&&!ad.supportsNetwork(activeNet))continue;
+    ad.prefetchForWallet?.({wallet:w,net:activeNet,fetcher:fetch});
+  }
+}
 /* ------------------------------------------------------------------ navigation */
-const VIEWS=['explore','create','mine','protocol','round'];
+const VIEWS=['explore','create','mine','round'];
 function route() {
   if(location.hash.startsWith('#join=')){const code=location.href;history.replaceState(null,'',location.pathname+'#/explore');S.view='explore';S.cid=null;S.shard=null;S.purchase=null;S.txLimit=20;previewRound=null;void ctl.watchRound(null);render();void onJoin(code);return;}
+  if(location.hash==='#/protocol'){history.replaceState(null,'',location.pathname+'#/explore');S.view='explore';S.cid=null;render();openHelp();return;}
   const m=/^#\/(\w+)(?:\/([0-9a-f]{64}))?$/.exec(location.hash);
   const nextView=m&&VIEWS.includes(m[1])?m[1]:'explore',nextCid=m?.[2]??null;
-  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.detailTab='map';S.txLimit=20;if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid){verify.delete(nextCid);initialSyncDone.delete(nextCid);}}
+  if(nextView!==S.view||nextCid!==S.cid){S.shard=null;S.purchase=null;S.detailTab='rules';S.txLimit=20;S.buyShard='auto';if(previewRound?.cid!==nextCid)previewRound=null;if(nextView==='round'&&nextCid){verify.delete(nextCid);initialSyncDone.delete(nextCid);}}
   S.view=nextView;S.cid=nextCid;if(S.view==='round'&&!S.cid)S.view='explore';
   if(S.view!=='round')previewRound=null;
   void ctl.watchRound(S.view==='round'&&shouldWatchRound(S.cid)?S.cid:null);
-  if(S.view==='round'&&S.cid){touch(S.cid);void hydrateRoundPreview(S.cid);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
+  if(S.view==='round'&&S.cid){touch(S.cid);prefetchActiveWalletAssets();void hydrateRoundPreview(S.cid);void autoVerify(S.cid);void resolveDrawHint(S.cid);void pollDrawProgress();}
   if(S.view==='mine')void syncWalletActivityIfNeeded();
   render();
 }
@@ -452,17 +571,21 @@ async function run<T>(fn: ()=>Promise<T>,{ok=null}: {ok?: string|null}={}): Prom
   finally {await refresh();}
 }
 function failure(e: unknown,action='') {
+  const loc=L(),A=loc.app;
   if(errCode(e)==='WALLET_FUNDS_INSUFFICIENT'&&action==='REFUND_SELF') {
-    toast(`${errText(e)} 这一步退款不一定需要付手续费：可以在钱包里改用「仅收款地址」再试，奖励会发到那个地址。`,'bad');return;
+    toast(`${errText(e)}${A.refundFreeHint}`,'bad');return;
   }
   if(errCode(e)==='STALE_INPUT') {
-    modal('这一轮的状态已更新',html`<p>${errText(e)}</p>`,html`<button class="btn" data-act="closeModal">知道了</button>${S.cid?html`<button class="btn pri" data-act="syncNow">同步最新状态</button>`:html`<button class="btn pri" data-act="pasteLatest">粘贴最新分享链接</button>`}`);
+    modal(A.roundUpdatedTitle,html`<p>${errText(e)}</p>`,html`<button class="btn" data-act="closeModal">${loc.common.gotIt}</button>${S.cid?html`<button class="btn pri" data-act="syncNow">${A.syncLatestBtn}</button>`:html`<button class="btn pri" data-act="pasteLatest">${A.pasteLatestBtn}</button>`}`);
   } else toast(errText(e),'bad');
 }
 /** A verification result only counts for the node and round state it was obtained for: importing different data over the same CID (file or link), a state
  * change, or switching node makes the fingerprint differ, so a stale green tick can never describe data it did not check. */
-const fpOf=(r: Round): string=>[conn.nodeUrl??'',r.manager?`${r.manager.outpoint.transactionId}:${r.manager.outpoint.index}`:'-',r.step,r.frozen.length,r.intent?.status??''].join('|');
-const isNodeVerified=(r: Round): boolean=>r.kusdt?!!r.kusdt.nodeVerified:(!!r.terminal||!!r.manager);
+const fpOf=(r: Round): string=>[conn.nodeUrl??'',roundStateFp(r),r.intent?.status??''].join('|');
+const isNodeVerified=(r: Round): boolean=>{
+  const adapter=adapterOf(r);
+  return adapter?.isNodeVerified?adapter.isNodeVerified(r):(!!r.terminal||!!r.manager);
+};
 function verifyFor(cid: string|null): VerifyState|null {
   const v=cid?verify.get(cid):undefined,it=cid?items.find(i=>i.r.cid===cid):undefined;
   if(!it)return v?.fp==='loading'?v:null;
@@ -479,7 +602,6 @@ async function autoVerify(cid: string) {
   initialSyncDone.add(cid);
   await doVerify(cid);
 }
-const userErr=(msg: string)=>Object.assign(new Error(msg),{code:'USER'});
 async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
   const it=items.find(i=>i.r.cid===cid);
   const fp=it?fpOf(it.r):'loading';
@@ -496,16 +618,16 @@ async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
     }else if(res.partial||res.source==='rest'){
       verify.set(res.cid,{state:'partial',at:Date.now(),fp:after?fpOf(after.r):fp});
       if(res.partial){detailSyncAt=0;setTimeout(()=>{void runDetailSync({immediate:true});},120);}
-      if(!quiet)toast(`已先同步 ${res.steps??0} 步最新状态，后台将继续追赶`);
+      if(!quiet)toast(L().app.syncedPartialToast(res.steps??0));
     }else{
       if(after&&isNodeVerified(after.r)){
         lastDetailOkAt=Date.now();
         verify.set(res.cid,{state:'ok',at:Date.now(),fp:fpOf(after.r)});
       }else{
-        verify.delete(res.cid);
+        verify.delete(cid);
       }
       if(res.cid!==cid&&S.view==='round'&&S.cid===cid){touch(res.cid);go('round',res.cid);return;}
-      if(!quiet)toast(after&&!isNodeVerified(after.r)?'尚未在节点确认最新状态，请稍后重试':(res.steps&&res.steps>0?`已向节点核对并追赶 ${res.steps} 步最新状态`:'已向节点核对：状态与链上一致'));
+      if(!quiet)toast(after&&!isNodeVerified(after.r)?L().app.verifyNotConfirmedToast:(res.steps&&res.steps>0?L().app.verifyCaughtUpToast(res.steps):L().app.verifyConsistentToast));
     }
   } catch(e) {
     if(errCode(e)==='BUSY'){verify.delete(cid);if(!quiet)toast(errText(e),'warn');}   // another operation is running: not a verdict
@@ -518,83 +640,164 @@ async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
 function saveCreateForm() {
   const f=S.form,raw=(f.registryAddr??'').trim().toLowerCase();
   const customAddr=raw&&raw!==activeNet.registry.address?f.registryAddr:undefined;
-  LS.set('form',{price:f.price,cap:f.cap,min:f.min,dur:f.dur,custom:f.custom,registry:f.registry!==false,registryAddr:customAddr});
+  LS.set('form',{protocol:f.protocol,price:f.price,cap:f.cap,min:f.min,dur:f.dur,custom:f.custom,registry:f.registry!==false,registryAddr:customAddr});
 }
 function planText(p: Prepared): string {
+  const adapter=p.profileId?ctl.protocols.get(p.profileId):null;
+  const isParallel=adapter?.viewMeta?.(activeNet)?.shardModel==='parallel'||!!p.subAction;
+  const asset=adapter?.assetFor(activeNet);
+  const tokenUnit=asset&&asset.kind!=='KAS'?asset.symbol:undefined;
   const fee=formatTkas(p.review.fee),n=p.targetCount,hasReg=p.review.outputs.some(o=>o.role==='REGISTRATION');
-  if(p.kusdtAction){
-    const kText: Record<string,string>={
-      GENESIS:`创建 kUSDT 轮次：锁定 4 ${UNIT} 押金${hasReg?`并附带 0.2 ${UNIT} 索引登记输出`:'（不附带索引登记输出）'}，规则创建后不可修改。网络费 ${fee} ${UNIT}。`,
-      OPEN_SHARD:`购买 ${p.op.quantity} 张票（首购开新分片需暂锁 4 ${UNIT} 可退押金，结算后全额退还），另付网络费 ${fee} ${UNIT}。如果别人抢先操作了这一轮，这笔交易会被节点拒绝，不会扣款。`,
-      BUY:`购买 ${p.op.quantity} 张票（追加到已有分片，免 4 ${UNIT} 分片押金），另付网络费 ${fee} ${UNIT}。如果别人抢先操作了同一分片，这笔交易会被节点拒绝，不会扣款。`,
-      EMPTY_CLOSE:`空轮封盘：本轮无人购票，结束轮次并退回 4 ${UNIT} 创建者押金。网络费 ${fee} ${UNIT}。`,
-      COLLECT_BATCH:`封盘汇总：本批冻结 ${n>0?`${n} 个`:''}开放分片（每批最多 8 片）；达 3 张进开奖，不足 3 张转退款。网络费 ${fee} ${UNIT}。`,
-      DRAW:`开奖：按链上 Pass-A 证明抽出中奖票，结果由合约校验。网络费 ${fee} ${UNIT}。`,
-      REROLL:`超时重掷：封盘逾约 12 小时未开奖，重置开奖等待窗口。网络费 ${fee} ${UNIT}。`,
-      DISPATCH_BATCH:`下发结算许可：本批将 ${n>0?`${n} 个`:''}已封存分片转为可领款状态；最后一批同时退回创建者 4 ${UNIT} 押金（网络费 ${fee} ${UNIT}）。完成后请在分片点击领取 kUSDT 与分片押金。`,
-      PAYOUT_EXECUTOR:`代推派奖：将分片奖金发给中奖者，你获得 0.5 kUSDT 执行激励，同时退回 4 ${UNIT} 分片押金。网络费 ${fee} ${UNIT}。`,
-      PAYOUT_SELF:`赢家自推派奖：将分片全额奖金发给中奖者（无执行激励），同时退回 4 ${UNIT} 分片押金。网络费 ${fee} ${UNIT}。`,
-      CLAIM_REFUND:`自助退款：从分片金库领回你的 kUSDT 票款，最后一条记录领取时自动退回 4 ${UNIT} 分片与金库押金（网络费 ${fee} ${UNIT}）。`,
-    };
-    if(kText[p.kusdtAction])return kText[p.kusdtAction];
-  }
-  const text: Record<string,string>={
-    GENESIS:`创建新轮次：锁定 4 ${UNIT} 押金${hasReg?`并附带 0.2 ${UNIT} 索引登记输出`:'（不附带索引登记输出）'}，规则创建后不可修改。网络费 ${fee} ${UNIT}。`,
-    BUY:`购买 ${p.op.quantity} 张票，票款进入合约，另付网络费 ${fee} ${UNIT}。如果别人抢先操作了这一轮，这笔交易会被节点拒绝，不会扣款。`,
-    CLOSE:`封盘：结束售票，由票数决定开奖、退款或退还押金。发起者承担网络费 ${fee} ${UNIT}。`,
-    DRAW:`开奖：按链上证明抽出中奖票，结果由合约校验。发起者承担网络费 ${fee} ${UNIT}。`,
-    TIMEOUT:`转入退款：封盘后已超过约 12 小时无人开奖。发起者承担网络费 ${fee} ${UNIT}。`,
-    PAY_OLD:`派奖：处理 ${n} 个已封存分片，票款并入奖金；你获得 ${n} ${UNIT} 执行奖励，网络费 ${fee} ${UNIT} 从奖池扣。`,
-    PAY_SELF:`派奖结算：奖金付给中奖者，押金退回创建者；你获得 1 ${UNIT} 执行奖励，网络费 ${fee} ${UNIT} 从奖池扣。`,
-    REFUND_OLD:`退款：处理一个封存分片的一批购买记录（最多 32 条），每条扣 0.02 ${UNIT} 执行费；执行费池扣除网络费后归你。`,
-    REFUND_SELF:`退款：退还当前分片剩余的购买记录，创建者取回押金。执行费池扣除网络费后归你。`,
-  };
-  return text[p.op.action]??'';
+  const act=p.subAction??p.op.action;
+  return L().app.planAction(act,{qty:Number(p.op.quantity??0),n,fee,unit:UNIT,tokenUnit,hasReg,isParallel});
 }
 async function prepareAndConfirm(choice: Record<string,unknown>,cid: string|null) {
-  const act=String(choice.action??'');
-  if(!ACTION_INFO[act]?.free&&ctl.state.wallet?.kind==='extension'){
+  const act=String(choice.action??''),A=L().app;
+  const it=cid?items.find(i=>i.r.cid===cid):null;
+  const adapter=it?adapterOf(it.r):null;
+  const freeSet=adapter?.capabilities?.freeActions;
+  const isFreeAct=freeSet?freeSet.includes(act):!!ACTION_INFO[act]?.free;
+  if(!isFreeAct&&ctl.state.wallet?.kind==='extension'){
     const ping=(ctl.state.wallet as {ping?:()=>Promise<boolean>}).ping;
-    if(ping&&!(await ping())){toast('钱包扩展连接已失效（可能已超时锁屏），请重新连接。','warn');openWallet();await refresh();return;}
+    if(ping&&!(await ping())){toast(A.extSessionLostToast,'warn');openWallet();await refresh();return;}
   }
   lockModal(true);
-  modal('准备交易',html`<ul class="progress"><li class="run">正在核对链上状态、用脚本引擎测量预算并计算网络费…</li></ul><p class="small muted">通常几秒，最长可能几十秒。请不要关闭页面。</p>`);
+  modal(A.prepareModalTitle,html`<ul class="progress"><li class="run">${A.prepareModalStep}</li></ul><p class="small muted">${A.prepareModalHint}</p>`);
   try {
     await ctl.prepare(choice,cid);
+    lastPreparedBuy=act==='BUY'&&cid?{cid,shardCid:typeof choice.shardCid==='string'?choice.shardCid:null,quantity:String(choice.quantity??'1'),auto:false}:null;
     lockModal(false);
     showConfirm();
   }
   catch(e) {lockModal(false);closeModal();ctl.log('error',`准备交易失败：${(e as Error)?.message??String(e)}`);failure(e,act);await refresh();return;}
 }
+function showBuyCongestionModal(cid: string,quantity: string,depositKas: string) {
+  const A=L().app;
+  pendingCongestion={cid,quantity};
+  modal(
+    A.buyShardCongestionTitle,
+    html`<p style="margin:0">${A.buyShardCongestionBody(depositKas,UNIT)}</p>`,
+    html`<button type="button" class="btn" data-act="retryOtherShard">${A.buyShardRetryOtherBtn}</button><button type="button" class="btn pri" data-act="openNewShard">${A.buyShardOpenNewBtn(depositKas,UNIT)}</button>`,
+    {kind:'congestion',onClose:()=>{pendingCongestion=null;}},
+  );
+}
+async function prepareAutoBuyShard(cid: string,quantity: string,{switchedNotice=false}: {switchedNotice?: boolean}={}) {
+  const A=L().app;
+  if(ctl.state.wallet?.kind==='extension'){
+    const ping=(ctl.state.wallet as {ping?:()=>Promise<boolean>}).ping;
+    if(ping&&!(await ping())){toast(A.extSessionLostToast,'warn');openWallet();await refresh();return;}
+  }
+  lockModal(true);
+  modal(A.prepareModalTitle,html`<ul class="progress"><li class="run" id="prepStep">${A.prepareModalStep}</li></ul><p class="small muted">${A.prepareModalHint}</p>`);
+  const setStep=(text: string)=>{const el=document.getElementById('prepStep');if(el)el.textContent=text;};
+  const rec=buyShardConflicts.get(cid)??{count:0,avoided:new Set<string>()};
+  const tried=new Set<string>();
+  let refreshedOnce=false,switched=switchedNotice,lastErr: unknown=null;
+  try {
+    for(let guard=0;guard<16;guard++){
+      const D=detail();
+      const buySel=D?.interactive?.buyShardSelector??null;
+      const opts=buySel?.options??[];
+      if(!opts.length){
+        if(buySel?.canOpenNew){
+          await ctl.prepare({action:'BUY',quantity},cid);
+          lastPreparedBuy={cid,shardCid:null,quantity,auto:true};
+          lockModal(false);
+          showConfirm();
+          return;
+        }
+        throw lastErr??Object.assign(new Error('ROUND_UNAVAILABLE'),{code:'USER'});
+      }
+      const combinedExclude=new Set<string>([...tried,...rec.avoided]);
+      const picked=pickRandomBuyShard(opts,combinedExclude)??pickRandomBuyShard(opts,tried);
+      if(!picked){
+        if(!refreshedOnce){
+          refreshedOnce=true;
+          setStep(A.buyShardRetryingStep(Math.max(1,rec.count)));
+          await doVerify(cid,{quiet:true});
+          await refresh();
+          tried.clear();
+          continue;
+        }
+        if(shouldWarnShardCongestion(rec.count,buySel)){
+          lockModal(false);
+          showBuyCongestionModal(cid,quantity,buySel!.depositKas);
+          return;
+        }
+        throw lastErr??Object.assign(new Error('STALE_INPUT'),{code:'STALE_INPUT'});
+      }
+      tried.add(picked.shardId);
+      try {
+        await ctl.prepare({action:'BUY',quantity,shardCid:picked.shardId},cid);
+        lastPreparedBuy={cid,shardCid:picked.shardId,quantity,auto:true};
+        lockModal(false);
+        showConfirm();
+        if(switched)toast(A.buyShardSwitchedToast);
+        return;
+      } catch(e) {
+        if(!isShardUtxoConflict(e))throw e;
+        lastErr=e;
+        rec.count+=1;
+        rec.avoided.add(picked.shardId);
+        buyShardConflicts.set(cid,rec);
+        switched=true;
+        ctl.log('warn',`分片 #${shortHash(picked.shardId,6,4)} UTXO 冲突（第 ${rec.count} 次），尝试切换其他分片`);
+        const curSel=detail()?.interactive?.buyShardSelector??buySel;
+        if(shouldWarnShardCongestion(rec.count,curSel)){
+          lockModal(false);
+          showBuyCongestionModal(cid,quantity,curSel!.depositKas);
+          return;
+        }
+        setStep(A.buyShardRetryingStep(rec.count));
+      }
+    }
+    const finalSel=detail()?.interactive?.buyShardSelector??null;
+    if(shouldWarnShardCongestion(rec.count,finalSel)){
+      lockModal(false);
+      showBuyCongestionModal(cid,quantity,finalSel!.depositKas);
+      return;
+    }
+    throw lastErr??Object.assign(new Error('STALE_INPUT'),{code:'STALE_INPUT'});
+  } catch(e) {
+    lockModal(false);closeModal();
+    ctl.log('error',`准备交易失败：${(e as Error)?.message??String(e)}`);
+    failure(e,'BUY');
+    await refresh();
+  }
+}
 function showConfirm() {
   const p: Prepared|null=ctl.state.prepared,w=ctl.state.wallet;if(!p||!w)return;
-  const x: ConfirmCtx={...ctxt(),prepared:p,planText:planText(p)};
-  modal(`确认交易 · ${actionTitle(p.op.action)}`,confirmBody(x),
-    html`<button class="btn" data-act="closeModal">取消</button><button class="btn pri" data-act="send">${p.review.inputs.some(i=>i.kind.includes('需签名'))?'确认并签名发送':'确认发送（无需签名）'}</button>`,
-    {onClose:()=>{if(ctl.state.prepared){ctl.discardPrepared();render();}}});
+  const loc=L(),x: ConfirmCtx={...ctxt(),prepared:p,planText:planText(p)};
+  const needsSig=p.review.inputs.some(i=>i.kind.includes('需签名')||i.kind.toLowerCase().includes('signed'));
+  modal(loc.dialogs.confirmTitle(actionTitle(p.op.action,loc)),confirmBody(x),
+    html`<button class="btn" data-act="closeModal">${loc.common.cancel}</button><button class="btn pri" data-act="send">${needsSig?loc.dialogs.confirmSignSend:loc.dialogs.confirmSendFree}</button>`,
+    {kind:'confirm',onClose:()=>{if(ctl.state.prepared){ctl.discardPrepared();render();}}});
 }
 async function onSend() {
-  const p: Prepared|null=ctl.state.prepared;if(!p){closeModal();toast('报价已失效，请重新核对。','warn');return;}
+  const loc=L(),A=loc.app;
+  const p: Prepared|null=ctl.state.prepared;if(!p){closeModal();toast(A.quoteExpiredToast,'warn');return;}
   const {cid}=p,genesis=p.op.action==='GENESIS',signerKey=ctl.state.wallet?.key??null,creatorKey=genesis?signerKey:null,txid=p.review?.txid??null;
-  const isExt=ctl.state.wallet?.kind==='extension',isKaspire=ctl.state.wallet?.id==='kaspire',needsSig=p.review.inputs.some(i=>i.kind.includes('需签名'));
+  const buyMeta=lastPreparedBuy?.cid===cid?lastPreparedBuy:null;
+  lastPreparedBuy=null;
+  const isExt=ctl.state.wallet?.kind==='extension',isKaspire=ctl.state.wallet?.id==='kaspire',needsSig=p.review.inputs.some(i=>i.kind.includes('需签名')||i.kind.toLowerCase().includes('signed'));
   const extWallet=isExt?ctl.state.wallet as {ping?:()=>Promise<boolean>;name?:string}:null;
   const signAbort=isExt&&needsSig?new AbortController():null;
   lockModal(true);
   if(signAbort){
     $('mFoot').hidden=false;
-    put($('mFoot'),html`<button type="button" class="btn" id="signCancel">取消等待</button>`);
+    put($('mFoot'),html`<button type="button" class="btn" id="signCancel">${A.cancelWaitBtn}</button>`);
     $('signCancel').onclick=()=>{
       const b=document.getElementById('signCancel') as HTMLButtonElement|null;if(b)b.disabled=true;
       signAbort.abort();
       void extWallet?.ping?.();
     };
   }else{$('mFoot').hidden=true;}
-  put($('mBody'),html`<ul class="progress"><li class="run">${isExt&&needsSig?`请在 ${ctl.state.wallet?.name??'扩展钱包'} 中确认签名；页面随后验签、检查、保存并提交…`:'正在核对签名、检查已签名交易、保存记录并提交…'}</li></ul>${isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">打开 Kaspire 确认签名</a></div>`:''}<p class="small muted" id="signHint">请不要关闭页面。</p>`);
+  put($('mBody'),html`<ul class="progress"><li class="run">${isExt&&needsSig?A.sendSigningExt:needsSig?A.sendSigningLocal:A.sendNoSig}</li></ul>${isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">${A.sendOpenKaspire}</a></div>`:''}<p class="small muted" id="signHint">${A.prepareModalHint}</p>`);
   let signed=false;
   const slowTimer=signAbort?setTimeout(()=>{
     if(signed||signAbort.signal.aborted)return;
     const hint=document.getElementById('signHint');
-    if(hint)hint.textContent='未收到扩展响应？可能扩展已锁屏、超时退出或未弹出授权框，可点击「取消等待」后解锁并重连钱包。';
+    if(hint)hint.textContent=loc.errors.map.WALLET_SIGN_TIMEOUT??A.prepareModalHint;
   },8000):null;
   let status: string;
   try {
@@ -612,64 +815,98 @@ async function onSend() {
   }
   if(slowTimer)clearTimeout(slowTimer);
   lockModal(false);closeModal();
-  if(status==='SUBMITTED')toast('已提交，等待节点确认。确认前页面会自动更新。');
-  else if(status==='REJECTED'){
-    const rejectedKind=classifyRejection(items.find(i=>i.r.cid===cid)?.r.intent).kind;
-    toast(rejectedKind==='ROUND_INPUT'?'交易被节点拒绝：这一轮已被抢先推进，正在自动同步最新状态…':'交易被节点拒绝。详情见轮次页。','bad');
+  if(status==='SUBMITTED'){
+    buyShardConflicts.delete(cid);
+    if(signerKey&&p.profileId)ctl.protocols.get(p.profileId)?.invalidateWalletCache?.(signerKey,fetch);
+    toast(A.sendDoneToast);
   }
-  else if(status==='UNSENT')toast('交易没有发出，请重试。','warn');
-  else toast('提交结果暂未确认，页面会自动核对，请不要重复操作。','warn');
+  else if(status==='REJECTED')toast(A.sendFailToast,'bad');
+  else if(status==='UNSENT')toast(A.sendFailToast,'warn');
+  else toast(A.sendSubmitted,'warn');
   touch(cid);verify.delete(cid);
   if(signerKey&&txid&&status!=='UNSENT'&&status!=='REJECTED')recordMyTx(signerKey,txid);
-  if(creatorKey&&status!=='UNSENT'){const own=owners();own[cid]=creatorKey;LS.set('owners',own);}   // readable from the manager only while the round is live
+  if(creatorKey&&status!=='UNSENT'){const own=owners();own[cid]=creatorKey;LS.set('owners',own);}
   await refresh();
   submission=null;render();
-  if(status==='REJECTED'&&!genesis&&classifyRejection(items.find(i=>i.r.cid===cid)?.r.intent).kind==='ROUND_INPUT')void doVerify(cid,{quiet:true});
+  const rejIntent=items.find(i=>i.r.cid===cid)?.r.intent;
+  if(status==='REJECTED'&&!genesis&&classifyRejection(rejIntent).kind==='ROUND_INPUT'){
+    if(buyMeta?.auto&&buyMeta.shardCid){
+      const rec=buyShardConflicts.get(cid)??{count:0,avoided:new Set<string>()};
+      rec.count+=1;rec.avoided.add(buyMeta.shardCid);buyShardConflicts.set(cid,rec);
+      await doVerify(cid,{quiet:true});
+      await refresh();
+      const curIntent=items.find(i=>i.r.cid===cid)?.r.intent;
+      if(curIntent?.status==='REJECTED'){
+        try {
+          await ctl.discard(cid,{force:false});
+          await refresh();
+          const D=detail();
+          const buySel=D?.interactive?.buyShardSelector??null;
+          if(shouldWarnShardCongestion(rec.count,buySel)){
+            showBuyCongestionModal(cid,buyMeta.quantity,buySel!.depositKas);
+          }else if(buySel?.options?.length&&S.view==='round'&&S.cid===cid){
+            void prepareAutoBuyShard(cid,buyMeta.quantity,{switchedNotice:true});
+          }
+        } catch {/* Keep rejected intent for manual reconciliation if discard safety check fails. */}
+      }
+    }else{
+      void doVerify(cid,{quiet:true});
+    }
+  }
   void refreshBalance(true);
   if(status!=='UNSENT'&&status!=='REJECTED')void ctl.track(cid).then(async()=>{await refresh();void refreshBalance(true);},()=>{});
 }
 async function onAction(a: string) {
   if(modalOpen())return;
-  if(ctl.state.busy){toast(`正在${ctl.state.busyLabel??'处理上一步'}，请稍候。`,'warn');return;}
+  if(ctl.state.busy){toast(L().app.gateBusy(ctl.state.busyLabel??L().common.working),'warn');return;}
   const choice: Record<string,unknown>={action:a};
   if(a==='BUY'){
-    const D=detail();if(!D){toast('没有找到这一轮。','warn');return;}
+    const D=detail();if(!D){toast(L().round.notFound,'warn');return;}
     const error=qtyError(S.qty,D.f,D.a.BUY);if(error){toast(error,'warn');return;}
     choice.quantity=S.qty.trim();
-    const sel=($('kShardCid') as HTMLSelectElement|null)?.value||'';
-    if(sel)choice.shardCid=sel;
+    const buySel=D.interactive?.buyShardSelector??null;
+    if(buySel&&S.cid){
+      const manualSel=(document.getElementById('buyShardSelect') as HTMLSelectElement|null)?.value??S.buyShard??'auto';
+      if(manualSel==='new'&&buySel.canOpenNew){
+        // Explicit new dedicated shard (OPEN_SHARD)
+      }else if(manualSel&&manualSel!=='auto'&&manualSel!=='new'&&buySel.options.some(o=>o.shardId===manualSel)){
+        choice.shardCid=manualSel;
+      }else{
+        await prepareAutoBuyShard(S.cid,choice.quantity as string);
+        return;
+      }
+    }
   }
   if(a==='DRAW'){
     const D=detail();if(!D)return;
-    if(!D.kusdt){
-      const readiness=drawReadiness(D,ctxt());if(!readiness.ready){toast(readiness.detail,'warn');void pollDrawProgress();return;}
-    }
+    const readiness=drawReadiness(D,ctxt());if(!readiness.ready){toast(readiness.detail,'warn');void pollDrawProgress();return;}
   }
   await prepareAndConfirm(choice,S.cid);
 }
 async function runBatchSettlement(mode: 'payout' | 'refund') {
   if(modalOpen())return;
   const cid=S.cid;if(!cid)return;
+  const loc=L(),B=loc.app.batch;
   const cfg=mode==='payout'
-    ?{module:'win',terminal:'PAID',primary:'PAY_OLD',final:'PAY_SELF',title:'一键连续派奖',noun:'派奖',doneTitle:'连续派奖已完成',stopTitle:'连续派奖已停止',abortTitle:'连续派奖已中止',failTitle:'连续派奖未完成'}
-    :{module:'refund',terminal:'REFUNDED',primary:'REFUND_OLD',final:'REFUND_SELF',title:'一键连续退款',noun:'退款',doneTitle:'连续退款已完成',stopTitle:'连续退款已停止',abortTitle:'连续退款已中止',failTitle:'连续退款未完成'};
+    ?{module:'win',terminal:'PAID',primary:'PAY_OLD',final:'PAY_SELF',...B.payout}
+    :{module:'refund',terminal:'REFUNDED',primary:'REFUND_OLD',final:'REFUND_SELF',...B.refund};
   const start=items.find(i=>i.r.cid===cid);
-  if(!start||start.r.terminal||start.r.halted||start.r.intent||start.f.module!==cfg.module){toast(`当前状态无法开始连续${cfg.noun}。`,'warn');return;}
-  if(ctl.state.busy){toast(`正在${ctl.state.busyLabel??'处理上一步'}，请稍候。`,'warn');return;}
+  if(!start||start.r.terminal||start.r.halted||start.r.intent||start.f.module!==cfg.module){toast(B.cannotStart(cfg.noun),'warn');return;}
+  if(ctl.state.busy){toast(B.busy(ctl.state.busyLabel??loc.common.working),'warn');return;}
   const g=gate(start.a[cfg.primary]?.ok?cfg.primary:cfg.final);
-  if(!g.ok){toast(g.reason??'当前无法操作','warn');if(g.fix==='wallet')openWallet();else if(g.fix==='settings')openSettings();return;}
+  if(!g.ok){toast(g.reason??loc.round.unavailable,'warn');if(g.fix==='wallet')openWallet();else if(g.fix==='settings')openSettings();return;}
   let stop=false,batch=0;
   const steps: {cls: string; text: string}[]=[];
   const paint=(summary: string,extra: unknown='')=>{
     put($('mBody'),html`<p class="small muted" style="margin-top:0">${summary}</p><ul class="progress">${steps.map(s=>html`<li class="${s.cls}">${s.text}</li>`)}</ul>${extra}`);
   };
   lockModal(true);
-  modal(cfg.title,html`<ul class="progress"><li class="run">正在准备第一批${cfg.noun}…</li></ul>`,html`<button type="button" class="btn warn" id="batchStop">停止（完成本批后中止）</button>`);
-  $('batchStop').onclick=()=>{stop=true;const b=$<HTMLButtonElement>('batchStop');b.disabled=true;b.textContent='正在停止…';};
+  modal(cfg.title,html`<ul class="progress"><li class="run">${B.preparingFirst(cfg.noun)}</li></ul>`,html`<button type="button" class="btn warn" id="batchStop">${B.stopBtn}</button>`);
+  $('batchStop').onclick=()=>{stop=true;const b=$<HTMLButtonElement>('batchStop');b.disabled=true;b.textContent=B.stoppingBtn;};
   const finish=(title: string,ok: boolean)=>{
     lockModal(false);
     $('mTitle').textContent=title;
-    put($('mFoot'),html`<button type="button" class="btn ${ok?'pri':''}" data-act="closeModal">${ok?'完成':'关闭'}</button>`);
+    put($('mFoot'),html`<button type="button" class="btn ${ok?'pri':''}" data-act="closeModal">${ok?loc.common.done:loc.common.close}</button>`);
     $('mFoot').hidden=false;
     void refreshBalance(true);
   };
@@ -677,34 +914,34 @@ async function runBatchSettlement(mode: 'payout' | 'refund') {
     while(!stop){
       const cur=items.find(i=>i.r.cid===cid);
       if(!cur)throw new Error('ROUND_NOT_FOUND');
-      if(cur.r.terminal===cfg.terminal){paint(`全部${cfg.noun}已完成，共处理 ${batch} 批。`);return finish(cfg.doneTitle,true);}
+      if(cur.r.terminal===cfg.terminal){paint(B.allDone(cfg.noun,batch));return finish(cfg.doneTitle,true);}
       if(cur.r.terminal||cur.r.halted)throw new Error('ROUND_CLOSED');
       if(cur.r.intent)throw new Error('PENDING_INTENT');
       const action=cur.a[cfg.primary]?.ok?cfg.primary:cur.a[cfg.final]?.ok?cfg.final:null;
       if(!action)throw new Error('ACTION_UNAVAILABLE');
       batch++;
       const rem=cur.r.frozen.length;
-      const detailLabel=action==='PAY_OLD'?`处理冻结分片，当前剩 ${rem} 片`:action==='PAY_SELF'?'最终派奖结算':action==='REFUND_OLD'?`退封存分片，当前剩 ${rem} 片`:'退当前分片';
-      const label=`第 ${batch} 批（${detailLabel}）`;
-      steps.push({cls:'run',text:`${label}：正在预算与构造交易…`});
-      paint('请保持页面开启；每批被节点接受后将自动进入下一批。');
+      const detailLabel=action==='PAY_OLD'?B.detailPayOld(rem):action==='PAY_SELF'?B.detailPaySelf:action==='REFUND_OLD'?B.detailRefundOld(rem):B.detailRefundSelf;
+      const label=B.batchLabel(batch,detailLabel);
+      steps.push({cls:'run',text:B.building(label)});
+      paint(B.keepOpen);
       await ctl.prepare({action},cid);
       const p=ctl.state.prepared;if(!p)throw new Error('PREPARE_FAILED');
-      const needsSig=p.review.inputs.some(i=>i.kind.includes('需签名')),isKaspire=ctl.state.wallet?.id==='kaspire';
-      steps[steps.length-1]={cls:'run',text:`${label}：${needsSig?'请在钱包中确认签名…':'正在提交交易（无需签名）…'}`};
-      paint('请保持页面开启；每批被节点接受后将自动进入下一批。',isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">打开 Kaspire 确认签名</a></div>`:'');
+      const needsSig=p.review.inputs.some(i=>i.kind.includes('需签名')||i.kind.toLowerCase().includes('signed')),isKaspire=ctl.state.wallet?.id==='kaspire';
+      steps[steps.length-1]={cls:'run',text:needsSig?B.signing(label):B.submittingFree(label)};
+      paint(B.keepOpen,isKaspire&&needsSig?html`<div class="btnrow" style="margin:8px 0"><a class="btn sm" href="${KASPIRE_WAKE_LINK}">${loc.app.sendOpenKaspire}</a></div>`:'');
       const status=await ctl.signAndSend();
       const signerKey=ctl.state.wallet?.key??null,txid=p.review?.txid??null;
       if(signerKey&&txid&&status!=='UNSENT'&&status!=='REJECTED')recordMyTx(signerKey,txid);
       touch(cid);verify.delete(cid);
       if(status==='UNSENT'||status==='REJECTED'){
-        steps[steps.length-1]={cls:'bad',text:`${label}：${status==='REJECTED'?'交易被节点拒绝':'交易未发出'}，已中止。`};
-        paint('可关闭后查看当前轮次状态或同步最新数据。');
+        steps[steps.length-1]={cls:'bad',text:status==='REJECTED'?B.rejected(label):B.unsent(label)};
+        paint(B.closeHint);
         await refresh();
         return finish(cfg.abortTitle,false);
       }
-      steps[steps.length-1]={cls:'run',text:`${label}：已提交，等待节点接受…`};
-      paint('等待本批被选中链接受后自动接力下一批…');
+      steps[steps.length-1]={cls:'run',text:B.waitingAccept(label)};
+      paint(B.waitingAcceptHint);
       await refresh();
       let settled=false;
       for(let t=0;t<30;t++){
@@ -714,37 +951,42 @@ async function runBatchSettlement(mode: 'payout' | 'refund') {
         const latest=items.find(i=>i.r.cid===cid);
         if(!latest)break;
         if(latest.r.intent?.status==='REJECTED'){
-          steps[steps.length-1]={cls:'bad',text:`${label}：交易被节点拒绝，已中止。`};
-          paint('可关闭后放弃该待确认交易并同步最新状态。');
+          steps[steps.length-1]={cls:'bad',text:B.acceptedRejected(label)};
+          paint(B.discardHint);
           return finish(cfg.abortTitle,false);
         }
         if(!latest.r.intent){settled=true;break;}
         if(stop)break;
       }
       if(!settled){
-        steps[steps.length-1]={cls:'ok',text:`${label}：已提交${stop?'（已按要求停止）':'（仍在等待节点确认，请稍后在轮次页继续）'}`};
-        paint(`已完成 ${batch} 批提交。`);
-        return finish(stop?cfg.stopTitle:'等待节点确认',false);
+        steps[steps.length-1]={cls:'ok',text:stop?B.submittedStop(label):B.submittedPending(label)};
+        paint(B.batchesSubmitted(batch));
+        return finish(stop?cfg.stopTitle:B.waitingConfirmTitle,false);
       }
-      steps[steps.length-1]={cls:'ok',text:`${label}：已接受 ✓`};
+      steps[steps.length-1]={cls:'ok',text:B.accepted(label)};
       void refreshBalance(true);
     }
-    paint(`已按要求停止，共完成 ${batch} 批。`);
+    paint(B.stoppedSummary(batch));
     finish(cfg.stopTitle,false);
   } catch(e) {
     if(ctl.state.prepared)ctl.discardPrepared();
-    steps.push({cls:'bad',text:`第 ${Math.max(1,batch)} 批出错：${errText(e)}`});
-    paint('已保留已完成批次，请关闭后查看轮次状态。');
+    steps.push({cls:'bad',text:B.batchError(Math.max(1,batch),errText(e))});
+    paint(B.errorHint);
     await refresh();
     finish(cfg.failTitle,false);
   }
 }
 async function onCreate() {
-  const p=parseCreate(S.form,activeNet);if(!p.ok){toast(p.errors[0],'warn');return;}
+  const loc=L(),specs=createSpecsList();
+  const spec=specs.find(s=>s.protocolId===S.form.protocol)??specs[0]??null;
+  const altSpec=specs.find(s=>s.supportedOnNet&&s.protocolId!==spec?.protocolId);
+  const altLabel=altSpec?(altSpec.layout==='parallel_fixed_shards'?loc.create.protoParallel(altSpec.name,altSpec.maxShards,altSpec.asset.symbol):loc.create.protoSequential(altSpec.name,UNIT)):UNIT;
+  const p=parseCreate(S.form,activeNet,loc,spec,altLabel);
+  if(!p.ok){toast(p.errors[0]!,'warn');return;}
   const w=ctl.state.wallet;
-  if(!w||!canSign(w)){if(w)toast('当前是「仅收款地址」，创建轮次需要能签名的钱包。','warn');openWallet();return;}
-  const proto=S.form.protocol==='kusdt-v2'?ctl.protocols.getById('kusdt-v2'):ctl.protocols.getById('rolling-v1');
-  await prepareAndConfirm({action:'GENESIS',profileId:proto?.profileId,registry:p.registry,settings:{ticketPrice:S.form.price.trim(),ticketCap:p.cap?S.form.cap.trim():S.form.cap.trim(),minTickets:S.form.min.trim(),closeMinutes:String(p.mins)}},null);
+  if(!w||!canSign(w)){if(w)toast(loc.app.createNeedSigningToast,'warn');openWallet();return;}
+  const proto=spec?ctl.protocols.getById(spec.protocolId):ctl.protocols.defaultForCreate();
+  await prepareAndConfirm({action:'GENESIS',profileId:proto?.profileId,registry:p.registry,settings:{ticketPrice:S.form.price.trim(),ticketCap:String(p.cap),minTickets:String(p.min),closeMinutes:String(p.mins)}},null);
 }
 async function onJoin(input: unknown) {
   if(typeof input==='string'&&/^[0-9a-f]{64}$/i.test(input.trim())){
@@ -753,46 +995,47 @@ async function onJoin(input: unknown) {
   }
   try {
     const text=await parseShare(input),cid=await ctl.importText(text);
-    touch(cid);verify.delete(cid);S.join='';toast('已加入这一轮，正在向节点核对…');await refresh();go('round',cid);
+    touch(cid);verify.delete(cid);S.join='';toast(L().app.joinedToast);await refresh();go('round',cid);
   } catch(e) {toast(errText(e),'bad');}
 }
 async function onRefreshIndex(){
   try{
     if(!ctl.state.indexer&&S.indexer.trim()){
       const err=await connectIndexerPart(S.indexer.trim());
-      if(!err){await refresh();toast('已从索引刷新列表');return;}
+      if(!err){await refresh();toast(L().app.refreshedIndexToast);return;}
     }
     const res=await ctl.refreshIndex() as {fallbackFrom?: unknown;skipped?: string}|undefined;
     conn.indexerStale=!!ctl.state.indexerInfo?.stale||!!res?.fallbackFrom;
     conn.discoveredSource=ctl.state.discoveredSource??null;
     await refresh();
-    if(!res?.skipped)toast(conn.discoveredSource==='rest'?'已从 REST 备选刷新列表':'已从索引刷新列表');
+    if(!res?.skipped)toast(conn.discoveredSource==='rest'?L().app.refreshedRestToast:L().app.refreshedIndexToast);
   }
   catch(e){conn.indexerStale=!!ctl.state.indexer||!!S.indexer.trim();conn.discoveredSource=ctl.state.discoveredSource??null;toast(errText(e),'warn');render();}
 }
 async function onMoreIndex(){try{await ctl.moreIndex();await refresh();}catch(e){toast(errText(e),'warn');}}
 function openRoundTools(cid: string) {
-  modal('更多轮次操作',roundToolsBody(cid),html`<button class="btn" data-act="closeModal">关闭</button>`);
+  const loc=L();
+  modal(loc.round.toolsTitle,roundToolsBody(cid,loc),html`<button class="btn" data-act="closeModal">${loc.common.close}</button>`);
 }
 async function onShare(cid: string) {
   const text=await ctl.exportText(cid),code=await makeShare(text),link=`${location.origin}${location.pathname}#join=${code}`;
-  try {await copyText(link);toast(link.length>6000?'分享链接已复制（较长，部分聊天软件可能截断；也可以用「导出」发送文件）':'分享链接已复制');}
-  catch {toast('复制失败，请改用「导出」','warn');}
+  try {await copyText(link);toast(link.length>6000?L().app.shareCopiedLong:L().app.shareCopied);}
+  catch {toast(L().app.shareCopyFail,'warn');}
 }
 async function onExport(cid: string) {download(`kaswin-rolling-${cid.slice(0,12)}.json`,await ctl.exportText(cid));}
 async function onExportAll() {
   const rounds: string[]=[];for(const r of await ctl.rounds())rounds.push(await ctl.exportText(r as unknown as string));
-  if(!rounds.length){toast('还没有轮次可导出','warn');return;}
+  if(!rounds.length){toast(L().app.exportEmptyToast,'warn');return;}
   download('kaswin-rolling-rounds.json',JSON.stringify({kind:'KASWIN_ROLLING_BUNDLE',rounds}));
 }
 async function onImportFile(file: File|undefined) {
-  if(!file||file.size>64_000_000){toast('文件为空或太大','warn');return;}
+  if(!file||file.size>64_000_000){toast(L().app.importSizeToast,'warn');return;}
   const text=await file.text();let n=0;
   try {
     let list: unknown[]=[text];
     if(text.trimStart().startsWith('{')){const o=JSON.parse(text) as {kind?: string;rounds?: unknown};if(o?.kind==='KASWIN_ROLLING_BUNDLE'&&Array.isArray(o.rounds)&&o.rounds.length<=200)list=o.rounds;}
     for(const t of list){const cid=await ctl.importText(String(t));verify.delete(cid);n++;}
-    toast(`已导入 ${n} 个轮次，页面会向节点重新核对`);
+    toast(L().app.importedToast(n));
   } catch(e) {toast(errText(e),'bad');}
   await refresh();
 }
@@ -804,11 +1047,12 @@ async function refreshBalance(force=false) {
   if(balanceInflight)return balanceInflight;
   balanceAt=Date.now();
   balanceInflight=(async()=>{
-    try {balance=(await getAssetUtxos(rpc,w.address,{kind:'KAS',symbol:activeNet.unit,decimals:8,tokenCovenantId:null})).reduce((n,u)=>n+u.value,0n);}catch{balance=null;}
-    chrome();if(modalOpen()&&$('mTitle').dataset.sourceTitle==='钱包')openWallet();else render();
+    try {balance=(await getAssetUtxos(rpc,w.address,kasAsset(activeNet))).reduce((n,u)=>n+u.value,0n);}catch{balance=null;}
+    chrome();if(modalOpen()&&$('mTitle').dataset.modalKind==='wallet')openWallet();else render();
   })().finally(()=>{balanceInflight=null;});
   return balanceInflight;
 }
+
 /* ------------------------------------------------------------------ connection / wallet dialogs */
 /** Node and service are connected independently, so one failing never reports the other as down. Both return the error (or null). */
 async function connectNodePart(list: string[]): Promise<unknown> {
@@ -857,17 +1101,22 @@ async function connectAuto() {
   await Promise.all([nodeTask,indexTask]);
   if(S.view==='round'&&S.cid)void autoVerify(S.cid);   // an imported or deep-linked round opened before the node/indexer was ready
 }
+function openHelp() {
+  const loc=L();
+  modal(loc.rules.heading,helpBody(ctxt()),html`<button class="btn pri" data-act="closeModal">${loc.common.gotIt}</button>`,{kind:'help'});
+}
 function openSettings() {
+  const loc=L(),Dl=loc.dialogs;
   settingsOpened={nodes:S.nodes,indexer:S.indexer};   // what this dialog was opened with: only fields the user actually edits are saved
-  modal('高级设置',settingsBody(ctxt()),html`<button class="btn" data-act="testConn">${ic('refresh')}测试连接</button><button class="btn" data-act="resetConn">恢复默认</button><button class="btn pri" data-act="applyConn">保存</button><button class="btn" data-act="closeModal">关闭</button>`);
+  modal(Dl.settingsTitle,settingsBody(ctxt()),html`<button class="btn" data-act="closeModal">${loc.common.close}</button>`,{kind:'settings'});
   $<HTMLInputElement>('sFile').onchange=ev=>{const el=ev.target as HTMLInputElement;void onImportFile(el.files?.[0]);el.value='';};
 }
 function openWallet() {
-  const x=ctxt(),w=x.wallet;
+  const loc=L(),x=ctxt(),w=x.wallet;
   const tab=activeNet.key==='mainnet'&&S.wtab==='key'?'extension':S.wtab;
-  modal('钱包',walletBody(x),w?html`<button class="btn warn" data-act="disconnect">断开钱包</button><button class="btn" data-act="closeModal">关闭</button>`
-    :tab==='extension'?html`<button class="btn" data-act="closeModal">关闭</button>`
-    :html`<button class="btn" data-act="closeModal">取消</button><button class="btn pri" data-act="connectWallet">连接</button>`);
+  modal(loc.dialogs.walletTitle,walletBody(x),w?html`<button class="btn warn" data-act="disconnect">${loc.common.disconnect}</button><button class="btn" data-act="closeModal">${loc.common.close}</button>`
+    :tab==='extension'?html`<button class="btn" data-act="closeModal">${loc.common.close}</button>`
+    :html`<button class="btn" data-act="closeModal">${loc.common.cancel}</button><button class="btn pri" data-act="connectWallet">${loc.common.connect}</button>`,{kind:'wallet'});
 }
 /** Error text next to the field that caused it (dialogs hide page-level feedback); falls back to a toast when the slot is gone. */
 function inlineError(id: string,text: string) {
@@ -875,14 +1124,15 @@ function inlineError(id: string,text: string) {
   if(el)el.textContent=text;else toast(text,'bad');
 }
 async function connectExternalProvider(id: string) {
-  if(ctl.state.busy){inlineError('wErr','正在处理上一步，请稍候。');return;}
+  const loc=L(),A=loc.app;
+  if(ctl.state.busy){inlineError('wErr',loc.round.busyFallback);return;}
   try {
     if(id==='kaspire'){
       const abort=new AbortController();
       const cancel=()=>{abort.abort();lockModal(false);closeModal();};
       lockModal(true);
-      put($('mBody'),html`<ul class="progress"><li class="run">正在连接 WalletConnect 中继，准备 Kaspire 配对…</li></ul><p class="small muted">如果已有授权会话将直接恢复，否则会显示拉起链接与二维码。</p>`);
-      put($('mFoot'),html`<button class="btn" id="kaspireCancel">取消</button>`);
+      put($('mBody'),html`<ul class="progress"><li class="run">${A.kaspireWaiting}</li></ul><p class="small muted">${A.prepareModalHint}</p>`);
+      put($('mFoot'),html`<button class="btn" id="kaspireCancel">${loc.common.cancel}</button>`);
       $('kaspireCancel').onclick=cancel;
       try {
         await ctl.connectExternalWallet('kaspire',{
@@ -892,14 +1142,15 @@ async function connectExternalProvider(id: string) {
             let qr='';
             try{qr=await renderPairingQrDataUrl(appLink);}catch{}
             if(abort.signal.aborted)return;
+            const pr=A.kaspirePrompt(loc.chrome.netLabel(activeNet.key));
             put($('mBody'),html`
-              <p class="sub" style="margin-top:0">请使用手机 <b>Kaspire</b> 钱包授权连接（请在 Kaspire 中切换到 <b>${activeNet.label}</b>）：</p>
-              ${qr?html`<div style="display:flex;justify-content:center;margin:12px 0"><img src="${qr}" alt="Kaspire 配对二维码" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:8px"></div>`:''}
+              <p class="sub" style="margin-top:0">${pr.before}<b>${pr.bold}</b>${pr.after}</p>
+              ${qr?html`<div style="display:flex;justify-content:center;margin:12px 0"><img src="${qr}" alt="${A.kaspireQrAlt}" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:8px"></div>`:''}
               <div class="btnrow" style="justify-content:center;margin-top:10px">
-                <a class="btn pri" href="${schemeUri}">打开 Kaspire 授权连接</a>
-                <button class="btn" type="button" data-copy="${wcUri}">复制配对链接</button>
+                <a class="btn pri" href="${schemeUri}">${A.kaspireOpenApp}</a>
+                <button class="btn" type="button" data-copy="${wcUri}">${A.kaspireCopyLink}</button>
               </div>
-              <p class="small muted" style="text-align:center;margin-top:10px">等待 Kaspire 确认中…（最长 2 分钟）</p>`);
+              <p class="small muted" style="text-align:center;margin-top:10px">${A.kaspireWaiting}</p>`);
             if(isMobileBrowser())setTimeout(()=>{if(!abort.signal.aborted)triggerAppLink(schemeUri);},350);
           },
         });
@@ -911,11 +1162,10 @@ async function connectExternalProvider(id: string) {
         return;
       } finally {lockModal(false);}
     } else {
-      const name=id==='kastle'?'Kastle':'KasWare';
       const abort=new AbortController();
       lockModal(true);
-      put($('mBody'),html`<ul class="progress"><li class="run">正在等待 ${name} 扩展响应授权…</li></ul><p class="small muted">如果 ${name} 已超时锁屏，请先在扩展中解锁；解锁后返回本页会自动完成连接，或点击下方取消后重试。</p>`);
-      put($('mFoot'),html`<button class="btn" id="extConnectCancel">取消</button>`);
+      put($('mBody'),html`<ul class="progress"><li class="run">${A.sendSigningExt}</li></ul><p class="small muted">${loc.errors.map.WALLET_CONNECT_TIMEOUT??A.prepareModalHint}</p>`);
+      put($('mFoot'),html`<button class="btn" id="extConnectCancel">${loc.common.cancel}</button>`);
       $('extConnectCancel').onclick=()=>abort.abort();
       try {
         await ctl.connectExternalWallet(id,{signal:abort.signal});
@@ -928,10 +1178,11 @@ async function connectExternalProvider(id: string) {
     }
     S.walletProvider=id;LS.set('walletProvider',id);
   } catch(e) {inlineError('wErr',errText(e));return;}
-  closeModal();toast('钱包已连接');void refreshBalance(true);render();
+  closeModal();toast(A.walletConnectedToast);void refreshBalance(true);render();
 }
 async function onConnectWallet() {
-  if(ctl.state.busy){inlineError('wErr','正在处理上一步，请稍候。');return;}
+  const loc=L();
+  if(ctl.state.busy){inlineError('wErr',loc.round.busyFallback);return;}
   if(S.wtab==='extension'){
     const sel=document.getElementById('wProvider') as HTMLSelectElement|null;
     await connectExternalProvider(sel?.value||S.walletProvider||'kasware');
@@ -942,23 +1193,22 @@ async function onConnectWallet() {
       if(activeNet.key==='mainnet')throw Object.assign(new Error('MAINNET_MEMORY_KEY_DISABLED'),{code:'MAINNET_MEMORY_KEY_DISABLED'});
       const el=$<HTMLInputElement>('wKey'),v=el.value;el.value='';ctl.openWallet(v);
     } else ctl.usePublicAddress($<HTMLInputElement>('wAddr').value);
-  } catch(e) {inlineError('wErr',errText(e));return;}   // a toast would sit behind the open dialog
-  closeModal();toast('钱包已连接');void refreshBalance(true);render();
+  } catch(e) {inlineError('wErr',errText(e));return;}
+  closeModal();toast(loc.app.walletConnectedToast);void refreshBalance(true);render();
 }
-function onDisconnect() {ctl.disconnectWallet();balance=null;closeModal();toast('钱包已断开');render();}
-/** Validate -> try to connect -> save ONLY what connected, and only the fields that were edited. A bad value never replaces a working configuration, and a
- * dialog opened earlier in another tab cannot overwrite a field it did not change (the old code wrote both fields back). */
+function onDisconnect() {ctl.disconnectWallet();balance=null;closeModal();toast(L().app.walletDisconnectedToast);render();}
 function onResetConn() {
   $<HTMLTextAreaElement>('sNodes').value=defaultNode;
   $<HTMLInputElement>('sIndexer').value=defaultIndexer;
   inlineError('sErr','');
   const probe=$('sProbe');if(probe)put(probe,html``);
-  toast('已填入默认地址，点「保存」后生效');
+  toast(L().app.resetConnToast);
 }
 async function onTestConn() {
+  const loc=L(),A=loc.app;
   inlineError('sErr','');
   const probe=$('sProbe');if(!probe)return;
-  put(probe,html`<div class="notice">正在测试连接…</div>`);
+  put(probe,html`<div class="notice">${A.testingConn}</div>`);
   const parts: Raw[]=[];
   try {
     const urls=parseNodeList($<HTMLTextAreaElement>('sNodes').value,defaultNode);
@@ -966,34 +1216,36 @@ async function onTestConn() {
     const rpc=await connectNetwork(urls,activeNet);
     try {
       const d=await rpc.currentDaa();
-      parts.push(html`<div class="notice ok">节点可用：<b>${rpc.url??urls[0]}</b>（${activeNet.label} 已同步，含 UTXO 索引 · DAA ${String(d)} · ${Date.now()-t0} ms）</div>`);
+      const ok=A.probeNodeOk(rpc.url??urls[0]!,loc.chrome.netLabel(activeNet.key),String(d),Date.now()-t0);
+      parts.push(html`<div class="notice ok">${ok.before}<b>${ok.bold}</b>${ok.after}</div>`);
     } finally {rpc.close?.();}
   } catch(e) {
-    parts.push(html`<div class="notice warn">节点：${errText(e)}</div>`);
+    parts.push(html`<div class="notice warn">${A.probeNodeWarn(errText(e))}</div>`);
   }
   try {
     const raw=$<HTMLInputElement>('sIndexer').value.trim();
-    if(!raw)parts.push(html`<div class="notice">索引：未配置，将使用 REST API 备用查询。</div>`);
+    if(!raw)parts.push(html`<div class="notice">${A.probeIndexerNone}</div>`);
     else {
-      const baseUrl=indexerBase(raw),client=createIndexerClient({baseUrl,networkId:activeNet.networkId,genesisHash:activeNet.genesis,profileId:profile.id,profileIds:ctl.protocols.profileIds()}),info=await client.info();
+      const baseUrl=indexerBase(raw),client=createIndexerClient({baseUrl,networkId:activeNet.networkId,genesisHash:activeNet.genesis,profileId:primaryProfileId,profileIds:ctl.protocols.profileIds()}),info=await client.info();
       const cnt=info.roundsCount??(await client.rounds({limit:100})).rounds.length;
       const reported=Array.isArray(info.profiles)&&info.profiles.length?new Set(info.profiles.map(p=>p.profileId)):null;
-      const required=compatibleProfilesList().filter(p=>activeNet.key==='mainnet'||p.protocolId!=='kusdt-v2');
+      const required=compatibleProfilesList().filter(p=>p.supportsNet!==false);
       const missing=reported?required.filter(p=>!reported.has(p.profileId)):[];
       if(missing.length){
-        const missText=missing.map(p=>`${p.asset} (${shortHash(p.profileId,6,4)})`).join('、');
-        parts.push(html`<div class="notice warn">索引可用（共 ${cnt} 个轮次），但未覆盖本页的 ${missText} Profile，相关新轮次可能无法从该索引发现。</div>`);
+        const missText=missing.map(p=>`${p.asset} (${shortHash(p.profileId,6,4)})`).join(loc.listSep);
+        parts.push(html`<div class="notice warn">${A.probeIndexerMissing(cnt,missText)}</div>`);
       }else{
-        const cov=reported?` · 已覆盖全部兼容 Profile（${required.map(p=>p.asset).join('、')}）`:'';
-        parts.push(html`<div class="notice ok">索引可用：共 ${cnt} 个轮次${info.stale?'（索引正在追赶）':''}${cov}。</div>`);
+        const cov=reported?required.map(p=>p.asset).join(loc.listSep):null;
+        parts.push(html`<div class="notice ok">${A.probeIndexerOk(cnt,!!info.stale,cov)}</div>`);
       }
     }
   } catch(e) {
-    parts.push(html`<div class="notice warn">索引：${errText(e)}</div>`);
+    parts.push(html`<div class="notice warn">${A.probeIndexerWarn(errText(e))}</div>`);
   }
   if($('sProbe'))put($('sProbe'),html`${parts}`);
 }
 async function onApplyConn() {
+  const loc=L(),A=loc.app;
   const nodesText=$<HTMLTextAreaElement>('sNodes').value,indexText=$<HTMLInputElement>('sIndexer').value;
   const nodesChanged=nodesText.trim()!==settingsOpened.nodes.trim(),indexChanged=indexText.trim()!==settingsOpened.indexer.trim();
   const problems: string[]=[];let newNodes: string[]|null=null,newIndex: string|null=null;
@@ -1003,61 +1255,57 @@ async function onApplyConn() {
   if(newNodes){
     const previous=nodesOrEmpty(S.nodes),err=await connectNodePart(newNodes);
     if(!err){S.nodes=newNodes.join('\n');LS.set('nodes',S.nodes);}
-    else{problems.push(`节点没有保存：${errText(err)}已保留原配置。`);if(previous.length)await connectNodePart(previous);}
+    else{problems.push(A.savedConnWarn(errText(err)));if(previous.length)await connectNodePart(previous);}
   }
   if(newIndex!==null){
     const err=await connectIndexerPart(newIndex);
     if(!err){S.indexer=newIndex;LS.set('indexer',newIndex);if(!newIndex){try{await ctl.refreshIndex();}catch{}}conn.discoveredSource=ctl.state.discoveredSource??null;}
-    else problems.push(`索引地址没有保存：${errText(err)}已保留原配置。`);
+    else problems.push(A.savedConnWarn(errText(err)));
   }
-  if(!nodesChanged&&!indexChanged)await connectAuto();   // nothing edited: just re-check the current configuration
+  if(!nodesChanged&&!indexChanged)await connectAuto();
   chrome();await refresh();void refreshBalance(true);
-  if(modalOpen()&&$('mTitle').dataset.sourceTitle==='高级设置'){
+  if(modalOpen()&&$('mTitle').dataset.modalKind==='settings'){
     openSettings();
-    if(problems.length){   // keep what the user typed so it can be corrected
+    if(problems.length){
       $<HTMLTextAreaElement>('sNodes').value=nodesText;$<HTMLInputElement>('sIndexer').value=indexText;inlineError('sErr',problems.join(' '));
-    } else toast('连接成功，设置已保存');
+    } else toast(A.savedConnToast);
   }
 }
-/** Drop the pending intent. SEARCH_RANGE (the node can no longer search that far back) needs an explicit second confirmation for the forced path. */
 async function onDiscard(force=false) {
-  const cid=CID();
+  const cid=CID(),loc=L(),A=loc.app;
   try {
-    const kind=classifyRejection(items.find(i=>i.r.cid===cid)?.r.intent).kind; // read before discarding: only the node's own wording decides which advice applies
     await ctl.discard(cid,{force});
     if(force)closeModal();
-    toast(kind==='FUNDS_INPUT'||kind==='ORPHAN'?'已放弃这笔交易。等几秒、让前一笔确认后，重新操作即可。':'已放弃这笔交易。请导入最新的分享链接后继续。');
+    toast(A.discardedToast);
   } catch(e) {
     if(!force&&errCode(e)==='SEARCH_RANGE') {
       const txid=items.find(i=>i.r.cid===cid)?.r.intent?.txid;
-      modal('无法自动确认这笔交易',html`<p>${errText(e)}</p>
-        <p>如果这笔交易的输入已经全部被花掉，你可以「强制放弃」：页面只在 <b>所有输入都已被花掉、内存池里也没有这笔交易</b> 时才会执行，放弃后请导入最新的分享链接。不会新建任何替代交易。</p>
-        ${txid?html`<p class="small muted">交易 ID：<span class="mono">${txid}</span></p>`:''}
-        <p class="small muted">如果还有输入没被花掉，页面会直接判定这笔交易从未成功，那种情况下请用「重新发送（原签名）」或普通的「放弃这笔」。</p>`,
-        html`<button class="btn" data-act="closeModal">取消</button><button class="btn warn" data-act="discardForce">强制放弃</button>`);
+      modal(A.discardConfirmTitle,html`<p>${errText(e)}</p><p>${A.discardConfirmBody}</p>${txid?html`<p class="small muted">${loc.round.intentTxid}<span class="mono">${txid}</span></p>`:''}`,
+        html`<button class="btn" data-act="closeModal">${loc.common.cancel}</button><button class="btn warn" data-act="discardForce">${A.discardConfirmBtn}</button>`);
     } else {if(force)closeModal();toast(errText(e),'bad');}
   } finally {await refresh();}
 }
 
 /* ------------------------------------------------------------------ events */
-const CID=(): string=>S.cid as string;   // only reachable from the round page, where the route guarantees a cid
+const CID=(): string=>S.cid as string;
 function toggleStar(cid: string) {
-  if(savedCids.has(cid)){savedCids.delete(cid);toast('已取消关注');}
-  else{savedCids.add(cid);toast('已添加到「★ 关注」');}
+  if(savedCids.has(cid)){savedCids.delete(cid);toast(L().common.star);}
+  else{savedCids.add(cid);toast(L().common.starred);}
   LS.set('saved',[...savedCids]);
   render();
 }
 async function onCheckPending() {
+  const loc=L(),A=loc.app;
   if(checkProgress||ctl.state.busy)return;
-  if(!ctl.state.rpc){toast('节点未连接。','warn');return;}
+  if(!ctl.state.rpc){toast(A.gateNoNode,'warn');return;}
   const targets=items.filter(i=>(i.r.pending?.length??0)>0||(!!i.r.intent&&['SUBMITTED','UNKNOWN'].includes(i.r.intent.status))).slice(0,20);
-  if(!targets.length){toast('没有待确认的交易');return;}
+  if(!targets.length){toast(A.checkPendingDone(0));return;}
   try {
     for(let i=0;i<targets.length;i++){
-      checkProgress=`核对中 ${i+1}/${targets.length}…`;render();
+      checkProgress=A.checkPendingProgress(i+1,targets.length);render();
       try{await ctl.track(targets[i]!.r.cid);}catch{}
     }
-    toast(`已完成 ${targets.length} 个轮次的待确认核对`);
+    toast(A.checkPendingDone(targets.length));
   } finally {checkProgress=null;await refresh();}
 }
 function toggleLiveSync() {
@@ -1070,34 +1318,69 @@ function toggleLiveSync() {
   }else{
     void ctl.watchRound(shouldWatchRound(cid)?cid:null);
     if(roundTimer&&detail()?.f.module!=='sealed'){clearInterval(roundTimer);roundTimer=null;}
-    toast('已暂停实时同步');
+    toast(L().app.syncPausedToast);
     render();
   }
 }
+const switchLanguage=()=>{
+  const next=setLocale(nextLocale(L()));
+  try{localStorage.setItem(LANG_KEY_STORAGE,next.key);}catch{}
+  LS.set('language',next.key);
+  try{
+    const url=new URL(location.href);
+    if(url.searchParams.has('lang')){url.searchParams.delete('lang');history.replaceState(null,'',url.href);}
+  }catch{}
+  applyShellLocale();
+  chrome();
+  render();
+  if(modalOpen()){
+    const kind=$('mTitle').dataset.modalKind;
+    if(kind==='settings')openSettings();
+    else if(kind==='wallet')openWallet();
+    else if(kind==='help')openHelp();
+  }
+};
+const switchTheme=()=>{
+  S.theme=S.theme==='dark'?'light':'dark';
+  LS.set('theme',S.theme);
+  chrome();
+  if(S.view==='round'){lastCanvasKey='';const d=detail();if(d){const ck=shardCanvasKey(d);if(ck){lastCanvasKey=ck;paintShardCanvases($('view'),d,S.theme);}}}
+  if(modalOpen()&&$('mTitle').dataset.modalKind==='settings')openSettings();
+};
 const ACT: Record<string,()=>unknown>={
   closeModal:()=>closeModal(),create:onCreate,join:()=>onJoin(S.join),send:onSend,connectWallet:onConnectWallet,disconnect:onDisconnect,
-  applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,switchNet:switchNetwork,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
+  applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,switchNet:switchNetwork,switchLang:switchLanguage,switchTheme,openHelp,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
   syncNow:()=>{closeModal();void doVerify(CID(),{quiet:false});},toggleStar:()=>toggleStar(CID()),checkPending:onCheckPending,batchPayout:()=>runBatchSettlement('payout'),batchRefund:()=>runBatchSettlement('refund'),
   moreRound:()=>openRoundTools(CID()),verify:toggleLiveSync,
-  track:()=>run(()=>ctl.track(CID())),recover:()=>run(()=>ctl.track(CID(),{recover:true}),{ok:'已核对输入并重发原签名'}),
+  track:()=>run(()=>ctl.track(CID())),recover:()=>run(()=>ctl.track(CID(),{recover:true}),{ok:L().app.sendDoneToast}),
   discard:()=>onDiscard(false),discardForce:()=>onDiscard(true),pickFile:()=>$<HTMLInputElement>('sFile').click(),
   pasteLatest:()=>{closeModal();go('explore');setTimeout(()=>$('joinText')?.focus(),50);},
+  retryOtherShard:()=>{
+    const p=pendingCongestion;closeModal();if(!p)return;
+    const rec=buyShardConflicts.get(p.cid);if(rec)rec.count=0;
+    void doVerify(p.cid,{quiet:true}).then(()=>refresh()).then(()=>prepareAutoBuyShard(p.cid,p.quantity));
+  },
+  openNewShard:()=>{
+    const p=pendingCongestion;closeModal();if(!p)return;
+    buyShardConflicts.delete(p.cid);
+    void prepareAndConfirm({action:'BUY',quantity:p.quantity},p.cid);
+  },
 };
 function onClick(ev: Event) {
-  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-kusdt-act],[data-fix],[data-filter],[data-sort],[data-proto],[data-dur],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
+  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-proto-act],[data-fix],[data-filter],[data-sort],[data-proto],[data-dur],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
   if(!t)return;const d=t.dataset;
-  if(d.kusdtAct){void prepareAndConfirm({action:d.kusdtAct,shardCid:d.shardCid??null,recIdx:d.recIdx!=null?Number(d.recIdx):null},S.cid);return;}
+  if(d.protoAct){void prepareAndConfirm({action:d.protoAct,shardCid:d.shardCid??null,recIdx:d.recIdx!=null?Number(d.recIdx):null},S.cid);return;}
   if(d.go2)return go(d.go2);
   if(d.open)return go('round',d.open);
   if(d.indexed)return go('round',d.indexed);
   if(d.filter){S.filter=d.filter;return render();}
   if(d.sort){S.sort=d.sort;return render();}
-  if(d.proto==='rolling-v1'||d.proto==='kusdt-v2'){const proto=d.proto as 'rolling-v1'|'kusdt-v2';S.form.protocol=proto;saveCreateForm();return render();}
+  if(d.proto&&ctl.protocols.getById(d.proto)){S.form.protocol=d.proto;saveCreateForm();return render();}
   if(d.dur){S.form.dur=d.dur;saveCreateForm();return render();}
   if(d.qty){S.qty=d.qty;return render();}
   if(d.wtab){S.wtab=d.wtab;return openWallet();}
   if(d.connect){void connectExternalProvider(d.connect);return;}
-  if(d.dtab==='map'||d.dtab==='txs'||d.dtab==='rules'){S.detailTab=d.dtab;return render();}
+  if(d.dtab==='rules'||d.dtab==='map'||d.dtab==='txs'){S.detailTab=d.dtab;return render();}
   if(d.shard){const idx=d.shard==='close'?null:Number(d.shard);S.shard=S.shard===idx?null:idx;S.purchase=null;return render();}
   if(d.purchase){const idx=Number(d.purchase);S.purchase=S.purchase===idx?null:idx;return render();}
   if(d.pixelmode!==undefined){S.pixelMode=d.pixelmode==='1';LS.set('pixelMode',S.pixelMode);return render();}
@@ -1115,41 +1398,37 @@ function onInput(ev: Event) {
   const el=ev.target as HTMLInputElement,id=el.id,v=el.value;
   if(id==='q'){S.query=v;return render();}
   if(id==='joinText'){S.join=v;return;}
-  if(id==='budgetPc'){S.budgetPc=Number(v);return render();}
   if(id==='cReg'){S.form.registry=el.checked;saveCreateForm();return render();}
   if(id==='cRegAddr'){S.form.registryAddr=v;saveCreateForm();return render();}
   const key=({cPrice:'price',cCap:'cap',cMin:'min',cCustom:'custom'} as Record<string,keyof UiState['form']|undefined>)[id];
   if(key&&key!=='registry'&&key!=='protocol'){S.form[key]=v;saveCreateForm();return render();}
+  if(id==='buyShardSelect'){S.buyShard=v||'auto';return render();}
   if(id==='qty'){
     S.qty=v;const D=detail();if(!D)return;
     const error=qtyError(v,D.f,D.a.BUY),hint=$('qtyCost'),button=$<HTMLButtonElement>('buySubmit'),g=gate('BUY');
-    const tu=D.asset?.kind==='KCC20'?D.asset.symbol:UNIT;
+    const tu=D.asset&&D.asset.kind!=='KAS'?D.asset.symbol:UNIT;
+    const allBusy=!!(D.interactive?.buyShardSelector&&!D.interactive.buyShardSelector.options.length&&!D.interactive.buyShardSelector.canOpenNew);
     hint.textContent=qtyCost(v,D.f,D.a.BUY,tu,D.asset);hint.className=`small ${error?'err':'muted'}`;
     el.setAttribute('aria-invalid',error?'true':'false');
-    button.disabled=!!error||ctl.state.busy||!D.a.BUY?.ok||(!g.ok&&!g.fix);
+    button.disabled=!!error||allBusy||ctl.state.busy||!D.a.BUY?.ok||(!g.ok&&!g.fix);
   }
 }
 function bind() {
   deferViewWrite=deferPointerRender($('view'),render);
   initModal();
-  $('view').addEventListener('click',onClick);$('view').addEventListener('input',onInput);
+  $('view').addEventListener('click',onClick);$('view').addEventListener('input',onInput);$('view').addEventListener('change',onInput);
   $('view').addEventListener('keydown',ev=>{const el=(ev.target as HTMLElement).closest?.<HTMLElement>('[data-open],[data-indexed]');if((ev.key==='Enter'||ev.key===' ')&&el){ev.preventDefault();if(el.dataset.open)go('round',el.dataset.open);else if(el.dataset.indexed)go('round',el.dataset.indexed);}});
   $('modal').addEventListener('click',onClick);
   document.querySelectorAll<HTMLElement>('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go??'explore')));
   document.addEventListener('click',ev=>{
     const target=ev.target as Element;
     const c=target.closest<HTMLElement>('[data-copy]');
-    if(c){ev.stopPropagation();copyText(c.dataset.copy??'').then(()=>toast('已复制'),()=>toast('复制失败','warn'));}
+    if(c){ev.stopPropagation();copyText(c.dataset.copy??'').then(()=>toast(L().common.copied),()=>toast(L().common.copyFailed,'warn'));}
   });
   $('walletBtn').onclick=openWallet;$('settingsBtn').onclick=openSettings;$('nodeChip').onclick=openSettings;
-  const netBtn=document.getElementById('netBtn');if(netBtn)netBtn.onclick=switchNetwork;
-  $('githubBtn').innerHTML=ic('github').s;
+  $('helpBtn').innerHTML=ic('help').s;$('helpBtn').onclick=openHelp;
+  const footHelp=document.getElementById('footHelpBtn');if(footHelp)footHelp.onclick=openHelp;
   $('settingsBtn').innerHTML=ic('settings').s;
-  $('themeBtn').onclick=()=>{S.theme=S.theme==='dark'?'light':'dark';LS.set('theme',S.theme);chrome();if(S.view==='round'){lastCanvasKey='';const d=detail();if(d){lastCanvasKey=shardCanvasKey(d);paintShardCanvases($('view'),d,S.theme);}}};
-  $('languageBtn').onclick=()=>{
-    setLanguage(getLanguage()==='en'?'zh-CN':'en');LS.set('language',getLanguage());
-    refreshLanguage();$('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';
-  };
   window.addEventListener('hashchange',route);
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
@@ -1169,9 +1448,20 @@ function bind() {
   window.addEventListener('pagehide',()=>ctl.disconnectWallet({keepSession:true}));
   // Same-origin tabs share localStorage: follow language / theme / node / service preferences (the live connection is NOT switched silently).
   window.addEventListener('storage',ev=>{
-    if(ev.storageArea!==localStorage||!ev.key?.startsWith(PREFIX))return;
+    if(ev.storageArea!==localStorage)return;
+    if(ev.key===LANG_KEY_STORAGE){
+      setLocale(resolveLocale(localStorage.getItem(LANG_KEY_STORAGE),[...navigator.languages]));
+      applyShellLocale();chrome();render();
+      if(modalOpen()){
+        const kind=$('mTitle').dataset.modalKind;
+        if(kind==='settings')openSettings();
+        else if(kind==='wallet')openWallet();
+      }
+      return;
+    }
+    if(!ev.key?.startsWith(PREFIX))return;
     const k=ev.key.slice(PREFIX.length);
-    if(k==='language'){setLanguage(chooseLanguage(LS.get('language',null),[...navigator.languages]));refreshLanguage();$('languageBtn').textContent=getLanguage()==='en'?'中文':'EN';}
+    if(k==='language'){setLocale(resolveLocale(LS.get('language',null),[...navigator.languages]));applyShellLocale();chrome();render();}
     else if(k==='theme'){const v=LS.get('theme',S.theme);if(v==='dark'||v==='light'){S.theme=v;chrome();}}
     else if(k==='nodes')S.nodes=LS.get('nodes',S.nodes);
     else if(k==='indexer')S.indexer=LS.get('indexer',S.indexer);
@@ -1221,7 +1511,7 @@ async function runDetailSync({allowIndexer=false,preferRest=false,skipIndexer=fa
         }else if(rewatch&&S.view==='round'&&S.cid===targetCid){
           void ctl.watchRound(shouldWatchRound(targetCid)?targetCid:null);
         }
-      }else if(cur.r.intent&&ctl.state.rpc&&!ctl.state.prepared&&['SUBMITTED','UNKNOWN','PREPARED'].includes(cur.r.intent.status)&&adapterOf(cur.r)?.id==='kusdt-v2'){
+      }else if(cur.r.intent&&ctl.state.rpc&&!ctl.state.prepared&&['SUBMITTED','UNKNOWN','PREPARED'].includes(cur.r.intent.status)&&adapterOf(cur.r)?.viewMeta?.(activeNet)?.shardModel==='parallel'){
         const tr=await ctl.track(targetCid) as {accepted?: boolean}|undefined;
         if(tr?.accepted){
           await refresh();
@@ -1277,7 +1567,7 @@ function installPwaManifest() {
       theme_color:S.theme==='dark'?'#081119':'#f4f7f9',
       icons:[
         ...(icon192?[{src:icon192,sizes:'192x192',type:'image/png',purpose:'any maskable'}]:[]),
-        ...(icon512?[{src:icon512,sizes:'512x512',type:'image/png',purpose:'any maskable'}]:[]),
+        ...(icon512?[{src:icon192,sizes:'512x512',type:'image/png',purpose:'any maskable'}]:[]),
       ],
     };
     link.href='data:application/manifest+json;charset=utf-8,'+encodeURIComponent(JSON.stringify(manifest));
@@ -1286,13 +1576,15 @@ function installPwaManifest() {
 
 async function main() {
   installPwaManifest();
-  profile=loadProfile(profileData);                 // the browser re-derives the Profile id (assertProfile)
-  if(profile.id!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
-  const kusdtV2Profile=loadKusdtV2Profile(kusdtV2Artifacts,{kusdtCid:kusdtV2Pins.kusdtCid,expectedHashes:kusdtV2Pins.templates});
-  kusdtProfile=kusdtV2Profile;
-  const protocols=createProtocolRegistry([createRollingV1Adapter({profile}),createKusdtV2Adapter({profile:kusdtV2Profile,kusdtCid:kusdtV2Pins.kusdtCid,kcc20Suffix:unhexBytes(kusdtV2Kcc20SuffixHex)})],{defaultCreateProfileId:profile.id});
-  store=await openStore({genesis:activeNet.genesis,profileId:protocols.defaultForCreate().profileId});
-  ctl=makeController(profile,store,activeNet,discoveryCache,protocols);
+  protocols=buildProtocolRegistryFromBundles(protocolBundles,{defaultCreateProfileId,defaultUiCreateId});
+  const defaultAdapter=protocols.defaultForCreate();
+  primaryProfileId=defaultAdapter.profileId;
+  if(primaryProfileId!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
+  if(!S.form.protocol||!protocols.getById(S.form.protocol)){
+    S.form.protocol=protocols.defaultUiCreateId();
+  }
+  store=await openStore({genesis:activeNet.genesis,profileId:primaryProfileId});
+  ctl=makeController((defaultAdapter.profile as Profile|undefined)??{id:primaryProfileId},store,activeNet,discoveryCache,protocols);
   await ctl.restoreDiscovery();
   conn.discoveredSource=ctl.state.discoveredSource??null;
   ctl.onChange(schedule);bind();
@@ -1318,6 +1610,7 @@ async function main() {
   },2500);
 }
 main().catch(e=>{
-  (document.getElementById('view') as HTMLElement).innerHTML='<div class="panel"><h2>页面无法启动</h2><div class="notice bad">合约 Profile 或本地存储初始化失败；页面不会在未验证 Profile 的情况下运行。</div></div>';
+  const A=L().app;
+  put($('view'),html`<div class="panel"><h2>${A.fatalStartTitle}</h2><div class="notice bad">${A.fatalStartBody}</div></div>`);
   void e;
 });

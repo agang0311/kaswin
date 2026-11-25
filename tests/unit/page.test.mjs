@@ -45,7 +45,7 @@ test('CSP hash matches the inline script, and GitHub navigation is the only exte
   const m=/script-src 'sha256-([^']+)'/.exec(html);assert.ok(m);
   assert.equal(createHash('sha256').update(script).digest('base64'),m[1]);
   const shell=html.replace(script,'');
-  assert.match(shell,/<a class="icon-btn" id="githubBtn" href="https:\/\/github\.com\/agang0311\/kaswin" target="_blank" rel="noopener noreferrer"/);
+  assert.match(shell,/<a class="foot-link" id="githubBtn" href="https:\/\/github\.com\/agang0311\/kaswin" target="_blank" rel="noopener noreferrer"/);
   assert.doesNotMatch(shell.replace(/<a\b[^>]*id="githubBtn"[^>]*>/,''),/(src|href)="https?:/);
   assert.match(html,/default-src 'none'/);
 });
@@ -67,6 +67,9 @@ test('browser import graph is clean: no node:*, fs, test signer, fixtures, engin
   for(const p of ['tests/contracts/fixtures.mjs','tests/contracts/test-signer.mjs','tests/contracts/engine-gate.mjs','tests/contracts/tn10-run.mjs','tests/contracts/state.mjs','tests/contracts/transactions.mjs','tests/unit/controller.test.mjs','tests/helpers/fake-node.mjs','scripts/contract/bundle.mjs','scripts/wallet/kasware.mjs','node:fs','../../web/outside.mjs'])
     assert.throws(()=>checkGraph(meta(p)),/GRAPH_/,p);
   assert.throws(()=>checkGraph({inputs:{...meta().inputs,'web/app/app.ts':{imports:[{path:'node:fs',external:true}]}}}),/GRAPH_NODE_IMPORT/);
+  // Architectural gate: web/ must NEVER directly import concrete covenant implementations or raw profile bundles.
+  for(const coupled of ['../../scripts/protocols/rolling-v1.mjs','../../scripts/protocols/kusdt-v2.mjs','../../scripts/protocols/kusdt-v2/profile.mjs','../../scripts/contract/profile-data.mjs','@kaswin/rolling-profile','@kaswin/kusdt-v2-profile'])
+    assert.throws(()=>checkGraph({inputs:{...meta().inputs,'web/app/app.ts':{imports:[{path:coupled}]}}}),/GRAPH_WEB_PROTOCOL_COUPLING/,coupled);
 });
 
 // ---- Static checks of the SHIPPED bundle (the pure views are exercised in views.test.mjs; there is no DOM stub any more) ----
@@ -77,5 +80,6 @@ test('shipped bundle keeps the key hygiene hooks: password input, wallet wipe on
   // user-facing page: the footer profile id is in the static HTML, outside the script
   const shell=html.replace(script,'');
   assert.doesNotMatch(shell,/class="exp-bar"/);assert.ok(shell.includes(`id="profileId">${TN10_PROFILE_ID}<`));
-  for(const id of ['view','toasts','modal','mTitle','mBody','mFoot','mClose','nodeChip','walletBtn','settingsBtn','themeBtn','githubBtn','languageBtn'])assert.ok(shell.includes(`id="${id}"`),id);
+  assert.ok(!shell.includes('data-go="protocol"'),'Rules must be removed from top navigation');
+  for(const id of ['view','toasts','modal','mTitle','mBody','mFoot','mClose','nodeChip','walletBtn','helpBtn','settingsBtn','githubBtn'])assert.ok(shell.includes(`id="${id}"`),id);
 });

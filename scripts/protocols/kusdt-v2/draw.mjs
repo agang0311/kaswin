@@ -57,7 +57,19 @@ export function kusdtDrawSample({cid, outpoint, utxoDaa, currentDaa, totalTicket
   const digest = blake2b256(cat(ASCII_SAMPLE_V1, seed, new Uint8Array(8)));
   const sample = fromLe(digest.slice(0, 7));
   const ticket = Number(sample % BigInt(totalTickets));
-  return {ticket, seed: hex(seed), proof, targetHash: target, sequenceCommitment: hex(seq)};
+  return {
+    ticket,
+    seed: hex(seed),
+    digest: hex(digest),
+    sample: sample.toString(),
+    sealedDaa: d.toString(),
+    boundaryDaa: boundary.toString(),
+    parentBlockDaa: openingInt(proof, 224).toString(),
+    targetBlockDaa: td.toString(),
+    proof,
+    targetHash: target,
+    sequenceCommitment: hex(seq),
+  };
 }
 
 /** Locate the winning (shardIndex, recordIndex) and verify the S_FROZEN preimage against mgrState.entries[j].ledgerHash. */
@@ -95,15 +107,27 @@ export function resolveKusdtDrawWinner(mgrState, shards, ticket, profile) {
   };
 }
 
-/** Extract node-authenticated kUSDT v2 DRAW winning shard/record/ticket directly from the DRAW tx witness & target block. */
-export async function verifyKusdtDrawReceipt(round, rpc, profile) {
+/** Extract node-authenticated kUSDT v2 DRAW winning shard/record/ticket & verification proof directly from the DRAW tx witness & target block. */
+export async function verifyKusdtDrawReceipt(round, rpc, profile, {net = null, fetcher = null} = {}) {
   const drawRc = round?.receipts?.find(x =>
     x?.action === 'DRAW'
-    && typeof x.acceptingBlock === 'string' && HASH64.test(x.acceptingBlock)
     && typeof x.txid === 'string' && HASH64.test(x.txid)
   );
   if (!drawRc) return null;
-  const ev = await acceptedAt(rpc, drawRc.txid, drawRc.acceptingBlock);
+  let acceptingBlock = typeof drawRc.acceptingBlock === 'string' && HASH64.test(drawRc.acceptingBlock) ? drawRc.acceptingBlock : null;
+  if (!acceptingBlock && net?.rest && typeof fetcher === 'function') {
+    try {
+      const restBase = String(net.rest).replace(/\/+$/, '');
+      const res = await fetcher(`${restBase}/transactions/${encodeURIComponent(drawRc.txid)}?inputs=false&outputs=false`, {method: 'GET', credentials: 'omit', cache: 'no-store'});
+      if (res.ok) {
+        const j = await res.json();
+        const ab = String(j?.accepting_block_hash ?? '').toLowerCase();
+        if (HASH64.test(ab)) acceptingBlock = ab;
+      }
+    } catch {}
+  }
+  if (!acceptingBlock) return null;
+  const ev = await acceptedAt(rpc, drawRc.txid, acceptingBlock);
   const tx = ev.tx;
   const pushes = scriptPushes(unhex(String(tx.inputs[0].signatureScript ?? '').toLowerCase()));
   check(pushes.length >= 6, 'DRAW_WITNESS');
@@ -124,9 +148,10 @@ export async function verifyKusdtDrawReceipt(round, rpc, profile) {
   const targetHash = hex(proof.slice(0, 32));
   const tb = (await rpc.call('getBlock', {hash: targetHash, includeTransactions: false}))?.block;
   check(tb?.header?.hash === targetHash && tb.verboseData?.isChainBlock === true, 'DRAW_TARGET_NOT_CHAIN');
+  const sealedOutpoint = tx.inputs[0].previousOutpoint;
   const sample = kusdtDrawSample({
     cid: round.cid,
-    outpoint: tx.inputs[0].previousOutpoint,
+    outpoint: sealedOutpoint,
     utxoDaa: ev.inputs[0].daa,
     currentDaa: ev.acceptingDaa,
     totalTickets: mgrState.totalTickets,
@@ -138,5 +163,30 @@ export async function verifyKusdtDrawReceipt(round, rpc, profile) {
   const before = record === 0 ? 0 : frozen.records[record - 1].cumTickets;
   const after = frozen.records[record].cumTickets;
   check(localT >= before && localT < after, 'DRAW_WINNING_RECORD_MISMATCH');
-  return {txid: drawRc.txid, shard, record, ticket: sample.ticket};
+  return {
+    txid: drawRc.txid,
+    shard,
+    record,
+    ticket: sample.ticket,
+    proof: {
+      scheme: 'kusdt-v2',
+      seedDomain: 'KASWIN_KUSDT_DRAW_V1',
+      sampleDomain: 'KASWIN_KUSDT_SAMPLE_V1',
+      cid: round.cid,
+      sealedTxid: sealedOutpoint.transactionId,
+      sealedIndex: Number(sealedOutpoint.index),
+      sealedDaa: sample.sealedDaa,
+      boundaryDaa: sample.boundaryDaa,
+      targetBlockHash: targetHash,
+      targetBlockDaa: sample.targetBlockDaa,
+      parentBlockDaa: sample.parentBlockDaa,
+      sequenceCommitment: sample.sequenceCommitment,
+      seed: sample.seed,
+      digest: sample.digest,
+      sample: sample.sample,
+      totalTickets: mgrState.totalTickets,
+      winningTicket: sample.ticket + 1,
+      rejectionSampled: false,
+    },
+  };
 }

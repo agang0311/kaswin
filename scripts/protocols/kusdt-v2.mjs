@@ -8,6 +8,7 @@ import {acquirePassAProof} from '../round/draw-proof.mjs';
 import {assertFreshDrawConfirmation, confirmDrawTargetWithRetry, drawTargetFromOpening} from '../round/draw-confirmations.mjs';
 import {addressToSpk, spkToAddress} from '../wallet/address.mjs';
 import {kasAsset} from './registry.mjs';
+import {parallelShardBuyReceipt, parallelShardRefundReceipt, parallelShardRefundReceipts} from './receipts.mjs';
 import {
   DECISION,
   EXECUTOR_REWARD,
@@ -17,11 +18,14 @@ import {
   KCC20_SUFFIX_LEN,
   KUSDT_V2_PROTOCOL_ID,
   KUSDT_V2_VERSION,
+  MANAGER_DEPOSIT,
   MAX_ACTIVE_OPEN_SHARDS,
   MAX_BATCH,
   MAX_RECORDS_PER_SHARD,
   MAX_SHARDS,
   MIN_DRAW_TICKETS,
+  PRICE_MAX,
+  PRICE_MIN,
   SHARD_TOTAL_DEPOSIT,
   SHARD_VAULT_DEPOSIT,
   STAGE,
@@ -983,17 +987,54 @@ async function fetchJsonBounded(fetcher, url, timeoutMs = 10_000) {
 
 /** Discover a P2PK owner's KCC-20 (kUSDT) cells via Kascov (primary) / Kasvio (fallback),
  * then verify every cell's pinned template hash, state layout, P2SH hash, AND live unspent state on the user's own Kaspa node. */
-export async function discoverOwnerKcc20Utxos({rpc, ownerPk, kusdtCid, kcc20Suffix, net = null, fetcher = globalThis.fetch}) {
-  check(typeof ownerPk === 'string' && HASH64.test(ownerPk), 'KUSDT_V2_OWNER_PK');
-  check(typeof kusdtCid === 'string' && HASH64.test(kusdtCid), 'KUSDT_V2_CID');
-  verifyKcc20Suffix(kcc20Suffix);
-  const prefix = net?.addressPrefix ?? 'kaspa';
-  const prefixBytes = unhex(KCC20_PREFIX_HEX);
-  const candidates = [];
-  let source = null;
-  let discoveryError = null;
+const KCC20_CAND_CACHE_MS = 15_000;
+const kcc20CandCacheByFetcher = new WeakMap();
+const kcc20CandInflightByFetcher = new WeakMap();
 
-  if (net?.key === 'mainnet' && typeof fetcher === 'function') {
+function kcc20CacheMap(store, fetcher) {
+  let m = store.get(fetcher);
+  if (!m) {
+    m = new Map();
+    store.set(fetcher, m);
+  }
+  return m;
+}
+
+export function invalidateOwnerKcc20Cache(ownerPk, fetcher = globalThis.fetch) {
+  if (typeof fetcher !== 'function') return;
+  const cache = kcc20CandCacheByFetcher.get(fetcher);
+  if (!cache) return;
+  if (!ownerPk) {
+    cache.clear();
+    return;
+  }
+  const suffix = `:${ownerPk}`;
+  for (const k of [...cache.keys()]) {
+    if (k.endsWith(suffix)) cache.delete(k);
+  }
+}
+
+async function fetchOwnerKcc20Candidates({ownerPk, kusdtCid, kcc20Suffix, net = null, fetcher = globalThis.fetch, bypassCache = false}) {
+  if (net?.key !== 'mainnet' || typeof fetcher !== 'function') {
+    return {candidates: [], source: null, discoveryError: null, fromCache: false};
+  }
+  const cacheKey = `${net.key}:${kusdtCid}:${ownerPk}`;
+  const cache = kcc20CacheMap(kcc20CandCacheByFetcher, fetcher);
+  if (!bypassCache) {
+    const hit = cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < KCC20_CAND_CACHE_MS) {
+      return {candidates: hit.candidates, source: hit.source, discoveryError: null, fromCache: true};
+    }
+  }
+  const inflight = kcc20CacheMap(kcc20CandInflightByFetcher, fetcher);
+  if (!bypassCache && inflight.has(cacheKey)) {
+    return await inflight.get(cacheKey);
+  }
+  const task = (async () => {
+    const prefixBytes = unhex(KCC20_PREFIX_HEX);
+    const candidates = [];
+    let source = null;
+    let discoveryError = null;
     try {
       const data = await fetchJsonBounded(fetcher, `${KASCOV_MAINNET_BASE}/token/${kusdtCid}/cells?owner=00${ownerPk}&limit=1000`);
       check(data?.network === 'mainnet' && data?.token_id === kusdtCid && data?.owner === `00${ownerPk}` && Array.isArray(data.cells), 'KASCOV_RESPONSE');
@@ -1044,10 +1085,27 @@ export async function discoverOwnerKcc20Utxos({rpc, ownerPk, kusdtCid, kcc20Suff
         discoveryError = e2;
       }
     }
-  }
+    if (!discoveryError && source) {
+      cache.set(cacheKey, {candidates, source, at: Date.now()});
+    }
+    return {candidates, source, discoveryError, fromCache: false};
+  })().finally(() => {
+    if (inflight.get(cacheKey) === task) inflight.delete(cacheKey);
+  });
+  if (!bypassCache) inflight.set(cacheKey, task);
+  return await task;
+}
 
-  if (!candidates.length) return {cells: [], source, discoveryError};
+export async function prefetchOwnerKcc20Candidates({ownerPk, kusdtCid, kcc20Suffix, net = null, fetcher = globalThis.fetch}) {
+  if (typeof ownerPk !== 'string' || !HASH64.test(ownerPk) || typeof kusdtCid !== 'string' || !HASH64.test(kusdtCid) || !kcc20Suffix) return;
+  try {
+    verifyKcc20Suffix(kcc20Suffix);
+    await fetchOwnerKcc20Candidates({ownerPk, kusdtCid, kcc20Suffix, net, fetcher});
+  } catch {}
+}
 
+async function verifyKcc20CandidatesOnNode({rpc, candidates, kusdtCid, prefix}) {
+  if (!candidates.length) return [];
   const byAddr = new Map();
   for (const cand of candidates) {
     const addr = spkToAddress(cand.spk, prefix);
@@ -1058,25 +1116,24 @@ export async function discoverOwnerKcc20Utxos({rpc, ownerPk, kusdtCid, kcc20Suff
   const addrs = [...byAddr.keys()];
   const liveCells = [];
   const seen = new Set();
-  for (let i = 0; i < addrs.length; i += 8) {
-    const batch = addrs.slice(i, i + 8);
-    await Promise.all(batch.map(async addr => {
-      try {
-        const [utxos, spent] = await Promise.all([
-          commonUtxos(rpc, addr),
-          mempoolSpentOutpoints(rpc, addr).catch(() => new Set()),
-        ]);
+  for (let i = 0; i < addrs.length; i += 64) {
+    const batch = addrs.slice(i, i + 64);
+    try {
+      const [utxos, spent] = await Promise.all([
+        commonUtxosByAddresses(rpc, batch, {chunkSize: 64}),
+        mempoolSpentOutpoints(rpc, batch).catch(() => new Set()),
+      ]);
+      const utxoByOutpoint = new Map();
+      for (const u of utxos) {
+        if (!u?.outpoint || u.isCoinbase || u.covenantId !== kusdtCid) continue;
+        utxoByOutpoint.set(`${u.outpoint.transactionId}:${u.outpoint.index}`, u);
+      }
+      for (const addr of batch) {
         for (const cand of byAddr.get(addr) ?? []) {
           const key = `${cand.outpoint.transactionId}:${cand.outpoint.index}`;
           if (seen.has(key) || spent.has(key)) continue;
-          const hit = utxos.find(u =>
-            !u.isCoinbase
-            && u.covenantId === kusdtCid
-            && u.outpoint?.transactionId === cand.outpoint.transactionId
-            && u.outpoint?.index === cand.outpoint.index
-            && u.spk?.script === cand.spk.script
-          );
-          if (!hit) continue;
+          const hit = utxoByOutpoint.get(key);
+          if (!hit || hit.spk?.script !== cand.spk.script) continue;
           seen.add(key);
           const d = hit.daa ?? hit.utxoDaa ?? 0n;
           liveCells.push({
@@ -1090,10 +1147,24 @@ export async function discoverOwnerKcc20Utxos({rpc, ownerPk, kusdtCid, kcc20Suff
             redeem: cand.redeem,
           });
         }
-      } catch {}
-    }));
+      }
+    } catch {}
   }
-  return {cells: liveCells, source, discoveryError};
+  return liveCells;
+}
+
+export async function discoverOwnerKcc20Utxos({rpc, ownerPk, kusdtCid, kcc20Suffix, net = null, fetcher = globalThis.fetch, bypassCache = false}) {
+  check(typeof ownerPk === 'string' && HASH64.test(ownerPk), 'KUSDT_V2_OWNER_PK');
+  check(typeof kusdtCid === 'string' && HASH64.test(kusdtCid), 'KUSDT_V2_CID');
+  verifyKcc20Suffix(kcc20Suffix);
+  const prefix = net?.addressPrefix ?? 'kaspa';
+  let fetched = await fetchOwnerKcc20Candidates({ownerPk, kusdtCid, kcc20Suffix, net, fetcher, bypassCache});
+  let liveCells = await verifyKcc20CandidatesOnNode({rpc, candidates: fetched.candidates, kusdtCid, prefix});
+  if (fetched.fromCache && !liveCells.length) {
+    fetched = await fetchOwnerKcc20Candidates({ownerPk, kusdtCid, kcc20Suffix, net, fetcher, bypassCache: true});
+    liveCells = await verifyKcc20CandidatesOnNode({rpc, candidates: fetched.candidates, kusdtCid, prefix});
+  }
+  return {cells: liveCells, source: fetched.source, discoveryError: fetched.discoveryError};
 }
 
 /** Select the cleanest subset of KCC-20 cells within maxInputs (prefer single smallest cell >= cost; else largest-first). */
@@ -1154,6 +1225,64 @@ export function buildKusdtV2AssetDeltas({action, qty = 0, price = 0n, vaultAmoun
   return deltas;
 }
 
+export function kusdtV2InteractiveModel(round, {isWinner = false} = {}) {
+  const k = round?.kusdt;
+  if (!k) return null;
+  const shards = Array.isArray(k.shards) ? k.shards : [];
+  const openShards = shards.filter(sh => !sh.terminal && sh.stage === STAGE.S_OPEN && Number(sh.recordCount ?? 0) < MAX_RECORDS_PER_SHARD);
+  const openedTotal = Number(k.openedCount ?? 0);
+  const buyShardSelector = {
+    canOpenNew: openShards.length < MAX_ACTIVE_OPEN_SHARDS && openedTotal < MAX_SHARDS,
+    activeOpenCount: openShards.length,
+    maxActiveOpen: MAX_ACTIVE_OPEN_SHARDS,
+    depositKas: '4',
+    options: openShards.map(sh => ({
+      shardId: sh.shardCid,
+      tickets: Number(sh.tickets ?? 0),
+      recordCount: Number(sh.recordCount ?? 0),
+      maxRecords: MAX_RECORDS_PER_SHARD,
+    })),
+  };
+  const actShards = shards.filter(s => !s.terminal && (s.stage === STAGE.S_PAYOUT || s.stage === STAGE.S_REFUND));
+  const price = BigInt(k.price ?? round?.settings?.ticketPrice ?? 1_000_000n);
+  const shardSettlement = actShards.length
+    ? {
+        mode: actShards.some(s => s.stage === STAGE.S_REFUND) ? 'refund' : 'payout',
+        depositKas: '4',
+        execRewardFormatted: '0.5',
+        groups: actShards.map(s => {
+          if (s.stage === STAGE.S_REFUND) {
+            const recs = Array.isArray(s.records) ? s.records : [];
+            return {
+              shardId: s.shardCid,
+              mode: 'refund',
+              claims: recs.map((rec, idx) => {
+                const prev = idx === 0 ? 0 : recs[idx - 1].cumTickets;
+                const qty = rec.cumTickets - prev;
+                const claimed = ((s.claimedMask ?? 0) & (1 << idx)) !== 0;
+                return {
+                  recordIndex: idx,
+                  buyerKey: rec.buyerPk,
+                  tickets: qty,
+                  amount: BigInt(qty) * price,
+                  claimed,
+                  op: {action: 'CLAIM_REFUND', shardCid: s.shardCid, recIdx: idx},
+                };
+              }),
+            };
+          }
+          return {
+            shardId: s.shardCid,
+            mode: 'payout',
+            selfPayoutOp: isWinner ? {action: 'PAYOUT_SELF', shardCid: s.shardCid} : null,
+            execPayoutOp: {action: 'PAYOUT_EXECUTOR', shardCid: s.shardCid},
+          };
+        }),
+      }
+    : null;
+  return {buyShardSelector, shardSettlement};
+}
+
 export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = null, canCreate = true} = {}) {
   check(profile && typeof profile.id === 'string' && profile.frames?.m_open, 'KUSDT_V2_PROFILE');
   const effectiveCid = kusdtCid ?? profile.kusdtCid;
@@ -1185,15 +1314,173 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
     name: 'kUSDT v2 (Parallel Shards)',
     profileId,
     profile,
+    supportedNetworks: Object.freeze(['mainnet']),
+    supportsNetwork(net = null) {
+      return !net || net.key === 'mainnet';
+    },
+    displayName() {
+      return 'kUSDT v2 (KCC-20)';
+    },
     capabilities: Object.freeze({
       canCreate: !!canCreate,
       multiShardSelect: true,
       pullRefund: true,
       supportsExecIncentive: true,
       supportsBudgetCalculator: false,
+      supportsBatchSettlement: false,
+      supportsIntentResend: false,
+      freeActions: Object.freeze([]),
+      customRoundSync: true,
+      customLifecycle: true,
     }),
     assetFor() {
       return kusdtAsset(effectiveCid);
+    },
+    prefetchForWallet({wallet, net = null, fetcher = globalThis.fetch} = {}) {
+      if (!wallet?.key || !defaultSuffix) return;
+      void prefetchOwnerKcc20Candidates({ownerPk: wallet.key, kusdtCid: effectiveCid, kcc20Suffix: defaultSuffix, net, fetcher});
+    },
+    invalidateWalletCache(ownerPk, fetcher = globalThis.fetch) {
+      invalidateOwnerKcc20Cache(ownerPk, fetcher);
+    },
+    matchesRound(r) {
+      if (!r || typeof r !== 'object') return false;
+      if (r.profileId) return r.profileId === profileId;
+      return !!r.kusdt || r.protocol === KUSDT_V2_PROTOCOL_ID || r.protocolId === KUSDT_V2_PROTOCOL_ID;
+    },
+    viewMeta() {
+      return Object.freeze({
+        protocolId: KUSDT_V2_PROTOCOL_ID,
+        profileId,
+        displayName: 'kUSDT v2 (KCC-20)',
+        shardModel: 'parallel',
+        maxShards: MAX_SHARDS,
+        supportsBatchSettlement: false,
+        supportsIntentResend: false,
+        freeActions: Object.freeze([]),
+        actionStyle: 'parallel_dispatch',
+      });
+    },
+    createSpec(net = null) {
+      return Object.freeze({
+        protocolId: KUSDT_V2_PROTOCOL_ID,
+        profileId,
+        name: 'kUSDT v2',
+        displayName: 'kUSDT v2 (KCC-20)',
+        layout: 'parallel_fixed_shards',
+        supportedOnNet: !net || net.key === 'mainnet',
+        asset: kusdtAsset(effectiveCid),
+        priceMin: PRICE_MIN,
+        priceMax: PRICE_MAX,
+        fixedTicketCap: MAX_SHARDS * MAX_RECORDS_PER_SHARD,
+        minTicketCap: MIN_DRAW_TICKETS,
+        maxTicketCap: MAX_SHARDS * MAX_RECORDS_PER_SHARD,
+        fixedMinTickets: MIN_DRAW_TICKETS,
+        minTicketsFloor: MIN_DRAW_TICKETS,
+        shardSize: MAX_RECORDS_PER_SHARD,
+        maxShards: MAX_SHARDS,
+        creatorDepositSompi: MANAGER_DEPOSIT,
+        minCloseMinutes: 1,
+        maxCloseMinutes: 10080,
+      });
+    },
+    roundFingerprint(r) {
+      if (!r) return '';
+      const k = r.kusdt;
+      const shKey = (k?.shards ?? []).map(s => `${s.shardCid}:${s.outpoint?.transactionId ?? ''}:${s.outpoint?.index ?? ''}:${s.stage ?? 0}:${s.tickets ?? 0}:${s.terminal ? 1 : 0}:${s.claimedMask ?? 0}:${s.records?.length ?? 0}:${s.frozenRedeem ? 1 : 0}`).join(',');
+      const rcKey = (r.receipts ?? []).map(t => `${t.txid}:${t.action}:${t.finalized === false ? 0 : 1}:${t.feeSompi ?? ''}:${t.shardCid ?? ''}:${t.recordIndex ?? ''}:${t.recIdx ?? ''}:${t.acceptingBlock ?? ''}`).join(';');
+      return `${r.terminal ?? ''}|${r.manager?.outpoint?.transactionId ?? ''}:${r.manager?.outpoint?.index ?? ''}|${r.accepting ?? ''}|${r.draw ? `${r.draw.txid}:${r.draw.shard}:${r.draw.record}:${r.draw.ticket}` : ''}|${k?.stage ?? ''}|${k?.totalTickets ?? 0}|${k?.openedCount ?? 0}|${k?.cursor ?? 0}|${k?.decision ?? 0}|${!!k?.nodeVerified}|${rcKey}|${shKey}`;
+    },
+    isNodeVerified(r) {
+      return !!r?.terminal || !!r?.kusdt?.nodeVerified;
+    },
+    isTerminalImmutable() {
+      return false;
+    },
+    lockedSompi(r) {
+      return r?.manager ? BigInt(r.manager.value ?? 0n) : 0n;
+    },
+    holdingsOf(r, facts, shards, walletKey) {
+      if (!walletKey || r?.terminal || !shards || !['sales', 'sealed', 'win', 'refund'].includes(facts?.module ?? '')) return null;
+      let mine = 0;
+      let total = 0;
+      for (const s of shards) { mine += s.mineCount; total += s.tickets; }
+      return {tickets: mine, total};
+    },
+    interactiveModel(r, opts = {}) {
+      return kusdtV2InteractiveModel(r, opts);
+    },
+    matchBuyReceipt(sh, rec, r, shards) { return parallelShardBuyReceipt(sh, rec, r, shards); },
+    matchRefundReceipt(sh, rec, r, shards) { return parallelShardRefundReceipt(sh, rec, r, shards); },
+    shardRefundReceipts(sh, r, shards) { return parallelShardRefundReceipts(sh, r, shards); },
+    isPurchaseReceipt(t) { return t?.action === 'BUY' || t?.action === 'OPEN_SHARD'; },
+    isRefundReceipt(t) { return t?.action === 'CLAIM_REFUND'; },
+    verifyDrawReceipt(r, rpc, opts) { return verifyKusdtDrawReceipt(r, rpc, profile, opts); },
+    buildPreparedIntent({prepared: p, signed, now = Date.now}) {
+      const act = p.subAction ?? p.kusdtAction ?? p.op.action;
+      return {
+        status: 'PREPARED',
+        action: act,
+        txid: signed.txid,
+        profileId,
+        draft: signed.draft,
+        createdAtMs: typeof now === 'function' ? now() : now,
+        nextManagerState: p.managerState ?? null,
+        nextShardState: p.shardState ?? null,
+        nextShardStates: p.shardStates ?? null,
+        shardCid: p.shardCid ?? p.op?.shardCid ?? null,
+        recordIndex: act === 'OPEN_SHARD' ? 0 : (act === 'BUY' && Array.isArray(p.shardState?.records) ? p.shardState.records.length - 1 : null),
+        recIdx: act === 'CLAIM_REFUND' && p.op?.recIdx != null ? Number(p.op.recIdx) : null,
+        proof: p.passAProof ?? null,
+        drawResult: p.drawResult ?? null,
+      };
+    },
+    createGenesisRound({prepared: p, signed, intent, wallet}) {
+      const mgrSpk = p.transaction?.outputs?.[0]?.scriptPublicKey ?? null;
+      return {
+        cid: p.cid,
+        profileId,
+        source: 'created',
+        terminal: null,
+        halted: null,
+        intent,
+        manager: p.managerRedeem && mgrSpk ? {
+          outpoint: {transactionId: signed.txid, index: 0},
+          value: MANAGER_DEPOSIT,
+          spk: mgrSpk,
+          utxoDaa: 0n,
+          daaScore: 0n,
+          covenantId: p.cid,
+          redeemScript: p.managerRedeem,
+        } : null,
+        frozen: [],
+        receipts: [{action: 'GENESIS', txid: signed.txid, feeSompi: String(p.fee ?? 0), finalized: false}],
+        pending: [],
+        fees: BigInt(p.fee ?? 0),
+        origin: p.transaction?.inputs?.[0]?.previousOutpoint ?? null,
+        settings: {...p.settings, closeDaa: p.settings.closeEligibleDaa, creatorPk: wallet.key},
+        bought: 0,
+        step: 0,
+        kusdt: {
+          stage: 1,
+          price: p.settings.ticketPrice,
+          closeDaa: p.settings.closeEligibleDaa,
+          openedCount: 0,
+          cursor: 0,
+          totalTickets: 0,
+          decision: 0,
+          creatorPk: wallet.key,
+          winnerPk: null,
+          nodeVerified: false,
+          shards: [],
+        },
+      };
+    },
+    canAttachIntent(round, intent) {
+      return !round.intent && (!!round.manager || ['PAYOUT_EXECUTOR', 'PAYOUT_SELF', 'CLAIM_REFUND'].includes(intent.action));
+    },
+    shouldRemoveOnGenesisDiscard(round, intent) {
+      return !round?.kusdt?.nodeVerified && (round?.receipts?.length ?? 0) <= 1 && intent?.action === 'GENESIS';
     },
     emptyRound(args) {
       return emptyKusdtV2Round({...args, profileId});
@@ -2019,6 +2306,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           op: choice,
           targetCount: 0,
           roundCid: prepared.cid,
+          subAction: 'GENESIS',
           kusdtAction: 'GENESIS',
           review: {
             txid: prepared.txid,
@@ -2083,28 +2371,6 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           }
         }
       }
-      const needsManager = uiAction !== 'PAYOUT_EXECUTOR' && uiAction !== 'PAYOUT_SELF' && uiAction !== 'CLAIM_REFUND' && !(uiAction === 'BUY' && targetCid);
-      let mgrArg = null;
-      if (needsManager) {
-        check(round.manager && round.manager.outpoint && round.manager.spk, 'STALE_INPUT');
-        const liveMgrUtxos = await commonUtxos(rpc, spkToAddress(round.manager.spk, prefix));
-        const liveMgr = liveMgrUtxos.find(u =>
-          u.covenantId === round.cid
-          && u.outpoint?.transactionId === round.manager.outpoint.transactionId
-          && u.outpoint?.index === round.manager.outpoint.index
-        );
-        check(liveMgr, 'STALE_INPUT');
-        mgrArg = {
-          outpoint: liveMgr.outpoint,
-          value: liveMgr.value,
-          spk: liveMgr.spk ?? round.manager.spk,
-          daaScore: liveMgr.daa ?? liveMgr.utxoDaa ?? round.manager.utxoDaa ?? 0n,
-          daa: liveMgr.daa ?? liveMgr.utxoDaa ?? round.manager.utxoDaa ?? 0n,
-          covenantId: round.cid,
-          redeem: round.manager.redeemScript,
-        };
-      }
-      const kasUtxos = await selectKasFunding(rpc, wallet, reserved);
       let kusdtAction = uiAction;
       let prepared;
       let refundBuyerPk = null;
@@ -2141,13 +2407,72 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         }
         check(false, 'KUSDT_V2_GENESIS_ORIGIN');
       };
+      const loadManagerAndKas = async () => {
+        check(round.manager && round.manager.outpoint && round.manager.spk, 'STALE_INPUT');
+        const [liveMgrUtxos, kasUtxos] = await Promise.all([
+          commonUtxos(rpc, spkToAddress(round.manager.spk, prefix)),
+          selectKasFunding(rpc, wallet, reserved),
+        ]);
+        const liveMgr = liveMgrUtxos.find(u =>
+          u.covenantId === round.cid
+          && u.outpoint?.transactionId === round.manager.outpoint.transactionId
+          && u.outpoint?.index === round.manager.outpoint.index
+        );
+        check(liveMgr, 'STALE_INPUT');
+        const mgrArg = {
+          outpoint: liveMgr.outpoint,
+          value: liveMgr.value,
+          spk: liveMgr.spk ?? round.manager.spk,
+          daaScore: liveMgr.daa ?? liveMgr.utxoDaa ?? round.manager.utxoDaa ?? 0n,
+          daa: liveMgr.daa ?? liveMgr.utxoDaa ?? round.manager.utxoDaa ?? 0n,
+          covenantId: round.cid,
+          redeem: round.manager.redeemScript,
+        };
+        return {mgrArg, kasUtxos};
+      };
       if (uiAction === 'BUY') {
         // C-01 fail-closed off-chain defense: ALWAYS verify canonical empty M_OPEN genesis root before BUY/OPEN_SHARD
         if (k.genesisRootInvalid) {
           throw Object.assign(new Error('该轮次未通过规范创世校验，已禁止参与。'), {code: 'USER', safeCode: 'KUSDT_V2_GENESIS_ROOT_MISMATCH'});
         }
+        check(suffix, 'KUSDT_V2_KCC20_SUFFIX_REQUIRED');
+        const qty = Number(choice.quantity);
+        check(Number.isInteger(qty) && qty >= 1, 'QUANTITY');
+        const cost = BigInt(qty) * price;
+        const maxKcc20Inputs = targetCid ? 2 : 3;
+
+        // Pre-validate local contract records and compute expected vault address before parallel RPC fan-out.
+        let sh = null, sst = null, oldTickets = 0, expectedVault = null;
+        const probeAddrs = [];
+        if (targetCid) {
+          check(round.manager?.spk && round.manager?.redeemScript, 'STALE_INPUT');
+          sh = shards.find(s => s.shardCid === targetCid);
+          check(sh && sh.outpoint && sh.redeem && sh.spk, 'STALE_INPUT');
+          sst = verifyKusdtV2Redeem(sh.redeem, profile, 'shard').state;
+          oldTickets = sst.records?.[sst.records.length - 1]?.cumTickets ?? Number(sh.tickets ?? 0);
+          probeAddrs.push(spkToAddress(round.manager.spk, prefix), spkToAddress(sh.spk, prefix));
+          if (!sh.vaultUtxo) {
+            const vAmt = BigInt(oldTickets) * sst.price;
+            expectedVault = {...kcc20RedeemAndSpk({amount: vAmt, owner: sh.shardCid, ownerScheme: KCC20_OWNER_SCHEME.OWNER_COVENANT_ID}, suffix), amount: vAmt};
+            probeAddrs.push(spkToAddress(expectedVault.scriptPubKey, prefix));
+          }
+        } else {
+          check(round.manager && round.manager.outpoint && round.manager.spk, 'STALE_INPUT');
+          probeAddrs.push(spkToAddress(round.manager.spk, prefix));
+        }
+
+        // Parallel I/O fan-out: KAS funding + genesis origin + KCC-20 discovery/verification + batched contract UTXO probe.
+        const [kasRes, originRes, discovered, contractUtxos] = await Promise.all([
+          selectKasFunding(rpc, wallet, reserved).then(v => ({ok: true, v}), e => ({ok: false, e})),
+          resolveOrigin().then(v => ({ok: true, v}), e => ({ok: false, e})),
+          discoverOwnerKcc20Utxos({rpc, ownerPk: wallet.key, kusdtCid: effectiveCid, kcc20Suffix: suffix, net, fetcher}),
+          commonUtxosByAddresses(rpc, probeAddrs, {chunkSize: 64}),
+        ]);
+
+        let buyOrigin;
         try {
-          const buyOrigin = await resolveOrigin();
+          if (!originRes.ok) throw originRes.e;
+          buyOrigin = originRes.v;
           verifyKusdtV2GenesisRoot({
             cid: round.cid,
             origin: buyOrigin,
@@ -2159,12 +2484,17 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         } catch {
           throw Object.assign(new Error('该轮次未通过规范创世校验，已禁止参与。'), {code: 'USER', safeCode: 'KUSDT_V2_GENESIS_ROOT_MISMATCH'});
         }
+
+        const liveMgr = contractUtxos.find(u =>
+          u.covenantId === round.cid
+          && u.outpoint?.transactionId === round.manager.outpoint.transactionId
+          && u.outpoint?.index === round.manager.outpoint.index
+        );
+
         // C-01 shard directory defense: when buying into an existing shard, verify targetCid belongs to live M_OPEN.entries on node!
         if (targetCid) {
-          check(round.manager?.spk && round.manager?.redeemScript, 'STALE_INPUT');
           let mgrStForDir = null;
-          const dirProbe = await probeLiveOutpoint(rpc, round.manager.spk, round.manager.outpoint, round.cid, prefix);
-          if (dirProbe.ok && dirProbe.hit) {
+          if (liveMgr) {
             mgrStForDir = verifyKusdtV2Redeem(round.manager.redeemScript, profile, 'manager').state;
           } else {
             const caught = await catchupKusdtManagerViaRest({rpc, cid: round.cid, manager: round.manager, profile, net, fetcher, shardMap: new Map()});
@@ -2174,13 +2504,13 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           if (!(mgrStForDir.entries ?? []).some(e => e.shardCid === targetCid)) {
             throw Object.assign(new Error('该分片不属于本轮官方目录，已禁止购买。'), {code: 'USER', safeCode: 'KUSDT_V2_SHARD_NOT_IN_DIRECTORY'});
           }
+        } else {
+          check(liveMgr, 'STALE_INPUT');
         }
-        check(suffix, 'KUSDT_V2_KCC20_SUFFIX_REQUIRED');
-        const qty = Number(choice.quantity);
-        check(Number.isInteger(qty) && qty >= 1, 'QUANTITY');
-        const cost = BigInt(qty) * price;
-        const maxKcc20Inputs = targetCid ? 2 : 3;
-        const discovered = await discoverOwnerKcc20Utxos({rpc, ownerPk: wallet.key, kusdtCid: effectiveCid, kcc20Suffix: suffix, net, fetcher});
+
+        if (!kasRes.ok) throw kasRes.e;
+        const kasUtxos = kasRes.v;
+
         let kcc20Utxos = (discovered.cells ?? []).filter(u => !u?.outpoint || !reserved.has(`${u.outpoint.transactionId}:${u.outpoint.index}`));
         if (!kcc20Utxos.length && net?.key !== 'mainnet') {
           kcc20Utxos = (await getAssetUtxos(rpc, wallet.address, kusdtAsset(effectiveCid)))
@@ -2207,13 +2537,22 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         reviewMeta.tokenChange = pickedSum - cost;
         try {
           if (!targetCid) {
+            const mgrArg = {
+              outpoint: liveMgr.outpoint,
+              value: liveMgr.value,
+              spk: liveMgr.spk ?? round.manager.spk,
+              daaScore: liveMgr.daa ?? liveMgr.utxoDaa ?? round.manager.utxoDaa ?? 0n,
+              daa: liveMgr.daa ?? liveMgr.utxoDaa ?? round.manager.utxoDaa ?? 0n,
+              covenantId: round.cid,
+              redeem: round.manager.redeemScript,
+            };
             kusdtAction = 'OPEN_SHARD';
             reviewMeta.vaultTokenAmount = cost;
             prepared = this.prepareOperation({
               action: 'OPEN_SHARD',
               managerUtxo: mgrArg,
               managerCid: round.cid,
-              origin: await resolveOrigin(),
+              origin: buyOrigin,
               buyerPk: wallet.key,
               qty,
               price,
@@ -2225,16 +2564,15 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
               net,
             });
           } else {
-            const sh = shards.find(s => s.shardCid === targetCid);
-            check(sh && sh.outpoint && sh.redeem && sh.spk, 'STALE_INPUT');
-            const shLive = (await commonUtxos(rpc, spkToAddress(sh.spk, prefix)))
-              .find(u => u.outpoint?.transactionId === sh.outpoint.transactionId && u.outpoint?.index === sh.outpoint.index);
+            const shLive = contractUtxos.find(u => u.outpoint?.transactionId === sh.outpoint.transactionId && u.outpoint?.index === sh.outpoint.index);
             check(shLive, 'STALE_INPUT');
-            const sst = verifyKusdtV2Redeem(sh.redeem, profile, 'shard').state;
-            const oldTickets = sst.records?.[sst.records.length - 1]?.cumTickets ?? Number(sh.tickets ?? 0);
-            const vaultUtxo = sh.vaultUtxo ?? await findLiveVaultUtxo({
-              rpc, shardCid: sh.shardCid, amount: BigInt(oldTickets) * sst.price, kusdtCid: effectiveCid, kcc20Suffix: suffix, prefix,
-            });
+            let vaultUtxo = sh.vaultUtxo;
+            if (!vaultUtxo && expectedVault) {
+              const vHit = contractUtxos.find(u => !u.isCoinbase && u.covenantId === effectiveCid && u.spk?.script === expectedVault.scriptPubKey.script && u.value === SHARD_VAULT_DEPOSIT && u.outpoint);
+              check(vHit, 'STALE_INPUT');
+              const vd = vHit.daa ?? vHit.utxoDaa ?? 0n;
+              vaultUtxo = {outpoint: vHit.outpoint, value: vHit.value, spk: vHit.spk ?? expectedVault.scriptPubKey, daa: vd, utxoDaa: vd, covenantId: effectiveCid, amount: expectedVault.amount, redeem: expectedVault.redeem};
+            }
             reviewMeta.vaultTokenAmount = BigInt(oldTickets + qty) * sst.price;
             prepared = this.prepareOperation({
               action: 'BUY',
@@ -2262,8 +2600,8 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         }
       } else if (uiAction === 'CLOSE') {
         kusdtAction = Number(k.openedCount ?? 0) === 0 ? 'EMPTY_CLOSE' : 'COLLECT_BATCH';
-        const roundOrigin = await resolveOrigin();
         if (kusdtAction === 'EMPTY_CLOSE') {
+          const [{mgrArg, kasUtxos}, roundOrigin] = await Promise.all([loadManagerAndKas(), resolveOrigin()]);
           prepared = this.prepareOperation({action: 'EMPTY_CLOSE', managerUtxo: mgrArg, managerCid: round.cid, origin: roundOrigin, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net});
         } else {
           // H-06: strictly contiguous prefix from cursor (never skip missing shard[cursor]), and verify live on node
@@ -2275,7 +2613,11 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
             contiguous.push(s);
           }
           check(contiguous.length > 0, 'STALE_INPUT');
-          const probeRes = await batchProbeLiveOutpoints(rpc, contiguous.map((s, i) => ({index: i, spk: s.spk, outpoint: s.outpoint, expectedCid: s.shardCid})), prefix);
+          const [{mgrArg, kasUtxos}, roundOrigin, probeRes] = await Promise.all([
+            loadManagerAndKas(),
+            resolveOrigin(),
+            batchProbeLiveOutpoints(rpc, contiguous.map((s, i) => ({index: i, spk: s.spk, outpoint: s.outpoint, expectedCid: s.shardCid})), prefix),
+          ]);
           const batch = [];
           for (let i = 0; i < contiguous.length; i++) {
             const hit = probeRes.get(i)?.hit;
@@ -2288,6 +2630,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
             this.prepareOperation({action: 'COLLECT_BATCH', managerUtxo: mgrArg, managerCid: round.cid, origin: roundOrigin, shardUtxos: slice, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net}));
         }
       } else if (uiAction === 'TIMEOUT') {
+        const {mgrArg, kasUtxos} = await loadManagerAndKas();
         kusdtAction = 'REROLL';
         prepared = this.prepareOperation({action: 'REROLL', managerUtxo: mgrArg, managerCid: round.cid, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net});
       } else if (uiAction === 'PAY_OLD' || uiAction === 'REFUND_OLD') {
@@ -2300,7 +2643,10 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
           contiguous.push(s);
         }
         check(contiguous.length > 0, 'STALE_INPUT');
-        const probeRes = await batchProbeLiveOutpoints(rpc, contiguous.map((s, i) => ({index: i, spk: s.spk, outpoint: s.outpoint, expectedCid: s.shardCid})), prefix);
+        const [{mgrArg, kasUtxos}, probeRes] = await Promise.all([
+          loadManagerAndKas(),
+          batchProbeLiveOutpoints(rpc, contiguous.map((s, i) => ({index: i, spk: s.spk, outpoint: s.outpoint, expectedCid: s.shardCid})), prefix),
+        ]);
         const batch = [];
         for (let i = 0; i < contiguous.length; i++) {
           const hit = probeRes.get(i)?.hit;
@@ -2312,6 +2658,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         prepared = prepareBatchWithStepDown(batch, slice =>
           this.prepareOperation({action: 'DISPATCH_BATCH', managerUtxo: mgrArg, managerCid: round.cid, frozenShardUtxos: slice, fundingUtxos: kasUtxos, changeSpk: wallet.spk, feerate, net}));
       } else if (uiAction === 'DRAW') {
+        const [{mgrArg, kasUtxos}, currentDaa] = await Promise.all([loadManagerAndKas(), rpc.currentDaa()]);
         const mgrTxid = mgrArg.outpoint.transactionId.toLowerCase();
         let accepting = (round.receipts ?? []).find(rc => rc.txid === mgrTxid && HASH64.test(String(rc.acceptingBlock ?? '')))?.acceptingBlock
           ?? (round.manager?.outpoint?.transactionId?.toLowerCase() === mgrTxid && HASH64.test(String(round.accepting ?? '')) ? round.accepting : null);
@@ -2326,7 +2673,6 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         if (!accepting) accepting = await fetchAcceptingBlockViaRest(mgrTxid, net, fetcher);
         check(accepting && HASH64.test(accepting), 'ACCEPTING_BLOCK_REQUIRED');
 
-        const currentDaa = await rpc.currentDaa();
         const proofObj = await acquirePassAProof(
           rpc,
           {outpoint: mgrArg.outpoint, value: mgrArg.value, cid: round.cid, spk: mgrArg.spk, utxoDaa: BigInt(mgrArg.daa), currentDaa},
@@ -2381,22 +2727,44 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         });
         prepared.drawConfirmation = proofObj.confirmation;
         prepared.passAProof = proofObj.opening;
-        prepared.drawResult = {txid: prepared.txid, shard: win.shardIndex, record: win.recordIndex, ticket: sample.ticket};
+        prepared.drawResult = {
+          txid: prepared.txid,
+          shard: win.shardIndex,
+          record: win.recordIndex,
+          ticket: sample.ticket,
+          proof: {
+            scheme: 'kusdt-v2',
+            seedDomain: 'KASWIN_KUSDT_DRAW_V1',
+            sampleDomain: 'KASWIN_KUSDT_SAMPLE_V1',
+            cid: round.cid,
+            sealedTxid: mgrArg.outpoint.transactionId,
+            sealedIndex: Number(mgrArg.outpoint.index),
+            sealedDaa: sample.sealedDaa,
+            boundaryDaa: sample.boundaryDaa,
+            targetBlockHash: sample.targetHash,
+            targetBlockDaa: sample.targetBlockDaa,
+            parentBlockDaa: sample.parentBlockDaa,
+            sequenceCommitment: sample.sequenceCommitment,
+            seed: sample.seed,
+            digest: sample.digest,
+            sample: sample.sample,
+            totalTickets: mgrState.totalTickets,
+            winningTicket: sample.ticket + 1,
+            rejectionSampled: false,
+          },
+        };
       } else if (uiAction === 'PAYOUT_EXECUTOR' || uiAction === 'PAYOUT_SELF' || uiAction === 'CLAIM_REFUND') {
         check(suffix, 'KUSDT_V2_KCC20_SUFFIX_REQUIRED');
         const sh = shards.find(s => s.shardCid === choice.shardCid);
         check(sh?.outpoint && sh?.redeem && sh?.spk, 'STALE_INPUT');
-        const shLive = (await commonUtxos(rpc, spkToAddress(sh.spk, prefix)))
-          .find(u => u.outpoint?.transactionId === sh.outpoint.transactionId && u.outpoint?.index === sh.outpoint.index);
-        check(shLive, 'STALE_INPUT');
-        const shardArg = {outpoint: shLive.outpoint, value: shLive.value, spk: sh.spk, daa: shLive.daa ?? sh.daaScore, covenantId: sh.shardCid, redeem: sh.redeem};
         const sst = verifyKusdtV2Redeem(sh.redeem, profile, 'shard').state;
         let vaultAmt = sst.vaultAmount ?? 0n;
+        let recIdx = 0, refundAmount = 0n;
         if (uiAction === 'CLAIM_REFUND') {
           check(choice.recIdx != null, 'KUSDT_V2_REC_IDX');
-          const recIdx = Number(choice.recIdx);
+          recIdx = Number(choice.recIdx);
           const prevCum = recIdx === 0 ? 0 : sst.records[recIdx - 1].cumTickets;
-          const refundAmount = BigInt(sst.records[recIdx].cumTickets - prevCum) * sst.price;
+          refundAmount = BigInt(sst.records[recIdx].cumTickets - prevCum) * sst.price;
           refundBuyerPk = sst.records[recIdx].buyerPk;
           vaultAmt = 0n;
           for (let ri = 0; ri < sst.recordCount; ri++) {
@@ -2405,17 +2773,33 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
               vaultAmt += BigInt(sst.records[ri].cumTickets - prev) * sst.price;
             }
           }
-          const vaultUtxo = sh.vaultUtxo ?? await findLiveVaultUtxo({
-            rpc, shardCid: sh.shardCid, amount: vaultAmt, kusdtCid: effectiveCid, kcc20Suffix: suffix, prefix,
-          });
+        } else {
+          payoutWinnerPk = normWinnerPk(sst.winnerPk);
+        }
+        const expectedVault = sh.vaultUtxo
+          ? null
+          : kcc20RedeemAndSpk({amount: vaultAmt, owner: sh.shardCid, ownerScheme: KCC20_OWNER_SCHEME.OWNER_COVENANT_ID}, suffix);
+        const settleAddrs = [spkToAddress(sh.spk, prefix)];
+        if (expectedVault) settleAddrs.push(spkToAddress(expectedVault.scriptPubKey, prefix));
+        const [kasUtxos, settleUtxos] = await Promise.all([
+          selectKasFunding(rpc, wallet, reserved),
+          commonUtxosByAddresses(rpc, settleAddrs, {chunkSize: 64}),
+        ]);
+        const shLive = settleUtxos.find(u => u.outpoint?.transactionId === sh.outpoint.transactionId && u.outpoint?.index === sh.outpoint.index);
+        check(shLive, 'STALE_INPUT');
+        const shardArg = {outpoint: shLive.outpoint, value: shLive.value, spk: sh.spk, daa: shLive.daa ?? sh.daaScore, covenantId: sh.shardCid, redeem: sh.redeem};
+        let vaultUtxo = sh.vaultUtxo;
+        if (!vaultUtxo && expectedVault) {
+          const vHit = settleUtxos.find(u => !u.isCoinbase && u.covenantId === effectiveCid && u.spk?.script === expectedVault.scriptPubKey.script && u.value === SHARD_VAULT_DEPOSIT && u.outpoint);
+          check(vHit, 'STALE_INPUT');
+          const vd = vHit.daa ?? vHit.utxoDaa ?? 0n;
+          vaultUtxo = {outpoint: vHit.outpoint, value: vHit.value, spk: vHit.spk ?? expectedVault.scriptPubKey, daa: vd, utxoDaa: vd, covenantId: effectiveCid, amount: vaultAmt, redeem: expectedVault.redeem};
+        }
+        if (uiAction === 'CLAIM_REFUND') {
           reviewMeta.refundTokenAmount = refundAmount;
           reviewMeta.remVaultTokenAmount = vaultAmt > refundAmount ? vaultAmt - refundAmount : 0n;
           prepared = this.prepareOperation({action: 'CLAIM_REFUND', shardUtxo: shardArg, shardCid: sh.shardCid, vaultUtxo, recIdx, refundAmount, fundingUtxos: kasUtxos, kcc20Suffix: suffix, changeSpk: wallet.spk, feerate, net});
         } else {
-          payoutWinnerPk = normWinnerPk(sst.winnerPk);
-          const vaultUtxo = sh.vaultUtxo ?? await findLiveVaultUtxo({
-            rpc, shardCid: sh.shardCid, amount: vaultAmt, kusdtCid: effectiveCid, kcc20Suffix: suffix, prefix,
-          });
           reviewMeta.winnerTokenAmount = uiAction === 'PAYOUT_EXECUTOR' && vaultAmt > EXECUTOR_REWARD ? vaultAmt - EXECUTOR_REWARD : vaultAmt;
           reviewMeta.execTokenAmount = uiAction === 'PAYOUT_EXECUTOR' ? EXECUTOR_REWARD : 0n;
           prepared = this.prepareOperation({action: uiAction, shardUtxo: shardArg, shardCid: sh.shardCid, vaultUtxo, vaultAmount: vaultAmt, executorPk: uiAction === 'PAYOUT_EXECUTOR' ? wallet.key : null, fundingUtxos: kasUtxos, kcc20Suffix: suffix, changeSpk: wallet.spk, feerate, net});
@@ -2432,6 +2816,7 @@ export function createKusdtV2Adapter({profile, kusdtCid = null, kcc20Suffix = nu
         op: choice,
         targetCount: prepared.batchSize ?? 0,
         roundCid: round.cid,
+        subAction: kusdtAction,
         kusdtAction,
         review: {
           txid: prepared.txid,

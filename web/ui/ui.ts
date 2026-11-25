@@ -31,10 +31,10 @@ export function download(name: string, text: string, type = 'application/json'):
 let cleanup: (() => void) | null = null, busy = false;
 export const modalOpen = (): boolean => $<HTMLDialogElement>('modal').open;
 export function lockModal(b: boolean): void {busy = b; $<HTMLButtonElement>('mClose').disabled = b;}
-export function modal(title: string, body: Raw | string, foot: Raw | null = null, {onClose = null}: {onClose?: (() => void) | null} = {}): void {
+export function modal(title: string, body: Raw | string, foot: Raw | null = null, {onClose = null, kind = ''}: {onClose?: (() => void) | null; kind?: string} = {}): void {
   cleanup?.(); cleanup = onClose;
-  // Keep dialog identity independent of its translated display title.
   $('mTitle').dataset.sourceTitle = title;
+  $('mTitle').dataset.modalKind = kind;
   $('mTitle').textContent = title; put($('mBody'), body);
   if (foot) {put($('mFoot'), foot); $('mFoot').hidden = false;} else {$('mFoot').replaceChildren(); $('mFoot').hidden = true;}
   const d = $<HTMLDialogElement>('modal'); if (!d.open) d.showModal();
