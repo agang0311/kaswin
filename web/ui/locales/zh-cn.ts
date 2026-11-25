@@ -34,6 +34,7 @@ export const ZH_CN: Locale = defineLocale({
     themeToDark: '切换为深色模式',
     connectWallet: '连接钱包',
     receiveOnlySuffix: ' · 仅收款',
+    receiveOnlyBadge: '只读地址',
     connected: '已连接',
     nodeFailed: '节点未连接，点此处理',
     connecting: '连接中…',
@@ -388,6 +389,14 @@ export const ZH_CN: Locale = defineLocale({
     minTicketsHint: minFloor => `至少 ${minFloor} 张，不足自动全额退款`,
     closeTimeLabel: '开奖时间',
     customMinutesPlaceholder: (min, max) => `输入分钟数（${min} – ${max}）`,
+    customDurationPlaceholder: (unit, minMin, maxMin) =>
+      unit === 'd' ? `输入天数（1 – ${Math.floor(maxMin / 1440)}）`
+      : unit === 'h' ? `输入小时数（1 – ${Math.floor(maxMin / 60)}）`
+      : `输入分钟数（${minMin} – ${maxMin}）`,
+    customUnitAria: '自定义时长单位',
+    unitMin: '分钟',
+    unitHour: '小时',
+    unitDay: '天',
     closeRuleHint: (min, u) => `到点后售出满 ${min} 张即可开奖；不足 ${min} 张自动原路退回 ${u}。`,
     closeHintParallel: '到点后即可触发开奖流程。',
     closeHintSequential: '到点或售满后即可触发开奖流程。',

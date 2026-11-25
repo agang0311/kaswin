@@ -6,7 +6,8 @@ import {spawn,execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {requireCampaignCapacity} from './known-rounds.mjs';
 const ROOT=process.cwd(),DIR=path.join(ROOT,'tests/output/rolling-campaign');
-const BIN='/root/kaspa/references/toolchains/rolling-vm-target/release/kaswin-rolling-vm';
+const BIN=process.env.KASWIN_VM_BIN??'';
+const TEST_URL=(process.env.KASWIN_TEST_URL??'').replace(/\/+$/,'');
 const initial={schema:'ROLLING_CAMPAIGN_FOLLOWUPS_2',startedAt:new Date().toISOString(),publication:null,smoke:null,refund:null,singleBatch:null,finalSuite:null,contention:null,roundRace:null,fundsConflict:null};
 const saved=fs.existsSync(path.join(DIR,'followups.json'))?JSON.parse(fs.readFileSync(path.join(DIR,'followups.json'),'utf8')):null;
 const status=saved?.schema===initial.schema?saved:initial;
@@ -55,9 +56,10 @@ const publishCandidate=()=>{
  const install=(source,target)=>{const temp=target+`.campaign-${process.pid}`;fs.copyFileSync(source,temp);fs.renameSync(temp,target);};
  install(path.join(candidate,'index.html'),html);install(path.join(candidate,'build-manifest.json'),manifest);
  try {
-  const online=execFileSync('curl',['-fsS','--max-time','25','https://cd311.cn:888/www/rolling-tn10/'],{maxBuffer:1024*1024});
+  if(!TEST_URL)throw new Error('KASWIN_TEST_URL_REQUIRED');
+  const online=execFileSync('curl',['-fsS','--max-time','25',`${TEST_URL}/`],{maxBuffer:1024*1024});
   if(sha(online)!==nextHash)throw new Error('PUBLISHED_HASH_MISMATCH');
-  const info=JSON.parse(execFileSync('curl',['-fsS','--max-time','25','https://cd311.cn:888/www/rolling-tn10/api/info'],{encoding:'utf8'}));
+  const info=JSON.parse(execFileSync('curl',['-fsS','--max-time','25',`${TEST_URL}/api/info`],{encoding:'utf8'}));
   if(info.network!=='testnet-10'||!info.readOnly||info.holdsKeys||info.signs||info.broadcasts)throw new Error('SERVICE_SCOPE_MISMATCH');
   return {sha256:nextHash,previousSha256:oldHash,archive,pageBytes:next.length,info,at:new Date().toISOString()};
  } catch(e){fs.writeFileSync(html,old);fs.writeFileSync(manifest,oldManifest);throw e;}

@@ -1,6 +1,6 @@
 # Rolling 主实现目录重组记录
 
-本轮以 Rolling 替代 V2.0.2 作为 Kaswin 的主源码实现，保留 `contracts/`、`scripts/`、`web/`、`build/`、`tests/`、`docs/` 顶层风格。工作区为 `/root/kaspa/kaswin`。这是源码布局迁移，不是协议批准、链上轮次迁移或发布。
+本轮以 Rolling 替代 V2.0.2 作为 Kaswin 的主源码实现，保留 `contracts/`、`scripts/`、`web/`、`build/`、`tests/`、`docs/` 顶层风格。工作区为 `<repo-root>`。这是源码布局迁移，不是协议批准、链上轮次迁移或发布。
 
 候选 Profile 为 `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`，状态仍为 **UNVALIDATED**，应用仅支持 **Testnet 10**。默认节点参照原 V2.0.2 的 `TN10.web.nodes`，默认索引为 `https://indexer.kaspay.top/tn10`；配置沿用不表示端点已经过本轮兼容性或可用性验证。
 
@@ -62,9 +62,9 @@
 
 ## 旧源码与历史证据
 
-重组前源码归档为 [`tracked-source.tar`](../../references/kaswin-before-layout-20261117-171234/tracked-source.tar)，绝对路径 `/root/kaspa/references/kaswin-before-layout-20261117-171234/tracked-source.tar`；原 Git 提交为 `9904597`。归档与提交分别提供迁移前源码和历史版本定位，不声称归档逐字节等于该提交，也不声称它包含全部被忽略的运行产物。本轮未解包、重建或验证该归档。
+重组前源码归档为 [`tracked-source.tar`](../../references/kaswin-before-layout-20261117-171234/tracked-source.tar)，绝对路径 `<references-dir>/kaswin-before-layout-20261117-171234/tracked-source.tar`；原 Git 提交为 `9904597`。归档与提交分别提供迁移前源码和历史版本定位，不声称归档逐字节等于该提交，也不声称它包含全部被忽略的运行产物。本轮未解包、重建或验证该归档。
 
-历史库 `/root/kaswin-publish-20261005` 保持只读、未修改。V2.0.2 的三模板、KW21 布局、旧主应用与双网络说明属于旧版本，不应把它们的 Profile 或批准状态移植给 Rolling。
+历史库 `<legacy-v202-archive>` 保持只读、未修改。V2.0.2 的三模板、KW21 布局、旧主应用与双网络说明属于旧版本，不应把它们的 Profile 或批准状态移植给 Rolling。
 
 [Rolling 历史目录](rolling/README.md)保存原实验文档与账本；[集成交接](ROLLING-INTEGRATION-HANDOFF.md)保存此前集成、测试及发布记录。文中的日期、通过数、票数、交易数、金额、txid、哈希、服务状态及未覆盖项保留原样，均限于各自记录时点。历史段落中的“当前”“本次”“已上线”不表示本轮重组已完成相同操作。
 

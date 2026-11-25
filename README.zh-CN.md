@@ -1,6 +1,6 @@
 # Kaswin
 
-[English](README.md) | 中文
+[English](README.md) | 中文 | 在线体验：[https://win.kaspay.top](https://win.kaspay.top)
 
 Kaswin 是基于 Kaspa L1 的抽奖协议与单页面应用，使用 SilverScript 合约和 JavaScript/TypeScript 客户端，通过单活动片与冻结片记录购票历史，默认运行于 **Kaspa 主网**（可在页面切换至 **Testnet 10**），Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` 状态仍为 `UNVALIDATED`。
 

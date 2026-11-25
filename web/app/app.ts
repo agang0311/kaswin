@@ -26,7 +26,7 @@ import {deferPointerRender} from '../ui/interaction.ts';
 import {availableExtensionWallets} from '../../scripts/wallet/extension-wallet.mjs';
 import {isMobileBrowser,KASPIRE_WAKE_LINK,renderPairingQrDataUrl,triggerAppLink} from '../../scripts/wallet/kaspire-wallet.mjs';
 import {indexerBase} from '../../scripts/round/indexer-client.mjs';
-import {formatTkas,shortHash} from '../ui/format.mjs';
+import {formatTkas,formatTkasFixed,shortHash} from '../ui/format.mjs';
 import {TN10_PROFILE_ID} from '../../scripts/contract/protocol.mjs';
 import {$,put,html,ic,toast,copyText,download,modal,closeModal,lockModal,initModal,modalOpen} from '../ui/ui.ts';
 import {ACTION_INFO,actionTitle,errText,errCode,phaseOf} from '../ui/messages.ts';
@@ -121,37 +121,38 @@ function applyShellLocale() {
   if(brand)brand.setAttribute('aria-label',ch.brandAria);
   const nav=document.querySelector<HTMLElement>('.nav');
   if(nav)nav.setAttribute('aria-label',ch.navAria);
+  const drawer=document.getElementById('menuDrawer');
+  if(drawer)drawer.setAttribute('aria-label',ch.navAria);
   const navLabels: Record<string,string>={explore:ch.navExplore,create:ch.navCreate,mine:ch.navMine};
-  document.querySelectorAll<HTMLElement>('.nav [data-go]').forEach(btn=>{
+  document.querySelectorAll<HTMLElement>('.nav [data-go], .menu-drawer [data-go]').forEach(btn=>{
     const key=btn.dataset.go??'',span=btn.querySelector('span');
     if(span&&navLabels[key])span.textContent=navLabels[key];
   });
   const setAttr=(id: string,title: string,aria=title)=>{const el=document.getElementById(id);if(el){el.title=title;el.setAttribute('aria-label',aria);}};
   setAttr('nodeChip',ch.nodeStatusTitle);
-  setAttr('helpBtn',ch.helpTitle);
   setAttr('githubBtn',ch.githubTitle);
   setAttr('settingsBtn',ch.settingsTitle);
+  setAttr('menuBtn',ch.navAria);
+  const menuSettings=document.querySelector<HTMLElement>('#menuSettingsBtn span');
+  if(menuSettings)menuSettings.textContent=ch.settingsTitle;
   const footHelp=document.getElementById('footHelpBtn');if(footHelp)footHelp.textContent=ch.helpTitle;
   const mClose=document.getElementById('mClose');if(mClose)mClose.setAttribute('aria-label',ch.close);
 }
 applyShellLocale();
-const defaultNode=__KASWIN_CD311__&&activeNet.key==='tn10'
-  ?'wss://cd311.cn:888/www/rolling-tn10/node'
-  :activeNet.web.nodes.join('\n');
-const defaultIndexer=__KASWIN_CD311__
-  ?(activeNet.key==='mainnet'?'https://cd311.cn:888/indexer/mainnet':'https://cd311.cn:888/indexer/tn10')
-  :activeNet.web.indexer;
+const overrideNode=activeNet.key==='mainnet'?__KASWIN_DEFAULT_MAINNET_NODE__:__KASWIN_DEFAULT_TN10_NODE__;
+const overrideIndexer=activeNet.key==='mainnet'?__KASWIN_DEFAULT_MAINNET_INDEXER__:__KASWIN_DEFAULT_TN10_INDEXER__;
+const defaultNode=overrideNode||activeNet.web.nodes.join('\n');
+const defaultIndexer=overrideIndexer||activeNet.web.indexer;
 const initialNodes=((): string=>{
   const saved=LS.get<string|null>('nodes',null);
   if(saved===null)return defaultNode;
-  if(activeNet.key==='mainnet'&&saved.trim()==='wss://cd311.cn:888/wrpc')return defaultNode;
-  if(__KASWIN_CD311__&&activeNet.key==='tn10'&&saved===activeNet.web.nodes.join('\n'))return defaultNode;
+  if(overrideNode&&saved===activeNet.web.nodes.join('\n'))return defaultNode;
   return saved;
 })();
 const initialIndexer=((): string=>{
   const saved=LS.get<string|null>('indexer',null);
   if(saved===null)return defaultIndexer;
-  if(saved.replace(/\/+$/,'').startsWith('https://indexer.kaspay.top/'))return defaultIndexer;
+  if(overrideIndexer&&saved.replace(/\/+$/,'')===activeNet.web.indexer.replace(/\/+$/,''))return defaultIndexer;
   // Migrate the previous Profile-qualified API on the same host; preserve explicitly configured hosts and empty opt-out.
   return saved.replace(/\/+$/,'').replace(`/rolling/v1/${TN10_PROFILE_ID}`,'');
 })();
@@ -161,7 +162,7 @@ const ex: Explorer={
   addrOfScript:(s: string)=>{const m=/^20([0-9a-f]{64})ac$/.exec(s);return m?pubkeyToAddress(m[1] as string,ADDR_PREFIX):shortHash(s,10,6);},
 };
 const S: UiState={view:'explore',cid:null,filter:'live',sort:'new',query:'',qty:'1',join:'',wtab:'extension',theme:LS.get('theme','dark'),shard:null,purchase:null,pixelMode:LS.get('pixelMode',false),liveSync:LS.get('liveSync',true),detailTab:'rules',txLimit:20,buyShard:'auto',
-  form:{protocol:'',price:'1',cap:'100',min:'3',dur:'60',custom:'',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:initialNodes,indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
+  form:{protocol:'',price:'1',cap:'100',min:'3',dur:'60',custom:'',customUnit:'m',registry:true,...LS.get<Partial<UiState['form']>>('form',{})},nodes:initialNodes,indexer:initialIndexer,walletProvider:LS.get('walletProvider','kasware')};
 const conn: Conn={node:null,nodeUrl:null,indexer:null,indexerUrl:null,indexerStale:false,discoveredSource:null};
 const verify=new Map<string,VerifyState>(),initialSyncDone=new Set<string>();
 const buyShardConflicts=new Map<string,{count: number; avoided: Set<string>}>();
@@ -470,9 +471,20 @@ function chrome() {
   }
   const w=ctl?.state.wallet,b=$('walletBtn');
   b.className='wbtn'+(w?' on':'');
-  b.textContent=w?`${shortHash(w.address,14,4)}${canSign(w)&&balance!=null?` · ${formatTkas(balance)} ${UNIT}`:w.kind==='public'?ch.receiveOnlySuffix:''}`:ch.connectWallet;
-  document.querySelectorAll<HTMLElement>('.nav [data-go]').forEach(n=>{if(n.dataset.go===(S.view==='round'?'explore':S.view))n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
+  if(w){
+    b.title=w.address;
+    b.dataset.address=w.address;
+    const text=canSign(w)?(balance!=null?`${formatTkasFixed(balance,2)} ${UNIT}`:`… ${UNIT}`):ch.receiveOnlyBadge;
+    put(b,html`<span class="wdot" aria-hidden="true"></span><span class="wbal">${text}</span>`);
+  }else{
+    b.title='';
+    delete b.dataset.address;
+    b.textContent=ch.connectWallet;
+  }
+  document.querySelectorAll<HTMLElement>('.nav [data-go], .menu-drawer [data-go]').forEach(n=>{if(n.dataset.go===(S.view==='round'?'explore':S.view))n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
   document.documentElement.dataset.theme=S.theme;
+  const menuTheme=document.getElementById('menuThemeBtn');
+  if(menuTheme){const tl=S.theme==='dark'?ch.themeToLight:ch.themeToDark;menuTheme.title=tl;menuTheme.setAttribute('aria-label',tl);}
   const themeColor=document.getElementById('themeColorMeta');
   if(themeColor)themeColor.setAttribute('content',S.theme==='dark'?'#081119':'#f4f7f9');
 }
@@ -640,7 +652,7 @@ async function doVerify(cid: string,{quiet=true}: {quiet?: boolean}={}) {
 function saveCreateForm() {
   const f=S.form,raw=(f.registryAddr??'').trim().toLowerCase();
   const customAddr=raw&&raw!==activeNet.registry.address?f.registryAddr:undefined;
-  LS.set('form',{protocol:f.protocol,price:f.price,cap:f.cap,min:f.min,dur:f.dur,custom:f.custom,registry:f.registry!==false,registryAddr:customAddr});
+  LS.set('form',{protocol:f.protocol,price:f.price,cap:f.cap,min:f.min,dur:f.dur,custom:f.custom,customUnit:f.customUnit??'m',registry:f.registry!==false,registryAddr:customAddr});
 }
 function planText(p: Prepared): string {
   const adapter=p.profileId?ctl.protocols.get(p.profileId):null;
@@ -1350,6 +1362,7 @@ const switchTheme=()=>{
 const ACT: Record<string,()=>unknown>={
   closeModal:()=>closeModal(),create:onCreate,join:()=>onJoin(S.join),send:onSend,connectWallet:onConnectWallet,disconnect:onDisconnect,
   applyConn:onApplyConn,testConn:onTestConn,resetConn:onResetConn,switchNet:switchNetwork,switchLang:switchLanguage,switchTheme,openHelp,exportAll:onExportAll,refreshIndex:onRefreshIndex,moreIndex:onMoreIndex,
+  toggleSearch:()=>{const open=!(S.searchOpen||!!S.query);S.searchOpen=open;if(!open)S.query='';render();if(open)setTimeout(()=>$('q')?.focus(),0);},
   syncNow:()=>{closeModal();void doVerify(CID(),{quiet:false});},toggleStar:()=>toggleStar(CID()),checkPending:onCheckPending,batchPayout:()=>runBatchSettlement('payout'),batchRefund:()=>runBatchSettlement('refund'),
   moreRound:()=>openRoundTools(CID()),verify:toggleLiveSync,
   track:()=>run(()=>ctl.track(CID())),recover:()=>run(()=>ctl.track(CID(),{recover:true}),{ok:L().app.sendDoneToast}),
@@ -1367,7 +1380,7 @@ const ACT: Record<string,()=>unknown>={
   },
 };
 function onClick(ev: Event) {
-  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-proto-act],[data-fix],[data-filter],[data-sort],[data-proto],[data-dur],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
+  const t=(ev.target as Element).closest<HTMLElement>('[data-go2],[data-open],[data-indexed],[data-act],[data-proto-act],[data-fix],[data-filter],[data-sort],[data-proto],[data-dur],[data-durunit],[data-qty],[data-wtab],[data-connect],[data-dtab],[data-shard],[data-purchase],[data-pixelmode],[data-moretx]');
   if(!t)return;const d=t.dataset;
   if(d.protoAct){void prepareAndConfirm({action:d.protoAct,shardCid:d.shardCid??null,recIdx:d.recIdx!=null?Number(d.recIdx):null},S.cid);return;}
   if(d.go2)return go(d.go2);
@@ -1377,6 +1390,8 @@ function onClick(ev: Event) {
   if(d.sort){S.sort=d.sort;return render();}
   if(d.proto&&ctl.protocols.getById(d.proto)){S.form.protocol=d.proto;saveCreateForm();return render();}
   if(d.dur){S.form.dur=d.dur;saveCreateForm();return render();}
+  const du=d.durunit;
+  if(du==='m'||du==='h'||du==='d'){S.form.customUnit=du;saveCreateForm();return render();}
   if(d.qty){S.qty=d.qty;return render();}
   if(d.wtab){S.wtab=d.wtab;return openWallet();}
   if(d.connect){void connectExternalProvider(d.connect);return;}
@@ -1400,8 +1415,8 @@ function onInput(ev: Event) {
   if(id==='joinText'){S.join=v;return;}
   if(id==='cReg'){S.form.registry=el.checked;saveCreateForm();return render();}
   if(id==='cRegAddr'){S.form.registryAddr=v;saveCreateForm();return render();}
-  const key=({cPrice:'price',cCap:'cap',cMin:'min',cCustom:'custom'} as Record<string,keyof UiState['form']|undefined>)[id];
-  if(key&&key!=='registry'&&key!=='protocol'){S.form[key]=v;saveCreateForm();return render();}
+  const key=({cPrice:'price',cCap:'cap',cMin:'min',cCustom:'custom'} as Record<string,'price'|'cap'|'min'|'custom'|undefined>)[id];
+  if(key){S.form[key]=v;saveCreateForm();return render();}
   if(id==='buyShardSelect'){S.buyShard=v||'auto';return render();}
   if(id==='qty'){
     S.qty=v;const D=detail();if(!D)return;
@@ -1419,17 +1434,40 @@ function bind() {
   $('view').addEventListener('click',onClick);$('view').addEventListener('input',onInput);$('view').addEventListener('change',onInput);
   $('view').addEventListener('keydown',ev=>{const el=(ev.target as HTMLElement).closest?.<HTMLElement>('[data-open],[data-indexed]');if((ev.key==='Enter'||ev.key===' ')&&el){ev.preventDefault();if(el.dataset.open)go('round',el.dataset.open);else if(el.dataset.indexed)go('round',el.dataset.indexed);}});
   $('modal').addEventListener('click',onClick);
-  document.querySelectorAll<HTMLElement>('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go??'explore')));
+  const setMenuOpen=(open: boolean)=>{
+    const btn=document.getElementById('menuBtn'),drawer=document.getElementById('menuDrawer'),back=document.getElementById('menuBackdrop');
+    if(!btn||!drawer||!back)return;
+    if(open){
+      const h=Math.round(document.querySelector('header.top')?.getBoundingClientRect().bottom??54);
+      drawer.style.top=`${h}px`;back.style.top=`${h}px`;
+    }
+    btn.setAttribute('aria-expanded',open?'true':'false');
+    btn.classList.toggle('open',open);
+    drawer.hidden=!open;
+    back.hidden=!open;
+  };
+  const closeMenu=()=>setMenuOpen(false);
+  document.querySelectorAll<HTMLElement>('[data-go]').forEach(b=>b.addEventListener('click',()=>{closeMenu();go(b.dataset.go??'explore');}));
   document.addEventListener('click',ev=>{
     const target=ev.target as Element;
     const c=target.closest<HTMLElement>('[data-copy]');
     if(c){ev.stopPropagation();copyText(c.dataset.copy??'').then(()=>toast(L().common.copied),()=>toast(L().common.copyFailed,'warn'));}
   });
-  $('walletBtn').onclick=openWallet;$('settingsBtn').onclick=openSettings;$('nodeChip').onclick=openSettings;
-  $('helpBtn').innerHTML=ic('help').s;$('helpBtn').onclick=openHelp;
+  $('walletBtn').onclick=()=>{closeMenu();openWallet();};
+  $('settingsBtn').onclick=()=>{closeMenu();openSettings();};
+  $('nodeChip').onclick=()=>{closeMenu();openSettings();};
   const footHelp=document.getElementById('footHelpBtn');if(footHelp)footHelp.onclick=openHelp;
   $('settingsBtn').innerHTML=ic('settings').s;
-  window.addEventListener('hashchange',route);
+  const menuBtn=document.getElementById('menuBtn');
+  if(menuBtn)menuBtn.onclick=()=>setMenuOpen(menuBtn.getAttribute('aria-expanded')!=='true');
+  const menuBack=document.getElementById('menuBackdrop');
+  if(menuBack)menuBack.onclick=closeMenu;
+  const menuSettingsBtn=document.getElementById('menuSettingsBtn');
+  if(menuSettingsBtn)menuSettingsBtn.onclick=()=>{closeMenu();openSettings();};
+  const menuThemeBtn=document.getElementById('menuThemeBtn');
+  if(menuThemeBtn)menuThemeBtn.onclick=switchTheme;
+  document.addEventListener('keydown',ev=>{if(ev.key==='Escape')closeMenu();});
+  window.addEventListener('hashchange',()=>{closeMenu();route();});
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
       if(ctl.state.wallet?.kind==='extension'&&!ctl.state.busy&&!modalOpen()){
@@ -1580,8 +1618,10 @@ async function main() {
   const defaultAdapter=protocols.defaultForCreate();
   primaryProfileId=defaultAdapter.profileId;
   if(primaryProfileId!==TN10_PROFILE_ID)throw new Error('PROFILE_ID');
-  if(!S.form.protocol||!protocols.getById(S.form.protocol)){
-    S.form.protocol=protocols.defaultUiCreateId();
+  const initSpecs=protocols.createSpecs(activeNet);
+  const curProto=S.form.protocol?protocols.getById(S.form.protocol):null;
+  if(!curProto||(curProto.supportsNetwork&&!curProto.supportsNetwork(activeNet))){
+    S.form.protocol=(initSpecs.find(s=>s.protocolId===protocols.defaultUiCreateId()&&s.supportedOnNet)??initSpecs.find(s=>s.supportedOnNet))?.protocolId??protocols.defaultUiCreateId();
   }
   store=await openStore({genesis:activeNet.genesis,profileId:primaryProfileId});
   ctl=makeController((defaultAdapter.profile as Profile|undefined)??{id:primaryProfileId},store,activeNet,discoveryCache,protocols);

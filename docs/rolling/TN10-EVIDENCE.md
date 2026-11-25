@@ -5,12 +5,12 @@
 - **accepted 的含义**：交易须出现在 selected chain 的接受集合中，并经 ≥100 DAA 深度复核；仅进块或 REST 回执不算。CLI 路径见 `tn10-run.mjs`，网页路径见 `web/rolling-tn10/controller.mjs`（先标“已出现在选中链”，深度 ≥100 后再次复核）。
 - **mass/fee**：computeMass 取节点值；fee 为实际手续费，单位 sompi（1 TKAS = 100,000,000 sompi）。
 - **来源与核对**：§1–§4 由 Gemini 3.8 Flash 子代理从各 run 目录的 `state.json` 整理，主会话已逐项对照原始 `state.json` 与运行日志：19 笔 txid 与 acceptingBlock 全部一致，acceptingDaa、feeSompi、computeMass、storageMass、transientMass 无差异；这四节的步骤序号从 0 起。§5–§6 与 TSV 流水由主会话脚本直接从 `state.json` 的 receipts 生成，步骤序号从 1 起（即 receipts 顺序；第 1 笔为 GENESIS）。
-- **网页轮次差异**：`tn10-browser/payout-…` 由真实 Chromium 经 `https://cd311.cn:888/www/rolling-tn10/` 驱动，仅使用已授权的 creator 测试钱包；该目录没有 `*-receipt.json`，故无 quotedMass 对照，各步 `*-intent.json` 的预估值与节点 computeMass 一致。
+- **网页轮次差异**：`tn10-browser/payout-…` 由真实 Chromium 经 `https://<staging-host>/tn10/` 驱动，仅使用已授权的 creator 测试钱包；该目录没有 `*-receipt.json`，故无 quotedMass 对照，各步 `*-intent.json` 的预估值与节点 computeMass 一致。
 - **不构成的结论**：这些是 TN10 上的实链终局：4 个小规模轮次（空轮、不足额退款、3 票开奖派奖、网页同流程）、2 个 256 笔分片边界轮次（`shard-payout`、`shard-refund`）和 2 个两分片轮次（`multi-payout`、`multi-refund`，515 票）；它们是有限场景的实链证据，不覆盖主网、外部钱包、TIMEOUT、共识边界专项实验（成熟度、双花、入池策略）、多买家/多执行者并发竞争、超过 2 个分片的 PAY_OLD 批次，也不把候选 Profile 升级为非 `UNVALIDATED`。本文件不构成生产可用结论。
 
 ## 1. empty-1794576685264（终局 EMPTY）
 
-- **目录**：`/root/kaspa/kaswin/experiments/rolling/artifacts/tn10/empty-1794576685264`
+- **目录**：`./experiments/rolling/artifacts/tn10/empty-1794576685264`
 
 | 步骤序号 | 动作 | 完整 txid | acceptingBlock | acceptingDaa | feeSompi | computeMass（节点值） | storageMass | transientMass |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -27,7 +27,7 @@
 
 ## 2. refund-1794576894993（终局 REFUNDED）
 
-- **目录**：`/root/kaspa/kaswin/experiments/rolling/artifacts/tn10/refund-1794576894993`
+- **目录**：`./experiments/rolling/artifacts/tn10/refund-1794576894993`
 
 | 步骤序号 | 动作 | 完整 txid | acceptingBlock | acceptingDaa | feeSompi | computeMass（节点值） | storageMass | transientMass |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -47,7 +47,7 @@
 
 ## 3. payout-1794620372263（终局 PAID）
 
-- **目录**：`/root/kaspa/kaswin/experiments/rolling/artifacts/tn10/payout-1794620372263`
+- **目录**：`./experiments/rolling/artifacts/tn10/payout-1794620372263`
 
 | 步骤序号 | 动作 | 完整 txid | acceptingBlock | acceptingDaa | feeSompi | computeMass（节点值） | storageMass | transientMass |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -69,7 +69,7 @@
 
 ## 4. tn10-browser/payout-1794621168788（终局 PAID，网页 Chromium 全流程）
 
-- **目录**：`/root/kaspa/kaswin/experiments/rolling/artifacts/tn10-browser/payout-1794621168788`
+- **目录**：`./experiments/rolling/artifacts/tn10-browser/payout-1794621168788`
 
 | 步骤序号 | 动作 | 完整 txid | acceptingBlock | acceptingDaa | feeSompi | computeMass（节点值） | storageMass | transientMass |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -239,7 +239,7 @@
 
 ## 10. 新版页面（V2.0.2 节奏）的 Chromium 实链走查（`tn10-browser/candidate-1794635908003`，终局 PAID）
 
-- **做法**：全新 Chromium 配置（空 IndexedDB），经 `https://cd311.cn:888/www/rolling-tn10/` 加载重新构建的 `dist/rolling-tn10.html`（sha256 `a90b892ac647ad6b9d3871137210448adfd7b60d2a5799f63a73a637b62f84f6`），连接本机 TN10 节点代理与预算服务，仅用 creator 专用测试钱包（内存钱包，读取后立即清空输入框）：GENESIS → 1 笔 3 票 BUY → CLOSE → DRAW（真实 PASS-A）→ PAY_SELF。
+- **做法**：全新 Chromium 配置（空 IndexedDB），经 `https://<staging-host>/tn10/` 加载重新构建的 `dist/rolling-tn10.html`（sha256 `a90b892ac647ad6b9d3871137210448adfd7b60d2a5799f63a73a637b62f84f6`），连接本机 TN10 节点代理与预算服务，仅用 creator 专用测试钱包（内存钱包，读取后立即清空输入框）：GENESIS → 1 笔 3 票 BUY → CLOSE → DRAW（真实 PASS-A）→ PAY_SELF。
 - **结果**：5 笔，全部 ACCEPTED（候选在满 100 DAA 后被页面复核提升，复核深度 ≥100，轮次结束时 `pending` 为空、无 `halted`），累计 feeSompi 8540200（0.085402 TKAS），票数 3。驱动脚本核对：私钥未出现在网络请求或落盘状态，无控制台异常。
 - **节奏**：各步从点击发送到轮次推进的用时：起步 1.7 s, GENESIS 6.6 s, BUY 8.1 s, CLOSE 8.1 s, DRAW 40.2 s, PAY_SELF 7.7 s。DRAW 步骤包含协议要求的收口后等待（CLOSE 后 ≥100 DAA）与驱动脚本的 30 s 停顿；上一版页面同一流程总计约 2.3 分钟。
 - **重新接受**：本次走查没有遇到重组（`reacceptedTransactions` 0）；页面的重组跟随、候选丢失停止等路径只有离线测试覆盖（见 `VALIDATION.md`），没有在页面上实链触发过。
@@ -258,7 +258,7 @@
 
 ## 12. 两个买家同时抢购同一个管理片（真实页面，三个隔离的 Chromium）
 
-2026-11-14，用户指示“预算就是钱包里有多少用多少”，要求实测双用户同时抢单（授权记录见 `TN10-DEPLOYMENT.md`）。做法：三个全新的 Chromium 配置（各有独立 IndexedDB），分别是 creator、buyer1、buyer2，均通过 `https://cd311.cn:888/www/rolling-tn10/` 使用页面、内存钱包（私钥读取后立即清空输入框）。creator 在页面里创建轮次（票数上限 10，最少 3 张，约 1 分钟后可关闭），用页面的“导出 round state”导出；buyer1、buyer2 用页面的“导入”导入同一份状态，各自准备 1 张票的 BUY，然后在同一个挂钟时刻点击“签名并发送”（两边相差 1–2 ms）。驱动脚本核对：私钥未出现在任何网络请求或 WebSocket 帧里，无控制台异常。
+2026-11-14，用户指示“预算就是钱包里有多少用多少”，要求实测双用户同时抢单（授权记录见 `TN10-DEPLOYMENT.md`）。做法：三个全新的 Chromium 配置（各有独立 IndexedDB），分别是 creator、buyer1、buyer2，均通过 `https://<staging-host>/tn10/` 使用页面、内存钱包（私钥读取后立即清空输入框）。creator 在页面里创建轮次（票数上限 10，最少 3 张，约 1 分钟后可关闭），用页面的“导出 round state”导出；buyer1、buyer2 用页面的“导入”导入同一份状态，各自准备 1 张票的 BUY，然后在同一个挂钟时刻点击“签名并发送”（两边相差 1–2 ms）。驱动脚本核对：私钥未出现在任何网络请求或 WebSocket 帧里，无控制台异常。
 
 | 运行 | 页面构建 | 节点 | 结果 |
 | :--- | :--- | :--- | :--- |
@@ -307,7 +307,7 @@
 ## 13. 浏览器套件场景 1（空轮）经本机节点（2026-11-15）
 
 - **授权与范围**：用户 2026-11-15 明确同意“用真实交易验证本地节点”（只跑场景 1 空轮，约 0.02 TKAS）。仅使用 creator 专用测试钱包（`tests/web/wallets/tn10-test-only.json`，运行前余额 6,792.81184635 TKAS）；仅 Testnet 10。
-- **运行**：`node tests/rolling-web/scenarios.mjs --scenarios=1 --node=wss://cd311.cn:888/www/rolling-tn10/node`，2026-11-15T02:42:28Z–02:44:01Z（92 秒）；页面构建 `8d002cd3c943c21899d46cd7eae081f39c462bc3edde9ca205dc8a308ee55bef`；节点为本机 `kaspad-tn10`（经 Caddy 反代）。归档：`tests/output/rolling-runs/2026-11-15T02-42-28Z-scenarios-1/`（`run.log`、`s1-final.png`、`profile-s1/`；`run.json` 不含 txid）。
+- **运行**：`node tests/rolling-web/scenarios.mjs --scenarios=1 --node=wss://<staging-host>/tn10/node`，2026-11-15T02:42:28Z–02:44:01Z（92 秒）；页面构建 `8d002cd3c943c21899d46cd7eae081f39c462bc3edde9ca205dc8a308ee55bef`；节点为本机 `kaspad-tn10`（经 Caddy 反代）。归档：`tests/output/rolling-runs/2026-11-15T02-42-28Z-scenarios-1/`（`run.log`、`s1-final.png`、`profile-s1/`；`run.json` 不含 txid）。
 - **结果**：页面终局 `EMPTY`，押金退回创建者；cid `193087e644d2a25ec042f90d60755b94bedb581f4adbe09a32745681e4be8639`。本机节点日志在 10:42:47 与 10:43:57（CST）各记一次 `in: 1 via RPC`，与下面两笔对应。
 
 | # | 动作 | txid | 接受块（前缀） | 接受块 DAA | feeSompi | computeMass | storageMass | 核对时深度 |
@@ -322,7 +322,7 @@
 
 ## 14. 同一钱包、两个页面的双花冲突（真实页面、本机节点，2026-11-15）
 
-- **授权与范围**：用户 2026-11-15 明确要求“对双花交易这种情况进行测试”。仅用 creator 专用测试钱包（`tn10-test-only`，两个页面用同一把私钥，各自独立的 Chromium profile），仅 Testnet 10，经本机节点 `wss://cd311.cn:888/www/rolling-tn10/node`。页面构建 `75c0ca4c80696af29006498f29bd470ff17ac2568d5c82dda48463fd9af885fc`。脚本 `tests/rolling-web/double-spend.mjs`；归档目录见下。花费：**18 笔链上交易、0.18 TKAS 网络费**（每笔 0.01），1 笔被节点拒绝（未上链）；所有轮次都用 CLOSE 走到 `EMPTY`，保证金退回，结束时内存池里没有 creator 的交易、没有被合约锁定的 UTXO。
+- **授权与范围**：用户 2026-11-15 明确要求“对双花交易这种情况进行测试”。仅用 creator 专用测试钱包（`tn10-test-only`，两个页面用同一把私钥，各自独立的 Chromium profile），仅 Testnet 10，经本机节点 `wss://<staging-host>/tn10/node`。页面构建 `75c0ca4c80696af29006498f29bd470ff17ac2568d5c82dda48463fd9af885fc`。脚本 `tests/rolling-web/double-spend.mjs`；归档目录见下。花费：**18 笔链上交易、0.18 TKAS 网络费**（每笔 0.01），1 笔被节点拒绝（未上链）；所有轮次都用 CLOSE 走到 `EMPTY`，保证金退回，结束时内存池里没有 creator 的交易、没有被合约锁定的 UTXO。
 - **测试手段**：脚本只通过页面 UI 操作；阶段 2 在页面与节点之间放了一个只观察、不改写的 WebSocket 旁路（`routeWebSocket`，帧原样双向转发），用来取得 `submitTransaction` 的发出与应答时刻。节点侧的核对用只读 RPC（无密钥、无签名、无提交）。
 
 ### 阶段 1：两个页面同时发送（真实冲突）——`2026-11-15T02-55-44Z-double-spend`

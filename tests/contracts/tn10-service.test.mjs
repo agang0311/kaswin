@@ -73,11 +73,11 @@ test('Host and Origin guards block rebinding and cross-site callers',async()=>wi
   assert.equal((await call(s,'GET','/api/info',{headers:{host:`localhost:${s.port}`}})).status,200);
   assert.equal((await call(s,'GET','/api/info',{headers:{origin:`http://127.0.0.1:${s.port}`}})).status,200);
 }));
-test('explicit HTTPS reverse-proxy origin is allowed without relaxing Host or other origins',async()=>withService({engine:stubEngine(),publicOrigin:'https://cd311.cn'},async s=>{
-  assert.equal((await call(s,'GET','/api/info',{headers:{origin:'https://cd311.cn'}})).status,200);
+test('explicit HTTPS reverse-proxy origin is allowed without relaxing Host or other origins',async()=>withService({engine:stubEngine(),publicOrigin:'https://proxy.example.invalid'},async s=>{
+  assert.equal((await call(s,'GET','/api/info',{headers:{origin:'https://proxy.example.invalid'}})).status,200);
   assert.equal((await call(s,'GET','/api/info',{headers:{origin:'https://evil.example'}})).status,403);
-  assert.equal((await call(s,'GET','/api/info',{headers:{origin:'https://cd311.cn',host:'evil.example'}})).status,403);
-  assert.throws(()=>createTn10Service({publicOrigin:'http://cd311.cn'}),/PUBLIC_ORIGIN/);
+  assert.equal((await call(s,'GET','/api/info',{headers:{origin:'https://proxy.example.invalid',host:'evil.example'}})).status,403);
+  assert.throws(()=>createTn10Service({publicOrigin:'http://proxy.example.invalid'}),/PUBLIC_ORIGIN/);
 }));
 test('/api/measure measures only unsigned covenant inputs and the reply is bound to the request',async()=>{
   const engine=stubEngine();
@@ -141,7 +141,7 @@ test('engine failures map to fixed codes and never leak internal text',async()=>
   const wire=toWire('measure',buy());
   for(const [fail,status,code] of [['ENGINE_TIMEOUT',504,'ENGINE_TIMEOUT'],['ENGINE_REJECTED',422,'ENGINE_REJECTED'],['ENGINE_INPUT_COVERAGE',422,'ENGINE_INPUT_COVERAGE'],
     ['ENGINE_BINARY_PIN',503,'ENGINE_BINARY_PIN'],['ENGINE_PROCESS_FAILED',422,'ENGINE_PROCESS_FAILED'],['KASWIN_VM_BIN_REQUIRED',503,'KASWIN_VM_BIN_REQUIRED'],['WHATEVER',422,'ENGINE_REJECTED']]) {
-    await withService({engine:stubEngine({fail,message:'/root/secret/path private'})},async s=>{
+    await withService({engine:stubEngine({fail,message:'/srv/secret/path private'})},async s=>{
       const r=await call(s,'POST','/api/measure',{body:wire});assert.equal(r.status,status);assert.deepEqual(r.json,{schema:1,ok:false,code});
       assert.ok(!r.text.includes('/root')&&!r.text.includes('private'));
     });

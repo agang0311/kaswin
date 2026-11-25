@@ -11,6 +11,14 @@ export function formatTkas(v) {
   const neg=v<0n,a=neg?-v:v,frac=(a%SOMPI).toString().padStart(8,'0').replace(/0+$/,'');
   return (neg?'-':'')+(a/SOMPI).toString()+(frac?'.'+frac:'');
 }
+/** Display-only exact bigint truncation to fixed decimals with thousands separators (no Number arithmetic). */
+export function formatTkasFixed(v,decimals=2) {
+  check(typeof v==='bigint','AMOUNT_TYPE');
+  const neg=v<0n,a=neg?-v:v;
+  const whole=(a/SOMPI).toString().replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  const frac=(a%SOMPI).toString().padStart(8,'0').slice(0,decimals);
+  return `${neg?'-':''}${whole}${decimals>0?`.${frac}`:''}`;
+}
 /** Non-negative decimal integer text -> bigint (DAA, counts). */
 export function parseUint(text,max=(1n<<63n)-1n) {
   check(typeof text==='string'&&/^(0|[1-9][0-9]{0,18})$/.test(text.trim())&&BigInt(text.trim())<=max,'UINT_FORMAT');return BigInt(text.trim());

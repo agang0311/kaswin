@@ -1,6 +1,6 @@
 /** Offline tests for the TN10 Rolling sidecar (config, store, scanner reorg, HTTP service, export round-trip).
  * Uses synthetic accepted fixtures and an in-process loopback HTTP server on an ephemeral port.
- * Does NOT start a node, touch 8788 / /var/lib/kci*, read real keys, sign, or broadcast.
+ * Does NOT start a node, touch local indexer services/state directories, read real keys, sign, or broadcast.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';

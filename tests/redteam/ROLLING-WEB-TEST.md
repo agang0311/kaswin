@@ -1,8 +1,8 @@
 # Rolling TN10 网页实测记录（2026-11-14）
 
-- 目标：`https://cd311.cn:888/www/rolling-tn10/`（线上字节 sha256 `944cf22b…f9d81e00`，与 `dist/rolling-tn10.manifest.json` 一致）
+- 目标：`https://<staging-host>/tn10/`（线上字节 sha256 `944cf22b…f9d81e00`，与 `dist/rolling-tn10.manifest.json` 一致）
 - 候选 Profile：`b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`（页面标记 `UNVALIDATED`）
-- 网络：Testnet 10，节点 `wss://cd311.cn:888/www/rolling-tn10/node`（2.1.0、synced、UTXO index）
+- 网络：Testnet 10，节点 `wss://<staging-host>/tn10/node`（2.1.0、synced、UTXO index）
 - 钱包：仅 `tests/web/wallets/tn10-test-only.json`（creator，授权文件列明的专用测试钱包）；单笔费用上限 0.5 TKAS
 - 浏览器：Playwright 1.63.0 + chromium-1243，headless
 
@@ -75,7 +75,7 @@
 ## 复现
 
 ```bash
-cd /root/kaspa/kaswin
+cd <repo-root>
 node /tmp/rt-browser/p14-paid.mjs      # 创建→3×BUY→CLOSE→DRAW→PAY_SELF（会广播）
 node /tmp/rt-browser/p20-settle.mjs    # 结算未终局轮次
 ```
@@ -200,7 +200,7 @@ LS.set('nodes', S.nodes); LS.set('svc', S.svc);
 ```
 
 复现：A 把节点设为 `wss://vector-10.kaspa.green/…`（顶栏「已连接」）→ B（页面打开较早，面板里仍是默认节点）只改服务地址后保存
-→ `localStorage` 的 `nodes` **被改回** `wss://cd311.cn:888/www/rolling-tn10/node`，A 的设置丢失。
+→ `localStorage` 的 `nodes` **被改回** `wss://<staging-host>/tn10/node`，A 的设置丢失。
 
 影响：多标签页时节点配置会被静默回退；节点地址决定页面连哪个链视图，回退后可能连回旧/不可用端点，而用户不会收到提示。
 修法：保存前合并未修改字段，或对同一键做版本/时间戳比较，冲突时提示。
@@ -348,7 +348,7 @@ const ok = conn.node===true && conn.service===true, bad = conn.node===false || c
 
 ## 15. 修复状态（2026-11-14，源码已改并发布，**修复未经运行时验证**）
 
-线上页面：`https://cd311.cn:888/www/rolling-tn10/`，sha256 `97b3d8b3…42da3fe`（293,085 字节；旧版 `944cf22b…` 已存档到 `dist/archive/`）。
+线上页面：`https://<staging-host>/tn10/`，sha256 `97b3d8b3…42da3fe`（293,085 字节；旧版 `944cf22b…` 已存档到 `dist/archive/`）。
 构建内置闸门（TypeScript 5.8.3 `strict` 类型检查 + 浏览器依赖图）通过。**没有运行任何单测、没有在浏览器里复测这些修复**（NOT_RUN），
 下表“已改”只表示源码已改、能构建，不表示问题已消失；逐项回归需按本文第 1、8、9、11、13 节的方法重测。
 
@@ -383,7 +383,7 @@ const ok = conn.node===true && conn.service===true, bad = conn.node===false || c
 
 ## 16. “本地节点拒绝交易”核查（2026-11-15，只读，未发任何交易）
 
-起因：`tests/rolling-web/README.md` 写“页面默认节点（本机 `kaspad-tn10`，经 Caddy `/www/rolling-tn10/node` 反代）会拒收/丢弃交易”。
+起因：`tests/rolling-web/README.md` 写“页面默认节点（本机 `kaspad-tn10`，经 Caddy `/<staging-path>/node` 反代）会拒收/丢弃交易”。
 
 **结论：没有证据表明本地节点拒绝了交易；已记录的拒绝原因是测试自己造成的双花。**
 
@@ -421,7 +421,7 @@ const ok = conn.node===true && conn.service===true, bad = conn.node===false || c
 
 ### 16.2 补充（2026-11-15）：本机节点的真实交易验证、内存限额、与一个界面标签问题
 
-**本机节点能收发交易**：场景 1（空轮）经本机节点（`wss://cd311.cn:888/www/rolling-tn10/node`）跑通，2 笔交易（GENESIS、CLOSE）在本机节点日志里各有一次 `in: 1 via RPC`，事后用只读脚本核对两笔都在选中链上、深度 ≥ 100 DAA（详见 `experiments/rolling/TN10-EVIDENCE.md` §13）。这只证明“本机节点现在接受并打包交易”，一轮 2 笔；256 笔等大规模运行没有在本机节点上做过。
+**本机节点能收发交易**：场景 1（空轮）经本机节点（`wss://<staging-host>/tn10/node`）跑通，2 笔交易（GENESIS、CLOSE）在本机节点日志里各有一次 `in: 1 via RPC`，事后用只读脚本核对两笔都在选中链上、深度 ≥ 100 DAA（详见 `experiments/rolling/TN10-EVIDENCE.md` §13）。这只证明“本机节点现在接受并打包交易”，一轮 2 笔；256 笔等大规模运行没有在本机节点上做过。
 
 **`MemoryHigh` 调整**：`kaspad-tn10.service` 的 `MemoryHigh` 在运行时由 14G 调到 **17G**（`systemctl set-property --runtime`，未重启，`NRestarts=0`，启动时间不变）。原先提议的 22G 无效：unit 里 `MemoryMax=18G` 是硬上限，`MemoryHigh` 高过它不起作用。依据：该 cgroup 匿名内存 12.8G + 已换出 3.0G，工作集约 15.8G，高于 14G 的限额，所以持续被回收（`memory.events` 的 `high` 累计 179,868 次）。调整后的短暂观察（几分钟）里 `high` 计数没有再涨（179,990 不变），但已换出的 3.0G swap 不会自己换回来，也**没有证据说明这与交易问题有关**。回退：`systemctl set-property --runtime kaspad-tn10.service MemoryHigh=14G`；运行时设置在重启后失效，unit 文件仍是 14G，要永久生效需要改 `/etc/systemd/system/kaspad-tn10.service`（没有改）。
 

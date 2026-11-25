@@ -155,7 +155,7 @@ node experiments/rolling/vm-model.mjs                                      # §5
   - 空轮退盘 `EMPTY`：2笔，手续费 0.02 TKAS。
   - 不足额退款 `REFUNDED`：GENESIS→2×BUY→CLOSE→REFUND_SELF，5笔，0.082414 TKAS。
   - 3票开奖派奖 `PAID`：GENESIS→3×BUY→CLOSE→DRAW（真实 PASS-A）→PAY_SELF，7笔，0.105834 TKAS。
-  - 网页同流程 `PAID`：真实 Chromium 经 `https://cd311.cn:888/www/rolling-tn10/` 驱动，creator 测试钱包内存签名，GENESIS→BUY→CLOSE→DRAW→PAY_SELF，5笔，0.085402 TKAS；驱动脚本未在网络请求与落盘状态中检测到私钥。
+  - 网页同流程 `PAID`：真实 Chromium 经 `https://<staging-host>/tn10/` 驱动，creator 测试钱包内存签名，GENESIS→BUY→CLOSE→DRAW→PAY_SELF，5笔，0.085402 TKAS；驱动脚本未在网络请求与落盘状态中检测到私钥。
   - 合计19笔、8票、0.29365 TKAS，远低于 30 TKAS 上限。逐笔 quotedMass 与节点 computeMass 在前三轮一致；网页轮无 receipt 文件，仅有 intent 预估值，与节点值一致。
 - **TN10 256 笔分片边界（本机节点，各一次跑完，无 resume，日志无 RPC_TIMEOUT/CURSOR_REORG/UNKNOWN）**：
   - `shard-payout`：260笔（GENESIS、256×BUY、CLOSE、DRAW、PAY_OLD），终局 `PAID`，451,305,516 sompi（4.513 TKAS）；第256笔 BUY 冻结第一个满片（步骤257，storageMass 10,051），随后 CLOSE→DRAW→PAY_OLD 在链上被接受，终局 PAID。
@@ -176,7 +176,7 @@ node experiments/rolling/vm-model.mjs                                      # §5
 - **页面界面改版并发布（2026-11-14）**：`web/rolling-tn10/` 的展示层按主 Kaswin 页面的风格重写为面向用户的产品界面（轮次 / 创建 / 我的 / 规则四个入口、轮次卡片与进度条、“下一步怎么做”动作卡、发送前的“你将支付 / 资金去向”确认窗口、分享链接加入、高级设置）。协议层未动：`controller.mjs`、`round.mjs`、`prepare.mjs`、`intent.mjs`、`wallet.mjs`、`store.mjs` 与签名/发送/复核/放弃规则原样沿用。
   - **界面层是 TypeScript**：`app.ts`、`views.ts`、`ui.ts`、`messages.ts`、`share.ts`、`bridge.ts`（给 `.mjs` 协议模块入口加类型签名，不重写任何逻辑）、`types.ts`、`globals.d.ts`。`build/rolling-tn10.mjs` 在打包前先跑 TypeScript 5.8.3 `strict` 类型检查，有任何诊断即构建失败；浏览器依赖图白名单增加了 `.ts` 与纯数据的 `web/ui/icons.mjs`。协议模块仍是 `.mjs`，因为实链证据与 53 项离线测试对应的就是这些文件。
   - **票数上限放开到 65,536**（256 个封存分片 × 256 笔购买，协议 `MAX_TICKETS` 为 10,000,000，分片数才是约束）。实链只完整测到 515 张、2 个封存分片，所以超过 515 张时创建页显示“超出已验证范围”警示，不拦截；多批 PAY_OLD / REFUND_OLD 路径对大轮次仍是未验证的。
-  - **构建与发布**：`node build/rolling-tn10.mjs`（含类型检查与依赖图闸门）通过，产物 `dist/rolling-tn10.html` sha256 `944cf22b…f9d81e00`（283,913 字节）；服务每次请求从磁盘读取页面，`curl https://cd311.cn:888/www/rolling-tn10/` 回读的哈希与本地一致。`dist/index.html`（主网）未改动。改版前的旧页面已存档到 `dist/archive/`。
+  - **构建与发布**：`node build/rolling-tn10.mjs`（含类型检查与依赖图闸门）通过，产物 `dist/rolling-tn10.html` sha256 `944cf22b…f9d81e00`（283,913 字节）；服务每次请求从磁盘读取页面，`curl https://<staging-host>/tn10/` 回读的哈希与本地一致。`dist/index.html`（主网）未改动。改版前的旧页面已存档到 `dist/archive/`。
   - **仍是 NOT_RUN**：新界面没有跑过任何测试（`views.test.mjs`、`page.test.mjs` 已按新结构写好但未执行），也没在真实浏览器里走过，更没有新界面的实链操作；构建只保证类型检查、打包和依赖图通过，不保证运行时行为。上文 63/63 的页面与服务测试结果只对应改版前的页面。
 - **红队实测与修复（2026-11-14）**：[tests/redteam/ROLLING-WEB-TEST.md](../../tests/redteam/ROLLING-WEB-TEST.md) 记录了对线上页面的真实浏览器实测（3 轮实链流程全部终局）和 5 份审查报告，共 17 项确认的问题。其 §15 逐项列出修复：核对绿标绑定节点与状态指纹、弹窗内错误提示、设置先校验再连接成功才保存且只存改动字段、导入侧校验收据与候选交易、`PREPARED` 意图可放弃、`SEARCH_RANGE` 时按“有未花输入即证明未被接受”继续并提供强制放弃、刷新竞态、创建页与确认弹窗细节、键盘/触摸/对比度/页脚。改动触及 `round.mjs`（导入校验）、`controller.mjs`（`discard`、`importText`）、`intent.mjs`（`checkAcceptance` 的 SEARCH_RANGE 分支）和展示层。构建通过（TypeScript `strict` 类型检查 + 依赖图），产物 sha256 `97b3d8b3…42da3fe`（293,085 字节），线上回读一致；旧版存档在 `dist/archive/`。**这些修复没有运行任何单测、没有在浏览器复测**（NOT_RUN）；新增断言已写进 `views.test.mjs` 与 `round.test.mjs` 但未执行。上文 53/53、63/63 的结果不覆盖这次改动。
 - **TypeScript 核心（`scripts/rolling/core`）编译（2026-11-14）**：`node build/rolling-core.mjs` 在 `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` 下 0 诊断，生成 7 个源文件的 21 个输出（`lib/` 被忽略）。**只证明能通过类型检查，没有任何行为测试**；页面不使用它，仍走 `experiments/rolling/*.mjs`。把页面切到 TS 核心之前，需要在同一批向量和 53 项测试上证明两者等价。
@@ -214,7 +214,7 @@ node experiments/rolling/vm-model.mjs                                      # §5
 
 参照 V2.0.2，在 Rolling 顶栏加入 GitHub 仓库链接与 `EN` / `中文` 切换。复用共享显示层本地化，补充 Rolling 专用英文词典，并允许页面提供自身标题和描述。浏览器保存语言偏好，切换只更新文本与显示属性，保留表单和弹窗；弹窗识别改用原始标题数据，避免英文显示影响钱包与设置流程。现有页面结构断言已跟随新按钮调整，但未执行。
 
-构建内置门首次指出浏览器语言列表为只读数组，与共享 JS 推导的可变数组类型不匹配；调用改为传数组副本后构建完成。交付物 1,053,512 字节、813 个图输入，sha256 `d49cdf8cb634629dd159b62896f164516ae10c7057a57cf79a3f90c54ef0bddf`，公开 HTTPS 页面回读一致；旧版与清单存于 `dist/archive/rolling-tn10-5cdaf8ef.*`。本次附带只读 `/www/rolling-tn10/api/info` 回读为 HTTP 404，不作为旧预算服务就绪证明。
+构建内置门首次指出浏览器语言列表为只读数组，与共享 JS 推导的可变数组类型不匹配；调用改为传数组副本后构建完成。交付物 1,053,512 字节、813 个图输入，sha256 `d49cdf8cb634629dd159b62896f164516ae10c7057a57cf79a3f90c54ef0bddf`，公开 HTTPS 页面回读一致；旧版与清单存于 `dist/archive/rolling-tn10-5cdaf8ef.*`。本次附带只读 `/<staging-path>/api/info` 回读为 HTTP 404，不作为旧预算服务就绪证明。
 
 按用户此前“改页面显示不要再测试了”的要求，单元测试、浏览器、VM 与链上测试均 **NOT_RUN**。主网页 `dist/index.html` 哈希仍为 `0ee7ec5d416820a7e8bb5d1d29b473dc2da16383c73ea396c790840e058e8c2b`。本次显示层构建和 HTTP 交付不扩大协议验证范围，Profile 继续 `UNVALIDATED`。
 

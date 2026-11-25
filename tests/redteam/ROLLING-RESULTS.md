@@ -1,7 +1,7 @@
 # Rolling（256×256 分片）kaspa-redteam 离线结果
 
 - 生成时间：见同目录 `manifest.json` 的 `generatedAt`
-- 目标：`https://cd311.cn:888/www/rolling-tn10/` 对应的 `experiments/rolling` 原型，候选 Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`（页面标记 `UNVALIDATED`）
+- 目标：`https://<staging-host>/tn10/` 对应的 `experiments/rolling` 原型，候选 Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`（页面标记 `UNVALIDATED`）
 - 交易来源：`experiments/rolling/fixtures.mjs` + `transactions.mjs`，即真实 JS 构造器对**真实编译产物**（silverc 1.0.1）生成的诚实交易；资金输入用公开的一次性密钥签名（`sha256("kaswin-rolling-vm-throwaway-key:funder")`，与 `vm-cases.mjs` 相同，从未充值）
 - 判定器：kaspa-redteam v0.14.2（rusty-kaspa `TransactionValidator` 2.1.0，主网常量，进程内离线），**未连节点、未签名广播、未使用任何钱包**
 - 证据层级：**V（离线脚本/共识判定器）**。不是 N 层链上验收，不是审计，也不是页面行为验证
@@ -68,7 +68,7 @@ function chosenPayment(int i, int value) {
 ```bash
 node tests/redteam/rolling-baseline.mjs                    # 生成 4 份 baseline + manifest
 cd experiments/rolling
-RT=/root/kaspa/references/kaspa-redteam/target/release/kaspa-redteam
+RT=<path-to-kaspa-redteam>
 for m in sales sealed win refund; do
   $RT generated/$m.sil --baseline <out>/rolling/$m.baseline.json -v --no-color --out <out>/rolling/findings-$m
 done

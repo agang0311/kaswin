@@ -236,23 +236,20 @@ export function exploreView(x: Ctx): Raw {
       ?html`<div class="notice warn">${E.noticeMissingProfiles(missingProfiles.map(p=>`${p.asset} (${shortHash(p.profileId,6,4)})`).join(L.listSep))}</div>`
       :'';
   const emptyInfo=E.emptyFiltered(entries.length,activeFilter!=='all');
+  const searchOpen=!!(x.S.searchOpen||x.S.query);
   return html`
-  <div class="section-title plaza-head">
-    <div>
-      <h2>${E.heading}</h2>
-      <p class="plaza-sub muted small">${E.liveSummary(g.live??0,entries.length)}</p>
-    </div>
-    <div class="hero-actions"><button class="btn pri" data-go2="create">${ic('create')}${E.createRound}</button></div>
-  </div>
-  <div class="toolbar plaza-toolbar">
+  <div class="toolbar plaza-toolbar${searchOpen?' search-open':''}">
     <div class="seg" role="group" aria-label="${E.filterAria}">${seg.map(([k,l])=>html`<button data-filter="${k}" aria-pressed="${activeFilter===k}">${l}<span class="c">${g[k]}</span></button>`)}</div>
     <span class="spacer"></span>
-    <label class="search search-sm">${ic('search')}<input id="q" placeholder="${E.searchPlaceholder}" value="${x.S.query}" autocomplete="off" spellcheck="false"></label>
-    ${x.conn.indexer||isRest||isCache||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="${E.refreshListTitle}" title="${E.refreshListTitle}">${ic('refresh')}</button>`:''}
-    ${x.indexerMore?html`<button class="btn sm" data-act="moreIndex">${L.common.loadMore}</button>`:''}
+    <div class="plaza-tools">
+      <button class="icon-btn plaza-search-btn${searchOpen?' on':''}" data-act="toggleSearch" aria-label="${E.searchPlaceholder}" title="${E.searchPlaceholder}" aria-expanded="${searchOpen}">${ic('search')}</button>
+      ${x.conn.indexer||isRest||isCache||x.conn.node?html`<button class="icon-btn" data-act="refreshIndex" aria-label="${E.refreshListTitle}" title="${E.refreshListTitle}">${ic('refresh')}</button>`:''}
+    </div>
+    <label class="search search-sm plaza-search">${ic('search')}<input id="q" placeholder="${E.searchPlaceholder}" value="${x.S.query}" autocomplete="off" spellcheck="false"></label>
   </div>
   ${sourceNotice}
   <div class="grid">${list.length?list.map(e=>e.item?card(e.item,x,e.disc):indexedCard(e.disc!,x)):html`<div class="empty">${ic('ticket')}<p>${entries.length?html`${emptyInfo.before}${emptyInfo.linkText?html`<button class="link" data-filter="all">${emptyInfo.linkText}</button>${emptyInfo.after}`:''}`:E.emptyNone}<button class="link" data-go2="create">${E.emptyCreateLink}</button>${E.emptyTail}</p></div>`}</div>
+  ${x.indexerMore?html`<div style="margin-top:12px;text-align:center"><button class="btn sm" data-act="moreIndex">${L.common.loadMore}</button></div>`:''}
   <details class="join-details"${x.S.join||!entries.length?' open':''}>
     <summary class="small muted">${ic('download')} <span>${E.joinSummary}</span></summary>
     <div class="joinrow" style="margin-top:10px"><input id="joinText" value="${x.S.join}" placeholder="${E.joinPlaceholder}" autocomplete="off" spellcheck="false" aria-label="${E.joinAria}"><button class="btn pri" data-act="join">${L.common.join}</button></div>
@@ -295,7 +292,9 @@ export function parseCreate(
     const price=intPrice?(asset.decimals===8?parseTkas(rawPrice):BigInt(rawPrice)*(10n**BigInt(asset.decimals))):null;
     const cap=resolved.fixedTicketCap!=null?resolved.fixedTicketCap:(/^[0-9]{1,8}$/.test(form.cap)?Number(form.cap):NaN);
     const min=resolved.fixedMinTickets!=null?resolved.fixedMinTickets:(/^[0-9]{1,8}$/.test(form.min)?Number(form.min):NaN);
-    const mins=form.dur==='custom'?(/^[0-9]{1,5}$/.test(form.custom)?Number(form.custom):NaN):Number(form.dur);
+    const customUnit=form.customUnit==='h'||form.customUnit==='d'?form.customUnit:'m';
+    const customMult=customUnit==='d'?1440:customUnit==='h'?60:1;
+    const mins=form.dur==='custom'?(/^[0-9]{1,5}$/.test(form.custom)?Number(form.custom)*customMult:NaN):Number(form.dur);
     const errors: string[]=[];
     if(!resolved.supportedOnNet)errors.push(C.errUnsupportedNet(label,unit,altProtoName??(net?.unit??'KAS')));
     if(price==null)errors.push(C.errPriceInt(unit));
@@ -319,7 +318,7 @@ function createCta(x: Ctx,formOk: boolean,L: Locale): Raw {
 export function createView(x: Ctx): Raw {
   const L=locOf(x),C=L.create;
   const specs=x.createSpecs?.length?x.createSpecs:[defaultSequentialCreateSpec(x.net)];
-  const f=x.S.form,spec=specs.find(s=>s.protocolId===f.protocol)??specs[0]!;
+  const f=x.S.form,spec=specs.find(s=>s.protocolId===f.protocol)??specs.find(s=>s.supportedOnNet)??specs[0]!;
   const altSpec=specs.find(s=>s.supportedOnNet&&s.protocolId!==spec.protocolId);
   const u=unitOf(x);
   const symOf=(s: ProtocolCreateSpec)=>isTokenAsset(s.asset)?s.asset.symbol:u;
@@ -345,7 +344,14 @@ export function createView(x: Ctx): Raw {
         </div>`:''}
         <label class="field full">${C.ticketPriceLabel(ticketU)}<input id="cPrice" value="${f.price}" inputmode="numeric" maxlength="12"><small>${C.ticketPriceHint(fmtAmt(spec.priceMin,spec.asset),ticketU)}</small></label>
         <div class="field full">${C.closeTimeLabel}<div class="pills">${L.actions.closePresets.map(([k,l])=>html`<button type="button" data-dur="${k}" aria-pressed="${f.dur===k}">${l}</button>`)}</div>
-          ${f.dur==='custom'?html`<input id="cCustom" value="${f.custom}" inputmode="numeric" maxlength="5" placeholder="${C.customMinutesPlaceholder(spec.minCloseMinutes,spec.maxCloseMinutes)}">`:''}
+          ${f.dur==='custom'?(()=>{const cu=f.customUnit==='h'||f.customUnit==='d'?f.customUnit:'m';return html`<div class="custom-dur-row">
+            <input id="cCustom" value="${f.custom}" inputmode="numeric" maxlength="5" placeholder="${C.customDurationPlaceholder(cu,spec.minCloseMinutes,spec.maxCloseMinutes)}">
+            <div class="seg custom-unit" role="group" aria-label="${C.customUnitAria}">
+              <button type="button" data-durunit="m" aria-pressed="${cu==='m'}">${C.unitMin}</button>
+              <button type="button" data-durunit="h" aria-pressed="${cu==='h'}">${C.unitHour}</button>
+              <button type="button" data-durunit="d" aria-pressed="${cu==='d'}">${C.unitDay}</button>
+            </div>
+          </div>`;})():''}
           <small>${C.closeRuleHint(effMin,ticketU)}</small></div>
         <details class="adv-details full"${advOpen?' open':''}>
           <summary class="small muted">${spec.fixedTicketCap!=null?C.moreOptionsPublicSummary:C.moreOptionsSummary}</summary>
@@ -740,10 +746,11 @@ function discoveredDetailView(d: DiscoveredRound,x: Ctx,L: Locale): Raw {
   const modHint=d.terminal
     ?L.actions.hintTerminal[d.terminal]??''
     :(isParallel&&L.actions.hintModuleParallel[d.module??'']?L.actions.hintModuleParallel[d.module??'']!(u,kasU):L.actions.hintModule[d.module??'']??'');
+  const starred=!!x.saved?.has(cid);
   return html`
   <div class="round-shell">
   <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}${L.common.back}</button><span class="spacer"></span>
-    <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(cid)?L.common.starred:L.common.star}</button></div>
+    <button class="btn sm star-btn${starred?' starred':''}" data-act="toggleStar" aria-pressed="${starred?'true':'false'}">${ic('star')}${starred?L.common.starred:L.common.star}</button></div>
   <div class="panel t-${ph.tone} round-hero">
     <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="badge t-${ph.tone}">${ph.label}</span><span class="badge asset-badge">${u}</span><span class="spacer"></span>
       <span class="tag">${isIncompat?R.incompatibleBadge:R.localCacheSummary}</span></div>
@@ -811,13 +818,9 @@ export function roundView(x: Ctx): Raw {
   const ph=localizePhase(D.ph,L),price=f.ticketPrice,open=!r.terminal&&!r.halted&&!r.intent&&r.manager,u=unitOf(x),tu=isToken?dAsset.symbol:u;
   const maxShards=meta?.maxShards??MAX_SHARDS;
   const order=ORDER[f.module??'']??[];
-  const blockedNotes: string[]=[];
   const cards=open?order.map(a=>{
     const st=D.a[a];
-    if(a==='CLOSE'&&st&&!st.ok){
-      if(st.reason&&!/不适用|没有旧分片|不满足/.test(st.reason))blockedNotes.push(localizeActionReason(st.reason,L));
-      return '';
-    }
+    if(a==='CLOSE'&&st&&!st.ok)return '';
     return actionCard(a,D,x,L);
   }).filter(c=>c!==''):[];
   const shardTopAct=D.interactive?.shardSettlement&&!r.terminal&&!r.halted&&!r.intent?shardSettlementHero(D.interactive.shardSettlement,D,x,L):'';
@@ -851,7 +854,7 @@ export function roundView(x: Ctx): Raw {
     ?html`<div class="notice round-countdown ${drawHint.ready?'ok':''}" role="status"><h3>${ic('clock')} ${drawHint.label}</h3><p>${drawHint.detail}</p>${drawHint.percent!==null?html`<progress max="100" value="${drawHint.percent}" aria-label="${drawHint.label}"></progress>`:''}</div>`
     :'';
   const heroCountdown=f.module==='sales'&&!r.terminal&&closeHint
-    ?html`<div class="hero-countdown${D.a.CLOSE?.ok?' ok':''}" role="status">${ic('clock')} <span>${closeHint}${!D.a.CLOSE?.ok&&blockedNotes.length?` · ${blockedNotes[0]}`:''}</span></div>`
+    ?html`<div class="hero-countdown${D.a.CLOSE?.ok?' ok':''}" role="status">${ic('clock')} <span>${closeHint}</span></div>`
     :'';
   const actionSection=allCards.length?html`<div class="panel action-panel">
     ${statusBanner}
@@ -861,10 +864,11 @@ export function roundView(x: Ctx): Raw {
   const roundProfileId=r.profileId??meta?.profileId??cp?.profileId??null;
   const protoLabel=meta?.displayName??cp?.displayName??cp?.name??(isToken?`${tu} (${dAsset.kind})`:u);
   const showCap=!isParallel&&f.ticketCap>0&&f.ticketCap<65536;
+  const starred=!!x.saved?.has(r.cid);
   return html`
   <div class="round-shell">
   <div class="toolbar"><button class="btn sm" data-go2="explore">${ic('arrow')}${L.common.back}</button><span class="spacer"></span>
-    <button class="btn sm" data-act="toggleStar">${ic('star')}${x.saved?.has(r.cid)?L.common.starred:L.common.star}</button>
+    <button class="btn sm star-btn${starred?' starred':''}" data-act="toggleStar" aria-pressed="${starred?'true':'false'}">${ic('star')}${starred?L.common.starred:L.common.star}</button>
     <button class="btn sm" data-act="moreRound" aria-haspopup="dialog" aria-label="${R.toolsTitle}" ${D.preview?'disabled':''}>${L.common.more}</button></div>
   <div class="panel t-${ph.tone} round-hero">
     <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">

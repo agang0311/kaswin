@@ -81,5 +81,6 @@ test('shipped bundle keeps the key hygiene hooks: password input, wallet wipe on
   const shell=html.replace(script,'');
   assert.doesNotMatch(shell,/class="exp-bar"/);assert.ok(shell.includes(`id="profileId">${TN10_PROFILE_ID}<`));
   assert.ok(!shell.includes('data-go="protocol"'),'Rules must be removed from top navigation');
-  for(const id of ['view','toasts','modal','mTitle','mBody','mFoot','mClose','nodeChip','walletBtn','helpBtn','settingsBtn','githubBtn'])assert.ok(shell.includes(`id="${id}"`),id);
+  for(const id of ['view','toasts','modal','mTitle','mBody','mFoot','mClose','nodeChip','walletBtn','settingsBtn','menuBtn','menuDrawer','footHelpBtn','githubBtn'])assert.ok(shell.includes(`id="${id}"`),id);
+  assert.ok(!shell.includes('id="helpBtn"'));
 });

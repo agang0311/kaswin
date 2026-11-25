@@ -1,6 +1,6 @@
 # Kaswin
 
-English | [中文](README.zh-CN.md)
+English | [中文](README.zh-CN.md) | Live App: [https://win.kaspay.top](https://win.kaspay.top)
 
 Kaswin is a lottery protocol and single-page application on Kaspa L1, built with SilverScript contracts and a JavaScript/TypeScript client. It uses an active shard and frozen shards for ticket history, defaults to **Kaspa Mainnet** (switchable to **Testnet 10**), and uses the `UNVALIDATED` Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`.
 

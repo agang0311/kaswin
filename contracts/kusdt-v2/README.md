@@ -40,10 +40,10 @@
 
 ```bash
 # 默认主网 KUSDT_CID + MAX_BATCH=8
-node /root/kaspa/kaswin/contracts/kusdt-v2/compile-contracts.mjs
+node ./contracts/kusdt-v2/compile-contracts.mjs
 
 # 校准不同 MAX_BATCH（如 4 或 8）或覆盖测试网 KUSDT_CID（输出到独立目录避免覆盖）
-node /root/kaspa/kaswin/contracts/kusdt-v2/compile-contracts.mjs --max-batch 4 --out-dir /tmp/kusdt-v2-b4
+node ./contracts/kusdt-v2/compile-contracts.mjs --max-batch 4 --out-dir /tmp/kusdt-v2-b4
 ```
 
 脚本会校验 `../toolchain.json` 中固定 `silverc 1.0.1` 二进制 SHA-256，按严格 DAG 顺序（`s_payout → s_refund → s_frozen → s_open → m_dispatch → m_sealed → m_open`）展开 `.sil` 并输出 `artifacts/*.json` 与 `artifacts/template-pins.json`。

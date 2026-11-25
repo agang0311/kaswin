@@ -22,8 +22,8 @@ import {classifyRejection} from '../../scripts/tracking/conflict.mjs';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const arg = (k, d) => process.argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
-const URL_ = arg('url', 'https://cd311.cn:888/www/rolling-tn10/');
-const NODE = arg('node', 'wss://cd311.cn:888/www/rolling-tn10/node');
+const URL_ = arg('url', process.env.KASWIN_TEST_URL ?? 'http://127.0.0.1:8080/');
+const NODE = arg('node', process.env.KASWIN_TEST_NODE ?? 'ws://127.0.0.1:18210');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const PHASES = arg('phases', 'r1,r2').split(',').map(s => s.trim());
 

@@ -18,10 +18,10 @@ try {
   const dir=path.join(RUN,name);fs.mkdirSync(dir,{recursive:true});
   const text=fs.readFileSync(path.join(DIR,name+'.json'),'utf8'),before=decodeTagged(text);
   if(before.cid!==cid||before.intent||before.terminal)throw new Error('LEGACY_RECORD_SCOPE');
-  const page=new RollingPage({url:'https://cd311.cn:888/www/rolling-tn10/',profileDir:path.join(dir,'profile-b2'),log});
+  const page=new RollingPage({url:process.env.KASWIN_TEST_URL??'http://127.0.0.1:8080/',profileDir:path.join(dir,'profile-b2'),log});
   const result={name,cid,pass:false,priorTransactions:before.receipts.length,priorFeeSompi:before.fees.toString()};report.results.push(result);save();
   try {
-   await page.open();await page.setNode('wss://cd311.cn:888/www/rolling-tn10/node');await page.connect('b2');await page.joinText(text);
+   await page.open();await page.setNode(process.env.KASWIN_TEST_NODE??'ws://127.0.0.1:18210');await page.connect('b2');await page.joinText(text);
    let round=await roundReady(page);const cursor=await stableCursor(rpc);
    ({round}=await executeAction(page,'CLOSE',{log}));
    let steps=0;const deadline=Date.now()+600000;

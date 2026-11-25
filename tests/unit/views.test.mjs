@@ -15,6 +15,7 @@ import {defaultSequentialCreateSpec} from '../../scripts/protocols/registry.mjs'
 import {kusdtV2InteractiveModel} from '../../scripts/protocols/kusdt-v2.mjs';
 import {pickRandomBuyShard,isShardUtxoConflict,shouldWarnShardCongestion} from '../../web/app/buy-shard.ts';
 import {recomputeDrawProof,buildPythonVerifyScript} from '../../web/app/draw-verify.ts';
+import {formatTkasFixed} from '../../web/ui/format.mjs';
 
 /* The views are pure (data in, HTML string out): no DOM, controller, node or wallet is needed. */
 const hex=c=>c.repeat(64),price=100000000n;
@@ -43,7 +44,7 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
   const r=roundFixture();
   out=exploreView(ctx({items:[item(r,facts(),actions())]})).s;
   assert.ok(out.includes(`data-open="${r.cid}"`));assert.match(out,/售票中/);assert.match(out,/已售 5 \/ 100 张/);
-  assert.match(out,/抽奖广场/);assert.doesNotMatch(out,/我的轮次|索引发现（链上共/);
+  assert.match(out,/data-filter="live"/);assert.match(out,/data-act="toggleSearch"/);assert.doesNotMatch(out,/我的轮次|索引发现（链上共|plaza-head/);
   // Unified plaza merges local rounds (data-open, deduplicated) and unjoined indexed rounds (data-indexed) as cards
   const dOut=exploreView(ctx({conn:{indexer:true},indexerMore:true,items:[item(r,facts(),actions())],discovered:[
     {cid:r.cid,terminal:'PAID',bought:4355,buys:4353,updatedAt:500},
@@ -51,7 +52,7 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
     {cid:hex('c'),terminal:'EMPTY',bought:0,buys:0,updatedAt:200},
     {cid:hex('f'),module:'sales',tickets:12,managerValue:'1600000000',updatedAt:1000},
   ]})).s;
-  assert.match(dOut,/1 场火热进行中/);
+  assert.match(dOut,/进行中<span class="c">1<\/span>/);
   assert.match(dOut,/data-act="refreshIndex"/);
   assert.match(dOut,/data-act="moreIndex"/);
   assert.equal((dOut.match(new RegExp(`data-(?:open|indexed)="${r.cid}"`,'g'))??[]).length,1);
@@ -108,6 +109,18 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
 
 test('create form: bounds are enforced, bad input never throws, and values are escaped in the page',()=>{
   const base={price:'1',cap:'100',min:'3',dur:'60',custom:''};
+  // Custom duration units: minutes, hours, days + exact 2-decimal balance formatting
+  assert.equal(parseCreate({...base,dur:'custom',custom:'12',customUnit:'m'}).mins,12);
+  assert.equal(parseCreate({...base,dur:'custom',custom:'2',customUnit:'h'}).mins,120);
+  assert.equal(parseCreate({...base,dur:'custom',custom:'7',customUnit:'d'}).mins,10080);
+  assert.equal(parseCreate({...base,dur:'custom',custom:'8',customUnit:'d'}).ok,false);
+  const customUnitHtml=createView(ctx({S:{...BASE_S,form:{...BASE_S.form,dur:'custom',custom:'2',customUnit:'h'}}})).s;
+  assert.match(customUnitHtml,/data-durunit="m"/);
+  assert.match(customUnitHtml,/data-durunit="h" aria-pressed="true"/);
+  assert.match(customUnitHtml,/data-durunit="d"/);
+  assert.equal(formatTkasFixed(102030027580n,2),'1,020.30');
+  assert.equal(formatTkasFixed(0n,2),'0.00');
+
   assert.equal(parseCreate(base).ok,true);assert.equal(parseCreate({...base,price:'2'}).ok,true);assert.equal(MAX_TICKET_CAP,10000000);assert.equal(parseCreate({...base,cap:'10000000'}).ok,true);assert.equal(parseCreate({...base,cap:String(VERIFIED_TICKET_CAP)}).ok,true);
   for(const bad of [{cap:String(MAX_TICKET_CAP+1)},{cap:'2'},{min:'2'},{min:'101'},{price:'0'},{price:'1.5'},{price:'1.'},{price:'0.99999999'},{price:'abc'},{price:'1.123456789'},{price:''},
     {dur:'custom',custom:'0'},{dur:'custom',custom:'99999'},{dur:'custom',custom:'-1'},{dur:'custom',custom:''}])
@@ -151,8 +164,10 @@ test('buy quantity text',()=>{
 test('round view: offered actions follow the phase; blocked ones carry their (escaped) reason; finished rounds offer nothing',()=>{
   const r=roundFixture(),a=actions({BUY:{ok:true,maxQuantity:95},CLOSE:NO('<b>尚未到可关闭 DAA</b>')});
   let out=roundView(ctx({S:{...BASE_S,view:'round',cid:r.cid,qty:'2'},detail:{...item(r,facts(),a),mine:null,isWinner:false}})).s;
-  assert.match(out,/参与抽奖/);assert.match(out,/data-act="BUY"/);assert.match(out,/&lt;b&gt;尚未到可关闭/);assert.ok(!out.includes('<b>尚未到可关闭'));
-  assert.ok(!out.includes('data-act="DRAW"'));assert.ok(!out.includes('data-act="CLOSE"'));   // CLOSE is blocked -> disabled button, no hook
+  assert.match(out,/参与抽奖/);assert.match(out,/data-act="BUY"/);assert.ok(!out.includes('<b>尚未到可关闭'));
+  assert.ok(!out.includes('data-act="DRAW"'));assert.ok(!out.includes('data-act="CLOSE"'));   // CLOSE is blocked -> hidden in sales phase
+  const blockedBuy=roundView(ctx({detail:{...item(r,facts(),actions({BUY:NO('<b>票池已满</b>'),CLOSE:NO('wait')})),mine:null,isWinner:false}})).s;
+  assert.match(blockedBuy,/&lt;b&gt;票池已满&lt;\/b&gt;/);assert.ok(!blockedBuy.includes('<b>票池已满'));
   assert.ok(!out.includes('data-act="verify"'));assert.ok(!out.includes('data-act="syncIndex"'));
   assert.match(out,/<button[^>]*data-act="moreRound"[^>]*aria-haspopup="dialog"/);
   // unmet wallet: the same action turns into a "connect wallet" hook instead of a send hook
@@ -477,6 +492,10 @@ test('round countdown: sales close countdown and two-stage sealed draw readiness
   const salesHtml=roundView(ctx({daa:1000n,detail:salesD})).s;
   assert.match(salesHtml,/class="hero-countdown"/);
   assert.match(salesHtml,/距最早可封盘约 1 分 0 秒/);
+  assert.doesNotMatch(salesHtml,/尚未到可关闭 DAA/);
+  assert.match(salesHtml,/class="btn sm star-btn" data-act="toggleStar" aria-pressed="false"/);
+  const starredHtml=roundView(ctx({daa:1000n,detail:salesD,saved:new Set([r.cid])})).s;
+  assert.match(starredHtml,/class="btn sm star-btn starred" data-act="toggleStar" aria-pressed="true"/);
 
   // Sealed Stage 1: works for BOTH sequential (KAS) and parallel (kUSDT v2) protocols!
   const kusdtAsset={kind:'KCC20',symbol:'kUSDT',decimals:6,tokenCovenantId:hex('5')};

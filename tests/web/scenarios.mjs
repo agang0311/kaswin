@@ -9,8 +9,8 @@ import {saveJson,openEvidenceRpc,stableCursor,roundReady,waitActionQuote,sendQuo
 const HERE=path.dirname(new URL(import.meta.url).pathname);
 const CFG=JSON.parse(fs.readFileSync(path.join(HERE,'config/scenarios.json'),'utf8')).scenarios;
 const arg=(k,d)=>process.argv.find(a=>a.startsWith(`--${k}=`))?.slice(k.length+3)??d;
-const URL_=arg('url','https://cd311.cn:888/www/rolling-tn10/');
-const NODE=arg('node','wss://cd311.cn:888/www/rolling-tn10/node');
+const URL_=arg('url',process.env.KASWIN_TEST_URL??'http://127.0.0.1:8080/');
+const NODE=arg('node',process.env.KASWIN_TEST_NODE??'ws://127.0.0.1:18210');
 const ROLE=arg('role','creator'),picks=arg('scenarios','1,2,3,4').split(',').map(x=>x.trim());
 if(!['creator','b1','b2'].includes(ROLE)||picks.some(x=>!['1','2','3','4','5','6'].includes(x)))throw new Error('ONLY_AUTHORIZED_NON_TIMEOUT_SCENARIOS_1_TO_6');
 const buyOverride=arg('buys',null),quantity=Number(arg('quantity','1')),budgetMs=Number(arg('budget','21600'))*1000;

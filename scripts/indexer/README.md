@@ -4,7 +4,7 @@ Status: `SOURCE_IMPLEMENTATION / NOT_RUN` (the latest TS-core import migration h
 
 [中文文档](README.zh-CN.md)
 
-This directory implements a standalone, read-only TN10 Rolling sidecar indexer using its own isolated data directory (default `var/rolling-indexer`). It does not modify the Rust V2.0.2 KCI endpoints or `/var/lib/kci*/events.*.sqlite`.
+This directory implements a standalone, read-only TN10 Rolling sidecar indexer using its own isolated data directory (default `var/rolling-indexer`). It does not modify the Rust V2.0.2 KCI endpoints or `<kci-state-dir>/events.*.sqlite`.
 
 ## Modules
 

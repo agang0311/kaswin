@@ -242,10 +242,10 @@ export interface Explorer {tx(id: Hex): string; addr(a: string): string; block?(
 export interface LogLine {at: number; kind: string; text: string}
 /** `fp` binds a result to the node and round state it was obtained for; a different state or node makes it stale (see app.ts verifyFor). */
 export interface VerifyState {state: 'checking' | 'ok' | 'partial' | 'bad'; at?: number; code?: string; fp?: string}
-export interface CreateForm {protocol?: string; price: string; cap: string; min: string; dur: string; custom: string; registry?: boolean; registryAddr?: string}
+export interface CreateForm {protocol?: string; price: string; cap: string; min: string; dur: string; custom: string; customUnit?: 'm' | 'h' | 'd'; registry?: boolean; registryAddr?: string}
 export interface UiState {
   view: string; cid: string | null; filter: string; sort: string; query: string; qty: string; join: string; wtab: string; theme: string;
-  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; detailTab?: 'rules' | 'map' | 'txs'; txLimit?: number; buyShard?: string;
+  shard?: number | null; purchase?: number | null; pixelMode?: boolean; liveSync?: boolean; detailTab?: 'rules' | 'map' | 'txs'; txLimit?: number; buyShard?: string; searchOpen?: boolean;
   form: CreateForm; nodes: string; indexer: string; walletProvider: string;
 }
 export interface NetInfo {

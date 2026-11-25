@@ -18,7 +18,7 @@ try{
   if(status[field])throw new Error(`${field}_REQUIRES_ORIGINAL_PROFILE_RECOVERY`);
   const capacity=await requireCampaignCapacity(slots);
   status[field]={startedAt:new Date().toISOString(),knownActiveBefore:capacity.slotCount};save();
-  const fd=fs.openSync(path.join(dir,`${name}.log`),'a',0o600),child=spawn(process.execPath,args,{cwd:root,env:{...process.env,KASWIN_VM_BIN:'/root/kaspa/references/toolchains/rolling-vm-target/release/kaswin-rolling-vm'},stdio:['ignore',fd,fd]});
+  const fd=fs.openSync(path.join(dir,`${name}.log`),'a',0o600),child=spawn(process.execPath,args,{cwd:root,env:{...process.env,KASWIN_VM_BIN:process.env.KASWIN_VM_BIN??''},stdio:['ignore',fd,fd]});
   fs.closeSync(fd);fs.writeFileSync(path.join(dir,`${name}.pid`),String(child.pid)+'\n');
   const ended=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',(code,signal)=>resolve({code,signal}));});
   status[field]={...status[field],...ended,finishedAt:new Date().toISOString()};save();

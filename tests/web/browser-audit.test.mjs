@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-const URL_='https://cd311.cn:888/www/rolling-tn10/';
+const URL_=process.env.KASWIN_TEST_URL??'http://127.0.0.1:8080/';
 const candidate='/tmp/kaswin-rolling-campaign-candidate/index.html';
 async function fixture() {
  const browser=await chromium.launch(),ctx=await browser.newContext();

@@ -34,6 +34,7 @@ export const EN: Locale = defineLocale({
     themeToDark: 'Switch to dark mode',
     connectWallet: 'Connect wallet',
     receiveOnlySuffix: ' · Receive-only',
+    receiveOnlyBadge: 'Watch-only',
     connected: 'Connected',
     nodeFailed: 'Node disconnected; click to fix',
     connecting: 'Connecting…',
@@ -388,6 +389,14 @@ export const EN: Locale = defineLocale({
     minTicketsHint: minFloor => `At least ${minFloor}; full refund if below`,
     closeTimeLabel: 'Draw time',
     customMinutesPlaceholder: (min, max) => `Minutes (${min} – ${max})`,
+    customDurationPlaceholder: (unit, minMin, maxMin) =>
+      unit === 'd' ? `Days (1 – ${Math.floor(maxMin / 1440)})`
+      : unit === 'h' ? `Hours (1 – ${Math.floor(maxMin / 60)})`
+      : `Minutes (${minMin} – ${maxMin})`,
+    customUnitAria: 'Custom duration unit',
+    unitMin: 'Min',
+    unitHour: 'Hr',
+    unitDay: 'Day',
     closeRuleHint: (min, u) => `Draws once time is up with ≥ ${min} tickets sold; otherwise refunds ${u} in full.`,
     closeHintParallel: 'Draw becomes available once target time is reached.',
     closeHintSequential: 'Draw becomes available once time is reached or sold out.',

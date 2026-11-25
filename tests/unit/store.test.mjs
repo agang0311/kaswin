@@ -23,7 +23,7 @@ test('discovery cache persists per genesis/profile namespace, sanitizes entries,
    null,
   ],
   origin:'indexer',
-  base:'https://cd311.cn:888/indexer/mainnet',
+  base:'https://indexer.example.invalid/mainnet',
   savedAt:123456,
  });
  const restored=await tn10Store.readDiscovery();

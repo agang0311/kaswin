@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-本目录实现独立的 TN10 Rolling 只读索引 sidecar，使用独立持久化目录（默认 `var/rolling-indexer`），不改动现有 Rust V2.0.2 KCI 接口或 `/var/lib/kci*/events.*.sqlite`。
+本目录实现独立的 TN10 Rolling 只读索引 sidecar，使用独立持久化目录（默认 `var/rolling-indexer`），不改动现有 Rust V2.0.2 KCI 接口或 `<kci-state-dir>/events.*.sqlite`。
 
 ## 组成
 

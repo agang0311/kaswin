@@ -75,7 +75,6 @@ import {profile as rollingProfile} from '../contracts/fixtures.mjs';
 import {runEngine} from '../contracts/engine-gate.mjs';
 
 const ARTIFACTS_DIR = join(process.cwd(), 'contracts/kusdt-v2/artifacts');
-const KCC20_TEMPLATE_PATH = '/root/kaspa/references/kaspire-wallet/crates/kaspa_secure_core/src/kcc20_standard_template.json';
 
 function loadArtifacts() {
   const out = {};
@@ -86,7 +85,7 @@ function loadArtifacts() {
 }
 
 const KCC20_SUFFIX = Uint8Array.from(
-  Buffer.from(JSON.parse(readFileSync(KCC20_TEMPLATE_PATH, 'utf8')).suffix, 'hex'),
+  Buffer.from(JSON.parse(readFileSync(join(ARTIFACTS_DIR, 'kcc20-suffix.json'), 'utf8')).suffixHex, 'hex'),
 );
 
 const keyHex = label => createHash('sha256').update(`kusdt-v2-unit:${label}`).digest('hex');

@@ -47,6 +47,7 @@ export interface Locale {
     themeToDark: string;
     connectWallet: string;
     receiveOnlySuffix: string;
+    receiveOnlyBadge: string;
     connected: string;
     nodeFailed: string;
     connecting: string;
@@ -238,6 +239,11 @@ export interface Locale {
     minTicketsHint: (minFloor: number) => string;
     closeTimeLabel: string;
     customMinutesPlaceholder: (min: number, max: number) => string;
+    customDurationPlaceholder: (unit: 'm' | 'h' | 'd', minMin: number, maxMin: number) => string;
+    customUnitAria: string;
+    unitMin: string;
+    unitHour: string;
+    unitDay: string;
     closeRuleHint: (min: number, unit: string) => string;
     closeHintParallel: string;
     closeHintSequential: string;

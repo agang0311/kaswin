@@ -6,9 +6,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import {createHash} from 'node:crypto';
-import {readFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import {mkdtemp, rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {chromium} from 'playwright';
+import {buildKaswin} from '../../build/build.mjs';
 
 import {openMemoryWallet} from '../../scripts/wallet/wallet.mjs';
 import {encodeTagged} from '../../scripts/store/codec.mjs';
@@ -24,7 +26,6 @@ import {parseSpk, txToRpc, txFromRpc} from '../../scripts/chain/nodes.mjs';
 import {jsonText} from '../../scripts/chain/json.mjs';
 import {loadDeploymentProfile} from '../../scripts/contract/bundle.mjs';
 
-const CANDIDATE_HTML = resolve('tests/output/rolling-integration/candidate/index.html');
 const TEST_SECRET = createHash('sha256').update('rolling-tn10-playwright-unfunded-test-key').digest('hex');
 
 function makeIndexedRoundFixture(profile) {
@@ -81,7 +82,9 @@ function makeIndexedRoundFixture(profile) {
 }
 
 test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing, and Indexer discovery/sync', async t => {
-  const html = await readFile(CANDIDATE_HTML, 'utf8');
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'kaswin-ext-browser-'));
+  t.after(() => rm(tmpDir, {recursive: true, force: true}));
+  const {html} = await buildKaswin({mode: 'tn10', outDir: tmpDir});
   const profile = await loadDeploymentProfile();
   const mem = openMemoryWallet(TEST_SECRET);
   t.after(() => mem.close());
@@ -347,6 +350,7 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
 
   // Inject mock window.kasware and window.kastle before page script runs
   await page.addInitScript(({address, pubkey}) => {
+    localStorage.setItem('kaswin:language', 'zh-CN');
     const makeEmitter = () => {
       const map = new Map();
       return {
@@ -408,25 +412,27 @@ test('Candidate HTML: extension wallets (KasWare/Kastle), invalidation, signing,
 
   // Connect KasWare
   await page.click('[data-connect="kasware"]');
-  await page.waitForFunction(() => document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
+  await page.waitForFunction(() => document.querySelector('#walletBtn')?.dataset?.address?.includes('kaspatest:'));
+  assert.ok(!(await page.locator('#walletBtn').innerText()).includes('kaspatest:'));
 
   // 2. Emit accountsChanged -> wallet auto-invalidates
   await page.evaluate(() => window.__emitKasware('accountsChanged', []));
-  await page.waitForFunction(() => !document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
+  await page.waitForFunction(() => !document.querySelector('#walletBtn')?.dataset?.address);
 
   // Reconnect with Kastle
   await page.click('#walletBtn');
   await page.waitForSelector('[data-connect="kastle"]');
   await page.click('[data-connect="kastle"]');
-  await page.waitForFunction(() => document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
+  await page.waitForFunction(() => document.querySelector('#walletBtn')?.dataset?.address?.includes('kaspatest:'));
 
   // 3. Configure mock Node and Indexer in Settings
   await page.click('#settingsBtn');
+  if (!(await page.locator('#sNodes').isVisible())) await page.click('#modal .adv-details summary');
   await page.waitForSelector('#sNodes');
   await page.fill('#sNodes', `ws://127.0.0.1:${port}/mock-node`);
   await page.fill('#sIndexer', `${origin}/idx/v1`);
   await page.click('[data-act="applyConn"]');
-  await page.waitForFunction(() => document.querySelector('#mToasts')?.textContent?.includes('连接成功，设置已保存'), null, {timeout: 8000});
+  await page.waitForFunction(() => document.querySelector('#mToasts')?.textContent?.includes('连接设置已保存并生效'), null, {timeout: 8000});
   await page.click('#mClose');
   await page.waitForFunction(() => document.querySelector('#modal')?.open === false, null, {timeout: 5000});
 

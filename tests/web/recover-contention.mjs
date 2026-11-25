@@ -16,11 +16,13 @@ const original=JSON.parse(fs.readFileSync(path.join(run,'result.json'),'utf8')).
 if(!original?.cid)throw new Error('RECOVERY_CASE_MISSING');
 const connection=original.actualConnections.find(x=>x.role===role);if(!connection)throw new Error('RECOVERY_NODE_MISSING');
 const readNode=arg('read-node',connection.url),knownNeverForwarded=original.barrierAborted&&original.lateUnforwardedFrames?.[role]>0&&!original.actors.some(x=>x.role===role&&x.forwarded);
-if(readNode!==connection.url&&(!knownNeverForwarded||readNode!=='wss://cd311.cn:888/www/rolling-tn10/node'))throw new Error('READ_NODE_SWITCH_SCOPE');
+const TEST_URL=process.env.KASWIN_TEST_URL??'http://127.0.0.1:8080/';
+const TEST_NODE=process.env.KASWIN_TEST_NODE??'ws://127.0.0.1:18210';
+if(readNode!==connection.url&&(!knownNeverForwarded||readNode!==TEST_NODE))throw new Error('READ_NODE_SWITCH_SCOPE');
 acquireWalletLock(root,role,'existing contention discard only');
 const dir=path.join(run,caseName),reportFile=path.join(dir,`discard-recovery-${role}.json`),report={scope:'EXISTING_INTENT_DISCARD_ONLY_NO_SIGNING_OR_BROADCAST',cid:original.cid,role,node:connection.url,startedAt:new Date().toISOString(),attempts:[]};
 if(fs.existsSync(reportFile))fs.copyFileSync(reportFile,reportFile.replace('.json',`.previous-${Date.now()}.json`));
-let blocked=0,originalRpc;const page=new RollingPage({url:'https://cd311.cn:888/www/rolling-tn10/',profileDir:path.join(dir,`profile-${role}`),submitGate:()=>{blocked++;},log:console.log}),rpc=await openEvidenceRpc();
+let blocked=0,originalRpc;const page=new RollingPage({url:TEST_URL,profileDir:path.join(dir,`profile-${role}`),submitGate:()=>{blocked++;},log:console.log}),rpc=await openEvidenceRpc();
 try{
  await page.open();await page.p.waitForFunction(()=>document.getElementById('nodeChip')?.textContent.includes('已连接'),null,{timeout:30000});
  await page.setNode(readNode);await page.connect(role,{publicOnly:true});

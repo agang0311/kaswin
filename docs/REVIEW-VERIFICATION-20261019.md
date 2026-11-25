@@ -92,11 +92,11 @@ F5输入本身合法，不能用F4“丢弃坏摘要”代替修复。应区分s
 
 但是读取既有存档可确认存在**同一个ed0387c9 Profile**的材料，而非仅旧Profile日志：
 
-- [V202-COMPILE](../../../kaswin-publish-20261005/docs/V202-COMPILE.md) 及 [equivalence-report](../../../kaswin-publish-20261005/tests/contracts/evidence/compile-v202/equivalence-report.json) 记录两次编译及与旧版完整tail/ABI相同，报告状态是当时的阶段快照。
-- [预算summary](../../../kaswin-publish-20261005/tests/contracts/evidence/budget-v202/summary.json) 记录2549/2549、SCRIPT_VM_ONLY及当前Profile；[预算候选](../../../kaswin-publish-20261005/tests/contracts/evidence/budget-v202/budget-evidence.candidate.json) 的 review.status仍为PENDING。
-- [回放summary](../../../kaswin-publish-20261005/tests/contracts/evidence/budget-v202/tn10-replay-summary.json) 记录946/946状态输入0回放，明确Profile。
+- [V202-COMPILE](<legacy-v202-archive>/docs/V202-COMPILE.md) 及 [equivalence-report](<legacy-v202-archive>/tests/contracts/evidence/compile-v202/equivalence-report.json) 记录两次编译及与旧版完整tail/ABI相同，报告状态是当时的阶段快照。
+- [预算summary](<legacy-v202-archive>/tests/contracts/evidence/budget-v202/summary.json) 记录2549/2549、SCRIPT_VM_ONLY及当前Profile；[预算候选](<legacy-v202-archive>/tests/contracts/evidence/budget-v202/budget-evidence.candidate.json) 的 review.status仍为PENDING。
+- [回放summary](<legacy-v202-archive>/tests/contracts/evidence/budget-v202/tn10-replay-summary.json) 记录946/946状态输入0回放，明确Profile。
 - 当前manifest记载的protocol/builders源摘要与上述budget summary的两个源摘要文字相同。本轮未重新计算哈希，不能据此宣布当前文件/全量证据完整性通过。
-- [既有VM说明](../../../kaswin-publish-20261005/docs/VM-BUDGET.md)、[唯一验证记录](../../../kaswin-publish-20261005/docs/VALIDATION.md)、[TN10实验记录](../../../kaswin-publish-20261005/docs/TN10-EXPERIMENT-V202.md) 记有990回执、P256/R256/R225及主网离线33/2549等历史范围。本轮没有重新核验这些原始交易和主网全部机器材料，不能将文档数字转成本轮V/N结论。
+- [既有VM说明](<legacy-v202-archive>/docs/VM-BUDGET.md)、[唯一验证记录](<legacy-v202-archive>/docs/VALIDATION.md)、[TN10实验记录](<legacy-v202-archive>/docs/TN10-EXPERIMENT-V202.md) 记有990回执、P256/R256/R225及主网离线33/2549等历史范围。本轮没有重新核验这些原始交易和主网全部机器材料，不能将文档数字转成本轮V/N结论。
 
 `approvalStatus=APPROVED` 是运行时允许精确Profile的批准，与候选预算独立评审、公开生产批准不同；编译报告的旧NOT_RUN也不否定后续执行。因此不能由这两字段直接断言批准造假，或说V2.0.2从未编译/校准/做规模链上实验。
 

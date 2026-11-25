@@ -17,9 +17,9 @@ for(const role of ['creator','b1','b2'])acquireWalletLock(ROOT,role,'contention 
 const stamp=new Date().toISOString().replace(/[:.]/g,'-'),RUN=path.join(ROOT,`${stamp}-contention`);
 fs.mkdirSync(RUN,{recursive:true});
 const log=(...args)=>{const line=`${new Date().toISOString()} ${args.join(' ')}`;console.log(line);fs.appendFileSync(path.join(RUN,'run.log'),line+'\n');};
-const data={schema:'ROLLING_CONTENTION_CAMPAIGN_2',cases:[],page:'https://cd311.cn:888/www/rolling-tn10/'};
+const data={schema:'ROLLING_CONTENTION_CAMPAIGN_2',cases:[],page:arg('url',process.env.KASWIN_TEST_URL??'')};
 const save=()=>saveJson(path.join(RUN,'result.json'),data);
-const local='wss://cd311.cn:888/www/rolling-tn10/node',remote=arg('remote','wss://vector-10.kaspa.green/kaspa/testnet-10/wrpc/json');
+const local=arg('local',process.env.KASWIN_TEST_NODE??'ws://127.0.0.1:18210'),remote=arg('remote','wss://vector-10.kaspa.green/kaspa/testnet-10/wrpc/json');
 const rpc=await openEvidenceRpc();
 async function noModal(a) {
  if(!await a.page.p.locator('#modal[open]').count())return;

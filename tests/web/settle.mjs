@@ -10,7 +10,7 @@ const ROOT = path.join(HERE, '../output/rolling-runs');
 const dry = process.argv.includes('--dry');
 // 结算会用 creator 钱包发交易；--dry 只读，不需要锁。
 if (!dry) acquireWalletLock(ROOT, 'creator', 'settle');
-const URL_ = 'https://cd311.cn:888/www/rolling-tn10/';
+const URL_ = process.argv.find(a => a.startsWith('--url='))?.slice(6) ?? process.env.KASWIN_TEST_URL ?? 'http://127.0.0.1:8080/';
 const NODE = process.argv.find(a => a.startsWith('--node='))?.slice(7) ?? 'ws://127.0.0.1:18210';
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 

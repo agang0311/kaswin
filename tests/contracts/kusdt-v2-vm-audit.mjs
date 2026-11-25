@@ -1,6 +1,6 @@
 /** Offline real-VM (kaspa-txscript 2.1.0) computeBudget, mass, and fee audit for Kaswin kUSDT v2.
  * Uses only synthetic deterministic test keys; never touches real keys, nodes, or broadcasts.
- * Usage (via tester): KASWIN_VM_BIN=/root/kaspa/references/toolchains/rolling-vm-target/release/kaswin-rolling-vm node tests/contracts/kusdt-v2-vm-audit.mjs
+ * Usage: KASWIN_VM_BIN=/path/to/kaswin-rolling-vm node tests/contracts/kusdt-v2-vm-audit.mjs
  */
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
@@ -25,9 +25,8 @@ import {drawOp as buildSyntheticDrawOp} from './fixtures.mjs';
 import {runEngine} from './engine-gate.mjs';
 
 const ARTIFACTS_DIR = join(process.cwd(), 'contracts/kusdt-v2/artifacts');
-const KCC20_TEMPLATE_PATH = '/root/kaspa/references/kaspire-wallet/crates/kaspa_secure_core/src/kcc20_standard_template.json';
 const KCC20_SUFFIX = Uint8Array.from(
-  Buffer.from(JSON.parse(readFileSync(KCC20_TEMPLATE_PATH, 'utf8')).suffix, 'hex'),
+  Buffer.from(JSON.parse(readFileSync(join(ARTIFACTS_DIR, 'kcc20-suffix.json'), 'utf8')).suffixHex, 'hex'),
 );
 
 const keyHex = label => createHash('sha256').update(`kusdt-v2-vm-audit:${label}`).digest('hex');

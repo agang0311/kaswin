@@ -2,7 +2,7 @@
 
 交付对象：把 rolling 网页放到面向用户的环境里的部署方。**这不是主网上线，也不是“已验证”发布**：Profile 仍是 `UNVALIDATED`，只在 Testnet 10 使用，TKAS 无真实价值。
 
-按 [TN10-DEPLOYMENT.md](TN10-DEPLOYMENT.md) 的约定，本机（`cd311.cn:888/www/rolling-tn10/`）上的页面、节点代理和预算服务只供测试；交付物是网页，它依赖的服务由生产方单独部署。本文件不改变本机任何对外配置。终端用户说明见 [TN10-USER-GUIDE.md](TN10-USER-GUIDE.md)。
+按 [TN10-DEPLOYMENT.md](TN10-DEPLOYMENT.md) 的约定，本机（`<staging-host>/<staging-path>/`）上的页面、节点代理和预算服务只供测试；交付物是网页，它依赖的服务由生产方单独部署。本文件不改变本机任何对外配置。终端用户说明见 [TN10-USER-GUIDE.md](TN10-USER-GUIDE.md)。
 
 ## 1. 交付物
 
@@ -15,7 +15,7 @@
 | Profile | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`，`UNVALIDATED` |
 | 预算引擎 | `kaspa-txscript 2.1.0` 运行器，二进制 sha256 `e773577d46c755c291726ebe80d3b1f94615a20f604d8f681636559f3ba2d5b8`（`engine-pin.json`） |
 
-本次“更多”显示修复：构建（含内置类型与依赖图门）通过，公开 HTTPS 页面回读与上表哈希一致。旧页面与清单归档为 `dist/archive/rolling-tn10-2f4f1fb8.*`。用户报告上一版安卓显示异常；现复用页面操作弹窗，尚未在安卓实机复测。按用户要求，单元、浏览器、VM 与链上测试均 **NOT_RUN**。此前只读回读 `/www/rolling-tn10/api/info` 返回 HTTP 404，详情见 [VALIDATION.md](VALIDATION.md) §10；本次仅回读页面。
+本次“更多”显示修复：构建（含内置类型与依赖图门）通过，公开 HTTPS 页面回读与上表哈希一致。旧页面与清单归档为 `dist/archive/rolling-tn10-2f4f1fb8.*`。用户报告上一版安卓显示异常；现复用页面操作弹窗，尚未在安卓实机复测。按用户要求，单元、浏览器、VM 与链上测试均 **NOT_RUN**。此前只读回读 `/<staging-path>/api/info` 返回 HTTP 404，详情见 [VALIDATION.md](VALIDATION.md) §10；本次仅回读页面。
 
 2026-11-15 核对（历史快照）：当时 `dist/` 页面哈希等于清单和本机线上字节。重新构建前须核对清单里的构建输入（`scripts/core/lib` 是生成物，不在版本库里）。用户可自行验证：`curl -s <页面地址> | sha256sum` 应等于上表。
 
@@ -34,18 +34,18 @@
 页面按所在位置推导默认地址，最省事的做法是沿用本机布局：
 
 ```
-https://<域名>/www/rolling-tn10/            页面与 /api/*（反代到服务 127.0.0.1:8792）
-wss://<域名>/www/rolling-tn10/node          节点 wRPC JSON（反代到节点回环端口）
+https://<域名>/<staging-path>/            页面与 /api/*（反代到服务 127.0.0.1:8792）
+wss://<域名>/<staging-path>/node          节点 wRPC JSON（反代到节点回环端口）
 ```
 
-默认值的推导（`web/rolling-tn10/app.ts`）：页面是 https 时，节点默认总是 `wss://<origin>/www/rolling-tn10/node`（与页面放在哪个路径无关）；页面是 http 时默认 `ws://127.0.0.1:18210`。服务地址只有在页面路径以 `/www/rolling-tn10/` 开头时才默认 `<origin>/www/rolling-tn10`，否则默认 `<origin>`。布局不同时，用户要手动改这两个字段。
+默认值的推导（`web/rolling-tn10/app.ts`）：页面是 https 时，节点默认总是 `wss://<origin>/<staging-path>/node`（与页面放在哪个路径无关）；页面是 http 时默认 `ws://127.0.0.1:18210`。服务地址只有在页面路径以 `/<staging-path>/` 开头时才默认 `<origin>/<staging-path>`，否则默认 `<origin>`。布局不同时，用户要手动改这两个字段。
 
 ### 反代参考（本机 Caddy，已在运行）
 
 ```
-handle /www/rolling-tn10/node { rewrite * /; reverse_proxy 127.0.0.1:<节点 json wRPC 端口> }
-redir /www/rolling-tn10 /www/rolling-tn10/ 308
-handle_path /www/rolling-tn10/* { reverse_proxy 127.0.0.1:8792 { header_up Host 127.0.0.1:8792 } }
+handle /<staging-path>/node { rewrite * /; reverse_proxy 127.0.0.1:<节点 json wRPC 端口> }
+redir /<staging-path> /<staging-path>/ 308
+handle_path /<staging-path>/* { reverse_proxy 127.0.0.1:8792 { header_up Host 127.0.0.1:8792 } }
 ```
 
 `header_up Host 127.0.0.1:8792` 必须保留：服务只接受回环 Host（否则 `HOST_NOT_ALLOWED`），并要求浏览器 Origin 等于 `--public-origin`。
@@ -115,10 +115,10 @@ Caddy 核心没有限流功能，要用插件、nginx `limit_req`/`limit_conn` �
 
 ## 6. 运维与回滚
 
-- 健康检查：`curl -s https://<域名>/www/rolling-tn10/api/info`（应含 `"readOnly":true`、`"engine":{"configured":true,…}`）；页面首页应显示节点“已连接”“服务就绪”。
+- 健康检查：`curl -s https://<域名>/<staging-path>/api/info`（应含 `"readOnly":true`、`"engine":{"configured":true,…}`）；页面首页应显示节点“已连接”“服务就绪”。
 - 日志：`journalctl -u kaswin-rolling-tn10`。服务不转发原始引擎/错误文本，只返回固定错误码。
 - 回滚：停服务并删除反代规则即可；**链上没有需要回滚的东西**。用户的资金锁在 covenant 里，退款/派奖分支任何人都可以执行，所以页面下线后，换一个部署或用命令行执行器（`tn10-run.mjs`）仍能继续任何已导出的轮次。因此要提醒用户随时导出 round state：清除浏览器数据会丢失本地轮次记录。
-- 本机回滚备份：`/etc/caddy/caddy_routes.inc.before-rolling-tn10`。
+- 本机回滚备份：`<reverse-proxy-config-backup>`。
 - 页面回滚：`dist/archive/rolling-tn10-b51c9895.html` 与同名 `.manifest.json` 是本次发布前的页面和清单（后台核对/按钮忙碌修复，已完成 1–6 网页场景）。回滚时把两者分别复制回 `dist/rolling-tn10.html` 与 `dist/rolling-tn10.manifest.json`，服务无需重启。更早的 `75c0ca4c`、`38d689ab` 等版本同样保留在 `dist/archive/`。
 
 ## 7. 变更前提

@@ -13,6 +13,23 @@ When a release **adds, changes, or drops** any compatible contract profile:
 
 ---
 
+## [v0.1.3.5] - 2026-11-25
+
+### Compatible Contract Profiles
+
+| Protocol | Asset | Contract Profile ID | Notes |
+|---|---|---|---|
+| `rolling-v1` | `KAS` / `TKAS` | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` | Unchanged |
+| `kusdt-v2` | `kUSDT` (KCC-20) | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` | Unchanged from `v0.1.3.2` (token `50b3477e…1513fd3`) |
+
+### Changed
+- **Mobile navigation & compact plaza**: Moved mobile `Explore / Create / Mine / Settings` and theme toggle into a top-right dropdown menu, removed the floating bottom bar and top help icon (keeping **How it works** in the footer), and collapsed the plaza controls into a single compact row (`Live / Ended / Starred` + collapsible search + refresh).
+- **Wallet header & Create duration**: Displayed connected wallet balance as a compact two-decimal pill (`bigint`-formatted, no truncated address clutter) and added `Min / Hr / Day` unit selection for custom draw durations.
+- **Round detail polish**: Styled starred state with a filled gold star, gave the round hero KPI/stepper more breathing room with a concise single-line close countdown, and removed nested double-card padding in the action panel.
+- **Public build & repository hygiene**: Replaced hardcoded staging build flags/URLs and absolute local paths across source, build scripts, tests, and docs with generic build-time/environment configuration; added `win.kaspay.top` to README.
+
+---
+
 ## [v0.1.3.4] - 2026-11-25
 
 ### Compatible Contract Profiles

@@ -80,7 +80,7 @@ export async function renderPairingQrDataUrl(text) {
 let clientPromise=null;
 async function getSignClient() {
   if(!clientPromise) {
-    const origin=typeof location==='object'&&/^https?:/.test(location.origin)?location.origin:'https://cd311.cn:888';
+    const origin=typeof location==='object'&&/^https?:/.test(location.origin)?location.origin:'https://win.kaspay.top';
     clientPromise=(async()=>{
       const {SignClient}=await loadKaspireDeps();
       return SignClient.init({

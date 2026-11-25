@@ -5,5 +5,8 @@ declare module '@kaswin/protocol-bundles' {
   export const defaultUiCreateId: string;
 }
 declare const __KASWIN_DEFAULT_NET__: 'mainnet' | 'tn10';
-declare const __KASWIN_CD311__: boolean;
+declare const __KASWIN_DEFAULT_MAINNET_NODE__: string;
+declare const __KASWIN_DEFAULT_TN10_NODE__: string;
+declare const __KASWIN_DEFAULT_MAINNET_INDEXER__: string;
+declare const __KASWIN_DEFAULT_TN10_INDEXER__: string;
 declare const __KASWIN_KASPIRE_WC_INTEGRITY__: string;

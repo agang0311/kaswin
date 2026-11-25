@@ -16,11 +16,13 @@ const c=JSON.parse(fs.readFileSync(path.join(run,'result.json'),'utf8')).cases.f
 if(!c?.cid||!c.cleanupRecoveredOriginal)throw new Error('ORIGINAL_RECOVERY_RECORD_REQUIRED');
 acquireWalletLock(root,role,'existing original contention recovery');
 const report={scope:'SAME_SIGNED_INTENT_LOCAL_NODE_RECOVERY_THEN_SAME_CID_SETTLEMENT',cid:c.cid,originalTxid:c.cleanupRecoveredOriginal,startedAt:new Date().toISOString()};
-const page=new RollingPage({url:'https://cd311.cn:888/www/rolling-tn10/',profileDir:path.join(run,caseName,`profile-${role}`),log:console.log}),rpc=await openEvidenceRpc();
+const TEST_URL=process.env.KASWIN_TEST_URL??'http://127.0.0.1:8080/';
+const TEST_NODE=process.env.KASWIN_TEST_NODE??'ws://127.0.0.1:18210';
+const page=new RollingPage({url:TEST_URL,profileDir:path.join(run,caseName,`profile-${role}`),log:console.log}),rpc=await openEvidenceRpc();
 const prior=path.join(dir,'report.json');if(fs.existsSync(prior))fs.copyFileSync(prior,path.join(dir,`report.previous-${Date.now()}.json`));
 try{
  await page.open();await page.p.waitForFunction(()=>document.getElementById('nodeChip')?.textContent.includes('已连接'),null,{timeout:30000});
- await page.setNode('wss://cd311.cn:888/www/rolling-tn10/node');await page.connect(role,{publicOnly:true});
+ await page.setNode(TEST_NODE);await page.connect(role,{publicOnly:true});
  let r=await roundReady(page,()=>true,60000);if(r.cid!==c.cid)throw new Error('RECOVERY_CID');if(!fs.existsSync(path.join(dir,'before.json')))saveJson(path.join(dir,'before.json'),r);
  if(r.intent){
   if(r.intent.txid!==report.originalTxid)throw new Error('ORIGINAL_TXID_CHANGED');

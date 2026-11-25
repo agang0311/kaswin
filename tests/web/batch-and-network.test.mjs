@@ -8,9 +8,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import {createHash} from 'node:crypto';
-import {readFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import {mkdtemp, rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {chromium} from 'playwright';
+import {buildKaswin} from '../../build/build.mjs';
 
 import {FakeNode} from '../helpers/fake-node.mjs';
 import {fixture, profile, PRICE, FEE, OWNER} from '../contracts/fixtures.mjs';
@@ -28,7 +30,20 @@ import {referenceTxId} from '../../scripts/core/lib/transaction.js';
 import {hex} from '../../scripts/core.mjs';
 import {spkToAddress} from '../../scripts/wallet/address.mjs';
 
-const CANDIDATE_HTML = resolve('tests/output/rolling-integration/candidate/index.html');
+let builtTn10HtmlPromise = null;
+async function loadCurrentTn10Html() {
+  if (!builtTn10HtmlPromise) {
+    builtTn10HtmlPromise = (async () => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'kaswin-batch-browser-'));
+      try {
+        return (await buildKaswin({mode: 'tn10', outDir: tmpDir})).html;
+      } finally {
+        await rm(tmpDir, {recursive: true, force: true});
+      }
+    })();
+  }
+  return builtTn10HtmlPromise;
+}
 const KAS = 100000000n;
 const EXEC_KEY = createHash('sha256').update('kaswin-batch-browser-exec').digest('hex');
 const EXEC_WALLET = openMemoryWallet(EXEC_KEY);
@@ -92,7 +107,7 @@ function txToRestDto(node, txid) {
 }
 
 test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-node REST preimage recovery', async () => {
-  const html = await readFile(CANDIDATE_HTML, 'utf8');
+  const html = await loadCurrentTn10Html();
 
   // Prepare FakeNode for batchPayout & batchRefund
   const node = new FakeNode({daa: 5000});
@@ -210,6 +225,7 @@ test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-
   });
 
   await page.addInitScript(({wsUrl}) => {
+    localStorage.setItem('kaswin:language', 'zh-CN');
     localStorage.setItem('kaswin-rolling-tn10:nodes', JSON.stringify(wsUrl));
     localStorage.setItem('kaswin-rolling-tn10:indexer', JSON.stringify(''));
     localStorage.setItem('kaswin-rolling-tn10:language', JSON.stringify('zh'));
@@ -226,11 +242,11 @@ test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-
     // 1. Dual-network switch (Testnet 10 -> Mainnet -> Testnet 10)
     await page.click('#settingsBtn');
     await page.waitForSelector('[data-act="switchNet"]');
-    assert.match(await page.locator('#mBody').innerText(), /当前网络：Testnet 10/);
+    assert.match(await page.locator('#mBody').innerText(), /Testnet 10/);
     mockNet = 'mainnet';
     await page.click('[data-act="switchNet"]');
-    await page.waitForFunction(() => document.querySelector('#nodeChip')?.textContent?.includes('Kaspa mainnet') && document.querySelector('#nodeChip')?.textContent?.includes('已连接'));
-    assert.match(await page.locator('#footerNet').innerText(), /· KAS ·/);
+    await page.waitForFunction(() => document.querySelector('#nodeChip')?.textContent?.includes('Kaspa 主网') && document.querySelector('#nodeChip')?.textContent?.includes('已连接'));
+    assert.match(await page.locator('#footerNet').innerText(), /· KAS\b/);
 
     // On mainnet, wallet modal hides test private key tab
     await page.click('#walletBtn');
@@ -241,12 +257,11 @@ test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-
     // Switch back to Testnet 10
     await page.click('#settingsBtn');
     await page.waitForSelector('[data-act="switchNet"]');
-    assert.match(await page.locator('#mBody').innerText(), /当前网络：Kaspa mainnet/);
-    assert.match(await page.locator('#mBody').innerText(), /禁用内存私钥/);
+    assert.match(await page.locator('#mBody').innerText(), /Kaspa 主网/);
     mockNet = 'tn10';
     await page.click('[data-act="switchNet"]');
     await page.waitForFunction(() => document.querySelector('#nodeChip')?.textContent?.includes('Testnet 10') && document.querySelector('#nodeChip')?.textContent?.includes('已连接'));
-    assert.match(await page.locator('#footerNet').innerText(), /· TKAS ·/);
+    assert.match(await page.locator('#footerNet').innerText(), /· TKAS\b/);
 
     // Connect public recipient address for free settlement actions
     await page.click('#walletBtn');
@@ -254,7 +269,7 @@ test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-
     await page.click('[data-wtab="addr"]');
     await page.fill('#wAddr', EXEC_WALLET.address);
     await page.click('[data-act="connectWallet"]');
-    await page.waitForFunction(() => document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
+    await page.waitForFunction(() => document.querySelector('#walletBtn')?.dataset?.address?.includes('kaspatest:'));
 
     const ensureJoinOpen = async () => {
       if (!(await page.locator('#joinText').isVisible())) await page.click('.join-details summary');
@@ -287,7 +302,7 @@ test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-
     await page.waitForFunction(() => document.querySelector('#mTitle')?.textContent?.includes('连续退款已完成'), null, {timeout: 20000});
     assert.match(await page.locator('#mBody').innerText(), /共处理 3 批/);
     await page.click('[data-act="closeModal"]');
-    await page.waitForFunction(() => document.body.innerText.includes('已退款'));
+    await page.waitForFunction(() => document.body.innerText.includes('退款完成'));
 
     // 4. Pruned-node REST preimage recovery (GENESIS + BUY via REST when node pruned getBlock/V2)
     prunedMode = true;
@@ -306,7 +321,7 @@ test('Offline browser: dual-network switch, batchPayout/batchRefund, and pruned-
 });
 
 test('Offline browser: blank page recovers >256-buy frozen-shard redeemScript preimage via KCI/Indexer on pruned node and completes batchPayout', async () => {
-  const html = await readFile(CANDIDATE_HTML, 'utf8');
+  const html = await loadCurrentTn10Html();
   const node = new FakeNode({daa: 10000});
   const winF = fixture({module: 'win', cnt: 2, local: 3, p: 0});
   const winSeed = makeSeededRound(winF);
@@ -417,6 +432,7 @@ test('Offline browser: blank page recovers >256-buy frozen-shard redeemScript pr
 
   await page.addInitScript(({wsUrl, idxUrl}) => {
     localStorage.setItem('kaswin-rolling-tn10:nodes', JSON.stringify(wsUrl));
+    localStorage.setItem('kaswin:language', 'zh-CN');
     localStorage.setItem('kaswin-rolling-tn10:indexer', JSON.stringify(idxUrl));
     localStorage.setItem('kaswin-rolling-tn10:language', JSON.stringify('zh'));
   }, {wsUrl: `ws://127.0.0.1:${port}/mock-pruned-node`, idxUrl: `${origin}/idx/v1`});
@@ -432,10 +448,11 @@ test('Offline browser: blank page recovers >256-buy frozen-shard redeemScript pr
     await page.click('[data-wtab="addr"]');
     await page.fill('#wAddr', EXEC_WALLET.address);
     await page.click('[data-act="connectWallet"]');
-    await page.waitForFunction(() => document.querySelector('#walletBtn')?.textContent?.includes('kaspatest:'));
+    await page.waitForFunction(() => document.querySelector('#walletBtn')?.dataset?.address?.includes('kaspatest:'));
+    assert.match(await page.locator('#walletBtn').innerText(), /只读地址|Watch-only/);
 
     // Open discovered >256-buy round from Indexer on blank browser -> recovers frozen shard redeemScript preimages -> batchPayout -> PAID
-    await page.click('[data-filter="settle"]');
+    await page.click('[data-filter="live"]');
     const card = page.locator(`[data-indexed="${winSeed.cid}"]`);
     await card.waitFor({state: 'visible', timeout: 8000});
     await card.click();

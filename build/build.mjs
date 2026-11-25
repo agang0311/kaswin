@@ -63,9 +63,19 @@ export function typeCheckPage() {
   fail(ts.getPreEmitDiagnostics(ts.createProgram(parsed.fileNames, parsed.options)));
 }
 
-export async function buildKaswin({outDir = path.join(root, 'dist'), mode = 'mainnet', cd311 = false} = {}) {
+export async function buildKaswin({
+  outDir = path.join(root, 'dist'),
+  mode = 'mainnet',
+  defaults = {},
+} = {}) {
   assert.ok(mode === 'mainnet' || mode === 'tn10', 'Rolling supports --mode=mainnet or --mode=tn10');
   assert.equal(esbuild.version, '0.28.2', 'esbuild 0.28.2 is required');
+  const buildDefaults = {
+    mainnetNode: String(defaults.mainnetNode ?? process.env.KASWIN_MAINNET_NODE ?? '').trim(),
+    tn10Node: String(defaults.tn10Node ?? process.env.KASWIN_TN10_NODE ?? '').trim(),
+    mainnetIndexer: String(defaults.mainnetIndexer ?? process.env.KASWIN_MAINNET_INDEXER ?? '').trim(),
+    tn10Indexer: String(defaults.tn10Indexer ?? process.env.KASWIN_TN10_INDEXER ?? '').trim(),
+  };
   const coreSources = await buildCore();
   const {MAINNET} = await import('../scripts/chain/mainnet.mjs');
   const {TN10} = await import('../scripts/chain/tn10.mjs');
@@ -93,7 +103,10 @@ export async function buildKaswin({outDir = path.join(root, 'dist'), mode = 'mai
       __KASWIN_RELEASE_TRADING__: 'true',
       __KASWIN_MAINNET_TRADING__: JSON.stringify(mode === 'mainnet'),
       __KASWIN_BROWSER_TEST_WALLET__: 'false',
-      __KASWIN_CD311__: JSON.stringify(!!cd311),
+      __KASWIN_DEFAULT_MAINNET_NODE__: JSON.stringify(buildDefaults.mainnetNode),
+      __KASWIN_DEFAULT_TN10_NODE__: JSON.stringify(buildDefaults.tn10Node),
+      __KASWIN_DEFAULT_MAINNET_INDEXER__: JSON.stringify(buildDefaults.mainnetIndexer),
+      __KASWIN_DEFAULT_TN10_INDEXER__: JSON.stringify(buildDefaults.tn10Indexer),
       __KASWIN_KASPIRE_WC_INTEGRITY__: JSON.stringify(wcIntegrity),
     },
     plugins: [
@@ -148,7 +161,6 @@ export async function buildKaswin({outDir = path.join(root, 'dist'), mode = 'mai
     formatVersion: 1,
     version: appVersion,
     mode,
-    cd311: !!cd311,
     artifact: {file: 'index.html', bytes: Buffer.byteLength(html), sha256: sha256(html)},
     kaspireWc: {file: 'kaspire-wc.js', bytes: Buffer.byteLength(wcJs), sha256: sha256(wcJs), integrity: wcIntegrity},
     capabilities: {tn10Trading: true, mainnetTrading: mode === 'mainnet', memoryWallet: mode !== 'mainnet', networkSwitch: true},
@@ -183,8 +195,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const args = process.argv.slice(2);
   const out = args.find(a => a.startsWith('--out-dir='));
   const mode = args.find(a => a.startsWith('--mode='));
-  const cd311 = args.includes('--cd311');
-  assert.ok(args.every(a => a.startsWith('--out-dir=') || a === '--mode=mainnet' || a === '--mode=tn10' || a === '--cd311'), 'Usage: node build/build.mjs [--mode=mainnet|tn10] [--out-dir=<dir>] [--cd311]');
-  const {manifest, outDir} = await buildKaswin({outDir: out ? path.resolve(out.slice(10)) : undefined, mode: mode ? mode.slice(7) : 'mainnet', cd311});
+  const flag = name => args.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const allowed = a => a.startsWith('--out-dir=') || a === '--mode=mainnet' || a === '--mode=tn10'
+    || a.startsWith('--mainnet-node=') || a.startsWith('--tn10-node=')
+    || a.startsWith('--mainnet-indexer=') || a.startsWith('--tn10-indexer=');
+  assert.ok(args.every(allowed), 'Usage: node build/build.mjs [--mode=mainnet|tn10] [--out-dir=<dir>] [--mainnet-indexer=<url>] [--tn10-indexer=<url>] [--mainnet-node=<url>] [--tn10-node=<url>]');
+  const {manifest, outDir} = await buildKaswin({
+    outDir: out ? path.resolve(out.slice(10)) : undefined,
+    mode: mode ? mode.slice(7) : 'mainnet',
+    defaults: {
+      mainnetNode: flag('mainnet-node'),
+      tn10Node: flag('tn10-node'),
+      mainnetIndexer: flag('mainnet-indexer'),
+      tn10Indexer: flag('tn10-indexer'),
+    },
+  });
   console.log(`Built ${path.join(outDir, 'index.html')} (${manifest.artifact.bytes} bytes, sha256=${manifest.artifact.sha256}, profile=${manifest.profileId}, ${manifest.graph.files} source files)`);
 }
