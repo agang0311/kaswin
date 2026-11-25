@@ -94,20 +94,24 @@ jobs:
               const oldPid = prevProfiles[k] || null;
               const newPid = curProfiles[k] || null;
               if (oldPid !== newPid) {
-                if (!oldPid) changes.push(`- 新增 \`${k}\`：\`${newPid}\``);
-                else if (!newPid) changes.push(`- 移除 \`${k}\`（原 \`${oldPid}\`）`);
-                else changes.push(`- **变更 \`${k}\`（不兼容旧轮次）**：\`${oldPid}\` → \`${newPid}\``);
+                if (!oldPid) changes.push(`- Added \`${k}\`: \`${newPid}\``);
+                else if (!newPid) changes.push(`- Removed \`${k}\` (previously \`${oldPid}\`)`);
+                else changes.push(`- **Changed \`${k}\` (incompatible with earlier rounds)**: \`${oldPid}\` → \`${newPid}\``);
               }
             }
           }
 
           let changelogSection = '';
           if (fs.existsSync('CHANGELOG.md')) {
-            const md = fs.readFileSync('CHANGELOG.md', 'utf8');
-            const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const re = new RegExp(`^## \\[${escaped}\\][^\\n]*\\n([\\s\\S]*?)(?=^## \\[|$)`, 'm');
-            const m = re.exec(md);
-            if (m) changelogSection = m[1].trim();
+            const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split(/\r?\n/);
+            const startIdx = lines.findIndex(l => l.startsWith(`## [${tag}]`));
+            if (startIdx >= 0) {
+              let endIdx = lines.length;
+              for (let i = startIdx + 1; i < lines.length; i++) {
+                if (lines[i].startsWith('## [')) { endIdx = i; break; }
+              }
+              changelogSection = lines.slice(startIdx + 1, endIdx).join('\n').replace(/\n---\s*$/, '').trim();
+            }
           }
 
           if (changes.length) {
@@ -124,42 +128,43 @@ jobs:
           }
 
           const profileTable = [
-            '| 协议 | 资产 | 合约 Profile ID |',
+            '| Protocol | Asset | Contract Profile ID |',
             '|---|---|---|',
             ...manifest.compatibleProfiles.map(p => `| \`${p.protocolId}\` | ${p.asset} | \`${p.profileId}\` |`),
           ].join('\n');
 
+          const hasProfilesInChangelog = /###\s+Compatible Contract Profiles/i.test(changelogSection);
           const parts = [
-            '基于 Kaspa L1 covenant 的抽奖协议单页应用。整个应用就是一个自包含 HTML 文件，没有后端，也不托管资金。',
+            'Permissionless, serverless on-chain raffle single-page application on Kaspa L1. Self-contained HTML bundle with no backend and no custodial funds.',
             '',
             ...(changes.length ? [
               `> [!IMPORTANT]`,
-              `> **兼容合约 Profile 较 \`${prevTag}\` 发生变更**（旧 Profile 轮次将在新版本中归入「不兼容轮次」只读查看，如需操作请使用对应历史 Release）：`,
+              `> **Compatible contract profiles changed since \`${prevTag}\`** (rounds created under older profiles appear read-only under *Incompatible rounds*; use the matching historical release to operate them):`,
               ...changes.map(c => `> ${c}`),
               '',
             ] : []),
-            '### 兼容的合约 Profile',
+            ...(hasProfilesInChangelog ? [] : ['### Compatible Contract Profiles', '', profileTable, '']),
+            ...(changelogSection ? [changelogSection, ''] : []),
+            '### Build & Artifacts',
             '',
-            profileTable,
+            `- Source commit: \`${sha}\``,
+            '- Built from the commit above by GitHub Actions (`npm ci && npm run build`).',
             '',
-            ...(changelogSection ? ['### 变更记录（CHANGELOG）', '', changelogSection, ''] : []),
-            `- 源码提交：\`${sha}\``,
-            `- 本 release 的附件由 GitHub Actions 从上述提交构建（\`npm ci && npm run build\`）。`,
-            '',
-            '| 文件 | 说明 |',
+            '| File | Description |',
             '|---|---|',
-            '| `kaswin.html` | 主页面（默认主网，可切换 Testnet 10） |',
-            '| `kaspire-wc.js` | Kaspire WalletConnect v2 按需加载模块（仅点击 Kaspire 时请求） |',
-            '| `build-manifest.json` | 构建模式、兼容合约 Profile 列表、工具版本、源码与产物哈希 |',
-            '| `SHA256SUMS` | 以上文件的 SHA256 |',
+            '| `kaswin.html` | Main SPA bundle (defaults to Kaspa Mainnet, switchable to Testnet 10) |',
+            '| `kaspire-wc.js` | Lazy-loaded Kaspire WalletConnect v2 module (loaded only when connecting Kaspire) |',
+            '| `build-manifest.json` | Build mode, compatible contract profiles, toolchain versions, source & artifact hashes |',
+            '| `SHA256SUMS` | SHA-256 checksums for all release files |',
             '',
-            `\`kaswin.html\` SHA256：\`${htmlSha}\``,
+            `\`kaswin.html\` SHA-256: \`${htmlSha}\``,
             '',
-            '下载后可用 `sha256sum -c SHA256SUMS` 核对；也可以检出上述提交自行构建比对。',
+            'Verify downloads with `sha256sum -c SHA256SUMS`, or check out the commit above and rebuild locally to compare.',
             '',
-            '使用：需要 KasWare、Kastle 钱包扩展或 Kaspire 钱包。建议放在 HTTPS 站点，或在本地用静态服务器打开（例如 `python3 -m http.server 8000` 后访问 `http://localhost:8000/kaswin.html`）；直接双击得到的 `file://` 地址下，浏览器默认不会注入钱包扩展。',
+            '### Usage & Security',
             '',
-            '没有第三方安全审计。请只投入你能承受损失的金额。',
+            '- Requires **KasWare**, **Kastle**, or **Kaspire** wallet. Serve over HTTPS or via a local static server (e.g. `python3 -m http.server 8000` and open `http://localhost:8000/kaswin.html`); browser extensions do not inject into `file://` URLs.',
+            '- No formal third-party security audit has been performed. Only commit funds you can afford to lose.',
           ];
           fs.writeFileSync('notes.md', parts.join('\n') + '\n');
           NODE
