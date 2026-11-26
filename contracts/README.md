@@ -1,6 +1,6 @@
 # 合约目录
 
-本目录存放 Kaswin Rolling 协议的五份 SilverScript 合约源码、模板输入、固定编译产物与身份固定文件。当前候选 Profile 为 `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`，状态仍为 **UNVALIDATED**，仅面向 Testnet 10。
+本目录存放 Kaswin Rolling 协议（`rolling-v1`）的五份 SilverScript 合约源码、模板输入、固定编译产物与身份固定文件，Profile 为 `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5`；`kusdt-v2` 合约源码与产物位于 `kusdt-v2/` 子目录。
 
 ## 文件组成
 

@@ -1,6 +1,6 @@
 # 架构说明
 
-Kaswin 当前源码以 Rolling 为主实现，保留 `contracts/`、`scripts/`、`web/`、`build/`、`tests/`、`docs/` 的顶层分层。应用支持 **Kaspa 主网（默认）** 与 **Testnet 10** 切换，候选 Profile `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` 仍为 **UNVALIDATED**（主网实链资金流转尚未验证）。
+Kaswin 当前源码以 Rolling 为主实现并支持多协议插件（`rolling-v1` 与 `kusdt-v2`），保留 `contracts/`、`scripts/`、`web/`、`build/`、`tests/`、`docs/` 的顶层分层。应用支持 **Kaspa 主网（默认）** 与 **Testnet 10** 切换。
 
 ## 模块
 

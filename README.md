@@ -61,7 +61,7 @@ Serve `dist/` on any static host or open locally. To override default endpoints 
 
 ## Security & Verification Boundaries
 
-- **Experimental Software**: Contract profiles are currently marked `UNVALIDATED` and have not undergone a formal third-party security audit. Review contract rules and transaction previews before committing mainnet funds.
+- **Security Notice**: These contracts have not undergone a formal third-party security audit. Review contract rules and transaction previews before committing mainnet funds.
 - **Node-Verified State**: On Kaspa L1, block inclusion does not equal transaction acceptance. Indexers and REST endpoints are used only for read-only discovery; the client verifies UTXO state and transaction acceptance directly against the connected Kaspa node and protocol rules.
 - **Key Hygiene & Precision**: Private keys never leave browser extension wallets or mobile WalletConnect signers on Mainnet (in-memory plaintext keys are disabled on Mainnet). All monetary amounts are handled as `bigint` or decimal strings.
 

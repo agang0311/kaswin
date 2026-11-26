@@ -1,6 +1,6 @@
 # 开发说明
 
-当前开发对象是 Rolling 主实现，支持 **Kaspa 主网（默认）** 与 **Testnet 10** 切换，Profile 保持 **UNVALIDATED**（主网实链资金流转尚未验证）。
+当前开发对象是 Kaswin 主实现（含 `rolling-v1` 与 `kusdt-v2` 协议插件），支持 **Kaspa 主网（默认）** 与 **Testnet 10** 切换。
 
 ## 工具链与主构建
 
