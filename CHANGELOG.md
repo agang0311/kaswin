@@ -13,6 +13,21 @@ When a release **adds, changes, or drops** any compatible contract profile:
 
 ---
 
+## [v0.1.3.6] - 2026-11-26
+
+### Compatible Contract Profiles
+
+| Protocol | Asset | Contract Profile ID | Notes |
+|---|---|---|---|
+| `rolling-v1` | `KAS` / `TKAS` | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` | Unchanged |
+| `kusdt-v2` | `kUSDT` (KCC-20) | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` | Unchanged from `v0.1.3.2` (token `50b3477e…1513fd3`) |
+
+### Changed
+- **Documentation**: Removed stale `UNVALIDATED` labels across `README.md`, `README.zh-CN.md`, `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, and `contracts/README.md`; added `docs/REVIEW-V0.1.3.1-20261124.md` and `docs/V3-RESEARCH-NOTES.md`.
+- **Redteam baseline**: Added `tests/redteam/kusdt-v2-baseline.mjs` exporting `kaspa-redteam/baseline/1` suites for all 7 `kusdt-v2` contracts.
+
+---
+
 ## [v0.1.3.5] - 2026-11-25
 
 ### Compatible Contract Profiles
