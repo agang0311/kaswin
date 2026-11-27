@@ -1584,6 +1584,7 @@ function installPwaManifest() {
       bg.addColorStop(0,'#11221c');bg.addColorStop(1,'#070e0c');
       g.fillStyle=bg;g.fillRect(0,0,512,512);
       g.translate(256,256);
+      g.scale(1.3,1.3);
       const tk=g.createLinearGradient(-144,-102,144,102);
       tk.addColorStop(0,'#9bf0c6');tk.addColorStop(1,'#4fbf8f');
       g.fillStyle=tk;
