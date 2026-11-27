@@ -13,6 +13,20 @@ When a release **adds, changes, or drops** any compatible contract profile:
 
 ---
 
+## [v0.1.3.7] - 2026-11-27
+
+### Compatible Contract Profiles
+
+| Protocol | Asset | Contract Profile ID | Notes |
+|---|---|---|---|
+| `rolling-v1` | `KAS` / `TKAS` | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` | Unchanged |
+| `kusdt-v2` | `kUSDT` (KCC-20) | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` | Unchanged from `v0.1.3.2` (token `50b3477e…1513fd3`) |
+
+### Changed
+- **Brand & PWA icons**: Replaced the Kaswin header logo, `favicon`, `apple-touch-icon`, and dynamic PWA manifest icons with the new mint-green ticket + gold `K` emblem (`docs/images/kaswin-icon.svg` and `docs/images/kaswin-icon.png`, scaled to 1.6× / ~90% width), and fixed the `512x512` manifest icon reference.
+
+---
+
 ## [v0.1.3.6] - 2026-11-26
 
 ### Compatible Contract Profiles
