@@ -60,7 +60,7 @@ test('explore: empty state, unified V2.0.2 plaza cards (local + indexed), filter
   assert.doesNotMatch(dOut,/17 片/); // shard counts hidden on plaza cards
   assert.ok(dOut.includes(`data-indexed="${hex('c')}"`));
   assert.ok(dOut.includes(`data-indexed="${hex('f')}"`));
-  assert.match(dOut,/16<small>TKAS<\/small>/);
+  assert.match(dOut,/12<small>TKAS<\/small>/);
   // Done filter keeps finished local and indexed cards only
   const doneOut=exploreView(ctx({conn:{indexer:true},S:{...BASE_S,filter:'done'},items:[item(r,facts(),actions())],discovered:[
     {cid:hex('b'),terminal:'PAID',bought:4355,buys:4353},
@@ -196,7 +196,7 @@ test('round view: verification and pending-intent notices',()=>{
   assert.match(discSummary,/本地缓存摘要/);
   assert.match(discSummary,/派奖中/);
   assert.match(discSummary,/10 张/);
-  assert.match(discSummary,/14 TKAS/);
+  assert.match(discSummary,/10 TKAS/);
   assert.doesNotMatch(discSummary,/没有找到这一轮/);
   const previewOut=roundView(ctx({
     S:{...BASE_S,view:'round',cid:r.cid},

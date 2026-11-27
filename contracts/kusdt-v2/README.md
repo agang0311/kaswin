@@ -11,12 +11,12 @@
 | 编译顺序 | 模板 | 合约名 | Bytecode | Tail | 冻结 `templateHash` |
 |---:|---|---|---:|---:|---|
 | 1 | `s_payout` | `KusdtShardPayout` | 2,343 B | 2,230 B | `d9c495e42d7730616441e05335ab8e30a742e7004e67f467ad4498111452e950` |
-| 2 | `s_refund` | `KusdtShardRefund` | 3,128 B | 3,045 B | `63f0f28aee985e1b3393c3722de1cbf1c4bec8eb565de75ee5125165c9a79983` |
-| 3 | `s_frozen` | `KusdtShardFrozen` | 810 B | 695 B | `5f6a591bd11fc5d4f873ab17aa94cc5b41e688ff7b9bae34e157dd5f86dfc76a` |
-| 4 | `s_open` | `KusdtShardOpen` | 2,678 B | 2,563 B | `30213f2234df0b1f67794ef5b8fd6e91f144a3d745ffa282d679218ac52165fc` |
-| 5 | `m_dispatch` | `KusdtManagerDispatch` | 4,063 B | 3,936 B | `c19b021080e31fd1408bd7aa7455cf11cfd4324d1cae0d94dd8ce6139db00050` |
-| 6 | `m_sealed` | `KusdtManagerSealed` | 15,608 B | 15,477 B | `e987429ff1ee8d5905fe6dc7c7a01ea5747f7e036d26d2a2e37e35c6d031f20f` |
-| 7 | `m_open` | `KusdtManagerOpen` | 8,750 B | 8,688 B | `559e67acf808e5d48283421e01ac7dc3134d91109f09ac1257324fa85feb8f2a` |
+| 2 | `s_refund` | `KusdtShardRefund` | 3,136 B | 3,053 B | `adf4eb35939f240a77de7f7ac0700b9116dca627452056523b8c63e2fd63cf16` |
+| 3 | `s_frozen` | `KusdtShardFrozen` | 810 B | 695 B | `dce727e1cb4a6d9ddc421d65d87af54becaff2234861ea3d356894e5d7456c62` |
+| 4 | `s_open` | `KusdtShardOpen` | 2,678 B | 2,563 B | `3d5ce67b7a302d18a63a824e16056b27ec549350db9a50c7f7d00587416a256f` |
+| 5 | `m_dispatch` | `KusdtManagerDispatch` | 4,063 B | 3,936 B | `529a66a41b1a277e57162d9dadaf3ffe49538b83cfff9adcd874286ed6ba3fba` |
+| 6 | `m_sealed` | `KusdtManagerSealed` | 15,608 B | 15,477 B | `3e07af22007701e0c41d42f5a6bef38eb999c5079d5c3673f9617e04dc1b770c` |
+| 7 | `m_open` | `KusdtManagerOpen` | 8,858 B | 8,796 B | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` |
 
 ## 真实 VM 边界校准摘要（`tester` 48/48 通过）
 

@@ -153,11 +153,16 @@ function card(i: Item,x: Ctx,freshDisc?: DiscoveredRound): Raw {
     <div class="row card-foot"><span class="card-next">${freshDisc?indexedStep(freshDisc,ph,L):stepText(i,x,L)}</span><span class="card-cta">${cta} ${ic('arrow')}</span></div>
   </article>`;
 }
+const indexedKasPool=(d: DiscoveredRound): bigint=>{
+  if(d.terminal)return 0n;
+  const raw=safeBig(d.managerValue);
+  return raw>400_000_000n?raw-400_000_000n:0n;
+};
 function indexedCard(d: DiscoveredRound,x?: Ctx): Raw {
   const L=locOf(x),E=L.explore;
   const asset=assetOfDisc(d,x),isToken=isTokenAsset(asset);
   const ph=indexedPhase(d,L),tkt=d.terminal?(d.bought??d.ticketsSold??d.tickets??0):(d.ticketsSold??d.tickets??0),isRest=d.source==='rest',u=isToken?asset.symbol:unitOf(x);
-  const mval=!d.terminal?safeBig(d.managerValue):0n,cta=L.actions.cardCta[ph.key]??L.common.viewDetails;
+  const mval=indexedKasPool(d),cta=L.actions.cardCta[ph.key]??L.common.viewDetails;
   const rawPrice=d.ticketPrice?safeBig(d.ticketPrice):0n;
   const tokenPool=isToken&&rawPrice>0n?BigInt(tkt)*rawPrice:0n;
   const starred=!!x?.saved?.has(d.cid);
@@ -188,11 +193,11 @@ export function exploreView(x: Ctx): Raw {
       const d=discByCid.get(i.r.cid),fresh=isDiscFresher(i,d)?d:undefined;
       const asset=fresh?(assetOfDisc(fresh,x)??i.asset):i.asset,isToken=isTokenAsset(asset);
       const value=fresh
-        ?(fresh.terminal?0n:!isToken&&(fresh.module==='sales'||fresh.module==='sealed')&&fresh.tickets!=null?BigInt(fresh.tickets)*i.f.ticketPrice+400_000_000n:(safeBig(fresh.managerValue)>i.value?safeBig(fresh.managerValue):i.value))
+        ?(fresh.terminal?0n:!isToken&&(fresh.module==='sales'||fresh.module==='sealed')&&fresh.tickets!=null?BigInt(fresh.tickets)*i.f.ticketPrice:(indexedKasPool(fresh)>i.value?indexedKasPool(fresh):i.value))
         :i.value;
       return {cid:i.r.cid,ph:fresh?indexedPhase(fresh,L):localizePhase(i.ph,L),value,at:Math.max(i.at,d?.updatedAt??0),item:i,disc:fresh};
     }),
-    ...disc.filter(d=>!localCids.has(d.cid)).map(d=>{const ph=indexedPhase(d,L);return {cid:d.cid,ph,value:d.terminal?0n:safeBig(d.managerValue),at:d.updatedAt??0,disc:d};}),
+    ...disc.filter(d=>!localCids.has(d.cid)).map(d=>{const ph=indexedPhase(d,L);return {cid:d.cid,ph,value:indexedKasPool(d),at:d.updatedAt??0,disc:d};}),
   ];
   const isIncompatibleProfile=(pid: string|null|undefined)=>!!(pid&&x.supportedProfiles&&!x.supportedProfiles.has(pid));
   const isOther=(e: ExploreEntry)=>isIncompatibleProfile(e.disc?.profileId)||isIncompatibleProfile(e.item?.r.profileId)
@@ -718,7 +723,7 @@ function discoveredDetailView(d: DiscoveredRound,x: Ctx,L: Locale): Raw {
   const ph=indexedPhase(d,L),kasU=unitOf(x),u=isToken?asset.symbol:kasU,cid=d.cid;
   const protoLabel=cp?.displayName??cp?.name??(isToken?`${u} (${asset.kind})`:kasU);
   const tkt=d.terminal?(d.bought??d.ticketsSold??d.tickets??0):(d.ticketsSold??d.tickets??0);
-  const mval=!d.terminal?safeBig(d.managerValue):0n;
+  const mval=indexedKasPool(d);
   const tokenPool=isToken&&d.ticketPrice?BigInt(tkt)*safeBig(d.ticketPrice):0n;
   const refund=d.module==='refund'||d.phase==='REFUNDING'||d.terminal==='REFUNDED',labels=refund?L.actions.stepsRefund:L.actions.stepsNormal;
   const pos=d.terminal?4:(d.module==='sealed'||d.phase==='SEALED')?1:(d.module==='win'||d.module==='refund'||d.phase==='SETTLING'||d.phase==='REFUNDING')?2:0;

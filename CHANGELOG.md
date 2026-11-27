@@ -13,6 +13,21 @@ When a release **adds, changes, or drops** any compatible contract profile:
 
 ---
 
+## [v0.1.3.8] - 2026-11-27
+
+### Compatible Contract Profiles
+
+| Protocol | Asset | Contract Profile ID | Notes |
+|---|---|---|---|
+| `rolling-v1` | `KAS` / `TKAS` | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` | Unchanged |
+| `kusdt-v2` | `kUSDT` (KCC-20) | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` | Unchanged from `v0.1.3.2` (token `50b3477e…1513fd3`) |
+
+### Fixed
+- **Plaza indexed KAS pool display**: Subtract the 4 KAS refundable manager deposit from `managerValue` in `indexedCard`, `discoveredDetailView`, and `exploreView` value sorting so un-synced `rolling-v1` rounds display the actual ticket pool rather than `pool + 4 KAS`.
+- **Documentation**: Synced `contracts/kusdt-v2/README.md` frozen template hash table with `contracts/kusdt-v2/artifacts/template-pins.json`.
+
+---
+
 ## [v0.1.3.7] - 2026-11-27
 
 ### Compatible Contract Profiles
