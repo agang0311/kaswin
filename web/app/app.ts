@@ -1579,12 +1579,33 @@ function installPwaManifest() {
     const renderIcon=(size: number): string=>{
       const c=document.createElement('canvas');c.width=c.height=size;
       const g=c.getContext('2d');if(!g)return '';
-      const s=size/2500;g.scale(s,s);
-      g.fillStyle='#70C7BA';
-      g.beginPath();g.arc(1250,1250,1200,0,Math.PI*2);g.fill();
-      g.fillStyle='#FFFFFF';
-      const pts:[number,number][]=[[1575.1,524.7],[1309.9,564.4],[1387.2,1078.6],[831.8,650.1],[668.9,863.3],[1155.4,1237.5],[668.9,1613.7],[831.8,1826.9],[1387.2,1398.4],[1309.9,1912.6],[1575.1,1952.3],[1681.6,1237.5]];
-      g.beginPath();pts.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.fill();
+      g.scale(size/512,size/512);
+      const bg=g.createLinearGradient(0,0,512,512);
+      bg.addColorStop(0,'#11221c');bg.addColorStop(1,'#070e0c');
+      g.fillStyle=bg;g.fillRect(0,0,512,512);
+      g.translate(256,256);
+      const tk=g.createLinearGradient(-144,-102,144,102);
+      tk.addColorStop(0,'#9bf0c6');tk.addColorStop(1,'#4fbf8f');
+      g.fillStyle=tk;
+      g.beginPath();
+      g.moveTo(-144,-86);g.quadraticCurveTo(-144,-102,-128,-102);
+      g.lineTo(128,-102);g.quadraticCurveTo(144,-102,144,-86);
+      g.lineTo(144,-28);g.arc(144,0,28,-Math.PI/2,Math.PI/2,true);
+      g.lineTo(144,86);g.quadraticCurveTo(144,102,128,102);
+      g.lineTo(-128,102);g.quadraticCurveTo(-144,102,-144,86);
+      g.lineTo(-144,28);g.arc(-144,0,28,Math.PI/2,-Math.PI/2,true);
+      g.closePath();g.fill();
+      g.save();
+      g.strokeStyle='rgba(10,22,18,0.28)';g.lineWidth=10;g.lineCap='round';g.setLineDash([14,14]);
+      g.beginPath();g.moveTo(64,-80);g.lineTo(64,80);g.stroke();
+      g.restore();
+      g.translate(-32,0);
+      const pts:[number,number][]=[[-32,-52],[-12,-52],[-12,-8],[28,-52],[50,-52],[8,-4],[52,52],[28,52],[-12,2],[-12,52],[-32,52]];
+      g.beginPath();pts.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();
+      g.strokeStyle='#0a1612';g.lineWidth=14;g.lineJoin='round';g.stroke();
+      const gd=g.createLinearGradient(-32,-52,52,52);
+      gd.addColorStop(0,'#fff0a6');gd.addColorStop(1,'#f0b429');
+      g.fillStyle=gd;g.fill();
       return c.toDataURL('image/png');
     };
     const icon192=renderIcon(192),icon512=renderIcon(512);
@@ -1601,11 +1622,11 @@ function installPwaManifest() {
       scope,
       display:'standalone',
       orientation:'portrait-primary',
-      background_color:'#081119',
+      background_color:'#070e0c',
       theme_color:S.theme==='dark'?'#081119':'#f4f7f9',
       icons:[
         ...(icon192?[{src:icon192,sizes:'192x192',type:'image/png',purpose:'any maskable'}]:[]),
-        ...(icon512?[{src:icon192,sizes:'512x512',type:'image/png',purpose:'any maskable'}]:[]),
+        ...(icon512?[{src:icon512,sizes:'512x512',type:'image/png',purpose:'any maskable'}]:[]),
       ],
     };
     link.href='data:application/manifest+json;charset=utf-8,'+encodeURIComponent(JSON.stringify(manifest));
