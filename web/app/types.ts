@@ -222,7 +222,7 @@ export interface DiscoveredRound {
   cid: string; protocolId?: string; profileId?: Hex; terminal?: string|null; module?: string|null; phase?: string|number; subPhase?: string;
   asset?: AssetDescriptor; settlementProgress?: SettlementProgress; protocolData?: Record<string, unknown>;
   tickets?: number; ticketsSold?: number; ticketCap?: number; ticketPrice?: string; shards?: number; bought?: number; buys?: number;
-  managerValue?: string|null; acceptingDaa?: string|number|null; updatedAt?: number|null;
+  managerValue?: string|null; poolValue?: string|null; acceptingDaa?: string|number|null; updatedAt?: number|null;
   source?: 'indexer'|'rest'; genesisTxid?: string;
 }
 export interface DiscoveryCacheSnapshot {

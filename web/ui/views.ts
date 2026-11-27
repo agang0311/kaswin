@@ -155,6 +155,9 @@ function card(i: Item,x: Ctx,freshDisc?: DiscoveredRound): Raw {
 }
 const indexedKasPool=(d: DiscoveredRound): bigint=>{
   if(d.terminal)return 0n;
+  if(d.poolValue!=null)return safeBig(d.poolValue);
+  const tkt=d.ticketsSold??d.tickets;
+  if(d.ticketPrice!=null&&tkt!=null)return BigInt(tkt)*safeBig(d.ticketPrice);
   const raw=safeBig(d.managerValue);
   return raw>400_000_000n?raw-400_000_000n:0n;
 };

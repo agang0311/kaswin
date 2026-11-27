@@ -13,6 +13,20 @@ When a release **adds, changes, or drops** any compatible contract profile:
 
 ---
 
+## [v0.1.3.9] - 2026-11-27
+
+### Compatible Contract Profiles
+
+| Protocol | Asset | Contract Profile ID | Notes |
+|---|---|---|---|
+| `rolling-v1` | `KAS` / `TKAS` | `b56bcd9cb654610b238a32bae25c41128ebd2837cc7a91b3ea835f8a102fc4e5` | Unchanged |
+| `kusdt-v2` | `kUSDT` (KCC-20) | `39a29f4e215a2d264aa1dad63ec61b41633c7ff3822fe8e8c6d888b32d2e5445` | Unchanged from `v0.1.3.2` (token `50b3477e…1513fd3`) |
+
+### Changed
+- **KCI `poolValue` & `ticketPrice` support for `rolling-v1`**: Preserved `poolValue` in `sanitizeDiscoveredRound` (`scripts/store/round-store.mjs`) and `DiscoveredRound` (`web/app/types.ts`), and updated `indexedKasPool` in `web/ui/views.ts` to prefer KCI's `poolValue` (and `tickets × ticketPrice`) so multi-shard `rolling-v1` rounds display the full prize pool including frozen shards without the 4 KAS state deposit, falling back to `managerValue - 4 KAS` for older indexers.
+
+---
+
 ## [v0.1.3.8] - 2026-11-27
 
 ### Compatible Contract Profiles

@@ -52,6 +52,9 @@ export function sanitizeDiscoveredRound(raw) {
   else if(typeof tp==='number'&&Number.isSafeInteger(tp)&&tp>=0)out.ticketPrice=String(tp);
   const mv=raw.managerValue;
   out.managerValue=typeof mv==='string'&&DEC_UINT.test(mv)?mv:(typeof mv==='number'&&Number.isSafeInteger(mv)&&mv>=0?String(mv):null);
+  const pv=raw.poolValue;
+  if(typeof pv==='string'&&DEC_UINT.test(pv))out.poolValue=pv;
+  else if(typeof pv==='number'&&Number.isSafeInteger(pv)&&pv>=0)out.poolValue=String(pv);
   const daa=raw.acceptingDaa;
   out.acceptingDaa=typeof daa==='string'&&DEC_UINT.test(daa)?daa:(typeof daa==='number'&&Number.isSafeInteger(daa)&&daa>=0?daa:null);
   out.updatedAt=typeof raw.updatedAt==='number'&&Number.isFinite(raw.updatedAt)&&raw.updatedAt>=0?Math.trunc(raw.updatedAt):null;
